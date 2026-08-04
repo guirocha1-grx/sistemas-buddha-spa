@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,145 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+// ===== Unidades =====
+
+export async function getUnidades() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(unidades);
+}
+
+export async function getUnidadeById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(unidades).where(eq(unidades.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getUnidadeBySlug(slug: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(unidades).where(eq(unidades.slug, slug)).limit(1);
+  return result[0];
+}
+
+export async function updateUnidade(id: number, dados: Partial<InsertUnidade>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(unidades).set(dados).where(eq(unidades.id, id));
+}
+
+// ===== Leads =====
+
+export async function createLead(lead: InsertLead) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(leads).values(lead);
+}
+
+export async function getLeads(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(leads).where(eq(leads.unidadeId, unidadeId)).orderBy(desc(leads.createdAt));
+}
+
+export async function updateLeadStatus(id: number, status: string, belleCodigo?: number, erroBelle?: string) {
+  const db = await getDb();
+  if (!db) return;
+  const updateData: Record<string, unknown> = { statusEnvioBelle: status as any };
+  if (belleCodigo !== undefined) updateData.belleCodigo = belleCodigo;
+  if (erroBelle !== undefined) updateData.erroBelle = erroBelle;
+  await db.update(leads).set(updateData).where(eq(leads.id, id));
+}
+
+// ===== Metas =====
+
+export async function getMetas(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(metas).where(eq(metas.unidadeId, unidadeId));
+}
+
+export async function upsertMeta(meta: InsertMeta) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(metas).values(meta).onDuplicateKeyUpdate({
+    set: {
+      valorFaturamento: meta.valorFaturamento,
+      valorRecebimento: meta.valorRecebimento,
+      numAgendamentos: meta.numAgendamentos,
+      numNovosClientes: meta.numNovosClientes,
+    },
+  });
+}
+
+// ===== Lâminas =====
+
+export async function getLaminas(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(laminas).where(eq(laminas.unidadeId, unidadeId)).orderBy(desc(laminas.createdAt));
+}
+
+export async function createLamina(lamina: InsertLamina) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(laminas).values(lamina);
+}
+
+export async function updateLamina(id: number, dados: Partial<InsertLamina>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(laminas).set(dados).where(eq(laminas.id, id));
+}
+
+// ===== Sync Logs =====
+
+export async function createSyncLog(log: InsertSyncLog) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(syncLogs).values(log);
+}
+
+export async function getSyncLogs(unidadeId: number, limit: number = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(syncLogs).where(eq(syncLogs.unidadeId, unidadeId)).orderBy(desc(syncLogs.createdAt)).limit(limit);
+}
+
+// ===== Copilot Conversas =====
+
+export async function createCopilotConversa(conversa: InsertCopilotConversa) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(copilotConversas).values(conversa);
+}
+
+export async function getCopilotConversas(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(copilotConversas).where(eq(copilotConversas.unidadeId, unidadeId)).orderBy(desc(copilotConversas.updatedAt));
+}
+
+export async function updateCopilotConversa(id: number, dados: Partial<InsertCopilotConversa>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(copilotConversas).set(dados).where(eq(copilotConversas.id, id));
+}
+
+// ===== Configurações =====
+
+export async function getConfig(chave: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(configuracoes).where(eq(configuracoes.chave, chave)).limit(1);
+  return result[0];
+}
+
+export async function setConfig(chave: string, valor: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(configuracoes).values({ chave, valor }).onDuplicateKeyUpdate({
+    set: { valor },
+  });
+}
