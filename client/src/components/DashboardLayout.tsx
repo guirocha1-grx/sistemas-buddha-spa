@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, Landmark } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -37,7 +37,6 @@ const menuItems = [
   { icon: Sparkles, label: "Copilot", path: "/copilot" },
   { icon: Image, label: "Lâminas", path: "/laminas" },
   { icon: UserPlus, label: "Leads", path: "/leads" },
-  { icon: Landmark, label: "Banco Inter", path: "/banco-inter" },
   { icon: Settings, label: "Configurações", path: "/configuracoes" },
 ];
 

@@ -837,6 +837,44 @@ Diretrizes:
       await db.updateUnidade(unidadeId, dados);
       return { success: true };
     }),
+
+    /**
+     * Importa transações de um extrato em CSV (formato: data, descrição,
+     * tipo C/D, valor). Usa o mesmo dedup por idTransacao do sync do
+     * Inter — reimportar o mesmo arquivo não duplica linhas, já que o
+     * idTransacao é derivado do conteúdo da própria linha.
+     */
+    importarCsv: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      linhas: z.array(z.object({
+        data: z.string(), // AAAA-MM-DD
+        descricao: z.string(),
+        tipo: z.enum(["C", "D"]),
+        valor: z.number().positive(),
+      })).min(1),
+    })).mutation(async ({ input }) => {
+      const transacoes = input.linhas.map((linha, i) => {
+        const idTransacao = `csv:${input.unidadeId}:${linha.data}:${linha.tipo}:${linha.valor}:${i}`;
+        return {
+          unidadeId: input.unidadeId,
+          idTransacao,
+          dataEntrada: linha.data,
+          tipoOperacao: linha.tipo,
+          valor: linha.valor.toFixed(2),
+          titulo: linha.descricao,
+          origem: "csv" as const,
+        };
+      });
+      const inseridos = await db.upsertInterExtratos(input.unidadeId, transacoes);
+      await db.createSyncLog({
+        unidadeId: input.unidadeId,
+        tipo: "csv_extrato",
+        status: "sucesso",
+        registrosProcessados: inseridos,
+        detalhes: `Importação manual via CSV. ${input.linhas.length} linha(s) no arquivo, ${inseridos} nova(s).`,
+      });
+      return { success: true, totalInseridos: inseridos, totalLinhas: input.linhas.length };
+    }),
   }),
 
   // ===== Configurações globais (chave-valor) =====
