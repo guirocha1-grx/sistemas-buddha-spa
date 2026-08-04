@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, json, decimal, datetime } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, json, decimal, datetime, index } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -28,6 +28,9 @@ export const unidades = mysqlTable("unidades", {
   slug: varchar("slug", { length: 64 }).notNull().unique(),
   codEstab: int("codEstab").notNull(),
   belleToken: text("belleToken"),
+  zapiInstanceId: text("zapiInstanceId"),
+  zapiToken: text("zapiToken"),
+  zapiClientToken: text("zapiClientToken"),
   corTema: varchar("corTema", { length: 32 }),
   ativa: mysqlEnum("ativa", ["true", "false"]).default("true").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -146,3 +149,51 @@ export const copilotConversas = mysqlTable("copilotConversas", {
 
 export type CopilotConversa = typeof copilotConversas.$inferSelect;
 export type InsertCopilotConversa = typeof copilotConversas.$inferInsert;
+
+/**
+ * Conversas de WhatsApp (Inbox). Dois canais: zapi (uma instância por
+ * unidade) e buddha_mkt (API oficial WhatsApp Cloud, conta única para
+ * as duas unidades — unidadeId fica null até ser resolvida via cliente
+ * Belle).
+ */
+export const inboxConversas = mysqlTable("inbox_conversas", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId"),
+  canal: mysqlEnum("canal", ["zapi", "buddha_mkt"]).notNull(),
+  telefone: varchar("telefone", { length: 30 }).notNull(),
+  nomeContato: varchar("nomeContato", { length: 256 }),
+  clienteBelleCodigo: int("clienteBelleCodigo"),
+  status: mysqlEnum("status", ["aberta", "encerrada"]).default("aberta").notNull(),
+  naoLidas: int("naoLidas").default(0).notNull(),
+  ultimaMensagemEm: timestamp("ultimaMensagemEm"),
+  ultimaMensagemTexto: text("ultimaMensagemTexto"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  telefoneCanalIdx: index("inbox_conversas_telefone_canal_idx").on(table.telefone, table.canal),
+  unidadeIdx: index("inbox_conversas_unidade_idx").on(table.unidadeId),
+}));
+
+export type InboxConversa = typeof inboxConversas.$inferSelect;
+export type InsertInboxConversa = typeof inboxConversas.$inferInsert;
+
+/**
+ * Mensagens trocadas dentro de uma conversa do Inbox.
+ */
+export const inboxMensagens = mysqlTable("inbox_mensagens", {
+  id: int("id").autoincrement().primaryKey(),
+  conversaId: int("conversaId").notNull(),
+  direcao: mysqlEnum("direcao", ["recebida", "enviada"]).notNull(),
+  tipo: mysqlEnum("tipo", ["texto", "imagem", "audio", "documento", "sistema"]).notNull(),
+  conteudo: text("conteudo"),
+  metadados: text("metadados"),
+  transcricao: text("transcricao"),
+  enviadaPorUserId: int("enviadaPorUserId"),
+  lida: mysqlEnum("lida", ["true", "false"]).default("false").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  conversaCreatedIdx: index("inbox_mensagens_conversa_created_idx").on(table.conversaId, table.createdAt),
+}));
+
+export type InboxMensagem = typeof inboxMensagens.$inferSelect;
+export type InsertInboxMensagem = typeof inboxMensagens.$inferInsert;

@@ -5,6 +5,9 @@ import { publicProcedure, router, protectedProcedure, adminProcedure } from "./_
 import { z } from "zod";
 import * as db from "./db";
 import { belleApi } from "./belleApi";
+import { zapiApi } from "./zapiApi";
+import { buddhaMktApi } from "./buddhaMktApi";
+import { storagePut, storageGetSignedUrl } from "./storage";
 import { invokeLLM } from "./_core/llm";
 
 export const appRouter = router({
@@ -30,6 +33,9 @@ export const appRouter = router({
     update: adminProcedure.input(z.object({
       id: z.number(),
       belleToken: z.string().optional(),
+      zapiInstanceId: z.string().optional(),
+      zapiToken: z.string().optional(),
+      zapiClientToken: z.string().optional(),
       codEstab: z.number().optional(),
       corTema: z.string().optional(),
     })).mutation(async ({ input }) => {
@@ -494,6 +500,144 @@ Diretrizes:
       } catch (error: any) {
         return { reply: `Erro ao processar: ${error.message}` };
       }
+    }),
+  }),
+
+  // ===== Mensagens (Inbox) =====
+  inbox: router({
+    conversas: router({
+      list: protectedProcedure.input(z.object({
+        unidadeId: z.number().optional(),
+        canal: z.enum(["zapi", "buddha_mkt"]).optional(),
+      })).query(async ({ input }) => {
+        return db.listInboxConversas(input);
+      }),
+
+      get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+        const conversa = await db.getInboxConversaById(input.id);
+        if (conversa) await db.marcarInboxConversaLida(input.id);
+        return conversa;
+      }),
+    }),
+
+    mensagens: router({
+      list: protectedProcedure.input(z.object({
+        conversaId: z.number(),
+        limit: z.number().default(50),
+      })).query(async ({ input }) => {
+        return db.listInboxMensagens(input.conversaId, input.limit);
+      }),
+
+      enviar: protectedProcedure.input(z.object({
+        conversaId: z.number(),
+        texto: z.string().min(1),
+      })).mutation(async ({ input, ctx }) => {
+        const conversa = await db.getInboxConversaById(input.conversaId);
+        if (!conversa) throw new Error("Conversa não encontrada");
+
+        if (conversa.canal === "zapi") {
+          if (!conversa.unidadeId) throw new Error("Conversa sem unidade associada");
+          const unidade = await db.getUnidadeById(conversa.unidadeId);
+          if (!unidade?.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) {
+            throw new Error("Z-API não configurado para esta unidade");
+          }
+          try {
+            await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, input.texto);
+          } catch (error) {
+            console.error("[Inbox] Falha ao enviar via Z-API:", error);
+          }
+        } else {
+          try {
+            await buddhaMktApi.sendText(conversa.telefone, input.texto);
+          } catch (error) {
+            console.error("[Inbox] Falha ao enviar via Buddha Mkt:", error);
+          }
+        }
+
+        await db.insertInboxMensagem({
+          conversaId: input.conversaId,
+          direcao: "enviada",
+          tipo: "texto",
+          conteudo: input.texto,
+          enviadaPorUserId: ctx.user.id,
+        });
+        await db.upsertInboxConversa({
+          unidadeId: conversa.unidadeId,
+          canal: conversa.canal,
+          telefone: conversa.telefone,
+          nomeContato: conversa.nomeContato ?? undefined,
+          ultimaMensagemTexto: input.texto,
+        });
+
+        return { success: true };
+      }),
+
+      enviarMidia: protectedProcedure.input(z.object({
+        conversaId: z.number(),
+        tipo: z.enum(["imagem", "audio", "documento"]),
+        arquivoBase64: z.string(),
+        contentType: z.string(),
+        fileName: z.string().optional(),
+        legenda: z.string().optional(),
+      })).mutation(async ({ input, ctx }) => {
+        const conversa = await db.getInboxConversaById(input.conversaId);
+        if (!conversa) throw new Error("Conversa não encontrada");
+
+        const buffer = Buffer.from(input.arquivoBase64, "base64");
+        const { key } = await storagePut(
+          `inbox/${input.conversaId}/${input.fileName ?? input.tipo}`,
+          buffer,
+          input.contentType,
+        );
+        const url = await storageGetSignedUrl(key);
+
+        if (conversa.canal === "zapi") {
+          if (!conversa.unidadeId) throw new Error("Conversa sem unidade associada");
+          const unidade = await db.getUnidadeById(conversa.unidadeId);
+          if (!unidade?.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) {
+            throw new Error("Z-API não configurado para esta unidade");
+          }
+          try {
+            if (input.tipo === "imagem") {
+              await zapiApi.sendImage(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url, input.legenda);
+            } else if (input.tipo === "audio") {
+              await zapiApi.sendAudio(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url);
+            }
+          } catch (error) {
+            console.error("[Inbox] Falha ao enviar mídia via Z-API:", error);
+          }
+        }
+        // Buddha Mkt: envio de mídia via Cloud API exige upload prévio pra
+        // biblioteca de mídia da Meta — fica pra quando o canal estiver
+        // configurado de verdade.
+
+        await db.insertInboxMensagem({
+          conversaId: input.conversaId,
+          direcao: "enviada",
+          tipo: input.tipo,
+          conteudo: input.legenda ?? "",
+          metadados: JSON.stringify({ url, legenda: input.legenda, fileName: input.fileName }),
+          enviadaPorUserId: ctx.user.id,
+        });
+
+        return { success: true, url };
+      }),
+    }),
+  }),
+
+  // ===== Configurações globais (chave-valor) =====
+  configuracoes: router({
+    get: adminProcedure.input(z.object({ chave: z.string() })).query(async ({ input }) => {
+      const config = await db.getConfig(input.chave);
+      return config?.valor ?? null;
+    }),
+
+    set: adminProcedure.input(z.object({
+      chave: z.string(),
+      valor: z.string(),
+    })).mutation(async ({ input }) => {
+      await db.setConfig(input.chave, input.valor);
+      return { success: true };
     }),
   }),
 });

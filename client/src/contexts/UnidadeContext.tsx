@@ -8,6 +8,9 @@ interface UnidadeInfo {
   codEstab: number;
   corTema: string | null;
   belleToken?: string | null;
+  zapiInstanceId?: string | null;
+  zapiToken?: string | null;
+  zapiClientToken?: string | null;
 }
 
 interface UnidadeContextValue {
@@ -36,6 +39,9 @@ export function UnidadeProvider({ children }: { children: ReactNode }) {
     codEstab: u.codEstab,
     corTema: u.corTema,
     belleToken: u.belleToken,
+    zapiInstanceId: u.zapiInstanceId,
+    zapiToken: u.zapiToken,
+    zapiClientToken: u.zapiClientToken,
   }));
 
   const unidadeSelecionada = unidades.find((u) => u.id === unidadeId) || unidades[0] || null;

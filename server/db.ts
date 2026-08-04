@@ -1,6 +1,6 @@
 import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -230,4 +230,99 @@ export async function setConfig(chave: string, valor: string) {
   await db.insert(configuracoes).values({ chave, valor }).onDuplicateKeyUpdate({
     set: { valor },
   });
+}
+
+// ===== Inbox (Mensagens) =====
+
+export async function listInboxConversas(filtros: { unidadeId?: number; canal?: "zapi" | "buddha_mkt" }) {
+  const db = await getDb();
+  if (!db) return [];
+  const condicoes = [];
+  if (filtros.unidadeId !== undefined) condicoes.push(eq(inboxConversas.unidadeId, filtros.unidadeId));
+  if (filtros.canal !== undefined) condicoes.push(eq(inboxConversas.canal, filtros.canal));
+  const query = db.select().from(inboxConversas).orderBy(desc(inboxConversas.ultimaMensagemEm));
+  if (condicoes.length === 0) return query;
+  return query.where(and(...condicoes));
+}
+
+export async function getInboxConversaById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(inboxConversas).where(eq(inboxConversas.id, id)).limit(1);
+  return result[0];
+}
+
+export async function marcarInboxConversaLida(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inboxConversas).set({ naoLidas: 0 }).where(eq(inboxConversas.id, id));
+}
+
+/**
+ * Busca a conversa por (telefone, canal) — se não achar, cria. Usada pelo
+ * webhook de entrada e ao iniciar uma conversa manualmente.
+ */
+export async function upsertInboxConversa(params: {
+  unidadeId: number | null;
+  canal: "zapi" | "buddha_mkt";
+  telefone: string;
+  nomeContato?: string;
+  ultimaMensagemTexto: string;
+  incrementarNaoLidas?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const existente = await db.select().from(inboxConversas)
+    .where(and(eq(inboxConversas.telefone, params.telefone), eq(inboxConversas.canal, params.canal)))
+    .limit(1);
+
+  const agora = new Date();
+
+  if (existente[0]) {
+    const naoLidas = params.incrementarNaoLidas ? existente[0].naoLidas + 1 : existente[0].naoLidas;
+    await db.update(inboxConversas).set({
+      nomeContato: params.nomeContato ?? existente[0].nomeContato,
+      ultimaMensagemEm: agora,
+      ultimaMensagemTexto: params.ultimaMensagemTexto,
+      naoLidas,
+      status: "aberta",
+    }).where(eq(inboxConversas.id, existente[0].id));
+    return existente[0].id;
+  }
+
+  const insertValues: InsertInboxConversa = {
+    unidadeId: params.unidadeId,
+    canal: params.canal,
+    telefone: params.telefone,
+    nomeContato: params.nomeContato,
+    ultimaMensagemEm: agora,
+    ultimaMensagemTexto: params.ultimaMensagemTexto,
+    naoLidas: params.incrementarNaoLidas ? 1 : 0,
+  };
+  const result = await db.insert(inboxConversas).values(insertValues).$returningId();
+  return result[0]?.id;
+}
+
+export async function listInboxMensagens(conversaId: number, limit: number = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  const mensagens = await db.select().from(inboxMensagens)
+    .where(eq(inboxMensagens.conversaId, conversaId))
+    .orderBy(desc(inboxMensagens.createdAt))
+    .limit(limit);
+  return mensagens.reverse();
+}
+
+export async function insertInboxMensagem(mensagem: InsertInboxMensagem) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.insert(inboxMensagens).values(mensagem).$returningId();
+  return result[0]?.id;
+}
+
+export async function updateInboxMensagemTranscricao(id: number, transcricao: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inboxMensagens).set({ transcricao }).where(eq(inboxMensagens.id, id));
 }
