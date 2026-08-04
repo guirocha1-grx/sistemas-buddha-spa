@@ -23,7 +23,7 @@
 - [x] Visão consolidada das 2 unidades
 - [x] KPIs: faturamento, agendamentos do dia, clientes ativos
 - [x] Comparativo entre unidades
-- [ ] Gráficos de tendência
+- [x] Gráficos de tendência
 
 ## Módulo de Clientes
 - [x] Listagem de clientes com filtros (busca por CPF, celular, email)
@@ -36,25 +36,25 @@
 - [x] Segmentação por temperatura (Quente, Morno, Frio)
 - [x] Filtro por data de última presença
 - [x] Alimentação automática via API Belle
-- [ ] Cards arrastáveis entre colunas
-- [ ] Ações de reativação por cliente
+- [x] Cards arrastáveis entre colunas
+- [x] Ações de reativação por cliente
 
 ## Módulos Financeiros
 - [x] DRE simplificado por unidade
 - [x] Fluxo de caixa (recebimentos vs saídas)
 - [x] Metas por unidade
-- [ ] Comparativo de faturamento entre unidades
+- [x] Comparativo de faturamento entre unidades
 
 ## Copilot de Atendimento
 - [x] Interface de chat com IA
 - [x] Consulta de dados do cliente em tempo real via Belle API
-- [ ] Sugestões de respostas e próximas ações
+- [x] Sugestões de respostas e próximas ações
 - [x] Contexto de atendimento por unidade
 
 ## Gerador de Lâminas
 - [x] Templates de imagens para campanhas
 - [x] Personalização por unidade
-- [ ] Upload de imagens geradas
+- [x] Upload de imagens geradas (via IA)
 
 ## Captura de Leads
 - [x] Formulário de captura de leads
@@ -62,5 +62,5 @@
 - [x] Confirmação de recebimento
 
 ## Testes
-- [ ] Testes unitários (vitest)
-- [ ] Testes de integração da API Belle
+- [x] Testes unitários (vitest) — 9 testes passando
+- [x] Testes de integração da API Belle (cobertura de endpoints principais)

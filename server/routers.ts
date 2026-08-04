@@ -5,6 +5,7 @@ import { publicProcedure, router, protectedProcedure, adminProcedure } from "./_
 import { z } from "zod";
 import * as db from "./db";
 import { belleApi } from "./belleApi";
+import { invokeLLM } from "./_core/llm";
 
 export const appRouter = router({
   system: systemRouter,
@@ -89,6 +90,19 @@ export const appRouter = router({
       if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
       await belleApi.alterarCliente(unidade.belleToken, input.codCliente, input.dados as any);
       return { success: true };
+    }),
+
+    historico: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      codCliente: z.number(),
+    })).query(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
+      // Buscar vendas do cliente via relatório de vendas filtrado
+      const vendas = await belleApi.relatorioVendas(unidade.belleToken, unidade.codEstab).catch(() => null);
+      if (!vendas?.vendas) return [];
+      // Filtrar vendas do cliente específico
+      return vendas.vendas.filter((v: any) => v.cliente === input.codCliente || v.codCliente === input.codCliente);
     }),
   }),
 
@@ -233,6 +247,71 @@ export const appRouter = router({
         totalAgendamentos: agendamentos?.length ?? 0,
       };
     }),
+
+    // Dashboard consolidado — ambas as unidades
+    dashboardConsolidado: protectedProcedure.query(async () => {
+      const unidades = await db.getUnidades();
+      const hoje = new Date();
+      const dataInicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+      const fmtDate = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+
+      const resultados = await Promise.all(
+        unidades.map(async (unidade) => {
+          if (!unidade.belleToken) {
+            return {
+              unidadeId: unidade.id,
+              nome: unidade.nome,
+              corTema: unidade.corTema,
+              faturamentoMes: 0,
+              totalVendasMes: 0,
+              recebimentosMes: 0,
+              agendamentosHoje: 0,
+              totalAgendamentos: 0,
+              semToken: true,
+            };
+          }
+          try {
+            const [vendas, recebimentos, agendamentos] = await Promise.all([
+              belleApi.relatorioVendas(unidade.belleToken, unidade.codEstab, {
+                data_inicio: fmtDate(dataInicio),
+                data_fim: fmtDate(hoje),
+              }).catch(() => null),
+              belleApi.listarRecebimentos(unidade.belleToken, unidade.codEstab, {
+                data_inicio: fmtDate(dataInicio),
+                data_fim: fmtDate(hoje),
+              }).catch(() => null),
+              belleApi.listarAgendamentos(unidade.belleToken, unidade.codEstab).catch(() => null),
+            ]);
+
+            return {
+              unidadeId: unidade.id,
+              nome: unidade.nome,
+              corTema: unidade.corTema,
+              faturamentoMes: vendas?.valorTotal ?? 0,
+              totalVendasMes: vendas?.totalVendas ?? 0,
+              recebimentosMes: recebimentos?.reduce((sum: number, r: any) => sum + (r.valor || 0), 0) ?? 0,
+              agendamentosHoje: agendamentos?.filter((a: any) => a.data === fmtDate(hoje)).length ?? 0,
+              totalAgendamentos: agendamentos?.length ?? 0,
+              semToken: false,
+            };
+          } catch {
+            return {
+              unidadeId: unidade.id,
+              nome: unidade.nome,
+              corTema: unidade.corTema,
+              faturamentoMes: 0,
+              totalVendasMes: 0,
+              recebimentosMes: 0,
+              agendamentosHoje: 0,
+              totalAgendamentos: 0,
+              semToken: false,
+            };
+          }
+        })
+      );
+
+      return resultados;
+    }),
   }),
 
   // ===== Leads =====
@@ -310,6 +389,25 @@ export const appRouter = router({
       await db.updateLamina(input.id, input);
       return { success: true };
     }),
+
+    gerar: protectedProcedure.input(z.object({
+      id: z.number(),
+      prompt: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      try {
+        const { generateImage } = await import("./_core/imageGeneration");
+        const result = await generateImage({
+          prompt: input.prompt,
+        });
+        const imageUrl = (result as any)?.data?.[0]?.url || (result as any)?.url || "";
+        if (imageUrl) {
+          await db.updateLamina(input.id, { imagemUrl: imageUrl, status: "pronto" });
+        }
+        return { imageUrl };
+      } catch (error: any) {
+        return { error: error.message };
+      }
+    }),
   }),
 
   // ===== Sync Logs =====
@@ -335,6 +433,67 @@ export const appRouter = router({
         mensagens: [],
       } as any);
       return { success: true };
+    }),
+
+    chat: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      mensagem: z.string().min(1),
+      clienteCpf: z.string().optional(),
+      clienteNome: z.string().optional(),
+      historico: z.array(z.object({
+        role: z.string(),
+        content: z.string(),
+      })).optional(),
+    })).mutation(async ({ input }) => {
+      // Buscar dados do cliente se CPF fornecido
+      let contextoCliente = "";
+      const unidade = await db.getUnidadeById(input.unidadeId);
+
+      if (input.clienteCpf && unidade?.belleToken) {
+        try {
+          const cliente = await belleApi.buscarCliente(unidade.belleToken, unidade.codEstab, {
+            cpf: input.clienteCpf,
+          });
+          const planos = await belleApi.planosCliente(unidade.belleToken, cliente.codigo, unidade.codEstab).catch(() => []);
+
+          contextoCliente = `DADOS DO CLIENTE:
+Nome: ${cliente.nome}
+CPF: ${cliente.cpf}
+Celular: ${cliente.celular}
+Email: ${cliente.email}
+Rating: ${cliente.rating} estrelas
+Temperatura: ${cliente.temperatura}
+Tags: ${cliente.tags?.map((t: any) => t.nome).join(", ") || "nenhuma"}
+Planos ativos: ${planos.map((p: any) => `${p.nome} (serviços: ${p.servicos?.map((s: any) => `${s.nome} (saldo: ${s.saldoRestante})`).join(", ")})`).join("; ") || "nenhum"}`;
+        } catch {
+          contextoCliente = "Cliente não encontrado no Belle.";
+        }
+      }
+
+      const systemPrompt = `Você é o Copilot de Atendimento do Buddha Spa, um spa premium com unidades no Shopping Santa Úrsula e Ribeirão Shopping. Você auxilia atendentes sugerindo respostas e próximas ações baseadas nos dados do cliente do sistema Belle Software.
+
+${contextoCliente ? `\n${contextoCliente}\n` : ""}
+Diretrizes:
+- Seja cordial, profissional e breve
+- Sugira ações práticas (ligar, agendar, oferecer plano, reativar)
+- Use os dados do cliente para personalizar sugestões
+- Se o cliente tem planos com saldo, sugira usar as sessões
+- Se o cliente está frio (sem visitas há muito tempo), sugira campanha de reativação
+- Responda sempre em português brasileiro`;
+
+      const messages = [
+        { role: "system" as const, content: systemPrompt },
+        ...(input.historico || []).map(m => ({ role: m.role as any, content: m.content })),
+        { role: "user" as const, content: input.mensagem },
+      ];
+
+      try {
+        const response = await invokeLLM({ messages });
+        const reply = (response as any)?.choices?.[0]?.message?.content || "Não consegui processar a resposta.";
+        return { reply };
+      } catch (error: any) {
+        return { reply: `Erro ao processar: ${error.message}` };
+      }
     }),
   }),
 });

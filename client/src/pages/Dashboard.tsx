@@ -2,7 +2,8 @@ import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { DollarSign, Calendar, Users, TrendingUp, Loader2, Sparkles } from "lucide-react";
+import { DollarSign, Calendar, Users, TrendingUp, Loader2, Sparkles, AlertCircle } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 export default function Dashboard() {
   const { unidadeSelecionada, unidades } = useUnidade();
@@ -17,8 +18,21 @@ export default function Dashboard() {
     { enabled: !!unidadeSelecionada }
   );
 
+  const { data: consolidado } = trpc.financeiro.dashboardConsolidado.useQuery();
+
   const fmtCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  const chartData = (consolidado || []).map((u: any) => ({
+    nome: u.nome?.replace("Shopping ", "") || `Unid ${u.unidadeId}`,
+    Faturamento: u.faturamentoMes ?? 0,
+    Recebimentos: u.recebimentosMes ?? 0,
+  }));
+
+  const totalFaturamento = (consolidado || []).reduce((sum: number, u: any) => sum + (u.faturamentoMes ?? 0), 0);
+  const totalRecebimentos = (consolidado || []).reduce((sum: number, u: any) => sum + (u.recebimentosMes ?? 0), 0);
+  const totalAgendamentosHoje = (consolidado || []).reduce((sum: number, u: any) => sum + (u.agendamentosHoje ?? 0), 0);
+  const totalClientes = kanbanData?.total ?? 0;
 
   return (
     <div className="space-y-6">
@@ -29,18 +43,18 @@ export default function Dashboard() {
             Dashboard
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Visão consolidada das operações
+            Visão consolidada das operações — Buddha Spa
           </p>
         </div>
         <UnidadeSelector />
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI Cards Consolidados */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-border/50 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Faturamento do Mês
+              Faturamento Total do Mês
             </CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -49,11 +63,9 @@ export default function Dashboard() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             ) : (
               <>
-                <div className="text-2xl font-bold">
-                  {fmtCurrency(dashboardData?.faturamentoMes ?? 0)}
-                </div>
+                <div className="text-2xl font-bold">{fmtCurrency(totalFaturamento)}</div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {dashboardData?.totalVendasMes ?? 0} vendas no período
+                  Soma das {unidades.length} unidades
                 </p>
               </>
             )}
@@ -63,7 +75,7 @@ export default function Dashboard() {
         <Card className="border-border/50 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Recebimentos
+              Recebimentos Totais
             </CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -72,9 +84,7 @@ export default function Dashboard() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             ) : (
               <>
-                <div className="text-2xl font-bold">
-                  {fmtCurrency(dashboardData?.recebimentosMes ?? 0)}
-                </div>
+                <div className="text-2xl font-bold">{fmtCurrency(totalRecebimentos)}</div>
                 <p className="text-xs text-muted-foreground mt-1">
                   Total recebido no mês
                 </p>
@@ -95,11 +105,9 @@ export default function Dashboard() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             ) : (
               <>
-                <div className="text-2xl font-bold">
-                  {dashboardData?.agendamentosHoje ?? 0}
-                </div>
+                <div className="text-2xl font-bold">{totalAgendamentosHoje}</div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {dashboardData?.totalAgendamentos ?? 0} total no período
+                  Total nas {unidades.length} unidades
                 </p>
               </>
             )}
@@ -118,9 +126,7 @@ export default function Dashboard() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             ) : (
               <>
-                <div className="text-2xl font-bold">
-                  {kanbanData?.total ?? 0}
-                </div>
+                <div className="text-2xl font-bold">{totalClientes}</div>
                 <div className="flex gap-3 mt-1">
                   <span className="text-xs text-orange-600">
                     {kanbanData?.quente?.length ?? 0} quentes
@@ -138,22 +144,57 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Comparativo entre unidades */}
+      {/* Gráfico de Comparativo */}
+      {chartData.length > 0 && (
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+              Comparativo de Faturamento por Unidade
+            </CardTitle>
+            <CardDescription>
+              Faturamento e recebimentos do mês atual lado a lado
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.91 0.005 70)" />
+                <XAxis dataKey="nome" tick={{ fontSize: 12 }} stroke="oklch(0.55 0.01 60)" />
+                <YAxis tick={{ fontSize: 12 }} stroke="oklch(0.55 0.01 60)" tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`} />
+                <Tooltip
+                  formatter={(value: number) => fmtCurrency(value)}
+                  contentStyle={{
+                    backgroundColor: "oklch(1 0 0)",
+                    border: "1px solid oklch(0.91 0.005 70)",
+                    borderRadius: "0.5rem",
+                    fontSize: "12px",
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: "12px" }} />
+                <Bar dataKey="Faturamento" fill="oklch(0.50 0.12 30)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Recebimentos" fill="oklch(0.65 0.10 40)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Comparativo Detalhado por Unidade */}
       <Card className="border-border/50 shadow-sm">
         <CardHeader>
           <CardTitle className="text-lg" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
             Comparativo de Unidades
           </CardTitle>
           <CardDescription>
-            Visão geral das duas unidades do Buddha Spa
+            Métricas detalhadas de cada unidade
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2">
-            {unidades.map((unidade) => (
+            {(consolidado || unidades).map((unidade: any) => (
               <div
-                key={unidade.id}
-                className="rounded-lg border border-border/50 p-4 space-y-2"
+                key={unidade.unidadeId || unidade.id}
+                className="rounded-lg border border-border/50 p-4 space-y-3"
                 style={{
                   borderColor: unidade.corTema ? `${unidade.corTema}30` : undefined,
                 }}
@@ -164,26 +205,34 @@ export default function Dashboard() {
                     style={{ backgroundColor: unidade.corTema || "#B8935A" }}
                   />
                   <span className="font-medium">{unidade.nome}</span>
+                  {unidade.semToken && (
+                    <span className="text-xs text-amber-600 flex items-center gap-1 ml-auto">
+                      <AlertCircle className="h-3 w-3" /> Sem token
+                    </span>
+                  )}
                 </div>
-                <div className="text-sm text-muted-foreground">
-                  Código Belle: {unidade.codEstab}
-                </div>
-                {unidadeSelecionada?.id === unidade.id && dashboardData && (
-                  <div className="space-y-1 mt-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Faturamento:</span>
-                      <span className="font-medium">{fmtCurrency(dashboardData.faturamentoMes)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Recebimentos:</span>
-                      <span className="font-medium">{fmtCurrency(dashboardData.recebimentosMes)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Agendamentos hoje:</span>
-                      <span className="font-medium">{dashboardData.agendamentosHoje}</span>
-                    </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Faturamento:</span>
+                    <span className="font-medium">{fmtCurrency(unidade.faturamentoMes ?? 0)}</span>
                   </div>
-                )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Recebimentos:</span>
+                    <span className="font-medium">{fmtCurrency(unidade.recebimentosMes ?? 0)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Vendas no mês:</span>
+                    <span className="font-medium">{unidade.totalVendasMes ?? 0}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Agendamentos hoje:</span>
+                    <span className="font-medium">{unidade.agendamentosHoje ?? 0}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Total agendamentos:</span>
+                    <span className="font-medium">{unidade.totalAgendamentos ?? 0}</span>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -191,7 +240,7 @@ export default function Dashboard() {
       </Card>
 
       {/* Aviso de integração */}
-      {!unidadeSelecionada && (
+      {consolidado?.some((u: any) => u.semToken) && (
         <Card className="border-amber-200 bg-amber-50">
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
@@ -201,7 +250,7 @@ export default function Dashboard() {
                   Configure o token do Belle Software
                 </p>
                 <p className="text-xs text-amber-700 mt-1">
-                  Acesse Configurações para inserir o token de integração de cada unidade.
+                  Algumas unidades não têm token configurado. Acesse Configurações para inserir o token de integração.
                 </p>
               </div>
             </div>

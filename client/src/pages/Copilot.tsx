@@ -1,24 +1,46 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Sparkles, Send, Search, Loader2 } from "lucide-react";
+import { Streamdown } from "streamdown";
+
+interface Mensagem {
+  role: "user" | "assistant";
+  content: string;
+}
 
 export default function Copilot() {
   const { unidadeSelecionada } = useUnidade();
   const [searchCpf, setSearchCpf] = useState("");
   const [cliente, setCliente] = useState<any>(null);
-  const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [messages, setMessages] = useState<Mensagem[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const { refetch } = trpc.clientes.buscar.useQuery(
     { unidadeId: unidadeSelecionada?.id ?? 0, cpf: searchCpf.replace(/\D/g, "") },
     { enabled: false }
   );
+
+  const chatMutation = trpc.copilot.chat.useMutation({
+    onSuccess: (data) => {
+      setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
+    },
+    onError: (error) => {
+      setMessages((prev) => [...prev, { role: "assistant", content: `Erro: ${error.message}` }]);
+    },
+  });
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
 
   const buscarCliente = async () => {
     if (!searchCpf || searchCpf.length < 3) return;
@@ -29,7 +51,7 @@ export default function Copilot() {
         setCliente(result.data);
         setMessages([{
           role: "assistant",
-          content: `Cliente encontrado: ${result.data.nome}. Temperatura: ${result.data.temperatura || "Não definida"}. Rating: ${result.data.rating || 0} estrelas. Como posso ajudar com este atendimento?`,
+          content: `Cliente encontrado: **${result.data.nome}**.\n\nTemperatura: ${result.data.temperatura || "Não definida"}\nRating: ${result.data.rating || 0} estrelas\nTags: ${result.data.tags?.map((t: any) => t.nome).join(", ") || "nenhuma"}\n\nComo posso ajudar com este atendimento?`,
         }]);
       } else {
         setMessages([{ role: "assistant", content: "Cliente não encontrado no Belle Software." }]);
@@ -40,6 +62,22 @@ export default function Copilot() {
     setLoading(false);
   };
 
+  const handleSend = () => {
+    if (!input.trim() || !unidadeSelecionada) return;
+
+    const novaMensagem: Mensagem = { role: "user", content: input };
+    setMessages((prev) => [...prev, novaMensagem]);
+    setInput("");
+
+    chatMutation.mutate({
+      unidadeId: unidadeSelecionada.id,
+      mensagem: input,
+      clienteCpf: cliente?.cpf || searchCpf.replace(/\D/g, "") || undefined,
+      clienteNome: cliente?.nome || undefined,
+      historico: messages.map(m => ({ role: m.role, content: m.content })),
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -48,7 +86,7 @@ export default function Copilot() {
             Copilot de Atendimento
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Assistente com IA que consulta dados do cliente em tempo real
+            Assistente com IA que consulta dados do cliente em tempo real via Belle
           </p>
         </div>
         <UnidadeSelector />
@@ -69,6 +107,7 @@ export default function Copilot() {
                 placeholder="000.000.000-00"
                 value={searchCpf}
                 onChange={(e) => setSearchCpf(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && buscarCliente()}
               />
               <Button size="icon" onClick={buscarCliente} disabled={loading}>
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
@@ -91,6 +130,11 @@ export default function Copilot() {
                 </div>
               </div>
             )}
+            <div className="pt-2 border-t border-border/30">
+              <p className="text-xs text-muted-foreground">
+                O Copilot usa os dados do cliente (planos, tags, rating, temperatura) como contexto para sugerir respostas e ações de atendimento.
+              </p>
+            </div>
           </CardContent>
         </Card>
 
@@ -98,11 +142,11 @@ export default function Copilot() {
         <Card className="border-border/50 shadow-sm lg:col-span-2 flex flex-col" style={{ minHeight: "500px" }}>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-              <Sparkles className="h-4 w-4" /> Conversa
+              <Sparkles className="h-4 w-4 text-amber-600" /> Conversa com IA
             </CardTitle>
           </CardHeader>
           <CardContent className="flex-1 flex flex-col">
-            <div className="flex-1 space-y-3 overflow-y-auto mb-4" style={{ maxHeight: "400px" }}>
+            <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto mb-4" style={{ maxHeight: "400px" }}>
               {messages.length === 0 ? (
                 <div className="text-center text-sm text-muted-foreground py-12">
                   <Sparkles className="h-10 w-10 mx-auto mb-3 text-muted-foreground/50" />
@@ -121,10 +165,21 @@ export default function Copilot() {
                           : "bg-muted"
                       }`}
                     >
-                      {msg.content}
+                      {msg.role === "assistant" ? (
+                        <Streamdown>{msg.content}</Streamdown>
+                      ) : (
+                        msg.content
+                      )}
                     </div>
                   </div>
                 ))
+              )}
+              {chatMutation.isPending && (
+                <div className="flex justify-start">
+                  <div className="bg-muted rounded-lg px-3 py-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  </div>
+                </div>
               )}
             </div>
             <div className="flex gap-2">
@@ -132,14 +187,10 @@ export default function Copilot() {
                 placeholder="Digite sua mensagem..."
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && input.trim()) {
-                    setMessages(prev => [...prev, { role: "user", content: input }]);
-                    setInput("");
-                  }
-                }}
+                onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                disabled={chatMutation.isPending}
               />
-              <Button size="icon">
+              <Button size="icon" onClick={handleSend} disabled={chatMutation.isPending || !input.trim()}>
                 <Send className="h-4 w-4" />
               </Button>
             </div>

@@ -36,7 +36,14 @@ export default function Clientes() {
     { enabled: !!selectedCliente?.codigo }
   );
 
+  const { data: historico } = trpc.clientes.historico.useQuery(
+    { unidadeId: unidadeSelecionada?.id ?? 0, codCliente: selectedCliente?.codigo ?? 0 },
+    { enabled: !!selectedCliente?.codigo }
+  );
+
   const displayClientes = searchType === "search" && clienteBuscado ? [clienteBuscado] : clientes || [];
+
+  const fmtCurrency = (val: number) => val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   return (
     <div className="space-y-6">
@@ -224,6 +231,26 @@ export default function Clientes() {
                           ))}
                         </div>
                       )}
+
+                      {/* Histórico de Compras */}
+                      <div>
+                        <h3 className="text-sm font-semibold mb-2">Histórico de Compras</h3>
+                        {historico && historico.length > 0 ? (
+                          <div className="space-y-1 max-h-40 overflow-y-auto">
+                            {historico.map((v: any, i: number) => (
+                              <div key={i} className="flex justify-between text-xs border-b border-border/30 pb-1">
+                                <div>
+                                  <span className="text-muted-foreground">{v.data}</span>
+                                  <span className="ml-2">{v.servico}</span>
+                                </div>
+                                <span className="font-medium">{fmtCurrency(v.valor)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">Sem histórico de compras.</p>
+                        )}
+                      </div>
 
                       {/* Planos */}
                       <div>
