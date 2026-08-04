@@ -311,6 +311,14 @@ pnpm test
 
 ---
 
+## Regras de Operação
+
+1. **Sempre que o usuário mencionar um commit ou versão, baixar a última versão do GitHub antes de qualquer ação.** Executar `git pull origin main` no diretório do projeto antes de iniciar qualquer trabalho.
+2. O auto-publish está ativado — todo checkpoint é automaticamente publicado em produção.
+3. O Belle Software é a fonte de verdade. Nunca sobrescrever dados do Belle sem intenção explícita.
+
+---
+
 ## Notas Técnicas
 
 - O Belle Software é a **fonte de verdade** para clientes, agendamentos, planos e dados financeiros. O sistema nunca sobrescreve dados do Belle sem intenção explícita.
