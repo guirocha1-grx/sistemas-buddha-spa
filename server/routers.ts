@@ -9,6 +9,7 @@ import { zapiApi } from "./zapiApi";
 import { buddhaMktApi } from "./buddhaMktApi";
 import { storagePut, storageGetSignedUrl } from "./storage";
 import { invokeLLM } from "./_core/llm";
+import { interApi, getInterAccessToken, isTokenValid } from "./interApi";
 
 export const appRouter = router({
   system: systemRouter,
@@ -38,6 +39,10 @@ export const appRouter = router({
       zapiClientToken: z.string().optional(),
       codEstab: z.number().optional(),
       corTema: z.string().optional(),
+      // Banco Inter
+      interClientId: z.string().optional(),
+      interClientSecret: z.string().optional(),
+      interContaCorrente: z.string().optional(),
     })).mutation(async ({ input }) => {
       const { id, ...dados } = input;
       await db.updateUnidade(id, dados);
@@ -622,6 +627,215 @@ Diretrizes:
 
         return { success: true, url };
       }),
+    }),
+  }),
+
+  // ===== Banco Inter =====
+  inter: router({
+    /**
+     * Verifica se a unidade tem credenciais Inter configuradas.
+     */
+    status: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      const configurado = !!(unidade?.interClientId && unidade?.interClientSecret);
+      const tokenValido = isTokenValid(unidade?.interTokenExpiresAt);
+      return { configurado, tokenValido, contaCorrente: unidade?.interContaCorrente ?? null };
+    }),
+
+    /**
+     * Obtém (ou renova) o token OAuth e o persiste na unidade.
+     */
+    autenticar: adminProcedure.input(z.object({ unidadeId: z.number() })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.interClientId || !unidade?.interClientSecret) {
+        throw new Error("Credenciais Banco Inter não configuradas para esta unidade");
+      }
+      const { accessToken, expiresAt } = await getInterAccessToken(
+        unidade.interClientId,
+        unidade.interClientSecret,
+      );
+      await db.updateInterToken(input.unidadeId, accessToken, expiresAt);
+      return { success: true };
+    }),
+
+    /**
+     * Consulta saldo em tempo real (sem persistir).
+     */
+    saldo: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.interClientId || !unidade?.interClientSecret) {
+        throw new Error("Credenciais Banco Inter não configuradas");
+      }
+      // Renovar token se necessário
+      let token = unidade.interAccessToken;
+      if (!token || !isTokenValid(unidade.interTokenExpiresAt)) {
+        const { accessToken, expiresAt } = await getInterAccessToken(
+          unidade.interClientId,
+          unidade.interClientSecret,
+        );
+        await db.updateInterToken(input.unidadeId, accessToken, expiresAt);
+        token = accessToken;
+      }
+      return interApi.consultarSaldo(token, unidade.interContaCorrente);
+    }),
+
+    /**
+     * Lista transações já sincronizadas no banco local.
+     */
+    extratos: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).query(async ({ input }) => {
+      return db.listInterExtratos(input.unidadeId, input.dataInicio, input.dataFim);
+    }),
+
+    /**
+     * Sincroniza o extrato enriquecido do período com o banco local.
+     * Usa paginação por scroll para grandes volumes.
+     * Rate limit: 10 req/min — não chamar em loop apertado.
+     */
+    sincronizar: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.interClientId || !unidade?.interClientSecret) {
+        throw new Error("Credenciais Banco Inter não configuradas");
+      }
+
+      // Renovar token se necessário
+      let token = unidade.interAccessToken;
+      if (!token || !isTokenValid(unidade.interTokenExpiresAt)) {
+        const { accessToken, expiresAt } = await getInterAccessToken(
+          unidade.interClientId,
+          unidade.interClientSecret,
+        );
+        await db.updateInterToken(input.unidadeId, accessToken, expiresAt);
+        token = accessToken;
+      }
+
+      let totalInseridos = 0;
+      let totalTransacoes = 0;
+      let scrollId: string | undefined;
+      let hasMore = true;
+      let pagina = 0;
+
+      try {
+        // Primeira página com scroll habilitado
+        const primeira = await interApi.consultarExtratoCompleto(
+          token,
+          input.dataInicio,
+          input.dataFim,
+          {
+            tamanhoPagina: 200,
+            scrollEnabled: !scrollId,
+            contaCorrente: unidade.interContaCorrente,
+          },
+        );
+
+        scrollId = primeira.scrollId;
+        hasMore = primeira.hasMore ?? false;
+        totalTransacoes = primeira.totalElementos;
+
+        const inseridos = await db.upsertInterExtratos(
+          input.unidadeId,
+          primeira.transacoes.map(t => ({
+            unidadeId: input.unidadeId,
+            idTransacao: t.idTransacao,
+            dataEntrada: t.dataEntrada,
+            dataTransacao: t.dataTransacao,
+            tipoTransacao: t.tipoTransacao,
+            tipoOperacao: (t.tipoOperacao === "D" || t.tipoOperacao === "C") ? t.tipoOperacao : "D",
+            valor: t.valor,
+            titulo: t.titulo,
+            descricao: t.descricao,
+            detalhe: t.detalhe,
+            nomeOrigem: t.nomeOrigem,
+            nomeDestino: t.nomeDestino,
+            cpfCnpjOrigem: t.cpfCnpjOrigem,
+            cpfCnpjDestino: t.cpfCnpjDestino,
+            cpmf: t.cpmf,
+          })),
+        );
+        totalInseridos += inseridos;
+        pagina++;
+
+        // Páginas subsequentes via scroll
+        while (hasMore && scrollId) {
+          const proxima = await interApi.consultarExtratoCompleto(
+            token,
+            input.dataInicio,
+            input.dataFim,
+            {
+              scrollId,
+              tamanhoPagina: 200,
+              contaCorrente: unidade.interContaCorrente,
+            },
+          );
+
+          scrollId = proxima.scrollId;
+          hasMore = proxima.hasMore ?? false;
+
+          const ins = await db.upsertInterExtratos(
+            input.unidadeId,
+            proxima.transacoes.map(t => ({
+              unidadeId: input.unidadeId,
+              idTransacao: t.idTransacao,
+              dataEntrada: t.dataEntrada,
+              dataTransacao: t.dataTransacao,
+              tipoTransacao: t.tipoTransacao,
+              tipoOperacao: (t.tipoOperacao === "D" || t.tipoOperacao === "C") ? t.tipoOperacao : "D",
+              valor: t.valor,
+              titulo: t.titulo,
+              descricao: t.descricao,
+              detalhe: t.detalhe,
+              nomeOrigem: t.nomeOrigem,
+              nomeDestino: t.nomeDestino,
+              cpfCnpjOrigem: t.cpfCnpjOrigem,
+              cpfCnpjDestino: t.cpfCnpjDestino,
+              cpmf: t.cpmf,
+            })),
+          );
+          totalInseridos += ins;
+          pagina++;
+        }
+
+        // Registrar log de sincronização
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "inter_extrato",
+          status: "sucesso",
+          registrosProcessados: totalInseridos,
+          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Total API: ${totalTransacoes}. Novos: ${totalInseridos}. Páginas: ${pagina}.`,
+        });
+
+        return { success: true, totalInseridos, totalTransacoes, paginas: pagina };
+      } catch (error: any) {
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "inter_extrato",
+          status: "erro",
+          registrosProcessados: totalInseridos,
+          detalhes: error.message,
+        });
+        throw error;
+      }
+    }),
+
+    /**
+     * Salva as credenciais OAuth do Banco Inter para a unidade.
+     */
+    salvarCredenciais: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      interClientId: z.string().min(1),
+      interClientSecret: z.string().min(1),
+      interContaCorrente: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const { unidadeId, ...dados } = input;
+      await db.updateUnidade(unidadeId, dados);
+      return { success: true };
     }),
   }),
 

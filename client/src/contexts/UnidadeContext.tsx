@@ -11,10 +11,16 @@ interface UnidadeInfo {
   zapiInstanceId?: string | null;
   zapiToken?: string | null;
   zapiClientToken?: string | null;
+  // Banco Inter
+  interClientId?: string | null;
+  interClientSecret?: string | null;
+  interContaCorrente?: string | null;
 }
 
 interface UnidadeContextValue {
   unidadeSelecionada: UnidadeInfo | null;
+  /** ID da unidade selecionada (atalho para unidadeSelecionada?.id) */
+  unidadeId: number | null;
   setUnidadeId: (id: number) => void;
   unidades: UnidadeInfo[];
   loading: boolean;
@@ -42,6 +48,9 @@ export function UnidadeProvider({ children }: { children: ReactNode }) {
     zapiInstanceId: u.zapiInstanceId,
     zapiToken: u.zapiToken,
     zapiClientToken: u.zapiClientToken,
+    interClientId: u.interClientId,
+    interClientSecret: u.interClientSecret,
+    interContaCorrente: u.interContaCorrente,
   }));
 
   const unidadeSelecionada = unidades.find((u) => u.id === unidadeId) || unidades[0] || null;
@@ -62,6 +71,7 @@ export function UnidadeProvider({ children }: { children: ReactNode }) {
     <UnidadeContext.Provider
       value={{
         unidadeSelecionada,
+        unidadeId: unidadeSelecionada?.id ?? null,
         setUnidadeId,
         unidades,
         loading: isLoading,

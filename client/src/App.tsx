@@ -15,6 +15,7 @@ import Copilot from "./pages/Copilot";
 import Laminas from "./pages/Laminas";
 import Leads from "./pages/Leads";
 import Configuracoes from "./pages/Configuracoes";
+import BancoInter from "./pages/BancoInter";
 
 function Router() {
   return (
@@ -29,6 +30,7 @@ function Router() {
         <Route path="/copilot" component={Copilot} />
         <Route path="/laminas" component={Laminas} />
         <Route path="/leads" component={Leads} />
+        <Route path="/banco-inter" component={BancoInter} />
         <Route path="/configuracoes" component={Configuracoes} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />

@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, json, decimal, datetime, index } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, json, decimal, datetime, index, bigint } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -31,6 +31,12 @@ export const unidades = mysqlTable("unidades", {
   zapiInstanceId: text("zapiInstanceId"),
   zapiToken: text("zapiToken"),
   zapiClientToken: text("zapiClientToken"),
+  // Banco Inter — credenciais OAuth e token em cache
+  interClientId: text("interClientId"),
+  interClientSecret: text("interClientSecret"),
+  interContaCorrente: varchar("interContaCorrente", { length: 20 }),
+  interAccessToken: text("interAccessToken"),
+  interTokenExpiresAt: bigint("interTokenExpiresAt", { mode: "number" }),
   corTema: varchar("corTema", { length: 32 }),
   ativa: mysqlEnum("ativa", ["true", "false"]).default("true").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -197,3 +203,33 @@ export const inboxMensagens = mysqlTable("inbox_mensagens", {
 
 export type InboxMensagem = typeof inboxMensagens.$inferSelect;
 export type InsertInboxMensagem = typeof inboxMensagens.$inferInsert;
+
+/**
+ * Transações do extrato Banco Inter sincronizadas por unidade.
+ * Fonte: GET /banking/v2/extrato/completo
+ */
+export const interExtratos = mysqlTable("inter_extratos", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  idTransacao: varchar("idTransacao", { length: 128 }),
+  dataEntrada: varchar("dataEntrada", { length: 10 }).notNull(),
+  dataTransacao: varchar("dataTransacao", { length: 10 }),
+  tipoTransacao: varchar("tipoTransacao", { length: 64 }),
+  tipoOperacao: mysqlEnum("tipoOperacao", ["D", "C"]).notNull(),
+  valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
+  titulo: varchar("titulo", { length: 256 }),
+  descricao: text("descricao"),
+  detalhe: text("detalhe"),
+  nomeOrigem: varchar("nomeOrigem", { length: 256 }),
+  nomeDestino: varchar("nomeDestino", { length: 256 }),
+  cpfCnpjOrigem: varchar("cpfCnpjOrigem", { length: 20 }),
+  cpfCnpjDestino: varchar("cpfCnpjDestino", { length: 20 }),
+  cpmf: varchar("cpmf", { length: 64 }),
+  syncedAt: timestamp("syncedAt").defaultNow().notNull(),
+}, (table) => ({
+  unidadeDataIdx: index("inter_extratos_unidade_data_idx").on(table.unidadeId, table.dataEntrada),
+  idTransacaoIdx: index("inter_extratos_id_transacao_idx").on(table.idTransacao),
+}));
+
+export type InterExtrato = typeof interExtratos.$inferSelect;
+export type InsertInterExtrato = typeof interExtratos.$inferInsert;

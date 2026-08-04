@@ -1,6 +1,6 @@
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -325,4 +325,79 @@ export async function updateInboxMensagemTranscricao(id: number, transcricao: st
   const db = await getDb();
   if (!db) return;
   await db.update(inboxMensagens).set({ transcricao }).where(eq(inboxMensagens.id, id));
+}
+
+// ===== Banco Inter =====
+
+/**
+ * Atualiza o token OAuth em cache para a unidade.
+ */
+export async function updateInterToken(
+  unidadeId: number,
+  accessToken: string,
+  expiresAt: number,
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(unidades).set({
+    interAccessToken: accessToken,
+    interTokenExpiresAt: expiresAt,
+  }).where(eq(unidades.id, unidadeId));
+}
+
+/**
+ * Insere transações do extrato Inter, ignorando duplicatas por idTransacao.
+ * Retorna o número de registros efetivamente inseridos.
+ */
+export async function upsertInterExtratos(
+  unidadeId: number,
+  transacoes: InsertInterExtrato[],
+): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  if (transacoes.length === 0) return 0;
+
+  let inseridos = 0;
+  for (const t of transacoes) {
+    // Evita duplicata por idTransacao quando disponível
+    if (t.idTransacao) {
+      const existente = await db
+        .select({ id: interExtratos.id })
+        .from(interExtratos)
+        .where(
+          and(
+            eq(interExtratos.unidadeId, unidadeId),
+            eq(interExtratos.idTransacao, t.idTransacao),
+          ),
+        )
+        .limit(1);
+      if (existente.length > 0) continue;
+    }
+    await db.insert(interExtratos).values({ ...t, unidadeId });
+    inseridos++;
+  }
+  return inseridos;
+}
+
+/**
+ * Lista transações do extrato Inter para uma unidade e período.
+ */
+export async function listInterExtratos(
+  unidadeId: number,
+  dataInicio: string,
+  dataFim: string,
+) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(interExtratos)
+    .where(
+      and(
+        eq(interExtratos.unidadeId, unidadeId),
+        gte(interExtratos.dataEntrada, dataInicio),
+        lte(interExtratos.dataEntrada, dataFim),
+      ),
+    )
+    .orderBy(desc(interExtratos.dataEntrada));
 }

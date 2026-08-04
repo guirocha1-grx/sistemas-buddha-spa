@@ -6,7 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megaphone } from "lucide-react";
+import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megaphone, Landmark } from "lucide-react";
+
+interface InterForm {
+  interClientId?: string;
+  interClientSecret?: string;
+  interContaCorrente?: string;
+}
 
 interface ZapiForm {
   zapiInstanceId?: string;
@@ -24,6 +30,8 @@ export default function Configuracoes() {
   const [zapiSaved, setZapiSaved] = useState<number | null>(null);
   const [mktForm, setMktForm] = useState<Record<string, string>>({});
   const [mktSaved, setMktSaved] = useState(false);
+  const [interForms, setInterForms] = useState<Record<number, InterForm>>({});
+  const [interSaved, setInterSaved] = useState<number | null>(null);
 
   const updateUnidade = trpc.unidades.update.useMutation({
     onSuccess: (_data, vars) => {
@@ -34,6 +42,10 @@ export default function Configuracoes() {
       if (vars.zapiInstanceId !== undefined || vars.zapiToken !== undefined || vars.zapiClientToken !== undefined) {
         setZapiSaved(vars.id);
         setTimeout(() => setZapiSaved(null), 3000);
+      }
+      if (vars.interClientId !== undefined || vars.interClientSecret !== undefined || vars.interContaCorrente !== undefined) {
+        setInterSaved(vars.id);
+        setTimeout(() => setInterSaved(null), 3000);
       }
     },
   });
@@ -196,6 +208,72 @@ export default function Configuracoes() {
                 <p className="text-xs text-muted-foreground">
                   Webhook: <span className="font-mono">/api/webhooks/zapi/{unidade.id}?token=&lt;token acima&gt;</span>
                 </p>
+              </div>
+
+              {/* Banco Inter */}
+              <div className="border-t pt-3 mt-1 space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-1.5 text-sm">
+                    <Landmark className="h-3.5 w-3.5" /> Banco Inter — OAuth
+                  </Label>
+                  {unidade.interClientId && unidade.interClientSecret ? (
+                    <Badge className="bg-green-100 text-green-700">Configurado</Badge>
+                  ) : (
+                    <Badge variant="secondary">Sem credenciais</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Crie uma aplicação em{" "}
+                  <a
+                    href="https://developers.inter.co"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
+                    developers.inter.co
+                  </a>{" "}
+                  com escopo <code>extrato.read</code> e <code>saldo.read</code>, depois insira as credenciais abaixo.
+                </p>
+                <Input
+                  placeholder="Client ID"
+                  defaultValue={unidade.interClientId || ""}
+                  onChange={(e) =>
+                    setInterForms({ ...interForms, [unidade.id]: { ...interForms[unidade.id], interClientId: e.target.value } })
+                  }
+                />
+                <Input
+                  type="password"
+                  placeholder="Client Secret"
+                  defaultValue={unidade.interClientSecret || ""}
+                  onChange={(e) =>
+                    setInterForms({ ...interForms, [unidade.id]: { ...interForms[unidade.id], interClientSecret: e.target.value } })
+                  }
+                />
+                <Input
+                  placeholder="Conta Corrente (opcional, sem zeros à esquerda)"
+                  defaultValue={unidade.interContaCorrente || ""}
+                  onChange={(e) =>
+                    setInterForms({ ...interForms, [unidade.id]: { ...interForms[unidade.id], interContaCorrente: e.target.value } })
+                  }
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const form = interForms[unidade.id];
+                    if (form && (form.interClientId || form.interClientSecret || form.interContaCorrente)) {
+                      updateUnidade.mutate({ id: unidade.id, ...form });
+                    }
+                  }}
+                  disabled={!interForms[unidade.id] || updateUnidade.isPending}
+                >
+                  {interSaved === unidade.id ? (
+                    <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  {interSaved === unidade.id ? "Salvo!" : "Salvar Banco Inter"}
+                </Button>
               </div>
             </CardContent>
           </Card>
