@@ -1,6 +1,14 @@
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, like, or, sql, ne, isNotNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao } from "../drizzle/schema";
+import {
+  InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes,
+  clientes, atendimentos, inboxConversas, inboxMensagens, scripts, scriptsUso, faseVenda, auditLog, tarefasDia,
+  type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta,
+  type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa,
+  type Configuracao, type Cliente, type InsertCliente, type Atendimento, type InsertAtendimento,
+  type InboxConversa, type InsertInboxConversa, type InboxMensagem, type InsertInboxMensagem,
+  type Script, type InsertScript, type FaseVenda, type TarefaDia, type InsertTarefaDia,
+} from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -229,5 +237,308 @@ export async function setConfig(chave: string, valor: string) {
   if (!db) return;
   await db.insert(configuracoes).values({ chave, valor }).onDuplicateKeyUpdate({
     set: { valor },
+  });
+}
+
+// ===== Clientes =====
+
+export async function listClientes(opts?: {
+  busca?: string;
+  unidadeId?: number;
+  status?: string;
+  tipo?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const limit = opts?.limit ?? 50;
+  const offset = opts?.offset ?? 0;
+  let query = db.select().from(clientes).where(eq(clientes.ativo, true)).$dynamic();
+
+  if (opts?.busca) {
+    const termo = `%${opts.busca}%`;
+    query = query.where(
+      or(
+        like(clientes.nome, termo),
+        like(clientes.cpfCnpj, termo),
+        like(clientes.celular, termo),
+        like(clientes.email, termo),
+      )!
+    );
+  }
+  if (opts?.unidadeId) {
+    query = query.where(eq(clientes.unidadeId, opts.unidadeId));
+  }
+  if (opts?.status && opts.status !== 'all') {
+    query = query.where(eq(clientes.statusCliente, opts.status as any));
+  }
+  if (opts?.tipo && opts.tipo !== 'all') {
+    query = query.where(eq(clientes.tipoCliente, opts.tipo as any));
+  }
+
+  return query.orderBy(desc(clientes.updatedAt)).limit(limit).offset(offset);
+}
+
+export async function getClienteById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(clientes).where(eq(clientes.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getClienteByCpf(cpf: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(clientes).where(eq(clientes.cpfCnpj, cpf)).limit(1);
+  return result[0];
+}
+
+export async function getClienteByCelular(celular: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(clientes).where(eq(clientes.celular, celular)).limit(1);
+  return result[0];
+}
+
+export async function createCliente(cliente: InsertCliente) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(clientes).values(cliente);
+}
+
+export async function updateCliente(id: number, dados: Partial<InsertCliente>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(clientes).set(dados).where(eq(clientes.id, id));
+}
+
+export async function countClientes(opts?: { unidadeId?: number; tipo?: string }) {
+  const db = await getDb();
+  if (!db) return 0;
+  let query = db.select({ count: sql<number>`count(*)` }).from(clientes).where(eq(clientes.ativo, true)).$dynamic();
+  if (opts?.unidadeId) query = query.where(eq(clientes.unidadeId, opts.unidadeId));
+  if (opts?.tipo && opts.tipo !== 'all') query = query.where(eq(clientes.tipoCliente, opts.tipo as any));
+  const result = await query;
+  return result[0]?.count ?? 0;
+}
+
+// ===== Atendimentos =====
+
+export async function listAtendimentosByCliente(clienteId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(atendimentos)
+    .where(and(eq(atendimentos.clienteId, clienteId), eq(atendimentos.ativo, true)))
+    .orderBy(desc(atendimentos.dataAtendimento));
+}
+
+export async function createAtendimento(atendimento: InsertAtendimento) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(atendimentos).values(atendimento);
+}
+
+export async function updateAtendimento(id: number, dados: Partial<InsertAtendimento>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(atendimentos).set(dados).where(eq(atendimentos.id, id));
+}
+
+// ===== Kanban =====
+
+export async function getKanbanOportunidades(unidadeId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  let query = db.select({
+    atendimento: atendimentos,
+    cliente: clientes,
+    fase: faseVenda,
+  })
+    .from(atendimentos)
+    .innerJoin(clientes, eq(atendimentos.clienteId, clientes.id))
+    .leftJoin(faseVenda, eq(atendimentos.statusAtendimentoNew, faseVenda.codFase))
+    .where(and(eq(atendimentos.ativo, true), ne(atendimentos.tipoAtendimento, 'venda_concretizada')))
+    .$dynamic();
+
+  if (unidadeId) {
+    query = query.where(eq(atendimentos.unidadeId, unidadeId));
+  }
+
+  return query.orderBy(desc(atendimentos.dataAtendimento));
+}
+
+export async function moverOportunidade(atendimentoId: number, novaFaseCod: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(atendimentos)
+    .set({ statusAtendimentoNew: novaFaseCod })
+    .where(eq(atendimentos.id, atendimentoId));
+}
+
+export async function registrarPerda(atendimentoId: number, motivoPerda: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(atendimentos)
+    .set({ motivoPerda, dataPerdido: new Date(), ativo: false })
+    .where(eq(atendimentos.id, atendimentoId));
+}
+
+export async function getFasesVenda() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(faseVenda).where(eq(faseVenda.ativo, true));
+}
+
+// ===== Inbox =====
+
+export async function listInboxConversas(opts?: {
+  unidadeId?: number;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const limit = opts?.limit ?? 50;
+  const offset = opts?.offset ?? 0;
+  let query = db.select().from(inboxConversas).$dynamic();
+
+  if (opts?.unidadeId) query = query.where(eq(inboxConversas.unidadeId, opts.unidadeId));
+  if (opts?.status && opts.status !== 'all') query = query.where(eq(inboxConversas.status, opts.status as any));
+
+  return query.orderBy(desc(inboxConversas.ultimaMensagemEm)).limit(limit).offset(offset);
+}
+
+export async function getInboxConversa(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(inboxConversas).where(eq(inboxConversas.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getInboxMensagens(conversaId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(inboxMensagens)
+    .where(eq(inboxMensagens.conversaId, conversaId))
+    .orderBy(inboxMensagens.createdAt);
+}
+
+export async function upsertInboxConversa(conversa: InsertInboxConversa) {
+  const db = await getDb();
+  if (!db) return;
+  // Try to find existing by telefone
+  const existing = await db.select().from(inboxConversas)
+    .where(eq(inboxConversas.telefone, conversa.telefone)).limit(1);
+
+  if (existing.length > 0) {
+    const id = existing[0].id;
+    await db.update(inboxConversas).set({
+      ultimaMensagemEm: new Date(),
+      ultimaMensagemTexto: conversa.ultimaMensagemTexto,
+      naoLidas: (existing[0].naoLidas || 0) + 1,
+      nomeContato: conversa.nomeContato || existing[0].nomeContato,
+      fotoUrl: conversa.fotoUrl || existing[0].fotoUrl,
+    }).where(eq(inboxConversas.id, id));
+    return id;
+  }
+
+  const result: any = await db.insert(inboxConversas).values(conversa);
+  return Number(result?.insertId ?? result?.[0]?.insertId ?? 0);
+}
+
+export async function updateInboxConversa(id: number, dados: Partial<InsertInboxConversa>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inboxConversas).set(dados as any).where(eq(inboxConversas.id, id));
+}
+
+export async function insertInboxMensagem(mensagem: InsertInboxMensagem) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(inboxMensagens).values(mensagem);
+}
+
+export async function marcarConversaLida(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inboxConversas).set({ naoLidas: 0 }).where(eq(inboxConversas.id, id));
+  await db.update(inboxMensagens).set({ lida: true }).where(eq(inboxMensagens.conversaId, id));
+}
+
+export async function totalNaoLidas(unidadeId?: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  let query = db.select({ total: sql<number>`coalesce(sum(${inboxConversas.naoLidas}), 0)` }).from(inboxConversas).$dynamic();
+  if (unidadeId) query = query.where(eq(inboxConversas.unidadeId, unidadeId));
+  const result = await query;
+  return result[0]?.total ?? 0;
+}
+
+// ===== Scripts =====
+
+export async function listScripts(categoria?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  let query = db.select().from(scripts).where(eq(scripts.ativo, true)).$dynamic();
+  if (categoria) query = query.where(eq(scripts.categoriaScript, categoria));
+  return query.orderBy(desc(scripts.createdAt));
+}
+
+export async function createScript(script: InsertScript) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(scripts).values(script);
+}
+
+export async function registrarUsoScript(scriptId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(scriptsUso).values({ scriptId, userId });
+}
+
+// ===== Tarefas do Dia =====
+
+export async function getTarefasDia(userId: number, data: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(tarefasDia)
+    .where(and(eq(tarefasDia.userId, userId), eq(tarefasDia.data, data as any)))
+    .orderBy(tarefasDia.feita);
+}
+
+export async function createTarefaDia(tarefa: InsertTarefaDia) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(tarefasDia).values(tarefa);
+}
+
+export async function toggleTarefaDia(id: number, feita: boolean) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(tarefasDia).set({ feita, feitaEm: feita ? new Date() : null }).where(eq(tarefasDia.id, id));
+}
+
+// ===== Audit Log =====
+
+export async function createAuditLog(entry: {
+  userId?: number;
+  userNome?: string;
+  userRole?: string;
+  procedure: string;
+  origem?: string;
+  clienteId?: number;
+  inputResumo?: string;
+  sucesso?: boolean;
+  erroMsg?: string;
+  duracaoMs?: number;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(auditLog).values({
+    ...entry,
+    origem: (entry.origem as any) || 'manual',
+    sucesso: entry.sucesso ?? true,
   });
 }

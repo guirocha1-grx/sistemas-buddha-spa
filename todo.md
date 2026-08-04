@@ -61,6 +61,19 @@
 - [x] Envio automático para Belle via POST /cliente/gravar-lead
 - [x] Confirmação de recebimento
 
+## Módulos Portados do Mobai CRM (Caminho Misto)
+- [x] Schema expandido: clientes, atendimentos, inbox_conversas, inbox_mensagens, scripts, fase_venda, audit_log, tarefas_dia
+- [x] Z-API (WhatsApp) — send-text, send-image, send-audio, send-document, resolve-lid, get-profile-picture
+- [x] Inbox WhatsApp — lista de conversas, mensagens, envio, marcar lida, total não lidas
+- [x] ClienteDetalhe — perfil com abas (Perfil, Planos & Sessões, Histórico, Atendimentos)
+- [x] Kanban Persistente — drag-and-drop com persistência no banco, registrar perda
+- [x] Atendimentos — registrar e listar atendimentos por cliente
+- [x] Scripts de Atendimento — listagem, criação, registrar uso
+- [x] Tarefas do Dia — listagem, criação, toggle
+- [x] Configurações — gerenciar tokens Z-API e Belle por unidade
+- [x] Navegação atualizada (Inbox, Kanban Vendas adicionados ao sidebar)
+- [x] Variáveis de ambiente (ZAPI_INSTANCE_ID, ZAPI_TOKEN, ZAPI_CLIENT_TOKEN, BELLE_DEFAULT_TOKEN)
+
 ## Testes
 - [x] Testes unitários (vitest) — 9 testes passando
 - [x] Testes de integração da API Belle (cobertura de endpoints principais)

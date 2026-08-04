@@ -410,6 +410,270 @@ export const appRouter = router({
     }),
   }),
 
+  // ===== Clientes Locais (banco interno) =====
+  clientesLocais: router({
+    list: protectedProcedure.input(z.object({
+      busca: z.string().optional(),
+      unidadeId: z.number().optional(),
+      status: z.string().optional(),
+      tipo: z.string().optional(),
+      limit: z.number().default(50),
+      offset: z.number().default(0),
+    })).query(async ({ input }) => {
+      return db.listClientes(input);
+    }),
+
+    get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return db.getClienteById(input.id);
+    }),
+
+    getByCpf: protectedProcedure.input(z.object({ cpf: z.string() })).query(async ({ input }) => {
+      return db.getClienteByCpf(input.cpf);
+    }),
+
+    getByCelular: protectedProcedure.input(z.object({ celular: z.string() })).query(async ({ input }) => {
+      return db.getClienteByCelular(input.celular);
+    }),
+
+    create: protectedProcedure.input(z.object({
+      nome: z.string().min(1),
+      tipo: z.enum(["F", "J"]).optional(),
+      cpfCnpj: z.string().optional(),
+      celular: z.string().optional(),
+      telefone: z.string().optional(),
+      email: z.string().optional(),
+      unidadeId: z.number().optional(),
+      canalCaptacao: z.string().optional(),
+      observacoesGerais: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      await db.createCliente(input as any);
+      return { success: true };
+    }),
+
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      nome: z.string().optional(),
+      celular: z.string().optional(),
+      email: z.string().optional(),
+      leadScore: z.number().optional(),
+      engajamento: z.enum(["Alto", "Medio", "Baixo"]).optional(),
+      tagClienteVip: z.boolean().optional(),
+      tagFrequente: z.boolean().optional(),
+      tagPremium: z.boolean().optional(),
+      tagReativacao: z.boolean().optional(),
+      observacoesGerais: z.string().optional(),
+      statusCliente: z.enum(["ativo", "inativo", "trash"]).optional(),
+      discPerfil: z.enum(["D", "I", "S", "C"]).optional(),
+      discObservacoes: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...dados } = input;
+      await db.updateCliente(id, dados);
+      return { success: true };
+    }),
+  }),
+
+  // ===== Atendimentos =====
+  atendimentos: router({
+    listByCliente: protectedProcedure.input(z.object({ clienteId: z.number() })).query(async ({ input }) => {
+      return db.listAtendimentosByCliente(input.clienteId);
+    }),
+
+    create: protectedProcedure.input(z.object({
+      clienteId: z.number(),
+      unidadeId: z.number().optional(),
+      tipoAtendimento: z.enum([
+        "contato_inicial", "follow_up", "negociacao",
+        "venda_concretizada", "pos_venda", "reativacao",
+        "oferta_indireta", "outro",
+      ]),
+      tipoContato: z.enum(["whatsapp", "ligacao", "email", "presencial", "outro"]).optional(),
+      observacoes: z.string().optional(),
+      resultado: z.enum(["positivo", "neutro", "negativo", "sem_resposta"]).optional(),
+      proxContato: z.string().optional(),
+      statusAtendimentoNew: z.number().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      await db.createAtendimento({
+        ...input,
+        agenteId: ctx.user?.id,
+        proxContato: input.proxContato as any,
+      } as any);
+      return { success: true };
+    }),
+  }),
+
+  // ===== Kanban Persistente =====
+  kanbanPersistente: router({
+    list: protectedProcedure.input(z.object({
+      unidadeId: z.number().optional(),
+    })).query(async ({ input }) => {
+      return db.getKanbanOportunidades(input.unidadeId);
+    }),
+
+    fases: protectedProcedure.query(async () => {
+      return db.getFasesVenda();
+    }),
+
+    mover: protectedProcedure.input(z.object({
+      atendimentoId: z.number(),
+      novaFaseCod: z.number(),
+    })).mutation(async ({ input }) => {
+      await db.moverOportunidade(input.atendimentoId, input.novaFaseCod);
+      return { success: true };
+    }),
+
+    registrarPerda: protectedProcedure.input(z.object({
+      atendimentoId: z.number(),
+      motivoPerda: z.string(),
+    })).mutation(async ({ input }) => {
+      await db.registrarPerda(input.atendimentoId, input.motivoPerda);
+      return { success: true };
+    }),
+  }),
+
+  // ===== Inbox WhatsApp =====
+  inbox: router({
+    list: protectedProcedure.input(z.object({
+      unidadeId: z.number().optional(),
+      status: z.string().optional(),
+      limit: z.number().default(50),
+      offset: z.number().default(0),
+    })).query(async ({ input }) => {
+      return db.listInboxConversas(input);
+    }),
+
+    get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return db.getInboxConversa(input.id);
+    }),
+
+    mensagens: protectedProcedure.input(z.object({ conversaId: z.number() })).query(async ({ input }) => {
+      return db.getInboxMensagens(input.conversaId);
+    }),
+
+    marcarLida: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.marcarConversaLida(input.id);
+      return { success: true };
+    }),
+
+    enviar: protectedProcedure.input(z.object({
+      conversaId: z.number(),
+      mensagem: z.string().min(1),
+    })).mutation(async ({ input, ctx }) => {
+      const conversa = await db.getInboxConversa(input.conversaId);
+      if (!conversa) throw new Error("Conversa não encontrada");
+
+      const { zapiSendText } = await import("./zapi");
+      const messageId = await zapiSendText(conversa.telefone, input.mensagem);
+
+      await db.insertInboxMensagem({
+        conversaId: input.conversaId,
+        direcao: "enviada",
+        tipo: "texto",
+        conteudo: input.mensagem,
+        lida: true,
+        enviadaPorUserId: ctx.user?.id,
+      });
+
+      await db.updateInboxConversa(input.conversaId, {
+        ultimaMensagemTexto: input.mensagem,
+        ultimaMensagemEm: new Date(),
+        status: "respondida",
+        naoLidas: 0,
+      } as any);
+
+      return { success: true, messageId };
+    }),
+
+    totalNaoLidas: protectedProcedure.input(z.object({
+      unidadeId: z.number().optional(),
+    })).query(async ({ input }) => {
+      return db.totalNaoLidas(input.unidadeId);
+    }),
+  }),
+
+  // ===== Scripts de Atendimento =====
+  scripts: router({
+    list: protectedProcedure.input(z.object({
+      categoria: z.string().optional(),
+    })).query(async ({ input }) => {
+      return db.listScripts(input.categoria);
+    }),
+
+    create: adminProcedure.input(z.object({
+      categoriaScript: z.string().min(1),
+      script: z.string().min(1),
+      observacoes: z.string().optional(),
+      itemQualificacaoId: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      await db.createScript(input);
+      return { success: true };
+    }),
+
+    registrarUso: protectedProcedure.input(z.object({ scriptId: z.number() })).mutation(async ({ input, ctx }) => {
+      if (ctx.user?.id) {
+        await db.registrarUsoScript(input.scriptId, ctx.user.id);
+      }
+      return { success: true };
+    }),
+  }),
+
+  // ===== Tarefas do Dia =====
+  tarefas: router({
+    list: protectedProcedure.input(z.object({
+      data: z.string(),
+    })).query(async ({ input, ctx }) => {
+      if (!ctx.user?.id) return [];
+      return db.getTarefasDia(ctx.user.id, input.data);
+    }),
+
+    create: protectedProcedure.input(z.object({
+      tipo: z.enum(["contato_programado", "contato_atrasado", "aniversario", "retorno_cliente"]),
+      titulo: z.string().min(1),
+      data: z.string(),
+      referenciaId: z.number().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      if (!ctx.user?.id) throw new Error("Usuário não autenticado");
+      await db.createTarefaDia({
+        ...input,
+        userId: ctx.user.id,
+        data: input.data as any,
+      });
+      return { success: true };
+    }),
+
+    toggle: protectedProcedure.input(z.object({
+      id: z.number(),
+      feita: z.boolean(),
+    })).mutation(async ({ input }) => {
+      await db.toggleTarefaDia(input.id, input.feita);
+      return { success: true };
+    }),
+  }),
+
+  // ===== Configurações =====
+  configuracoes: router({
+    list: protectedProcedure.query(async () => {
+      const items = await db.getConfig("");
+      // Return all configs as key-value map
+      const allConfigs = await (await import("drizzle-orm")).getTableName ? null : null;
+      // Simple approach: return known keys
+      const keys = ["zapiInstanceId", "zapiToken", "zapiClientToken", "belleTokenSanta", "belleTokenRibeirao"];
+      const result: Record<string, string> = {};
+      for (const key of keys) {
+        const config = await db.getConfig(key);
+        result[key] = config?.valor || "";
+      }
+      return result;
+    }),
+
+    update: adminProcedure.input(z.object({
+      chave: z.string().min(1),
+      valor: z.string(),
+    })).mutation(async ({ input }) => {
+      await db.setConfig(input.chave, input.valor);
+      return { success: true };
+    }),
+  }),
+
   // ===== Sync Logs =====
   syncLogs: router({
     list: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {

@@ -7,4 +7,10 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  // Z-API (WhatsApp)
+  zapiInstanceId: process.env.ZAPI_INSTANCE_ID ?? "",
+  zapiToken: process.env.ZAPI_TOKEN ?? "",
+  zapiClientToken: process.env.ZAPI_CLIENT_TOKEN ?? "",
+  // Belle Software
+  belleDefaultToken: process.env.BELLE_DEFAULT_TOKEN ?? "",
 };

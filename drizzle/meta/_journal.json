@@ -15,6 +15,13 @@
       "when": 1785871348519,
       "tag": "0001_complete_jasper_sitwell",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1785879394377,
+      "tag": "0002_faithful_the_executioner",
+      "breakpoints": true
     }
   ]
 }
