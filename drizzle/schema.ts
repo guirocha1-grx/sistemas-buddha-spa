@@ -225,7 +225,7 @@ export const interExtratos = mysqlTable("inter_extratos", {
   cpfCnpjOrigem: varchar("cpfCnpjOrigem", { length: 20 }),
   cpfCnpjDestino: varchar("cpfCnpjDestino", { length: 20 }),
   cpmf: varchar("cpmf", { length: 64 }),
-  origem: mysqlEnum("origem", ["inter", "csv"]).default("inter").notNull(),
+  origem: mysqlEnum("origem", ["inter", "csv", "pdf", "ofx"]).default("inter").notNull(),
   syncedAt: timestamp("syncedAt").defaultNow().notNull(),
 }, (table) => ({
   unidadeDataIdx: index("inter_extratos_unidade_data_idx").on(table.unidadeId, table.dataEntrada),

@@ -22,13 +22,6 @@
       "when": 1785880000000,
       "tag": "0002_inter_banking",
       "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "5",
-      "when": 1785890417600,
-      "tag": "0003_modern_daimon_hellstrom",
-      "breakpoints": true
     }
   ]
 }
