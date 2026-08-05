@@ -156,6 +156,18 @@ export default function Extratos() {
     onError: (err) => toast.error(err.message),
   });
 
+  const reprocessarMutation = trpc.inter.reprocessarCategorias.useMutation({
+    onSuccess: (data) => {
+      toast.success(
+        data.atualizados > 0
+          ? `${data.atualizados} transação(ões) categorizada(s) automaticamente.`
+          : "Nenhuma transação pendente bateu com as regras atuais.",
+      );
+      utils.inter.extratos.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const statusInterQuery = trpc.inter.status.useQuery(
     { unidadeId: unidadeId! },
     { enabled: !!unidadeId },
@@ -451,10 +463,20 @@ export default function Extratos() {
               </p>
 
               {transacoesExtrato.some((t) => !t.dreCategoriaId) && (
-                <div className="flex justify-end">
+                <div className="flex justify-end items-center gap-2">
                   <Badge variant="outline" className="text-xs border-amber-400 text-amber-700">
                     {transacoesExtrato.filter((t) => !t.dreCategoriaId).length} pendente(s) de categorização
                   </Badge>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 text-xs"
+                    onClick={() => unidadeId && reprocessarMutation.mutate({ unidadeId })}
+                    disabled={!unidadeId || reprocessarMutation.isPending}
+                  >
+                    {reprocessarMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                    Reprocessar pendentes
+                  </Button>
                 </div>
               )}
               <Tabs value={filtroTipoExtrato} onValueChange={(v) => setFiltroTipoExtrato(v as "todos" | "D" | "C")}>

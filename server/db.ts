@@ -1,4 +1,4 @@
-import { eq, desc, and, gte, lte } from "drizzle-orm";
+import { eq, desc, and, gte, lte, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreRegras, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -525,6 +525,37 @@ export async function sugerirCategoriaId(textoTransacao: string): Promise<number
   const nomeSugerido = sugerirCategoriaNome(textoTransacao, regras);
   if (!nomeSugerido) return null;
   return regras.find((r) => r.categoriaNome === nomeSugerido)?.dreCategoriaId ?? null;
+}
+
+/**
+ * Reaplica as regras atuais em transações já importadas que ainda estão
+ * "Pendente" (dreCategoriaId null). Necessário porque a categorização só
+ * roda no momento do import — toda vez que uma regra nova é adicionada
+ * (ex.: resolvendo um dos itens em aberto), as linhas antigas continuam
+ * pendentes até alguém rodar isso. Não mexe em linha já categorizada
+ * (manual ou automática anterior).
+ */
+export async function reprocessarPendentes(unidadeId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+
+  const regras = await listRegrasParaMatch();
+  if (regras.length === 0) return 0;
+
+  const pendentes = await db.select().from(interExtratos)
+    .where(and(eq(interExtratos.unidadeId, unidadeId), isNull(interExtratos.dreCategoriaId)));
+
+  let atualizados = 0;
+  for (const t of pendentes) {
+    const texto = `${t.tipoTransacao ?? ""} ${t.titulo ?? ""} ${t.descricao ?? ""}`;
+    const categoriaNome = sugerirCategoriaNome(texto, regras);
+    if (!categoriaNome) continue;
+    const dreCategoriaId = regras.find((r) => r.categoriaNome === categoriaNome)?.dreCategoriaId;
+    if (!dreCategoriaId) continue;
+    await db.update(interExtratos).set({ dreCategoriaId }).where(eq(interExtratos.id, t.id));
+    atualizados++;
+  }
+  return atualizados;
 }
 
 export async function setCategoriaTransacao(transacaoId: number, dreCategoriaId: number | null) {

@@ -709,6 +709,18 @@ Diretrizes:
     }),
 
     /**
+     * Reaplica as regras de categorização atuais só nas transações que
+     * ainda estão "Pendente" — usado depois que uma regra nova é
+     * adicionada, pra não deixar lançamentos já importados presos.
+     */
+    reprocessarCategorias: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+    })).mutation(async ({ input }) => {
+      const atualizados = await db.reprocessarPendentes(input.unidadeId);
+      return { success: true, atualizados };
+    }),
+
+    /**
      * Sincroniza o extrato enriquecido do período com o banco local.
      * Usa paginação por scroll para grandes volumes.
      * Rate limit: 10 req/min — não chamar em loop apertado.
