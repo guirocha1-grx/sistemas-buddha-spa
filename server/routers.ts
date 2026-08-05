@@ -45,6 +45,8 @@ export const appRouter = router({
       // Banco Inter
       interClientId: z.string().optional(),
       interClientSecret: z.string().optional(),
+      interCertificado: z.string().optional(),
+      interChavePrivada: z.string().optional(),
       interContaCorrente: z.string().optional(),
     })).mutation(async ({ input }) => {
       const { id, ...dados } = input;
@@ -640,7 +642,7 @@ Diretrizes:
      */
     status: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
-      const configurado = !!(unidade?.interClientId && unidade?.interClientSecret);
+      const configurado = !!(unidade?.interClientId && unidade?.interClientSecret && unidade?.interCertificado && unidade?.interChavePrivada);
       const tokenValido = isTokenValid(unidade?.interTokenExpiresAt);
       return { configurado, tokenValido, contaCorrente: unidade?.interContaCorrente ?? null };
     }),
@@ -650,12 +652,13 @@ Diretrizes:
      */
     autenticar: adminProcedure.input(z.object({ unidadeId: z.number() })).mutation(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.interClientId || !unidade?.interClientSecret) {
-        throw new Error("Credenciais Banco Inter não configuradas para esta unidade");
+      if (!unidade?.interClientId || !unidade?.interClientSecret || !unidade?.interCertificado || !unidade?.interChavePrivada) {
+        throw new Error("Credenciais Banco Inter não configuradas para esta unidade (client_id/secret + certificado)");
       }
       const { accessToken, expiresAt } = await getInterAccessToken(
         unidade.interClientId,
         unidade.interClientSecret,
+        { certificado: unidade.interCertificado, chavePrivada: unidade.interChavePrivada },
       );
       await db.updateInterToken(input.unidadeId, accessToken, expiresAt);
       return { success: true };
@@ -666,20 +669,22 @@ Diretrizes:
      */
     saldo: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.interClientId || !unidade?.interClientSecret) {
-        throw new Error("Credenciais Banco Inter não configuradas");
+      if (!unidade?.interClientId || !unidade?.interClientSecret || !unidade?.interCertificado || !unidade?.interChavePrivada) {
+        throw new Error("Credenciais Banco Inter não configuradas (client_id/secret + certificado)");
       }
+      const credenciais = { certificado: unidade.interCertificado, chavePrivada: unidade.interChavePrivada };
       // Renovar token se necessário
       let token = unidade.interAccessToken;
       if (!token || !isTokenValid(unidade.interTokenExpiresAt)) {
         const { accessToken, expiresAt } = await getInterAccessToken(
           unidade.interClientId,
           unidade.interClientSecret,
+          credenciais,
         );
         await db.updateInterToken(input.unidadeId, accessToken, expiresAt);
         token = accessToken;
       }
-      return interApi.consultarSaldo(token, unidade.interContaCorrente);
+      return interApi.consultarSaldo(token, unidade.interContaCorrente, credenciais);
     }),
 
     /**
@@ -757,9 +762,10 @@ Diretrizes:
       dataFim: z.string(),
     })).mutation(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.interClientId || !unidade?.interClientSecret) {
-        throw new Error("Credenciais Banco Inter não configuradas");
+      if (!unidade?.interClientId || !unidade?.interClientSecret || !unidade?.interCertificado || !unidade?.interChavePrivada) {
+        throw new Error("Credenciais Banco Inter não configuradas (client_id/secret + certificado)");
       }
+      const credenciaisInter = { certificado: unidade.interCertificado, chavePrivada: unidade.interChavePrivada };
 
       // Renovar token se necessário
       let token = unidade.interAccessToken;
@@ -767,6 +773,7 @@ Diretrizes:
         const { accessToken, expiresAt } = await getInterAccessToken(
           unidade.interClientId,
           unidade.interClientSecret,
+          credenciaisInter,
         );
         await db.updateInterToken(input.unidadeId, accessToken, expiresAt);
         token = accessToken;
@@ -807,6 +814,7 @@ Diretrizes:
             scrollEnabled: !scrollId,
             contaCorrente: unidade.interContaCorrente,
           },
+          credenciaisInter,
         );
 
         scrollId = primeira.scrollId;
@@ -849,6 +857,7 @@ Diretrizes:
               tamanhoPagina: 200,
               contaCorrente: unidade.interContaCorrente,
             },
+            credenciaisInter,
           );
 
           scrollId = proxima.scrollId;
@@ -909,6 +918,8 @@ Diretrizes:
       unidadeId: z.number(),
       interClientId: z.string().min(1),
       interClientSecret: z.string().min(1),
+      interCertificado: z.string().min(1),
+      interChavePrivada: z.string().min(1),
       interContaCorrente: z.string().optional(),
     })).mutation(async ({ input }) => {
       const { unidadeId, ...dados } = input;

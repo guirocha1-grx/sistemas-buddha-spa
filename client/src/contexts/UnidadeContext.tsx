@@ -14,6 +14,8 @@ interface UnidadeInfo {
   // Banco Inter
   interClientId?: string | null;
   interClientSecret?: string | null;
+  interCertificado?: string | null;
+  interChavePrivada?: string | null;
   interContaCorrente?: string | null;
 }
 

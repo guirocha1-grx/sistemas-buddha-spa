@@ -6,11 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megaphone, Landmark } from "lucide-react";
 
 interface InterForm {
   interClientId?: string;
   interClientSecret?: string;
+  interCertificado?: string;
+  interChavePrivada?: string;
   interContaCorrente?: string;
 }
 
@@ -43,7 +46,7 @@ export default function Configuracoes() {
         setZapiSaved(vars.id);
         setTimeout(() => setZapiSaved(null), 3000);
       }
-      if (vars.interClientId !== undefined || vars.interClientSecret !== undefined || vars.interContaCorrente !== undefined) {
+      if (vars.interClientId !== undefined || vars.interClientSecret !== undefined || vars.interCertificado !== undefined || vars.interChavePrivada !== undefined || vars.interContaCorrente !== undefined) {
         setInterSaved(vars.id);
         setTimeout(() => setInterSaved(null), 3000);
       }
@@ -216,7 +219,7 @@ export default function Configuracoes() {
                   <Label className="flex items-center gap-1.5 text-sm">
                     <Landmark className="h-3.5 w-3.5" /> Banco Inter — OAuth
                   </Label>
-                  {unidade.interClientId && unidade.interClientSecret ? (
+                  {unidade.interClientId && unidade.interClientSecret && unidade.interCertificado && unidade.interChavePrivada ? (
                     <Badge className="bg-green-100 text-green-700">Configurado</Badge>
                   ) : (
                     <Badge variant="secondary">Sem credenciais</Badge>
@@ -233,6 +236,8 @@ export default function Configuracoes() {
                     developers.inter.co
                   </a>{" "}
                   com escopo <code>extrato.read</code> e <code>saldo.read</code>, depois insira as credenciais abaixo.
+                  O Inter também exige um certificado digital (mTLS) — gere o par certificado/chave no mesmo portal, na aba
+                  "Certificados", e cole o conteúdo dos arquivos <code>.crt</code> e <code>.key</code> abaixo.
                 </p>
                 <Input
                   placeholder="Client ID"
@@ -249,6 +254,24 @@ export default function Configuracoes() {
                     setInterForms({ ...interForms, [unidade.id]: { ...interForms[unidade.id], interClientSecret: e.target.value } })
                   }
                 />
+                <Textarea
+                  placeholder="Certificado (.crt) — conteúdo completo em PEM"
+                  className="font-mono text-xs"
+                  rows={4}
+                  defaultValue={unidade.interCertificado || ""}
+                  onChange={(e) =>
+                    setInterForms({ ...interForms, [unidade.id]: { ...interForms[unidade.id], interCertificado: e.target.value } })
+                  }
+                />
+                <Textarea
+                  placeholder="Chave privada (.key) — conteúdo completo em PEM"
+                  className="font-mono text-xs"
+                  rows={4}
+                  defaultValue={unidade.interChavePrivada || ""}
+                  onChange={(e) =>
+                    setInterForms({ ...interForms, [unidade.id]: { ...interForms[unidade.id], interChavePrivada: e.target.value } })
+                  }
+                />
                 <Input
                   placeholder="Conta Corrente (opcional, sem zeros à esquerda)"
                   defaultValue={unidade.interContaCorrente || ""}
@@ -261,7 +284,14 @@ export default function Configuracoes() {
                   variant="outline"
                   onClick={() => {
                     const form = interForms[unidade.id];
-                    if (form && (form.interClientId || form.interClientSecret || form.interContaCorrente)) {
+                    if (
+                      form &&
+                      (form.interClientId ||
+                        form.interClientSecret ||
+                        form.interCertificado ||
+                        form.interChavePrivada ||
+                        form.interContaCorrente)
+                    ) {
                       updateUnidade.mutate({ id: unidade.id, ...form });
                     }
                   }}

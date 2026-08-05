@@ -31,9 +31,14 @@ export const unidades = mysqlTable("unidades", {
   zapiInstanceId: text("zapiInstanceId"),
   zapiToken: text("zapiToken"),
   zapiClientToken: text("zapiClientToken"),
-  // Banco Inter — credenciais OAuth e token em cache
+  // Banco Inter — credenciais OAuth e token em cache. A API do Inter
+  // exige mTLS em toda chamada (inclusive a troca de token), não só
+  // client_id/secret — por isso o certificado e a chave privada
+  // (conteúdo PEM, texto) ficam guardados aqui também.
   interClientId: text("interClientId"),
   interClientSecret: text("interClientSecret"),
+  interCertificado: text("interCertificado"), // .crt em PEM
+  interChavePrivada: text("interChavePrivada"), // .key em PEM
   interContaCorrente: varchar("interContaCorrente", { length: 20 }),
   interAccessToken: text("interAccessToken"),
   interTokenExpiresAt: bigint("interTokenExpiresAt", { mode: "number" }),
