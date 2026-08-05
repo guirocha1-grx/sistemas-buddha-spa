@@ -12,6 +12,7 @@ import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid } from "./interApi";
 import { parseExtratoInterPdf } from "./interExtratoPdfParser";
 import { parseExtratoOfx } from "./interExtratoOfxParser";
+import { sugerirCategoriaNome } from "./dreCategorizacao";
 import { PDFParse } from "pdf-parse";
 
 export const appRouter = router({
@@ -695,6 +696,19 @@ Diretrizes:
     }),
 
     /**
+     * Define/corrige manualmente a categoria de DRE de uma transação —
+     * o "Descrição (manual)" da planilha antiga. dreCategoriaId null
+     * volta a transação pra "Pendente".
+     */
+    categorizar: protectedProcedure.input(z.object({
+      transacaoId: z.number(),
+      dreCategoriaId: z.number().nullable(),
+    })).mutation(async ({ input }) => {
+      await db.setCategoriaTransacao(input.transacaoId, input.dreCategoriaId);
+      return { success: true };
+    }),
+
+    /**
      * Sincroniza o extrato enriquecido do período com o banco local.
      * Usa paginação por scroll para grandes volumes.
      * Rate limit: 10 req/min — não chamar em loop apertado.
@@ -721,6 +735,12 @@ Diretrizes:
       }
 
       const contaInter = await db.getOrCreateContaInter(input.unidadeId);
+      const regrasDre = await db.listRegrasParaMatch();
+      const categorizar = (t: { tipoTransacao?: string; titulo?: string; descricao?: string }) => {
+        const texto = `${t.tipoTransacao ?? ""} ${t.titulo ?? ""} ${t.descricao ?? ""}`;
+        const categoriaNome = sugerirCategoriaNome(texto, regrasDre);
+        return regrasDre.find((r) => r.categoriaNome === categoriaNome)?.dreCategoriaId;
+      };
 
       let totalInseridos = 0;
       let totalTransacoes = 0;
@@ -764,6 +784,7 @@ Diretrizes:
             cpfCnpjOrigem: t.cpfCnpjOrigem,
             cpfCnpjDestino: t.cpfCnpjDestino,
             cpmf: t.cpmf,
+            dreCategoriaId: categorizar(t),
           })),
         );
         totalInseridos += inseridos;
@@ -804,6 +825,7 @@ Diretrizes:
               cpfCnpjOrigem: t.cpfCnpjOrigem,
               cpfCnpjDestino: t.cpfCnpjDestino,
               cpmf: t.cpmf,
+              dreCategoriaId: categorizar(t),
             })),
           );
           totalInseridos += ins;
@@ -864,8 +886,11 @@ Diretrizes:
       const conta = await db.getContaById(input.contaId);
       if (!conta) throw new Error("Conta não encontrada");
 
+      const regras = await db.listRegrasParaMatch();
       const transacoes = input.linhas.map((linha, i) => {
         const idTransacao = `csv:${input.contaId}:${linha.data}:${linha.tipo}:${linha.valor}:${i}`;
+        const categoriaNome = sugerirCategoriaNome(linha.descricao, regras);
+        const dreCategoriaId = regras.find((r) => r.categoriaNome === categoriaNome)?.dreCategoriaId;
         return {
           unidadeId: conta.unidadeId,
           contaId: input.contaId,
@@ -875,6 +900,7 @@ Diretrizes:
           valor: linha.valor.toFixed(2),
           titulo: linha.descricao,
           origem: "csv" as const,
+          dreCategoriaId,
         };
       });
       const inseridos = await db.upsertInterExtratos(conta.unidadeId, transacoes);
@@ -917,16 +943,22 @@ Diretrizes:
         throw new Error("Nenhuma transação encontrada no PDF. Confirme que é um extrato completo do Banco Inter.");
       }
 
-      const transacoes = linhas.map((linha, i) => ({
-        unidadeId: conta.unidadeId,
-        contaId: input.contaId,
-        idTransacao: `pdf:${input.contaId}:${linha.data}:${linha.tipo}:${linha.valor}:${i}`,
-        dataEntrada: linha.data,
-        tipoOperacao: linha.tipo,
-        valor: linha.valor.toFixed(2),
-        titulo: linha.descricao,
-        origem: "pdf" as const,
-      }));
+      const regras = await db.listRegrasParaMatch();
+      const transacoes = linhas.map((linha, i) => {
+        const categoriaNome = sugerirCategoriaNome(linha.descricao, regras);
+        const dreCategoriaId = regras.find((r) => r.categoriaNome === categoriaNome)?.dreCategoriaId;
+        return {
+          unidadeId: conta.unidadeId,
+          contaId: input.contaId,
+          idTransacao: `pdf:${input.contaId}:${linha.data}:${linha.tipo}:${linha.valor}:${i}`,
+          dataEntrada: linha.data,
+          tipoOperacao: linha.tipo,
+          valor: linha.valor.toFixed(2),
+          titulo: linha.descricao,
+          origem: "pdf" as const,
+          dreCategoriaId,
+        };
+      });
 
       const inseridos = await db.upsertInterExtratos(conta.unidadeId, transacoes);
       await db.createSyncLog({
@@ -957,16 +989,22 @@ Diretrizes:
         throw new Error("Nenhuma transação encontrada no OFX. Confirme que o arquivo é um extrato bancário válido.");
       }
 
-      const transacoes = linhas.map((linha) => ({
-        unidadeId: conta.unidadeId,
-        contaId: input.contaId,
-        idTransacao: `ofx:${input.contaId}:${linha.fitid}`,
-        dataEntrada: linha.data,
-        tipoOperacao: linha.tipo,
-        valor: linha.valor.toFixed(2),
-        titulo: linha.descricao,
-        origem: "ofx" as const,
-      }));
+      const regras = await db.listRegrasParaMatch();
+      const transacoes = linhas.map((linha) => {
+        const categoriaNome = sugerirCategoriaNome(linha.descricao, regras);
+        const dreCategoriaId = regras.find((r) => r.categoriaNome === categoriaNome)?.dreCategoriaId;
+        return {
+          unidadeId: conta.unidadeId,
+          contaId: input.contaId,
+          idTransacao: `ofx:${input.contaId}:${linha.fitid}`,
+          dataEntrada: linha.data,
+          tipoOperacao: linha.tipo,
+          valor: linha.valor.toFixed(2),
+          titulo: linha.descricao,
+          origem: "ofx" as const,
+          dreCategoriaId,
+        };
+      });
 
       const inseridos = await db.upsertInterExtratos(conta.unidadeId, transacoes);
       await db.createSyncLog({
@@ -1005,6 +1043,13 @@ Diretrizes:
     })).mutation(async ({ input }) => {
       await db.renameConta(input.id, input.nome);
       return { success: true };
+    }),
+  }),
+
+  // ===== Plano de contas do DRE =====
+  dreCategorias: router({
+    list: protectedProcedure.query(async () => {
+      return db.listDreCategorias();
     }),
   }),
 

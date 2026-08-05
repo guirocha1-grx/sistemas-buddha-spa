@@ -148,6 +148,14 @@ export default function Extratos() {
     onError: (err) => toast.error(err.message),
   });
 
+  const categoriasQuery = trpc.dreCategorias.list.useQuery();
+  const categorias = categoriasQuery.data ?? [];
+
+  const categorizarMutation = trpc.inter.categorizar.useMutation({
+    onSuccess: () => utils.inter.extratos.invalidate(),
+    onError: (err) => toast.error(err.message),
+  });
+
   const statusInterQuery = trpc.inter.status.useQuery(
     { unidadeId: unidadeId! },
     { enabled: !!unidadeId },
@@ -442,6 +450,13 @@ export default function Extratos() {
                 tipo C/D, valor sempre positivo, cabeçalho opcional) ou o PDF do "Extrato completo" do Banco Inter.
               </p>
 
+              {transacoesExtrato.some((t) => !t.dreCategoriaId) && (
+                <div className="flex justify-end">
+                  <Badge variant="outline" className="text-xs border-amber-400 text-amber-700">
+                    {transacoesExtrato.filter((t) => !t.dreCategoriaId).length} pendente(s) de categorização
+                  </Badge>
+                </div>
+              )}
               <Tabs value={filtroTipoExtrato} onValueChange={(v) => setFiltroTipoExtrato(v as "todos" | "D" | "C")}>
                 <TabsList className="h-8">
                   <TabsTrigger value="todos" className="text-xs h-7">Todos ({transacoesExtrato.length})</TabsTrigger>
@@ -466,6 +481,7 @@ export default function Extratos() {
                             <TableHead className="text-xs">Descrição</TableHead>
                             <TableHead className="text-xs w-32">Conta</TableHead>
                             <TableHead className="text-xs w-20">Origem</TableHead>
+                            <TableHead className="text-xs w-56">Categoria DRE</TableHead>
                             <TableHead className="text-xs text-right w-32">Valor</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -482,6 +498,25 @@ export default function Extratos() {
                                 <Badge variant="outline" className="text-xs font-normal">
                                   {t.origem === "csv" ? "CSV" : t.origem === "pdf" ? "PDF" : t.origem === "ofx" ? "OFX" : "Inter"}
                                 </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Select
+                                  value={t.dreCategoriaId ? String(t.dreCategoriaId) : "pendente"}
+                                  onValueChange={(v) => categorizarMutation.mutate({
+                                    transacaoId: t.id,
+                                    dreCategoriaId: v === "pendente" ? null : Number(v),
+                                  })}
+                                >
+                                  <SelectTrigger className={`h-7 text-xs ${!t.dreCategoriaId ? "border-amber-400 text-amber-700" : ""}`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="pendente">Pendente</SelectItem>
+                                    {categorias.map((c) => (
+                                      <SelectItem key={c.id} value={String(c.id)}>{c.nome}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               </TableCell>
                               <TableCell className="text-right font-medium">
                                 <span className={t.tipoOperacao === "C" ? "text-green-700" : "text-red-600"}>

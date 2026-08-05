@@ -247,6 +247,7 @@ export const interExtratos = mysqlTable("inter_extratos", {
   cpfCnpjDestino: varchar("cpfCnpjDestino", { length: 20 }),
   cpmf: varchar("cpmf", { length: 64 }),
   origem: mysqlEnum("origem", ["inter", "csv", "pdf", "ofx"]).default("inter").notNull(),
+  dreCategoriaId: int("dreCategoriaId"), // null = pendente (ainda não categorizado)
   syncedAt: timestamp("syncedAt").defaultNow().notNull(),
 }, (table) => ({
   unidadeDataIdx: index("inter_extratos_unidade_data_idx").on(table.unidadeId, table.dataEntrada),
@@ -255,3 +256,50 @@ export const interExtratos = mysqlTable("inter_extratos", {
 
 export type InterExtrato = typeof interExtratos.$inferSelect;
 export type InsertInterExtrato = typeof interExtratos.$inferInsert;
+
+/**
+ * Plano de contas do DRE (estrutura definida em 2026-08-04, revisão
+ * pendente pra Receitas/Pronampe/alguns itens sem exemplo real ainda —
+ * ver comentário em server/dreCategorizacao.ts). "excluido" é uma seção
+ * especial pra transações que não são receita/despesa de verdade
+ * (transferência entre contas, aporte em aplicação, retirada de sócio).
+ */
+export const dreCategorias = mysqlTable("dre_categorias", {
+  id: int("id").autoincrement().primaryKey(),
+  nome: varchar("nome", { length: 128 }).notNull().unique(),
+  secao: mysqlEnum("secao", [
+    "receitas",
+    "impostos",
+    "custos_diretos",
+    "despesas_pessoal",
+    "marketing",
+    "despesas_administrativas",
+    "despesas_financeiras",
+    "devolucoes",
+    "excluido",
+  ]).notNull(),
+  ordem: int("ordem").default(0).notNull(),
+}, (table) => ({
+  secaoIdx: index("dre_categorias_secao_idx").on(table.secao),
+}));
+
+export type DreCategoria = typeof dreCategorias.$inferSelect;
+export type InsertDreCategoria = typeof dreCategorias.$inferInsert;
+
+/**
+ * Regras de categorização automática: se `padrao` aparece (case-
+ * insensitive) no histórico+descrição da transação, sugere
+ * `dreCategoriaId`. Fica em tabela (não hardcoded) pra dar pra adicionar
+ * regra nova sem deploy — mesmo espírito da planilha antiga, mas sem
+ * ficar preso a fórmula quebrada.
+ */
+export const dreRegras = mysqlTable("dre_regras", {
+  id: int("id").autoincrement().primaryKey(),
+  padrao: varchar("padrao", { length: 256 }).notNull(),
+  dreCategoriaId: int("dreCategoriaId").notNull(),
+  ativa: mysqlEnum("ativa", ["true", "false"]).default("true").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DreRegra = typeof dreRegras.$inferSelect;
+export type InsertDreRegra = typeof dreRegras.$inferInsert;

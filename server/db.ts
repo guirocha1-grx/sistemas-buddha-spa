@@ -1,7 +1,8 @@
 import { eq, desc, and, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreRegras, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { DRE_CATEGORIAS_SEED, DRE_REGRAS_SEED, sugerirCategoriaNome } from "./dreCategorizacao";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -454,4 +455,80 @@ export async function getContaById(id: number) {
   if (!db) return undefined;
   const result = await db.select().from(contas).where(eq(contas.id, id)).limit(1);
   return result[0];
+}
+
+// ===== DRE: plano de contas e categorização automática =====
+
+/**
+ * Popula o plano de contas e as regras na primeira chamada (tabela
+ * vazia) — auto-provisionado, mesmo espírito do getOrCreateContaInter,
+ * sem precisar de INSERT manual pelo Manus.
+ */
+export async function ensureDreSeed() {
+  const db = await getDb();
+  if (!db) return;
+
+  const existentes = await db.select({ id: dreCategorias.id }).from(dreCategorias).limit(1);
+  if (existentes.length > 0) return;
+
+  await db.insert(dreCategorias).values(DRE_CATEGORIAS_SEED);
+
+  const todas = await db.select().from(dreCategorias);
+  const idPorNome = new Map(todas.map((c) => [c.nome, c.id]));
+
+  const regrasParaInserir = DRE_REGRAS_SEED
+    .map((r) => {
+      const dreCategoriaId = idPorNome.get(r.categoriaNome);
+      if (!dreCategoriaId) return null;
+      return { padrao: r.padrao, dreCategoriaId };
+    })
+    .filter((r): r is { padrao: string; dreCategoriaId: number } => r !== null);
+
+  if (regrasParaInserir.length > 0) {
+    await db.insert(dreRegras).values(regrasParaInserir);
+  }
+}
+
+export async function listDreCategorias() {
+  await ensureDreSeed();
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(dreCategorias).orderBy(dreCategorias.secao, dreCategorias.ordem);
+}
+
+/**
+ * Regras ativas com o id da categoria já resolvido — buscar uma vez e
+ * reusar num loop de importação em lote, em vez de uma query por
+ * transação.
+ */
+export async function listRegrasParaMatch(): Promise<{ padrao: string; categoriaNome: string; dreCategoriaId: number }[]> {
+  await ensureDreSeed();
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    padrao: dreRegras.padrao,
+    categoriaNome: dreCategorias.nome,
+    dreCategoriaId: dreRegras.dreCategoriaId,
+  })
+    .from(dreRegras)
+    .innerJoin(dreCategorias, eq(dreRegras.dreCategoriaId, dreCategorias.id))
+    .where(eq(dreRegras.ativa, "true"));
+}
+
+/**
+ * Sugere uma categoria pro texto combinado (histórico + descrição) de
+ * uma transação avulsa. Retorna null (Pendente) se nenhuma regra bater.
+ * Pra lote, use listRegrasParaMatch() + sugerirCategoriaNome() direto.
+ */
+export async function sugerirCategoriaId(textoTransacao: string): Promise<number | null> {
+  const regras = await listRegrasParaMatch();
+  const nomeSugerido = sugerirCategoriaNome(textoTransacao, regras);
+  if (!nomeSugerido) return null;
+  return regras.find((r) => r.categoriaNome === nomeSugerido)?.dreCategoriaId ?? null;
+}
+
+export async function setCategoriaTransacao(transacaoId: number, dreCategoriaId: number | null) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(interExtratos).set({ dreCategoriaId }).where(eq(interExtratos.id, transacaoId));
 }
