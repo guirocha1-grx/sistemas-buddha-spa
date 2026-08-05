@@ -24,8 +24,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, Plus, Settings2, ListTree } from "lucide-react";
+import { Loader2, Plus, Settings2, ListTree, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { toast } from "sonner";
+
+type ColunaOrdenavel = "descricao" | "categoriaNome" | "padrao";
 
 const SECOES: { value: string; label: string }[] = [
   { value: "receitas", label: "Receitas" },
@@ -43,7 +45,7 @@ function labelSecao(secao: string) {
   return SECOES.find((s) => s.value === secao)?.label ?? secao;
 }
 
-const REGRA_FORM_VAZIO = { padrao: "", dreCategoriaId: "", valorMin: "", valorMax: "", alertaSeRepetirNoMes: false };
+const REGRA_FORM_VAZIO = { descricao: "", padrao: "", dreCategoriaId: "", valorMin: "", valorMax: "", alertaSeRepetirNoMes: false };
 
 export default function Parametros() {
   const utils = trpc.useUtils();
@@ -97,6 +99,11 @@ export default function Parametros() {
     onError: (err) => toast.error(err.message),
   });
 
+  const atualizarDescricaoMutation = trpc.dreRegras.atualizarDescricao.useMutation({
+    onSuccess: () => utils.dreRegras.list.invalidate(),
+    onError: (err) => toast.error(err.message),
+  });
+
   function abrirNovaRegra() {
     setRegraEditandoId(null);
     setRegraForm(REGRA_FORM_VAZIO);
@@ -106,6 +113,7 @@ export default function Parametros() {
   function abrirEditarRegra(r: typeof regras[number]) {
     setRegraEditandoId(r.id);
     setRegraForm({
+      descricao: r.descricao ?? "",
       padrao: r.padrao,
       dreCategoriaId: String(r.dreCategoriaId),
       valorMin: r.valorMin ?? "",
@@ -118,6 +126,7 @@ export default function Parametros() {
   function salvarRegra() {
     if (!regraForm.padrao.trim() || !regraForm.dreCategoriaId) return;
     const dados = {
+      descricao: regraForm.descricao.trim() || undefined,
       padrao: regraForm.padrao.trim(),
       dreCategoriaId: Number(regraForm.dreCategoriaId),
       valorMin: regraForm.valorMin ? parseFloat(regraForm.valorMin.replace(",", ".")) : undefined,
@@ -129,6 +138,34 @@ export default function Parametros() {
     } else {
       criarRegraMutation.mutate(dados);
     }
+  }
+
+  // ===== Ordenação =====
+  const [ordenarPor, setOrdenarPor] = useState<ColunaOrdenavel>("descricao");
+  const [ordemAsc, setOrdemAsc] = useState(true);
+
+  function alternarOrdenacao(coluna: ColunaOrdenavel) {
+    if (ordenarPor === coluna) {
+      setOrdemAsc(!ordemAsc);
+    } else {
+      setOrdenarPor(coluna);
+      setOrdemAsc(true);
+    }
+  }
+
+  function valorOrdenavel(r: typeof regras[number], coluna: ColunaOrdenavel): string {
+    if (coluna === "descricao") return (r.descricao || r.categoriaNome).toLowerCase();
+    return r[coluna].toLowerCase();
+  }
+
+  const regrasOrdenadas = [...regras].sort((a, b) => {
+    const cmp = valorOrdenavel(a, ordenarPor).localeCompare(valorOrdenavel(b, ordenarPor), "pt-BR");
+    return ordemAsc ? cmp : -cmp;
+  });
+
+  function IconeOrdenacao({ coluna }: { coluna: ColunaOrdenavel }) {
+    if (ordenarPor !== coluna) return <ArrowUpDown className="h-3 w-3 opacity-40" />;
+    return ordemAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
   }
 
   const categoriasPorSecao = SECOES.map((s) => ({
@@ -171,6 +208,14 @@ export default function Parametros() {
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">
+                  <div>
+                    <Label className="text-xs">Descrição (opcional)</Label>
+                    <Input
+                      placeholder="Ex.: Escritório de advocacia Herdade Martini — usa o nome da categoria se vazio"
+                      value={regraForm.descricao}
+                      onChange={(e) => setRegraForm({ ...regraForm, descricao: e.target.value })}
+                    />
+                  </div>
                   <div>
                     <Label className="text-xs">Padrão de texto</Label>
                     <Input
@@ -239,19 +284,48 @@ export default function Parametros() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/30">
-                    <TableHead className="text-xs">Padrão</TableHead>
-                    <TableHead className="text-xs">Categoria</TableHead>
+                    <TableHead className="text-xs">
+                      <button className="flex items-center gap-1 hover:text-foreground" onClick={() => alternarOrdenacao("descricao")}>
+                        Descrição <IconeOrdenacao coluna="descricao" />
+                      </button>
+                    </TableHead>
+                    <TableHead className="text-xs">
+                      <button className="flex items-center gap-1 hover:text-foreground" onClick={() => alternarOrdenacao("categoriaNome")}>
+                        Categoria <IconeOrdenacao coluna="categoriaNome" />
+                      </button>
+                    </TableHead>
+                    <TableHead className="text-xs">
+                      <button className="flex items-center gap-1 hover:text-foreground" onClick={() => alternarOrdenacao("padrao")}>
+                        Padrão <IconeOrdenacao coluna="padrao" />
+                      </button>
+                    </TableHead>
                     <TableHead className="text-xs">Faixa de valor</TableHead>
                     <TableHead className="text-xs w-24">Origem</TableHead>
                     <TableHead className="text-xs w-20">Ativa</TableHead>
-                    <TableHead className="text-xs w-20"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {regras.map((r) => (
-                    <TableRow key={r.id} className={`text-sm ${r.ativa === "false" ? "opacity-50" : ""}`}>
-                      <TableCell className="font-mono text-xs">{r.padrao}</TableCell>
-                      <TableCell className="text-sm">{r.categoriaNome}</TableCell>
+                  {regrasOrdenadas.map((r) => (
+                    <TableRow
+                      key={r.id}
+                      className={`text-sm cursor-pointer hover:bg-muted/40 ${r.ativa === "false" ? "opacity-50" : ""}`}
+                      onClick={() => abrirEditarRegra(r)}
+                    >
+                      <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
+                        <Input
+                          key={r.id}
+                          defaultValue={r.descricao ?? r.categoriaNome}
+                          className="h-7 text-xs border-transparent hover:border-input focus-visible:border-input bg-transparent"
+                          onBlur={(e) => {
+                            const novoValor = e.target.value.trim();
+                            if (novoValor && novoValor !== (r.descricao ?? r.categoriaNome)) {
+                              atualizarDescricaoMutation.mutate({ id: r.id, descricao: novoValor });
+                            }
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{r.categoriaNome}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">{r.padrao}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {r.valorMin || r.valorMax
                           ? `${r.valorMin ? `de R$ ${r.valorMin}` : ""} ${r.valorMax ? `até R$ ${r.valorMax}` : ""}`.trim()
@@ -262,16 +336,11 @@ export default function Parametros() {
                           {r.origem === "seed" ? "Padrão" : r.origem === "aprendida" ? "Aprendida" : "Manual"}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={r.ativa === "true"}
                           onCheckedChange={(v) => ativarDesativarMutation.mutate({ id: r.id, ativa: !!v })}
                         />
-                      </TableCell>
-                      <TableCell>
-                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => abrirEditarRegra(r)}>
-                          Editar
-                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}

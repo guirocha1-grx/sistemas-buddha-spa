@@ -26,6 +26,7 @@ CREATE TABLE `dre_categorias` (
 --> statement-breakpoint
 CREATE TABLE `dre_regras` (
 	`id` int AUTO_INCREMENT NOT NULL,
+	`descricao` varchar(256),
 	`padrao` varchar(256) NOT NULL,
 	`dreCategoriaId` int NOT NULL,
 	`valorMin` decimal(12,2),

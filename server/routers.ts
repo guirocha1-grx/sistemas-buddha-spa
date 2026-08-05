@@ -1179,6 +1179,7 @@ Diretrizes:
     }),
 
     criar: adminProcedure.input(z.object({
+      descricao: z.string().optional(),
       padrao: z.string().min(1),
       dreCategoriaId: z.number(),
       valorMin: z.number().optional(),
@@ -1195,6 +1196,7 @@ Diretrizes:
 
     atualizar: adminProcedure.input(z.object({
       id: z.number(),
+      descricao: z.string().optional(),
       padrao: z.string().min(1).optional(),
       dreCategoriaId: z.number().optional(),
       valorMin: z.number().nullable().optional(),
@@ -1207,6 +1209,17 @@ Diretrizes:
         valorMin: valorMin === null ? undefined : valorMin?.toFixed(2),
         valorMax: valorMax === null ? undefined : valorMax?.toFixed(2),
       });
+      return { success: true };
+    }),
+
+    /**
+     * Só a descrição — edição rápida inline na tabela, sem abrir modal.
+     */
+    atualizarDescricao: adminProcedure.input(z.object({
+      id: z.number(),
+      descricao: z.string(),
+    })).mutation(async ({ input }) => {
+      await db.atualizarDescricaoDreRegra(input.id, input.descricao);
       return { success: true };
     }),
 

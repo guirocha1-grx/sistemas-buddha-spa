@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "fdca3477-e117-4bd7-9749-5a965f02063f",
+  "id": "cb082f7a-db82-4c1a-9215-80f13613ebba",
   "prevId": "57be1fff-6ce9-489b-ad2b-c1e999561599",
   "tables": {
     "configuracoes": {
@@ -332,6 +332,13 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": true
+        },
+        "descricao": {
+          "name": "descricao",
+          "type": "varchar(256)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "padrao": {
           "name": "padrao",
