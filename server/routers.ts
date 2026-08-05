@@ -704,6 +704,9 @@ Diretrizes:
       dataFim: z.string(),
     })).mutation(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) {
+        throw new Error("Unidade não encontrada. Verifique se a unidade está cadastrada antes de sincronizar extratos.");
+      }
       if (!unidade?.interClientId || !unidade?.interClientSecret) {
         throw new Error("Credenciais Banco Inter não configuradas");
       }
@@ -856,6 +859,10 @@ Diretrizes:
         valor: z.number().positive(),
       })).min(1),
     })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) {
+        throw new Error("Unidade não encontrada. Selecione a unidade correta antes de importar o extrato.");
+      }
       const transacoes = input.linhas.map((linha, i) => {
         const idTransacao = `csv:${input.unidadeId}:${linha.data}:${linha.tipo}:${linha.valor}:${i}`;
         return {
@@ -890,6 +897,10 @@ Diretrizes:
       unidadeId: z.number(),
       pdfBase64: z.string().min(1),
     })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) {
+        throw new Error("Unidade não encontrada. Selecione a unidade correta antes de importar o extrato.");
+      }
       const buffer = Buffer.from(input.pdfBase64, "base64");
       const parser = new PDFParse({ data: buffer });
       let texto: string;
@@ -936,6 +947,10 @@ Diretrizes:
       unidadeId: z.number(),
       ofxTexto: z.string().min(1),
     })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) {
+        throw new Error("Unidade não encontrada. Selecione a unidade correta antes de importar o extrato.");
+      }
       const linhas = parseExtratoOfx(input.ofxTexto);
       if (linhas.length === 0) {
         throw new Error("Nenhuma transação encontrada no OFX. Confirme que o arquivo é um extrato bancário válido.");
