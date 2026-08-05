@@ -10,6 +10,8 @@ import { buddhaMktApi } from "./buddhaMktApi";
 import { storagePut, storageGetSignedUrl } from "./storage";
 import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid } from "./interApi";
+import { parseExtratoInterPdf } from "./interExtratoPdfParser";
+import { PDFParse } from "pdf-parse";
 
 export const appRouter = router({
   system: systemRouter,
@@ -874,6 +876,53 @@ Diretrizes:
         detalhes: `Importação manual via CSV. ${input.linhas.length} linha(s) no arquivo, ${inseridos} nova(s).`,
       });
       return { success: true, totalInseridos: inseridos, totalLinhas: input.linhas.length };
+    }),
+
+    /**
+     * Importa transações a partir do PDF "Extrato completo" do Banco
+     * Inter (mesmo modelo exportado pelo app/site do banco). Extrai o
+     * texto do PDF no servidor e aplica o parser de
+     * server/interExtratoPdfParser.ts — mesmo dedup por idTransacao dos
+     * outros dois modos de importação.
+     */
+    importarPdf: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      pdfBase64: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      const buffer = Buffer.from(input.pdfBase64, "base64");
+      const parser = new PDFParse({ data: buffer });
+      let texto: string;
+      try {
+        const resultado = await parser.getText();
+        texto = resultado.text;
+      } finally {
+        await parser.destroy();
+      }
+
+      const linhas = parseExtratoInterPdf(texto);
+      if (linhas.length === 0) {
+        throw new Error("Nenhuma transação encontrada no PDF. Confirme que é um extrato completo do Banco Inter.");
+      }
+
+      const transacoes = linhas.map((linha, i) => ({
+        unidadeId: input.unidadeId,
+        idTransacao: `pdf:${input.unidadeId}:${linha.data}:${linha.tipo}:${linha.valor}:${i}`,
+        dataEntrada: linha.data,
+        tipoOperacao: linha.tipo,
+        valor: linha.valor.toFixed(2),
+        titulo: linha.descricao,
+        origem: "pdf" as const,
+      }));
+
+      const inseridos = await db.upsertInterExtratos(input.unidadeId, transacoes);
+      await db.createSyncLog({
+        unidadeId: input.unidadeId,
+        tipo: "pdf_extrato",
+        status: "sucesso",
+        registrosProcessados: inseridos,
+        detalhes: `Importação manual via PDF (Banco Inter). ${linhas.length} transação(ões) no arquivo, ${inseridos} nova(s).`,
+      });
+      return { success: true, totalInseridos: inseridos, totalLinhas: linhas.length };
     }),
   }),
 
