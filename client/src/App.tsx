@@ -11,6 +11,7 @@ import Reativacao from "./pages/Reativacao";
 import Agenda from "./pages/Agenda";
 import Mensagens from "./pages/Mensagens";
 import Financeiro from "./pages/Financeiro";
+import Extratos from "./pages/Extratos";
 import Copilot from "./pages/Copilot";
 import Laminas from "./pages/Laminas";
 import Leads from "./pages/Leads";
@@ -26,6 +27,7 @@ function Router() {
         <Route path="/agenda" component={Agenda} />
         <Route path="/mensagens" component={Mensagens} />
         <Route path="/financeiro" component={Financeiro} />
+        <Route path="/financeiro/extratos" component={Extratos} />
         <Route path="/copilot" component={Copilot} />
         <Route path="/laminas" component={Laminas} />
         <Route path="/leads" component={Leads} />
