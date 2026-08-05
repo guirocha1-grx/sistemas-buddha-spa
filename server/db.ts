@@ -374,7 +374,13 @@ export async function upsertInterExtratos(
         .limit(1);
       if (existente.length > 0) continue;
     }
-    await db.insert(interExtratos).values({ ...t, unidadeId });
+    // Drizzle gera `default` para undefined, mas TiDB não aceita em colunas
+    // nullable sem DEFAULT definido. Converter undefined → null explicitamente.
+    const limpo: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(t)) {
+      limpo[k] = v === undefined ? null : v;
+    }
+    await db.insert(interExtratos).values({ ...limpo, unidadeId } as any);
     inseridos++;
   }
   return inseridos;
