@@ -166,6 +166,11 @@ export default function Extratos() {
     onError: (err) => toast.error(err.message),
   });
 
+  const atualizarNotaMutation = trpc.inter.atualizarNota.useMutation({
+    onSuccess: () => utils.inter.extratos.invalidate(),
+    onError: (err) => toast.error(err.message),
+  });
+
   const reprocessarMutation = trpc.inter.reprocessarCategorias.useMutation({
     onSuccess: (data) => {
       toast.success(
@@ -320,11 +325,23 @@ export default function Extratos() {
             <Card className="border-border/50 shadow-sm">
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-1.5">
-                  <Wallet className="h-4 w-4" /> Saldo Disponível (Inter)
+                  <Wallet className="h-4 w-4" />
+                  {contaAtual && contaAtual.tipo !== "inter_oauth" ? `Saldo (${contaAtual.nome})` : "Saldo Disponível (Inter)"}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {saldoInterQuery.isLoading ? (
+                {contaAtual && contaAtual.tipo !== "inter_oauth" ? (
+                  contaAtual.saldoImportado ? (
+                    <>
+                      <div className="text-2xl font-bold">{fmtCurrencyExtrato(contaAtual.saldoImportado)}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        conforme OFX de {fmtDateExtrato(contaAtual.saldoImportadoEm ?? "")}
+                      </div>
+                    </>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Importe um OFX pra ver o saldo</span>
+                  )
+                ) : saldoInterQuery.isLoading ? (
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 ) : saldoInterQuery.data ? (
                   <div className="text-2xl font-bold">{fmtCurrencyExtrato(saldoInterQuery.data.disponivel)}</div>
@@ -521,6 +538,7 @@ export default function Extratos() {
                             <TableHead className="text-xs w-32">Conta</TableHead>
                             <TableHead className="text-xs w-20">Origem</TableHead>
                             <TableHead className="text-xs w-56">Categoria DRE</TableHead>
+                            <TableHead className="text-xs w-48">Nota</TableHead>
                             <TableHead className="text-xs text-right w-32">Valor</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -578,6 +596,19 @@ export default function Extratos() {
                                     </Button>
                                   )}
                                 </div>
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  key={t.id}
+                                  defaultValue={t.nota ?? ""}
+                                  placeholder="Do que se trata..."
+                                  className="h-7 text-xs"
+                                  onBlur={(e) => {
+                                    if (e.target.value !== (t.nota ?? "")) {
+                                      atualizarNotaMutation.mutate({ transacaoId: t.id, nota: e.target.value });
+                                    }
+                                  }}
+                                />
                               </TableCell>
                               <TableCell className="text-right font-medium">
                                 <span className={t.tipoOperacao === "C" ? "text-green-700" : "text-red-600"}>

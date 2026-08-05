@@ -215,6 +215,11 @@ export const contas = mysqlTable("contas", {
   unidadeId: int("unidadeId").notNull(),
   nome: varchar("nome", { length: 128 }).notNull(),
   tipo: mysqlEnum("tipo", ["inter_oauth", "manual"]).default("manual").notNull(),
+  // Saldo extraído do <LEDGERBAL> na última importação de OFX — só
+  // usado por contas "manual" (sem API própria pra consultar saldo ao
+  // vivo, tipo o inter_oauth já tem via inter.saldo).
+  saldoImportado: decimal("saldoImportado", { precision: 12, scale: 2 }),
+  saldoImportadoEm: varchar("saldoImportadoEm", { length: 10 }), // AAAA-MM-DD (data de apuração do OFX, não da importação)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
@@ -251,6 +256,10 @@ export const interExtratos = mysqlTable("inter_extratos", {
   // pendente = sem categoria; sugerida = regra bateu sozinha, ainda não
   // confirmada por humano; confirmada = humano escolheu ou confirmou.
   categorizacaoStatus: mysqlEnum("categorizacaoStatus", ["pendente", "sugerida", "confirmada"]).default("pendente").notNull(),
+  // Nota livre, separada da categoria — a categoria agrupa (ex.: "Custos
+  // Terapeutas"), a nota esclarece o caso específico (ex.: "Repasse Ana
+  // Paula") sem precisar criar categoria nova pra cada pessoa/situação.
+  nota: text("nota"),
   syncedAt: timestamp("syncedAt").defaultNow().notNull(),
 }, (table) => ({
   unidadeDataIdx: index("inter_extratos_unidade_data_idx").on(table.unidadeId, table.dataEntrada),

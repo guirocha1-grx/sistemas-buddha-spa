@@ -450,6 +450,20 @@ export async function renameConta(id: number, nome: string) {
   await db.update(contas).set({ nome }).where(eq(contas.id, id));
 }
 
+/**
+ * Atualiza o saldo extraído do <LEDGERBAL> de um OFX importado. Só
+ * sobrescreve se a nova data de apuração for igual ou mais recente que
+ * a que já estava salva — evita um OFX antigo importado por engano
+ * regredir o saldo mostrado.
+ */
+export async function atualizarSaldoImportado(contaId: number, saldo: string, dataApuracao: string) {
+  const db = await getDb();
+  if (!db) return;
+  const conta = await getContaById(contaId);
+  if (conta?.saldoImportadoEm && conta.saldoImportadoEm > dataApuracao) return;
+  await db.update(contas).set({ saldoImportado: saldo, saldoImportadoEm: dataApuracao }).where(eq(contas.id, contaId));
+}
+
 export async function getContaById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
@@ -609,4 +623,16 @@ export async function confirmarSugestao(transacaoId: number) {
   if (!db) return;
   await db.update(interExtratos).set({ categorizacaoStatus: "confirmada" })
     .where(and(eq(interExtratos.id, transacaoId), eq(interExtratos.categorizacaoStatus, "sugerida")));
+}
+
+/**
+ * Nota livre por transação — separada da categoria de propósito. A
+ * categoria agrupa (várias contrapartes diferentes podem cair na mesma
+ * categoria), a nota esclarece o caso específico sem precisar criar
+ * categoria nova pra cada situação.
+ */
+export async function atualizarNota(transacaoId: number, nota: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(interExtratos).set({ nota: nota || null }).where(eq(interExtratos.id, transacaoId));
 }

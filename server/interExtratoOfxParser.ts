@@ -20,6 +20,12 @@ export interface LinhaExtratoOfx {
   descricao: string;
   tipo: "C" | "D";
   valor: number;
+  trnType: string | null; // CREDIT, DEBIT, CHECK, PAYMENT, TRANSFER, FEE, INT, ATM, POS... (já vem classificado pelo banco)
+}
+
+export interface SaldoOfx {
+  saldo: number;
+  dataApuracao: string; // AAAA-MM-DD
 }
 
 function extrairCampo(bloco: string, tag: string): string | null {
@@ -55,7 +61,8 @@ export function parseExtratoOfx(texto: string): LinhaExtratoOfx[] {
     const fitid = extrairCampo(bloco, "FITID");
     const dtPosted = extrairCampo(bloco, "DTPOSTED");
     const trnAmt = extrairCampo(bloco, "TRNAMT");
-    const memo = extrairCampo(bloco, "MEMO") ?? extrairCampo(bloco, "NAME") ?? extrairCampo(bloco, "TRNTYPE");
+    const trnType = extrairCampo(bloco, "TRNTYPE");
+    const memo = extrairCampo(bloco, "MEMO") ?? extrairCampo(bloco, "NAME") ?? trnType;
 
     if (!fitid || !dtPosted || !trnAmt) continue;
 
@@ -69,8 +76,34 @@ export function parseExtratoOfx(texto: string): LinhaExtratoOfx[] {
       descricao: memo?.trim() || "(sem descrição)",
       tipo: valor >= 0 ? "C" : "D",
       valor: Math.abs(valor),
+      trnType,
     });
   }
 
   return resultado;
+}
+
+/**
+ * Extrai o saldo do <LEDGERBAL> — snapshot na data em que o extrato foi
+ * gerado (não é um saldo por transação como no PDF do Inter, é só um
+ * valor). Útil pra contas sem sincronização automática (só têm o OFX
+ * mesmo): é o único jeito de saber o saldo real sem chamar API do banco.
+ */
+export function parseSaldoOfx(texto: string): SaldoOfx | null {
+  const inicio = texto.search(/<LEDGERBAL>/i);
+  if (inicio === -1) return null;
+
+  const restante = texto.slice(inicio);
+  const fimRelativo = restante.search(/<\/LEDGERBAL>|<AVAILBAL>/i);
+  const bloco = fimRelativo === -1 ? restante : restante.slice(0, fimRelativo);
+
+  const balAmt = extrairCampo(bloco, "BALAMT");
+  const dtAsOf = extrairCampo(bloco, "DTASOF");
+  if (!balAmt || !dtAsOf) return null;
+
+  const saldo = parseValorOfx(balAmt);
+  const dataApuracao = parseDataOfx(dtAsOf);
+  if (Number.isNaN(saldo) || !dataApuracao) return null;
+
+  return { saldo, dataApuracao };
 }

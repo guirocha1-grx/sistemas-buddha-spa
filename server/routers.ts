@@ -11,7 +11,7 @@ import { storagePut, storageGetSignedUrl } from "./storage";
 import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid } from "./interApi";
 import { parseExtratoInterPdf } from "./interExtratoPdfParser";
-import { parseExtratoOfx } from "./interExtratoOfxParser";
+import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { sugerirCategoriaNome } from "./dreCategorizacao";
 import { PDFParse } from "pdf-parse";
 
@@ -723,6 +723,19 @@ Diretrizes:
     }),
 
     /**
+     * Nota livre por transação, separada da categoria — esclarece o
+     * caso específico quando a categoria sozinha agrupa vários tipos
+     * de lançamento diferentes.
+     */
+    atualizarNota: protectedProcedure.input(z.object({
+      transacaoId: z.number(),
+      nota: z.string(),
+    })).mutation(async ({ input }) => {
+      await db.atualizarNota(input.transacaoId, input.nota);
+      return { success: true };
+    }),
+
+    /**
      * Reaplica as regras de categorização atuais só nas transações que
      * ainda estão "Pendente" — usado depois que uma regra nova é
      * adicionada, pra não deixar lançamentos já importados presos.
@@ -1027,6 +1040,7 @@ Diretrizes:
           contaId: input.contaId,
           idTransacao: `ofx:${input.contaId}:${linha.fitid}`,
           dataEntrada: linha.data,
+          tipoTransacao: linha.trnType ?? undefined,
           tipoOperacao: linha.tipo,
           valor: linha.valor.toFixed(2),
           titulo: linha.descricao,
@@ -1037,6 +1051,16 @@ Diretrizes:
       });
 
       const inseridos = await db.upsertInterExtratos(conta.unidadeId, transacoes);
+
+      // Saldo do <LEDGERBAL> — só grava pra conta manual (a inter_oauth
+      // já tem saldo ao vivo via inter.saldo, não precisa do snapshot do OFX).
+      if (conta.tipo !== "inter_oauth") {
+        const saldoOfx = parseSaldoOfx(input.ofxTexto);
+        if (saldoOfx) {
+          await db.atualizarSaldoImportado(input.contaId, saldoOfx.saldo.toFixed(2), saldoOfx.dataApuracao);
+        }
+      }
+
       await db.createSyncLog({
         unidadeId: conta.unidadeId,
         tipo: "ofx_extrato",
