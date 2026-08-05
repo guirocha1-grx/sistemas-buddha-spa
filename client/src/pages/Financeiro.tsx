@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
@@ -171,18 +172,39 @@ export default function Financeiro() {
     onError: (err) => toast.error(`Erro ao importar CSV: ${err.message}`),
   });
 
+  const [pendingUpload, setPendingUpload] = useState<{ tipo: "csv" | "pdf" | "ofx"; file: File } | null>(null);
+
+  function confirmarUpload(tipo: "csv" | "pdf" | "ofx", file: File) {
+    setPendingUpload({ tipo, file });
+  }
+
+  async function executarUploadConfirmado() {
+    if (!pendingUpload || !unidadeId) return;
+    const { tipo, file } = pendingUpload;
+    try {
+      if (tipo === "csv") {
+        const texto = await file.text();
+        const linhas = parseCsvExtrato(texto);
+        importarCsvMutation.mutate({ unidadeId, linhas });
+      } else if (tipo === "pdf") {
+        const pdfBase64 = await fileParaBase64(file);
+        importarPdfMutation.mutate({ unidadeId, pdfBase64 });
+      } else {
+        const ofxTexto = await file.text();
+        importarOfxMutation.mutate({ unidadeId, ofxTexto });
+      }
+    } catch (err: any) {
+      toast.error(err.message ?? `Falha ao ler o arquivo ${tipo.toUpperCase()}`);
+    } finally {
+      setPendingUpload(null);
+    }
+  }
+
   async function handleImportarCsv(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !unidadeId) return;
-    try {
-      const texto = await file.text();
-      const linhas = parseCsvExtrato(texto);
-      importarCsvMutation.mutate({ unidadeId, linhas });
-    } catch (err: any) {
-      toast.error(err.message ?? "Falha ao ler o arquivo CSV");
-    } finally {
-      e.target.value = "";
-    }
+    confirmarUpload("csv", file);
+    e.target.value = "";
   }
 
   const importarPdfMutation = trpc.inter.importarPdf.useMutation({
@@ -196,14 +218,8 @@ export default function Financeiro() {
   async function handleImportarPdf(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !unidadeId) return;
-    try {
-      const pdfBase64 = await fileParaBase64(file);
-      importarPdfMutation.mutate({ unidadeId, pdfBase64 });
-    } catch (err: any) {
-      toast.error(err.message ?? "Falha ao ler o arquivo PDF");
-    } finally {
-      e.target.value = "";
-    }
+    confirmarUpload("pdf", file);
+    e.target.value = "";
   }
 
   const importarOfxMutation = trpc.inter.importarOfx.useMutation({
@@ -217,14 +233,8 @@ export default function Financeiro() {
   async function handleImportarOfx(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !unidadeId) return;
-    try {
-      const ofxTexto = await file.text();
-      importarOfxMutation.mutate({ unidadeId, ofxTexto });
-    } catch (err: any) {
-      toast.error(err.message ?? "Falha ao ler o arquivo OFX");
-    } finally {
-      e.target.value = "";
-    }
+    confirmarUpload("ofx", file);
+    e.target.value = "";
   }
 
   const transacoesExtrato = extratosQuery.data ?? [];
@@ -594,6 +604,30 @@ export default function Financeiro() {
           )}
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={!!pendingUpload} onOpenChange={(open) => !open && setPendingUpload(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar importação de extrato</AlertDialogTitle>
+            <AlertDialogDescription>
+              Você está prestes a importar um arquivo <strong>{pendingUpload?.tipo.toUpperCase()}</strong> para a unidade{" "}
+              <strong className="text-primary">{unidadeSelecionada?.nome}</strong>.{" "}
+              Confirme se esta é a unidade correta antes de prosseguir.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingUpload(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={executarUploadConfirmado}
+              disabled={importarCsvMutation.isPending || importarPdfMutation.isPending || importarOfxMutation.isPending}
+            >
+              {(importarCsvMutation.isPending || importarPdfMutation.isPending || importarOfxMutation.isPending)
+                ? "Importando..."
+                : "Confirmar importação"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

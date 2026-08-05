@@ -61,9 +61,6 @@
 - [x] Envio automático para Belle via POST /cliente/gravar-lead
 - [x] Confirmação de recebimento
 
-## Correções e Melhorias
-- [x] Verificação de unidade ao fazer upload de extrato (validar unidadeId no router antes de inserir)
-
 ## Testes
 - [x] Testes unitários (vitest) — 9 testes passando
 - [x] Testes de integração da API Belle (cobertura de endpoints principais)
