@@ -22,6 +22,13 @@
       "when": 1785880000000,
       "tag": "0002_inter_banking",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1785973306736,
+      "tag": "0003_brainy_lenny_balinger",
+      "breakpoints": true
     }
   ]
 }

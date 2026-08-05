@@ -839,6 +839,8 @@ Diretrizes:
             nomeDestino: t.nomeDestino,
             cpfCnpjOrigem: t.cpfCnpjOrigem,
             cpfCnpjDestino: t.cpfCnpjDestino,
+            contaOrigem: t.contaOrigem,
+            contaDestino: t.contaDestino,
             cpmf: t.cpmf,
             ...(await categorizar(t)),
           }))),
@@ -881,6 +883,8 @@ Diretrizes:
               nomeDestino: t.nomeDestino,
               cpfCnpjOrigem: t.cpfCnpjOrigem,
               cpfCnpjDestino: t.cpfCnpjDestino,
+              contaOrigem: t.contaOrigem,
+              contaDestino: t.contaDestino,
               cpmf: t.cpmf,
               ...(await categorizar(t)),
             }))),
@@ -889,13 +893,17 @@ Diretrizes:
           pagina++;
         }
 
-        // Registrar log de sincronização
+        // Registrar log de sincronização — inclui uma amostra bruta da
+        // 1ª transação da API (todos os campos, sem filtro), útil pra
+        // auditar se o mapeamento em InterTransacaoCompleta cobre tudo
+        // que a API realmente devolve hoje.
+        const amostraBruta = primeira.transacoes[0] ? JSON.stringify(primeira.transacoes[0]).slice(0, 2000) : null;
         await db.createSyncLog({
           unidadeId: input.unidadeId,
           tipo: "inter_extrato",
           status: "sucesso",
           registrosProcessados: totalInseridos,
-          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Total API: ${totalTransacoes}. Novos: ${totalInseridos}. Páginas: ${pagina}.`,
+          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Total API: ${totalTransacoes}. Novos: ${totalInseridos}. Páginas: ${pagina}.${amostraBruta ? ` Amostra bruta: ${amostraBruta}` : ""}`,
         });
 
         return { success: true, totalInseridos, totalTransacoes, paginas: pagina };
@@ -1118,6 +1126,7 @@ Diretrizes:
      */
     list: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
       await db.getOrCreateContaInter(input.unidadeId);
+      await db.ensureContasPadrao(input.unidadeId);
       return db.listContas(input.unidadeId);
     }),
 

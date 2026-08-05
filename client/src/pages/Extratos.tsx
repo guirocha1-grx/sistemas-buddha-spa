@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
   Dialog,
   DialogContent,
@@ -28,7 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Landmark, Check, Pencil, Search, TriangleAlert } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Landmark, Check, Pencil, Search, TriangleAlert, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
 
 // ===== Períodos rápidos =====
@@ -147,6 +149,62 @@ function fileParaBase64(file: File): Promise<string> {
 }
 
 const CONTA_FORM_VAZIO = { nome: "", agencia: "", numeroConta: "", cnpj: "", saldoInicial: "", saldoInicialEm: "" };
+
+// ===== Combobox de Categoria DRE (com busca por nome) =====
+function CategoriaDreCombobox({
+  categorias,
+  value,
+  status,
+  onChange,
+}: {
+  categorias: { id: number; nome: string }[];
+  value: number | null;
+  status: "pendente" | "sugerida" | "confirmada";
+  onChange: (id: number | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const atual = categorias.find((c) => c.id === value);
+  const corClasse =
+    status === "confirmada"
+      ? "border-green-400 text-green-700 hover:text-green-700"
+      : status === "sugerida"
+        ? "border-blue-400 text-blue-700 hover:text-blue-700"
+        : "border-amber-400 text-amber-700 hover:text-amber-700";
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={`h-7 text-xs justify-between font-normal w-full px-2 ${corClasse}`}
+        >
+          <span className="truncate">{atual ? atual.nome : "Pendente"}</span>
+          <ChevronsUpDown className="h-3 w-3 opacity-50 shrink-0 ml-1" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Buscar categoria..." className="text-sm h-8" />
+          <CommandList>
+            <CommandEmpty>Nenhuma categoria encontrada.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem value="Pendente" onSelect={() => { onChange(null); setOpen(false); }}>
+                Pendente
+              </CommandItem>
+              {categorias.map((c) => (
+                <CommandItem key={c.id} value={c.nome} onSelect={() => { onChange(c.id); setOpen(false); }}>
+                  {c.nome}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export default function Extratos() {
   const { unidadeSelecionada } = useUnidade();
@@ -419,6 +477,26 @@ export default function Extratos() {
     return mapa;
   }, [transacoesExtrato, saldoNaDataQuery.data]);
 
+  // Saldo do card "Consolidado" (nenhuma conta específica selecionada) —
+  // soma o saldo do Inter (via API) com o saldoImportado (via OFX) de
+  // cada conta manual. null se nenhuma das contas tem saldo disponível
+  // ainda, pra não mostrar "R$ 0,00" enganoso.
+  const saldoConsolidado = useMemo(() => {
+    let total = 0;
+    let temAlgum = false;
+    if (statusInterQuery.data?.configurado && saldoInterQuery.data) {
+      total += parseFloat(saldoInterQuery.data.disponivel);
+      temAlgum = true;
+    }
+    for (const c of contas) {
+      if (c.tipo === "manual" && c.saldoImportado) {
+        total += parseFloat(c.saldoImportado);
+        temAlgum = true;
+      }
+    }
+    return temAlgum ? total : null;
+  }, [contas, statusInterQuery.data, saldoInterQuery.data]);
+
   function nomeConta(contaId: number | null) {
     if (!contaId) return "—";
     return contas.find((c) => c.id === contaId)?.nome ?? "—";
@@ -461,53 +539,51 @@ export default function Extratos() {
             </Card>
           )}
 
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card className="border-border/50 shadow-sm">
-              <CardHeader className="pb-2">
-                <CardDescription className="flex items-center gap-1.5">
-                  <Wallet className="h-4 w-4" />
-                  {contaAtual && contaAtual.tipo !== "inter_oauth" ? `Saldo (${contaAtual.nome})` : "Saldo Disponível (Inter)"}
+          <div className="grid gap-3 md:grid-cols-3">
+            <Card className="border-border/50 shadow-sm py-2.5">
+              <CardContent className="px-4">
+                <CardDescription className="flex items-center gap-1.5 text-xs">
+                  <Wallet className="h-3.5 w-3.5" />
+                  {!contaAtual ? "Saldo Consolidado" : contaAtual.tipo === "inter_oauth" ? "Saldo Disponível (Inter)" : `Saldo (${contaAtual.nome})`}
                 </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {contaAtual && contaAtual.tipo !== "inter_oauth" ? (
-                  contaAtual.saldoImportado ? (
-                    <>
-                      <div className="text-2xl font-bold">{fmtCurrencyExtrato(contaAtual.saldoImportado)}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        conforme OFX de {fmtDateExtrato(contaAtual.saldoImportadoEm ?? "")}
-                      </div>
-                    </>
+                {!contaAtual ? (
+                  saldoConsolidado !== null ? (
+                    <div className="text-base font-bold mt-0.5">{fmtCurrencyExtrato(saldoConsolidado)}</div>
                   ) : (
-                    <span className="text-sm text-muted-foreground">Importe um OFX pra ver o saldo</span>
+                    <span className="text-xs text-muted-foreground">Nenhuma conta com saldo configurado ainda</span>
                   )
-                ) : saldoInterQuery.isLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                ) : saldoInterQuery.data ? (
-                  <div className="text-2xl font-bold">{fmtCurrencyExtrato(saldoInterQuery.data.disponivel)}</div>
+                ) : contaAtual.tipo === "inter_oauth" ? (
+                  saldoInterQuery.isLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mt-0.5" />
+                  ) : saldoInterQuery.data ? (
+                    <div className="text-base font-bold mt-0.5">{fmtCurrencyExtrato(saldoInterQuery.data.disponivel)}</div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )
+                ) : contaAtual.saldoImportado ? (
+                  <>
+                    <div className="text-base font-bold mt-0.5">{fmtCurrencyExtrato(contaAtual.saldoImportado)}</div>
+                    <div className="text-[11px] text-muted-foreground">conforme OFX de {fmtDateExtrato(contaAtual.saldoImportadoEm ?? "")}</div>
+                  </>
                 ) : (
-                  <span className="text-sm text-muted-foreground">—</span>
+                  <span className="text-xs text-muted-foreground">Importe um OFX pra ver o saldo</span>
                 )}
               </CardContent>
             </Card>
-            <Card className="border-border/50 shadow-sm">
-              <CardHeader className="pb-2">
-                <CardDescription className="flex items-center gap-1.5">
-                  <TrendingUp className="h-4 w-4 text-green-600" /> Entradas no Período{contaAtual ? "" : " (todas as contas)"}
+            <Card className="border-border/50 shadow-sm py-2.5">
+              <CardContent className="px-4">
+                <CardDescription className="flex items-center gap-1.5 text-xs">
+                  <TrendingUp className="h-3.5 w-3.5 text-green-600" /> Entradas no Período{contaAtual ? "" : " (consolidado)"}
                 </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-green-700">{fmtCurrencyExtrato(totalCreditosExtrato)}</div>
+                <div className="text-base font-bold text-green-700 mt-0.5">{fmtCurrencyExtrato(totalCreditosExtrato)}</div>
               </CardContent>
             </Card>
-            <Card className="border-border/50 shadow-sm">
-              <CardHeader className="pb-2">
-                <CardDescription className="flex items-center gap-1.5">
-                  <DollarSign className="h-4 w-4 text-red-500" /> Saídas no Período{contaAtual ? "" : " (todas as contas)"}
+            <Card className="border-border/50 shadow-sm py-2.5">
+              <CardContent className="px-4">
+                <CardDescription className="flex items-center gap-1.5 text-xs">
+                  <DollarSign className="h-3.5 w-3.5 text-red-500" /> Saídas no Período{contaAtual ? "" : " (consolidado)"}
                 </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-red-600">{fmtCurrencyExtrato(totalDebitosExtrato)}</div>
+                <div className="text-base font-bold text-red-600 mt-0.5">{fmtCurrencyExtrato(totalDebitosExtrato)}</div>
               </CardContent>
             </Card>
           </div>
@@ -520,78 +596,24 @@ export default function Extratos() {
               <CardDescription>Transações de todas as contas, somadas por padrão</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-3 items-end">
-                <div className="space-y-1">
-                  <Label className="text-xs">Conta</Label>
-                  <div className="flex items-center gap-1">
-                    <Select value={contaSelecionadaId} onValueChange={setContaSelecionadaId}>
-                      <SelectTrigger className="w-56 h-8 text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="todas">Todas as contas</SelectItem>
-                        {contas.map((c) => (
-                          <SelectItem key={c.id} value={String(c.id)}>{c.nome}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {contaAtual && (
-                      <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" title="Editar conta" onClick={abrirEditarConta}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">Período</Label>
-                  <div className="flex gap-1 flex-wrap">
-                    {([
-                      ["mes_vigente", "Mês vigente"],
-                      ["15", "15 dias"],
-                      ["30", "30 dias"],
-                      ["60", "60 dias"],
-                      ["mes_anterior", "Mês anterior"],
-                    ] as [PeriodoRapido, string][]).map(([valor, label]) => (
-                      <Button
-                        key={valor}
-                        size="sm"
-                        variant={periodoAtivo === valor ? "default" : "outline"}
-                        className="h-8 text-xs"
-                        onClick={() => selecionarPeriodo(valor)}
-                      >
-                        {label}
-                      </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Tabs value={contaSelecionadaId} onValueChange={setContaSelecionadaId}>
+                  <TabsList className="h-auto flex-wrap justify-start p-1">
+                    <TabsTrigger value="todas" className="text-sm">Consolidado</TabsTrigger>
+                    {contas.map((c) => (
+                      <TabsTrigger key={c.id} value={String(c.id)} className="text-sm">{c.nome}</TabsTrigger>
                     ))}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Data início</Label>
-                  <Input
-                    type="date"
-                    value={dataInicioExtrato}
-                    onChange={(e) => { setDataInicioExtrato(e.target.value); setPeriodoAtivo("livre"); }}
-                    className="w-40 h-8 text-sm"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Data fim</Label>
-                  <Input
-                    type="date"
-                    value={dataFimExtrato}
-                    onChange={(e) => { setDataFimExtrato(e.target.value); setPeriodoAtivo("livre"); }}
-                    className="w-40 h-8 text-sm"
-                  />
-                </div>
-                <Button size="sm" variant="outline" onClick={() => extratosQuery.refetch()} disabled={extratosQuery.isFetching}>
-                  {extratosQuery.isFetching ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
-                  Atualizar
-                </Button>
-
+                  </TabsList>
+                </Tabs>
+                {contaAtual && (
+                  <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" title="Editar conta" onClick={abrirEditarConta}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
                 <Dialog open={contaModalOpen} onOpenChange={setContaModalOpen}>
                   <DialogTrigger asChild>
-                    <Button size="sm" variant="outline" onClick={abrirNovaConta}>
-                      <Plus className="h-3.5 w-3.5 mr-1.5" /> Nova conta
+                    <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={abrirNovaConta}>
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Nova conta
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
@@ -670,6 +692,53 @@ export default function Extratos() {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
+              </div>
+
+              <div className="flex flex-wrap gap-3 items-end">
+                <div className="space-y-1">
+                  <Label className="text-xs">Período</Label>
+                  <div className="flex gap-1 flex-wrap">
+                    {([
+                      ["mes_vigente", "Mês vigente"],
+                      ["15", "15 dias"],
+                      ["30", "30 dias"],
+                      ["60", "60 dias"],
+                      ["mes_anterior", "Mês anterior"],
+                    ] as [PeriodoRapido, string][]).map(([valor, label]) => (
+                      <Button
+                        key={valor}
+                        size="sm"
+                        variant={periodoAtivo === valor ? "default" : "outline"}
+                        className="h-8 text-xs"
+                        onClick={() => selecionarPeriodo(valor)}
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Data início</Label>
+                  <Input
+                    type="date"
+                    value={dataInicioExtrato}
+                    onChange={(e) => { setDataInicioExtrato(e.target.value); setPeriodoAtivo("livre"); }}
+                    className="w-40 h-8 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Data fim</Label>
+                  <Input
+                    type="date"
+                    value={dataFimExtrato}
+                    onChange={(e) => { setDataFimExtrato(e.target.value); setPeriodoAtivo("livre"); }}
+                    className="w-40 h-8 text-sm"
+                  />
+                </div>
+                <Button size="sm" variant="outline" onClick={() => extratosQuery.refetch()} disabled={extratosQuery.isFetching}>
+                  {extratosQuery.isFetching ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+                  Atualizar
+                </Button>
 
                 {statusInterQuery.data?.configurado && (
                   <Button
@@ -711,16 +780,6 @@ export default function Extratos() {
                   Importar OFX
                 </Button>
               </div>
-              {!contaIdSelecionada && (
-                <p className="text-xs text-muted-foreground">
-                  Selecione uma conta específica (não "Todas as contas") pra habilitar a importação.
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                <strong>OFX</strong> (recomendado — exportação padrão do banco, com ID de transação garantido)
-                ou <span className="font-mono">data;descricao;tipo;valor</span> em CSV (data AAAA-MM-DD ou DD/MM/AAAA,
-                tipo C/D, valor sempre positivo, cabeçalho opcional) ou o PDF do "Extrato completo" do Banco Inter.
-              </p>
 
               <div className="flex flex-wrap gap-3 items-end border-t border-border/30 pt-3">
                 <div className="space-y-1">
@@ -844,31 +903,15 @@ export default function Extratos() {
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-1.5">
-                                  <Select
-                                    value={t.dreCategoriaId ? String(t.dreCategoriaId) : "pendente"}
-                                    onValueChange={(v) => categorizarMutation.mutate({
+                                  <CategoriaDreCombobox
+                                    categorias={categorias}
+                                    value={t.dreCategoriaId}
+                                    status={t.categorizacaoStatus}
+                                    onChange={(id) => categorizarMutation.mutate({
                                       transacaoId: t.id,
-                                      dreCategoriaId: v === "pendente" ? null : Number(v),
+                                      dreCategoriaId: id,
                                     })}
-                                  >
-                                    <SelectTrigger
-                                      className={`h-7 text-xs ${
-                                        t.categorizacaoStatus === "confirmada"
-                                          ? "border-green-400 text-green-700"
-                                          : t.categorizacaoStatus === "sugerida"
-                                            ? "border-blue-400 text-blue-700"
-                                            : "border-amber-400 text-amber-700"
-                                      }`}
-                                    >
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="pendente">Pendente</SelectItem>
-                                      {categorias.map((c) => (
-                                        <SelectItem key={c.id} value={String(c.id)}>{c.nome}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                  />
                                   {t.categorizacaoStatus === "sugerida" && (
                                     <Button
                                       size="icon"

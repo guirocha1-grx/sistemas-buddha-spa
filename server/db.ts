@@ -449,6 +449,27 @@ export async function getOrCreateContaInter(unidadeId: number) {
   return novaConta[0];
 }
 
+/**
+ * Garante que a unidade tenha as contas "manuais" padrão do negócio
+ * (Sicredi, Mercado Pago) — auto-provisiona na primeira chamada, mesmo
+ * espírito do getOrCreateContaInter, sem precisar de seed manual. Não
+ * recria se o nome já existir (o usuário pode renomear/excluir depois).
+ */
+const CONTAS_PADRAO = ["Sicredi", "Mercado Pago"];
+
+export async function ensureContasPadrao(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return;
+  const existentes = await db.select({ nome: contas.nome }).from(contas).where(eq(contas.unidadeId, unidadeId));
+  const nomesExistentes = new Set(existentes.map((c) => c.nome));
+  for (const nome of CONTAS_PADRAO) {
+    if (!nomesExistentes.has(nome)) {
+      const insertValues: InsertConta = { unidadeId, nome, tipo: "manual" };
+      await db.insert(contas).values(insertValues);
+    }
+  }
+}
+
 export interface DadosConta {
   nome: string;
   agencia?: string;
