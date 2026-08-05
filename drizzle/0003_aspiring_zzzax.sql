@@ -100,6 +100,8 @@ ALTER TABLE `unidades` ADD `zapiToken` text;--> statement-breakpoint
 ALTER TABLE `unidades` ADD `zapiClientToken` text;--> statement-breakpoint
 ALTER TABLE `unidades` ADD `interClientId` text;--> statement-breakpoint
 ALTER TABLE `unidades` ADD `interClientSecret` text;--> statement-breakpoint
+ALTER TABLE `unidades` ADD `interCertificado` text;--> statement-breakpoint
+ALTER TABLE `unidades` ADD `interChavePrivada` text;--> statement-breakpoint
 ALTER TABLE `unidades` ADD `interContaCorrente` varchar(20);--> statement-breakpoint
 ALTER TABLE `unidades` ADD `interAccessToken` text;--> statement-breakpoint
 ALTER TABLE `unidades` ADD `interTokenExpiresAt` bigint;--> statement-breakpoint

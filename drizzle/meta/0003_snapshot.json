@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "cb082f7a-db82-4c1a-9215-80f13613ebba",
+  "id": "567ad9f8-6a42-405d-aed7-044e1b4f3e56",
   "prevId": "57be1fff-6ce9-489b-ad2b-c1e999561599",
   "tables": {
     "configuracoes": {
@@ -1281,6 +1281,20 @@
         },
         "interClientSecret": {
           "name": "interClientSecret",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "interCertificado": {
+          "name": "interCertificado",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "interChavePrivada": {
+          "name": "interChavePrivada",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
