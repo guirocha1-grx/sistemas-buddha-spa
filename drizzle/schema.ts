@@ -332,8 +332,9 @@ export const dreRegras = mysqlTable("dre_regras", {
   // pode ser erro de import ou mudança real que merece revisão).
   alertaSeRepetirNoMes: mysqlEnum("alertaSeRepetirNoMes", ["true", "false"]).default("false").notNull(),
   // seed = cadastrada por mim; aprendida = criada automaticamente
-  // quando o usuário categoriza uma transação manualmente.
-  origem: mysqlEnum("origem", ["seed", "aprendida"]).default("aprendida").notNull(),
+  // quando o usuário categoriza uma transação manualmente; manual =
+  // criada direto na tela de Parâmetros.
+  origem: mysqlEnum("origem", ["seed", "aprendida", "manual"]).default("aprendida").notNull(),
   ativa: mysqlEnum("ativa", ["true", "false"]).default("true").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

@@ -571,6 +571,83 @@ export async function listDreCategorias() {
 }
 
 /**
+ * Categoria nova no plano de contas — só inclusão (editar/excluir uma
+ * categoria existente mexe com histórico já categorizado, fica de fora
+ * por segurança).
+ */
+export async function criarDreCategoria(nome: string, secao: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const maxOrdem = await db.select({ ordem: dreCategorias.ordem }).from(dreCategorias)
+    .where(eq(dreCategorias.secao, secao as any)).orderBy(desc(dreCategorias.ordem)).limit(1);
+  const proximaOrdem = (maxOrdem[0]?.ordem ?? 0) + 1;
+  const result = await db.insert(dreCategorias).values({ nome, secao: secao as any, ordem: proximaOrdem }).$returningId();
+  return result[0]?.id;
+}
+
+export interface DadosDreRegra {
+  padrao: string;
+  dreCategoriaId: number;
+  valorMin?: string;
+  valorMax?: string;
+  alertaSeRepetirNoMes?: boolean;
+}
+
+/**
+ * Todas as regras (inclusive inativas) com o nome da categoria já
+ * resolvido — pra tela de gerenciamento em Parâmetros.
+ */
+export async function listDreRegrasCompleto() {
+  await ensureDreSeed();
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: dreRegras.id,
+    padrao: dreRegras.padrao,
+    dreCategoriaId: dreRegras.dreCategoriaId,
+    categoriaNome: dreCategorias.nome,
+    valorMin: dreRegras.valorMin,
+    valorMax: dreRegras.valorMax,
+    alertaSeRepetirNoMes: dreRegras.alertaSeRepetirNoMes,
+    origem: dreRegras.origem,
+    ativa: dreRegras.ativa,
+  })
+    .from(dreRegras)
+    .innerJoin(dreCategorias, eq(dreRegras.dreCategoriaId, dreCategorias.id))
+    .orderBy(dreCategorias.nome, dreRegras.padrao);
+}
+
+export async function criarDreRegra(dados: DadosDreRegra) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.insert(dreRegras).values({
+    padrao: dados.padrao,
+    dreCategoriaId: dados.dreCategoriaId,
+    valorMin: dados.valorMin,
+    valorMax: dados.valorMax,
+    alertaSeRepetirNoMes: dados.alertaSeRepetirNoMes ? "true" : "false",
+    origem: "manual",
+  }).$returningId();
+  return result[0]?.id;
+}
+
+export async function atualizarDreRegra(id: number, dados: Partial<DadosDreRegra>) {
+  const db = await getDb();
+  if (!db) return;
+  const { alertaSeRepetirNoMes, ...resto } = dados;
+  await db.update(dreRegras).set({
+    ...resto,
+    ...(alertaSeRepetirNoMes !== undefined ? { alertaSeRepetirNoMes: alertaSeRepetirNoMes ? "true" as const : "false" as const } : {}),
+  }).where(eq(dreRegras.id, id));
+}
+
+export async function ativarDesativarDreRegra(id: number, ativa: boolean) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(dreRegras).set({ ativa: ativa ? "true" : "false" }).where(eq(dreRegras.id, id));
+}
+
+/**
  * Regras ativas com o id da categoria já resolvido — buscar uma vez e
  * reusar num loop de importação em lote, em vez de uma query por
  * transação.

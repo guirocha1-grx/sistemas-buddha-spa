@@ -12,6 +12,7 @@ import Agenda from "./pages/Agenda";
 import Mensagens from "./pages/Mensagens";
 import Financeiro from "./pages/Financeiro";
 import Extratos from "./pages/Extratos";
+import Parametros from "./pages/Parametros";
 import Copilot from "./pages/Copilot";
 import Laminas from "./pages/Laminas";
 import Leads from "./pages/Leads";
@@ -28,6 +29,7 @@ function Router() {
         <Route path="/mensagens" component={Mensagens} />
         <Route path="/financeiro" component={Financeiro} />
         <Route path="/financeiro/extratos" component={Extratos} />
+        <Route path="/financeiro/parametros" component={Parametros} />
         <Route path="/copilot" component={Copilot} />
         <Route path="/laminas" component={Laminas} />
         <Route path="/leads" component={Leads} />

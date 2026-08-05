@@ -1162,6 +1162,61 @@ Diretrizes:
     list: protectedProcedure.query(async () => {
       return db.listDreCategorias();
     }),
+
+    criar: adminProcedure.input(z.object({
+      nome: z.string().min(1),
+      secao: z.enum(["receitas", "impostos", "custos_diretos", "despesas_pessoal", "marketing", "despesas_administrativas", "despesas_financeiras", "devolucoes", "excluido"]),
+    })).mutation(async ({ input }) => {
+      const id = await db.criarDreCategoria(input.nome, input.secao);
+      return { success: true, id };
+    }),
+  }),
+
+  // ===== Regras de categorização automática (tela Parâmetros) =====
+  dreRegras: router({
+    list: protectedProcedure.query(async () => {
+      return db.listDreRegrasCompleto();
+    }),
+
+    criar: adminProcedure.input(z.object({
+      padrao: z.string().min(1),
+      dreCategoriaId: z.number(),
+      valorMin: z.number().optional(),
+      valorMax: z.number().optional(),
+      alertaSeRepetirNoMes: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      const id = await db.criarDreRegra({
+        ...input,
+        valorMin: input.valorMin?.toFixed(2),
+        valorMax: input.valorMax?.toFixed(2),
+      });
+      return { success: true, id };
+    }),
+
+    atualizar: adminProcedure.input(z.object({
+      id: z.number(),
+      padrao: z.string().min(1).optional(),
+      dreCategoriaId: z.number().optional(),
+      valorMin: z.number().nullable().optional(),
+      valorMax: z.number().nullable().optional(),
+      alertaSeRepetirNoMes: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, valorMin, valorMax, ...resto } = input;
+      await db.atualizarDreRegra(id, {
+        ...resto,
+        valorMin: valorMin === null ? undefined : valorMin?.toFixed(2),
+        valorMax: valorMax === null ? undefined : valorMax?.toFixed(2),
+      });
+      return { success: true };
+    }),
+
+    ativarDesativar: adminProcedure.input(z.object({
+      id: z.number(),
+      ativa: z.boolean(),
+    })).mutation(async ({ input }) => {
+      await db.ativarDesativarDreRegra(input.id, input.ativa);
+      return { success: true };
+    }),
   }),
 
   // ===== Configurações globais (chave-valor) =====
