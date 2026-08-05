@@ -374,31 +374,7 @@ export async function upsertInterExtratos(
         .limit(1);
       if (existente.length > 0) continue;
     }
-    // Drizzle gera `default` para undefined/chaves ausentes, mas TiDB não
-    // aceita DEFAULT em colunas nullable sem DEFAULT definido. Garantir TODAS
-    // as colunas nullable com null explícito quando ausentes.
-    const limpo: Record<string, unknown> = {
-      idTransacao: t.idTransacao ?? null,
-      contaId: t.contaId ?? null,
-      dataTransacao: t.dataTransacao ?? null,
-      tipoTransacao: t.tipoTransacao ?? null,
-      titulo: t.titulo ?? null,
-      descricao: t.descricao ?? null,
-      detalhe: t.detalhe ?? null,
-      nomeOrigem: t.nomeOrigem ?? null,
-      nomeDestino: t.nomeDestino ?? null,
-      cpfCnpjOrigem: t.cpfCnpjOrigem ?? null,
-      cpfCnpjDestino: t.cpfCnpjDestino ?? null,
-      cpmf: t.cpmf ?? null,
-      dreCategoriaId: t.dreCategoriaId ?? null,
-      nota: t.nota ?? null,
-      alerta: t.alerta ?? null,
-    };
-    // Copiar apenas campos com valor (não undefined)
-    for (const [k, v] of Object.entries(t)) {
-      if (v !== undefined) limpo[k] = v;
-    }
-    await db.insert(interExtratos).values({ ...limpo, unidadeId } as any);
+    await db.insert(interExtratos).values({ ...t, unidadeId });
     inseridos++;
   }
   return inseridos;

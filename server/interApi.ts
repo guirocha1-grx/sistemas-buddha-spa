@@ -51,7 +51,9 @@ export interface InterExtratoResponse {
 
 export interface InterTransacaoCompleta {
   idTransacao: string;
-  dataEntrada: string;
+  // A API às vezes não devolve dataEntrada (observado em produção) —
+  // por isso opcional aqui; quem consome usa dataTransacao como fallback.
+  dataEntrada?: string;
   dataTransacao: string;
   tipoTransacao: string;
   tipoOperacao: string;

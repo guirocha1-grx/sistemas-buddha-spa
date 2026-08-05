@@ -782,11 +782,11 @@ Diretrizes:
       const contaInter = await db.getOrCreateContaInter(input.unidadeId);
       const regrasDre = await db.listRegrasParaMatch();
       const cnpjsContasDre = await db.listCnpjsDeContas();
-      const categorizar = async (t: { dataEntrada: string; tipoTransacao?: string; titulo?: string; descricao?: string; valor: string; cpfCnpjOrigem?: string; cpfCnpjDestino?: string }) => {
+      const categorizar = async (t: { dataEntrada?: string; dataTransacao?: string; tipoTransacao?: string; titulo?: string; descricao?: string; valor: string; cpfCnpjOrigem?: string; cpfCnpjDestino?: string }) => {
         if (!contaInter?.id) return { dreCategoriaId: undefined, categorizacaoStatus: "pendente" as const, alerta: null };
         const resultado = await db.categorizarTransacaoAutomaticamente({
           contaId: contaInter.id,
-          dataEntrada: t.dataEntrada,
+          dataEntrada: t.dataEntrada ?? t.dataTransacao ?? "",
           tipoTransacao: t.tipoTransacao,
           titulo: t.titulo,
           descricao: t.descricao,
@@ -827,7 +827,7 @@ Diretrizes:
             unidadeId: input.unidadeId,
             contaId: contaInter?.id,
             idTransacao: t.idTransacao,
-            dataEntrada: t.dataEntrada,
+            dataEntrada: t.dataEntrada ?? t.dataTransacao,
             dataTransacao: t.dataTransacao,
             tipoTransacao: t.tipoTransacao,
             tipoOperacao: (t.tipoOperacao === "D" || t.tipoOperacao === "C") ? t.tipoOperacao : "D",
@@ -869,7 +869,7 @@ Diretrizes:
               unidadeId: input.unidadeId,
               contaId: contaInter?.id,
               idTransacao: t.idTransacao,
-              dataEntrada: t.dataEntrada,
+              dataEntrada: t.dataEntrada ?? t.dataTransacao,
               dataTransacao: t.dataTransacao,
               tipoTransacao: t.tipoTransacao,
               tipoOperacao: (t.tipoOperacao === "D" || t.tipoOperacao === "C") ? t.tipoOperacao : "D",
