@@ -215,6 +215,16 @@ export const contas = mysqlTable("contas", {
   unidadeId: int("unidadeId").notNull(),
   nome: varchar("nome", { length: 128 }).notNull(),
   tipo: mysqlEnum("tipo", ["inter_oauth", "manual"]).default("manual").notNull(),
+  // Ag/conta/CNPJ — identifica a conta pra bater contra
+  // cpfCnpjOrigem/cpfCnpjDestino do extrato e detectar transferência
+  // entre contas próprias automaticamente (sem depender de texto).
+  agencia: varchar("agencia", { length: 20 }),
+  numeroConta: varchar("numeroConta", { length: 20 }),
+  cnpj: varchar("cnpj", { length: 20 }),
+  // Âncora pro saldo corrido (coluna Saldo na tabela): saldo real numa
+  // data conhecida + soma das transações a partir dali.
+  saldoInicial: decimal("saldoInicial", { precision: 12, scale: 2 }),
+  saldoInicialEm: varchar("saldoInicialEm", { length: 10 }), // AAAA-MM-DD
   // Saldo extraído do <LEDGERBAL> na última importação de OFX — só
   // usado por contas "manual" (sem API própria pra consultar saldo ao
   // vivo, tipo o inter_oauth já tem via inter.saldo).
@@ -260,6 +270,9 @@ export const interExtratos = mysqlTable("inter_extratos", {
   // Terapeutas"), a nota esclarece o caso específico (ex.: "Repasse Ana
   // Paula") sem precisar criar categoria nova pra cada pessoa/situação.
   nota: text("nota"),
+  // Aviso não-bloqueante (ex.: "já tem outra 'Limpeza' este mês, confira
+  // duplicidade") — null = sem aviso.
+  alerta: text("alerta"),
   syncedAt: timestamp("syncedAt").defaultNow().notNull(),
 }, (table) => ({
   unidadeDataIdx: index("inter_extratos_unidade_data_idx").on(table.unidadeId, table.dataEntrada),
@@ -309,6 +322,15 @@ export const dreRegras = mysqlTable("dre_regras", {
   id: int("id").autoincrement().primaryKey(),
   padrao: varchar("padrao", { length: 256 }).notNull(),
   dreCategoriaId: int("dreCategoriaId").notNull(),
+  // Faixa de valor opcional — mesma contraparte pode significar coisas
+  // diferentes dependendo do valor (ex.: MDS Serviços até R$1.600 é
+  // limpeza, acima é lavanderia). Null = sem restrição de valor.
+  valorMin: decimal("valorMin", { precision: 12, scale: 2 }),
+  valorMax: decimal("valorMax", { precision: 12, scale: 2 }),
+  // Se true, alerta quando já existir outra transação da mesma regra
+  // no mesmo mês/conta — pensado pra despesa mensal única (se duplicar,
+  // pode ser erro de import ou mudança real que merece revisão).
+  alertaSeRepetirNoMes: mysqlEnum("alertaSeRepetirNoMes", ["true", "false"]).default("false").notNull(),
   // seed = cadastrada por mim; aprendida = criada automaticamente
   // quando o usuário categoriza uma transação manualmente.
   origem: mysqlEnum("origem", ["seed", "aprendida"]).default("aprendida").notNull(),

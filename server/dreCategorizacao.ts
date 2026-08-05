@@ -114,12 +114,20 @@ export const DRE_CATEGORIAS_SEED: { nome: string; secao: DreSecao; ordem: number
   { nome: EXCLUIDO_NOME, secao: "excluido", ordem: 1 },
 ];
 
+export interface DreRegraSeed {
+  padrao: string;
+  categoriaNome: string;
+  valorMin?: number;
+  valorMax?: number;
+  alertaSeRepetirNoMes?: boolean;
+}
+
 /**
  * Regras conservadoras — só as que têm padrão de texto confirmado e
  * confiável. Confiança > cobertura: prefiro deixar "Pendente" (revisão
  * manual) a arriscar categorizar errado um valor grande.
  */
-export const DRE_REGRAS_SEED: { padrao: string; categoriaNome: string }[] = [
+export const DRE_REGRAS_SEED: DreRegraSeed[] = [
   { padrao: "Eleva", categoriaNome: "Sistemas / Softwares" },
   { padrao: "Belle", categoriaNome: "Sistemas / Softwares" },
   { padrao: "Mywork", categoriaNome: "Sistemas / Softwares" },
@@ -132,22 +140,69 @@ export const DRE_REGRAS_SEED: { padrao: string; categoriaNome: string }[] = [
   // relacionado ao empréstimo.
   { padrao: "Vanessa", categoriaNome: "Juros + Multas" },
   { padrao: "Transferência", categoriaNome: EXCLUIDO_NOME },
+
+  // Confirmadas pelo usuário em 2026-08-05:
+  // "Pix recebido no Inter é sempre receita" — a expressão "Pix recebido"
+  // só aparece nesse formato no vocabulário do Inter (sync/PDF), então
+  // essa regra já fica naturalmente restrita a esses dois canais.
+  { padrao: "Pix recebido", categoriaNome: "Receitas de Vendas" },
+  { padrao: "voucher", categoriaNome: "Parcerias Comerciais" },
+  { padrao: "convênio", categoriaNome: "Parcerias Comerciais" },
+  { padrao: "Totalpass", categoriaNome: "Parcerias Comerciais" },
+  { padrao: "Wellhub", categoriaNome: "Parcerias Comerciais" },
+  // MDS Serviços Terceirizados: até R$1.600 é limpeza, acima é lavanderia
+  // — mesma contraparte, categoria decidida pelo valor. Alerta se repetir
+  // no mês (normalmente só tem 1 de cada por mês).
+  { padrao: "MDS SERVICOS TERCEIRIZADOS", categoriaNome: "Limpeza", valorMax: 1600, alertaSeRepetirNoMes: true },
+  { padrao: "MDS SERVICOS TERCEIRIZADOS", categoriaNome: "Lavanderia", valorMin: 1600.01, alertaSeRepetirNoMes: true },
 ];
+
+export interface RegraMatch {
+  padrao: string;
+  categoriaNome: string;
+  valorMin: number | null;
+  valorMax: number | null;
+}
 
 /**
  * Match simples: primeira regra ativa cujo padrão aparece (case-
- * insensitive) no texto combinado da transação. Sem match = null
- * (Pendente, revisão manual).
+ * insensitive) no texto combinado da transação E cujo valor (se a regra
+ * tiver faixa) cai dentro do intervalo. Sem match = null (Pendente,
+ * revisão manual).
  */
 export function sugerirCategoriaNome(
   textoTransacao: string,
-  regras: { padrao: string; categoriaNome: string }[],
+  valor: number,
+  regras: RegraMatch[],
 ): string | null {
   const texto = textoTransacao.toLowerCase();
   for (const regra of regras) {
-    if (texto.includes(regra.padrao.toLowerCase())) return regra.categoriaNome;
+    if (!texto.includes(regra.padrao.toLowerCase())) continue;
+    if (regra.valorMin !== null && valor < regra.valorMin) continue;
+    if (regra.valorMax !== null && valor > regra.valorMax) continue;
+    return regra.categoriaNome;
   }
   return null;
+}
+
+/**
+ * CNPJ de origem ou destino batendo com alguma conta própria cadastrada
+ * = transferência entre contas, sempre excluída do DRE. Prioridade
+ * máxima — roda antes das regras de texto porque é exato, não um
+ * chute por padrão.
+ */
+export function ehTransferenciaEntreContas(
+  cpfCnpjOrigem: string | null | undefined,
+  cpfCnpjDestino: string | null | undefined,
+  cnpjsContas: string[],
+): boolean {
+  if (cnpjsContas.length === 0) return false;
+  const origemLimpo = cpfCnpjOrigem?.replace(/\D/g, "");
+  const destinoLimpo = cpfCnpjDestino?.replace(/\D/g, "");
+  return !!(
+    (origemLimpo && cnpjsContas.includes(origemLimpo)) ||
+    (destinoLimpo && cnpjsContas.includes(destinoLimpo))
+  );
 }
 
 const MIN_TAMANHO_PADRAO_APRENDIDO = 5;

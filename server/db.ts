@@ -1,8 +1,8 @@
-import { eq, desc, and, gte, lte, isNull } from "drizzle-orm";
+import { eq, desc, and, gte, lte, isNull, like, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreRegras, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta } from "../drizzle/schema";
 import { ENV } from './_core/env';
-import { DRE_CATEGORIAS_SEED, DRE_REGRAS_SEED, sugerirCategoriaNome, extrairPadraoContraparte } from "./dreCategorizacao";
+import { DRE_CATEGORIAS_SEED, DRE_REGRAS_SEED, sugerirCategoriaNome, extrairPadraoContraparte, ehTransferenciaEntreContas, EXCLUIDO_NOME, type RegraMatch } from "./dreCategorizacao";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -415,6 +415,19 @@ export async function listContas(unidadeId: number) {
 }
 
 /**
+ * CNPJs de todas as contas cadastradas (qualquer unidade — transferência
+ * entre Satori e Agama, por exemplo, atravessa unidade). Normalizado
+ * (só dígitos), pra bater contra cpfCnpjOrigem/cpfCnpjDestino do extrato
+ * sem depender de formatação.
+ */
+export async function listCnpjsDeContas(): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const todas = await db.select({ cnpj: contas.cnpj }).from(contas);
+  return todas.map((c) => c.cnpj?.replace(/\D/g, "")).filter((c): c is string => !!c);
+}
+
+/**
  * Garante que a unidade tenha uma conta "Banco Inter" (auto-cria na
  * primeira chamada, sem precisar de seed manual). Usada tanto pra listar
  * contas quanto pelo sync automático, pra ter um contaId real pra marcar
@@ -436,18 +449,58 @@ export async function getOrCreateContaInter(unidadeId: number) {
   return novaConta[0];
 }
 
-export async function createConta(unidadeId: number, nome: string) {
+export interface DadosConta {
+  nome: string;
+  agencia?: string;
+  numeroConta?: string;
+  cnpj?: string;
+  saldoInicial?: string;
+  saldoInicialEm?: string;
+}
+
+export async function createConta(unidadeId: number, dados: DadosConta) {
   const db = await getDb();
   if (!db) return undefined;
-  const insertValues: InsertConta = { unidadeId, nome, tipo: "manual" };
+  const insertValues: InsertConta = { unidadeId, tipo: "manual", ...dados };
   const result = await db.insert(contas).values(insertValues).$returningId();
   return result[0]?.id;
 }
 
-export async function renameConta(id: number, nome: string) {
+export async function atualizarConta(id: number, dados: Partial<DadosConta>) {
   const db = await getDb();
   if (!db) return;
-  await db.update(contas).set({ nome }).where(eq(contas.id, id));
+  await db.update(contas).set(dados).where(eq(contas.id, id));
+}
+
+/**
+ * Saldo real da conta na data de início de um período — âncora
+ * (saldoInicial na sua data) + soma de tudo que já aconteceu entre a
+ * âncora e o dia anterior ao período. Retorna null se a conta não tem
+ * saldo inicial cadastrado (não dá pra calcular saldo corrido sem
+ * ponto de partida).
+ */
+export async function calcularSaldoNaData(contaId: number, dataInicioPeriodo: string): Promise<number | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const conta = await getContaById(contaId);
+  if (!conta?.saldoInicial || !conta.saldoInicialEm) return null;
+
+  const transacoesAntes = await db.select().from(interExtratos)
+    .where(and(
+      eq(interExtratos.contaId, contaId),
+      gte(interExtratos.dataEntrada, conta.saldoInicialEm),
+      lte(interExtratos.dataEntrada, dataInicioPeriodo),
+    ));
+
+  let saldo = parseFloat(conta.saldoInicial);
+  for (const t of transacoesAntes) {
+    // Se a data de início do período coincidir com uma transação, ela
+    // entra no cálculo do próprio dia (a coluna Saldo soma no acumulado
+    // do dia), não no "saldo antes do período" — evita contar 2x.
+    if (t.dataEntrada >= dataInicioPeriodo) continue;
+    saldo += (t.tipoOperacao === "C" ? 1 : -1) * parseFloat(t.valor);
+  }
+  return saldo;
 }
 
 /**
@@ -494,9 +547,16 @@ export async function ensureDreSeed() {
     .map((r) => {
       const dreCategoriaId = idPorNome.get(r.categoriaNome);
       if (!dreCategoriaId) return null;
-      return { padrao: r.padrao, dreCategoriaId, origem: "seed" as const };
+      return {
+        padrao: r.padrao,
+        dreCategoriaId,
+        origem: "seed" as const,
+        valorMin: r.valorMin?.toFixed(2),
+        valorMax: r.valorMax?.toFixed(2),
+        alertaSeRepetirNoMes: r.alertaSeRepetirNoMes ? ("true" as const) : ("false" as const),
+      };
     })
-    .filter((r): r is { padrao: string; dreCategoriaId: number; origem: "seed" } => r !== null);
+    .filter((r): r is NonNullable<typeof r> => r !== null);
 
   if (regrasParaInserir.length > 0) {
     await db.insert(dreRegras).values(regrasParaInserir);
@@ -515,28 +575,98 @@ export async function listDreCategorias() {
  * reusar num loop de importação em lote, em vez de uma query por
  * transação.
  */
-export async function listRegrasParaMatch(): Promise<{ padrao: string; categoriaNome: string; dreCategoriaId: number }[]> {
+export async function listRegrasParaMatch(): Promise<(RegraMatch & { dreCategoriaId: number; alertaSeRepetirNoMes: boolean })[]> {
   await ensureDreSeed();
   const db = await getDb();
   if (!db) return [];
-  return db.select({
+  const linhas = await db.select({
     padrao: dreRegras.padrao,
     categoriaNome: dreCategorias.nome,
     dreCategoriaId: dreRegras.dreCategoriaId,
+    valorMin: dreRegras.valorMin,
+    valorMax: dreRegras.valorMax,
+    alertaSeRepetirNoMes: dreRegras.alertaSeRepetirNoMes,
   })
     .from(dreRegras)
     .innerJoin(dreCategorias, eq(dreRegras.dreCategoriaId, dreCategorias.id))
     .where(eq(dreRegras.ativa, "true"));
+
+  return linhas.map((r) => ({
+    ...r,
+    valorMin: r.valorMin !== null ? parseFloat(r.valorMin) : null,
+    valorMax: r.valorMax !== null ? parseFloat(r.valorMax) : null,
+    alertaSeRepetirNoMes: r.alertaSeRepetirNoMes === "true",
+  }));
+}
+
+export interface DadosParaCategorizar {
+  contaId: number;
+  dataEntrada: string; // AAAA-MM-DD
+  tipoTransacao?: string | null;
+  titulo?: string | null;
+  descricao?: string | null;
+  valor: number; // sempre positivo
+  cpfCnpjOrigem?: string | null;
+  cpfCnpjDestino?: string | null;
+}
+
+/**
+ * Ponto único de categorização automática — usado no import (sync,
+ * CSV, PDF, OFX) e no reprocessamento de pendentes. Ordem de
+ * prioridade: (1) CNPJ batendo com conta própria = transferência,
+ * sempre excluída do DRE, sem exceção; (2) regra de texto/valor.
+ * Se a regra tiver alertaSeRepetirNoMes e já existir outra transação
+ * da mesma categoria na mesma conta no mesmo mês, marca um aviso (não
+ * bloqueia, só avisa).
+ */
+export async function categorizarTransacaoAutomaticamente(
+  dados: DadosParaCategorizar,
+  regras: (RegraMatch & { dreCategoriaId: number; alertaSeRepetirNoMes: boolean })[],
+  cnpjsContas: string[],
+  transacaoIdParaExcluirDoAlerta?: number,
+): Promise<{ dreCategoriaId: number | null; categorizacaoStatus: "sugerida" | "pendente"; alerta: string | null }> {
+  if (ehTransferenciaEntreContas(dados.cpfCnpjOrigem, dados.cpfCnpjDestino, cnpjsContas)) {
+    const excluidoId = regras.find((r) => r.categoriaNome === EXCLUIDO_NOME)?.dreCategoriaId;
+    if (excluidoId) return { dreCategoriaId: excluidoId, categorizacaoStatus: "sugerida", alerta: null };
+  }
+
+  const texto = `${dados.tipoTransacao ?? ""} ${dados.titulo ?? ""} ${dados.descricao ?? ""}`;
+  const categoriaNome = sugerirCategoriaNome(texto, dados.valor, regras);
+  if (!categoriaNome) return { dreCategoriaId: null, categorizacaoStatus: "pendente", alerta: null };
+
+  const regra = regras.find((r) => r.categoriaNome === categoriaNome && texto.toLowerCase().includes(r.padrao.toLowerCase()));
+  const dreCategoriaId = regra?.dreCategoriaId;
+  if (!dreCategoriaId) return { dreCategoriaId: null, categorizacaoStatus: "pendente", alerta: null };
+
+  let alerta: string | null = null;
+  if (regra?.alertaSeRepetirNoMes) {
+    const db = await getDb();
+    if (db) {
+      const mesPrefixo = dados.dataEntrada.slice(0, 7); // AAAA-MM
+      const condicoes = [
+        eq(interExtratos.contaId, dados.contaId),
+        eq(interExtratos.dreCategoriaId, dreCategoriaId),
+        like(interExtratos.dataEntrada, `${mesPrefixo}%`),
+      ];
+      if (transacaoIdParaExcluirDoAlerta) condicoes.push(ne(interExtratos.id, transacaoIdParaExcluirDoAlerta));
+      const outras = await db.select({ id: interExtratos.id }).from(interExtratos).where(and(...condicoes)).limit(1);
+      if (outras.length > 0) {
+        alerta = `Já existe outro lançamento de "${categoriaNome}" nesta conta em ${mesPrefixo} — confira se não é duplicidade.`;
+      }
+    }
+  }
+
+  return { dreCategoriaId, categorizacaoStatus: "sugerida", alerta };
 }
 
 /**
  * Sugere uma categoria pro texto combinado (histórico + descrição) de
  * uma transação avulsa. Retorna null (Pendente) se nenhuma regra bater.
- * Pra lote, use listRegrasParaMatch() + sugerirCategoriaNome() direto.
+ * Pra lote, use listRegrasParaMatch() + categorizarTransacaoAutomaticamente() direto.
  */
-export async function sugerirCategoriaId(textoTransacao: string): Promise<number | null> {
+export async function sugerirCategoriaId(textoTransacao: string, valor: number): Promise<number | null> {
   const regras = await listRegrasParaMatch();
-  const nomeSugerido = sugerirCategoriaNome(textoTransacao, regras);
+  const nomeSugerido = sugerirCategoriaNome(textoTransacao, valor, regras);
   if (!nomeSugerido) return null;
   return regras.find((r) => r.categoriaNome === nomeSugerido)?.dreCategoriaId ?? null;
 }
@@ -558,18 +688,29 @@ export async function reprocessarPendentes(unidadeId: number): Promise<number> {
 
   const regras = await listRegrasParaMatch();
   if (regras.length === 0) return 0;
+  const cnpjsContas = await listCnpjsDeContas();
 
   const pendentes = await db.select().from(interExtratos)
     .where(and(eq(interExtratos.unidadeId, unidadeId), eq(interExtratos.categorizacaoStatus, "pendente")));
 
   let atualizados = 0;
   for (const t of pendentes) {
-    const texto = `${t.tipoTransacao ?? ""} ${t.titulo ?? ""} ${t.descricao ?? ""}`;
-    const categoriaNome = sugerirCategoriaNome(texto, regras);
-    if (!categoriaNome) continue;
-    const dreCategoriaId = regras.find((r) => r.categoriaNome === categoriaNome)?.dreCategoriaId;
-    if (!dreCategoriaId) continue;
-    await db.update(interExtratos).set({ dreCategoriaId, categorizacaoStatus: "sugerida" }).where(eq(interExtratos.id, t.id));
+    const resultado = await categorizarTransacaoAutomaticamente({
+      contaId: t.contaId ?? 0,
+      dataEntrada: t.dataEntrada,
+      tipoTransacao: t.tipoTransacao,
+      titulo: t.titulo,
+      descricao: t.descricao,
+      valor: parseFloat(t.valor),
+      cpfCnpjOrigem: t.cpfCnpjOrigem,
+      cpfCnpjDestino: t.cpfCnpjDestino,
+    }, regras, cnpjsContas, t.id);
+    if (!resultado.dreCategoriaId) continue;
+    await db.update(interExtratos).set({
+      dreCategoriaId: resultado.dreCategoriaId,
+      categorizacaoStatus: resultado.categorizacaoStatus,
+      alerta: resultado.alerta,
+    }).where(eq(interExtratos.id, t.id));
     atualizados++;
   }
   return atualizados;
