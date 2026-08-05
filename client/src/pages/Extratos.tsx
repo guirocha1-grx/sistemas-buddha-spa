@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Landmark } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Landmark, Check } from "lucide-react";
 import { toast } from "sonner";
 
 // ===== Parser de CSV =====
@@ -152,6 +152,16 @@ export default function Extratos() {
   const categorias = categoriasQuery.data ?? [];
 
   const categorizarMutation = trpc.inter.categorizar.useMutation({
+    onSuccess: (data) => {
+      if (data.regraAprendida) {
+        toast.success("Categorizado — regra nova aprendida pra reconhecer essa contraparte sozinho da próxima vez.");
+      }
+      utils.inter.extratos.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const confirmarMutation = trpc.inter.confirmarSugestao.useMutation({
     onSuccess: () => utils.inter.extratos.invalidate(),
     onError: (err) => toast.error(err.message),
   });
@@ -462,11 +472,18 @@ export default function Extratos() {
                 tipo C/D, valor sempre positivo, cabeçalho opcional) ou o PDF do "Extrato completo" do Banco Inter.
               </p>
 
-              {transacoesExtrato.some((t) => !t.dreCategoriaId) && (
+              {(transacoesExtrato.some((t) => t.categorizacaoStatus === "pendente") || transacoesExtrato.some((t) => t.categorizacaoStatus === "sugerida")) && (
                 <div className="flex justify-end items-center gap-2">
-                  <Badge variant="outline" className="text-xs border-amber-400 text-amber-700">
-                    {transacoesExtrato.filter((t) => !t.dreCategoriaId).length} pendente(s) de categorização
-                  </Badge>
+                  {transacoesExtrato.some((t) => t.categorizacaoStatus === "sugerida") && (
+                    <Badge variant="outline" className="text-xs border-blue-400 text-blue-700">
+                      {transacoesExtrato.filter((t) => t.categorizacaoStatus === "sugerida").length} sugerida(s), aguardando confirmação
+                    </Badge>
+                  )}
+                  {transacoesExtrato.some((t) => t.categorizacaoStatus === "pendente") && (
+                    <Badge variant="outline" className="text-xs border-amber-400 text-amber-700">
+                      {transacoesExtrato.filter((t) => t.categorizacaoStatus === "pendente").length} pendente(s) de categorização
+                    </Badge>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
@@ -522,23 +539,45 @@ export default function Extratos() {
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                <Select
-                                  value={t.dreCategoriaId ? String(t.dreCategoriaId) : "pendente"}
-                                  onValueChange={(v) => categorizarMutation.mutate({
-                                    transacaoId: t.id,
-                                    dreCategoriaId: v === "pendente" ? null : Number(v),
-                                  })}
-                                >
-                                  <SelectTrigger className={`h-7 text-xs ${!t.dreCategoriaId ? "border-amber-400 text-amber-700" : ""}`}>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="pendente">Pendente</SelectItem>
-                                    {categorias.map((c) => (
-                                      <SelectItem key={c.id} value={String(c.id)}>{c.nome}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                <div className="flex items-center gap-1.5">
+                                  <Select
+                                    value={t.dreCategoriaId ? String(t.dreCategoriaId) : "pendente"}
+                                    onValueChange={(v) => categorizarMutation.mutate({
+                                      transacaoId: t.id,
+                                      dreCategoriaId: v === "pendente" ? null : Number(v),
+                                    })}
+                                  >
+                                    <SelectTrigger
+                                      className={`h-7 text-xs ${
+                                        t.categorizacaoStatus === "confirmada"
+                                          ? "border-green-400 text-green-700"
+                                          : t.categorizacaoStatus === "sugerida"
+                                            ? "border-blue-400 text-blue-700"
+                                            : "border-amber-400 text-amber-700"
+                                      }`}
+                                    >
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="pendente">Pendente</SelectItem>
+                                      {categorias.map((c) => (
+                                        <SelectItem key={c.id} value={String(c.id)}>{c.nome}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  {t.categorizacaoStatus === "sugerida" && (
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-6 w-6 text-blue-700 hover:text-green-700 hover:bg-green-50 shrink-0"
+                                      title="Confirmar sugestão"
+                                      onClick={() => confirmarMutation.mutate({ transacaoId: t.id })}
+                                      disabled={confirmarMutation.isPending}
+                                    >
+                                      <Check className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                </div>
                               </TableCell>
                               <TableCell className="text-right font-medium">
                                 <span className={t.tipoOperacao === "C" ? "text-green-700" : "text-red-600"}>

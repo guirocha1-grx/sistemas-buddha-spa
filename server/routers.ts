@@ -698,13 +698,27 @@ Diretrizes:
     /**
      * Define/corrige manualmente a categoria de DRE de uma transação —
      * o "Descrição (manual)" da planilha antiga. dreCategoriaId null
-     * volta a transação pra "Pendente".
+     * volta a transação pra "Pendente". Marca como "confirmada" e tenta
+     * aprender uma regra nova a partir da contraparte, aplicando de
+     * imediato em outras transações pendentes da mesma unidade (que
+     * viram "sugerida", aguardando 1 clique de confirmação).
      */
     categorizar: protectedProcedure.input(z.object({
       transacaoId: z.number(),
       dreCategoriaId: z.number().nullable(),
     })).mutation(async ({ input }) => {
-      await db.setCategoriaTransacao(input.transacaoId, input.dreCategoriaId);
+      const { regraAprendida } = await db.categorizarManual(input.transacaoId, input.dreCategoriaId);
+      return { success: true, regraAprendida };
+    }),
+
+    /**
+     * Confirma uma sugestão automática sem trocar a categoria — o
+     * "tá certo" de 1 clique.
+     */
+    confirmarSugestao: protectedProcedure.input(z.object({
+      transacaoId: z.number(),
+    })).mutation(async ({ input }) => {
+      await db.confirmarSugestao(input.transacaoId);
       return { success: true };
     }),
 
@@ -751,7 +765,8 @@ Diretrizes:
       const categorizar = (t: { tipoTransacao?: string; titulo?: string; descricao?: string }) => {
         const texto = `${t.tipoTransacao ?? ""} ${t.titulo ?? ""} ${t.descricao ?? ""}`;
         const categoriaNome = sugerirCategoriaNome(texto, regrasDre);
-        return regrasDre.find((r) => r.categoriaNome === categoriaNome)?.dreCategoriaId;
+        const dreCategoriaId = regrasDre.find((r) => r.categoriaNome === categoriaNome)?.dreCategoriaId;
+        return { dreCategoriaId, categorizacaoStatus: dreCategoriaId ? ("sugerida" as const) : ("pendente" as const) };
       };
 
       let totalInseridos = 0;
@@ -796,7 +811,7 @@ Diretrizes:
             cpfCnpjOrigem: t.cpfCnpjOrigem,
             cpfCnpjDestino: t.cpfCnpjDestino,
             cpmf: t.cpmf,
-            dreCategoriaId: categorizar(t),
+            ...categorizar(t),
           })),
         );
         totalInseridos += inseridos;
@@ -837,7 +852,7 @@ Diretrizes:
               cpfCnpjOrigem: t.cpfCnpjOrigem,
               cpfCnpjDestino: t.cpfCnpjDestino,
               cpmf: t.cpmf,
-              dreCategoriaId: categorizar(t),
+              ...categorizar(t),
             })),
           );
           totalInseridos += ins;
@@ -913,6 +928,7 @@ Diretrizes:
           titulo: linha.descricao,
           origem: "csv" as const,
           dreCategoriaId,
+          categorizacaoStatus: dreCategoriaId ? ("sugerida" as const) : ("pendente" as const),
         };
       });
       const inseridos = await db.upsertInterExtratos(conta.unidadeId, transacoes);
@@ -969,6 +985,7 @@ Diretrizes:
           titulo: linha.descricao,
           origem: "pdf" as const,
           dreCategoriaId,
+          categorizacaoStatus: dreCategoriaId ? ("sugerida" as const) : ("pendente" as const),
         };
       });
 
@@ -1015,6 +1032,7 @@ Diretrizes:
           titulo: linha.descricao,
           origem: "ofx" as const,
           dreCategoriaId,
+          categorizacaoStatus: dreCategoriaId ? ("sugerida" as const) : ("pendente" as const),
         };
       });
 

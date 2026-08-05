@@ -2,7 +2,7 @@ import { eq, desc, and, gte, lte, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreRegras, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta } from "../drizzle/schema";
 import { ENV } from './_core/env';
-import { DRE_CATEGORIAS_SEED, DRE_REGRAS_SEED, sugerirCategoriaNome } from "./dreCategorizacao";
+import { DRE_CATEGORIAS_SEED, DRE_REGRAS_SEED, sugerirCategoriaNome, extrairPadraoContraparte } from "./dreCategorizacao";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -480,9 +480,9 @@ export async function ensureDreSeed() {
     .map((r) => {
       const dreCategoriaId = idPorNome.get(r.categoriaNome);
       if (!dreCategoriaId) return null;
-      return { padrao: r.padrao, dreCategoriaId };
+      return { padrao: r.padrao, dreCategoriaId, origem: "seed" as const };
     })
-    .filter((r): r is { padrao: string; dreCategoriaId: number } => r !== null);
+    .filter((r): r is { padrao: string; dreCategoriaId: number; origem: "seed" } => r !== null);
 
   if (regrasParaInserir.length > 0) {
     await db.insert(dreRegras).values(regrasParaInserir);
@@ -528,12 +528,15 @@ export async function sugerirCategoriaId(textoTransacao: string): Promise<number
 }
 
 /**
- * Reaplica as regras atuais em transações já importadas que ainda estão
- * "Pendente" (dreCategoriaId null). Necessário porque a categorização só
- * roda no momento do import — toda vez que uma regra nova é adicionada
- * (ex.: resolvendo um dos itens em aberto), as linhas antigas continuam
- * pendentes até alguém rodar isso. Não mexe em linha já categorizada
- * (manual ou automática anterior).
+ * Reaplica as regras atuais em transações que ainda estão "pendente".
+ * Necessário porque a categorização só roda no momento do import ou
+ * quando uma regra nova é aprendida — toda vez que uma regra nova entra,
+ * as linhas antigas continuam pendentes até alguém rodar isso. Não mexe
+ * em linha "sugerida" ou "confirmada".
+ *
+ * Resultado vira "sugerida" (não "confirmada") — é o sistema aplicando
+ * uma regra, não uma decisão humana; ainda precisa de 1 clique de
+ * confirmação.
  */
 export async function reprocessarPendentes(unidadeId: number): Promise<number> {
   const db = await getDb();
@@ -543,7 +546,7 @@ export async function reprocessarPendentes(unidadeId: number): Promise<number> {
   if (regras.length === 0) return 0;
 
   const pendentes = await db.select().from(interExtratos)
-    .where(and(eq(interExtratos.unidadeId, unidadeId), isNull(interExtratos.dreCategoriaId)));
+    .where(and(eq(interExtratos.unidadeId, unidadeId), eq(interExtratos.categorizacaoStatus, "pendente")));
 
   let atualizados = 0;
   for (const t of pendentes) {
@@ -552,14 +555,58 @@ export async function reprocessarPendentes(unidadeId: number): Promise<number> {
     if (!categoriaNome) continue;
     const dreCategoriaId = regras.find((r) => r.categoriaNome === categoriaNome)?.dreCategoriaId;
     if (!dreCategoriaId) continue;
-    await db.update(interExtratos).set({ dreCategoriaId }).where(eq(interExtratos.id, t.id));
+    await db.update(interExtratos).set({ dreCategoriaId, categorizacaoStatus: "sugerida" }).where(eq(interExtratos.id, t.id));
     atualizados++;
   }
   return atualizados;
 }
 
-export async function setCategoriaTransacao(transacaoId: number, dreCategoriaId: number | null) {
+/**
+ * Decisão humana: usuário escolhe (ou corrige) a categoria de uma
+ * transação pelo seletor. Marca como "confirmada" direto (não precisa
+ * de segundo clique) e, se a categoria não for nula, tenta "aprender"
+ * uma regra nova a partir da contraparte dessa transação — pra próxima
+ * vez que aparecer um pagamento parecido, o sistema já sugerir sozinho.
+ *
+ * Regra aprendida é aplicada de imediato nas outras transações
+ * "pendente" da unidade (via reprocessarPendentes), viram "sugerida" —
+ * o usuário confirma cada uma com 1 clique, não fica automático demais.
+ */
+export async function categorizarManual(transacaoId: number, dreCategoriaId: number | null): Promise<{ regraAprendida: boolean }> {
+  const db = await getDb();
+  if (!db) return { regraAprendida: false };
+
+  if (dreCategoriaId === null) {
+    await db.update(interExtratos).set({ dreCategoriaId: null, categorizacaoStatus: "pendente" }).where(eq(interExtratos.id, transacaoId));
+    return { regraAprendida: false };
+  }
+
+  const [transacao] = await db.select().from(interExtratos).where(eq(interExtratos.id, transacaoId)).limit(1);
+  await db.update(interExtratos).set({ dreCategoriaId, categorizacaoStatus: "confirmada" }).where(eq(interExtratos.id, transacaoId));
+  if (!transacao) return { regraAprendida: false };
+
+  const textoContraparte = transacao.titulo || transacao.descricao || "";
+  const padrao = extrairPadraoContraparte(textoContraparte);
+  if (!padrao) return { regraAprendida: false };
+
+  const jaExiste = await db.select({ id: dreRegras.id }).from(dreRegras)
+    .where(and(eq(dreRegras.padrao, padrao), eq(dreRegras.ativa, "true")))
+    .limit(1);
+  if (jaExiste.length > 0) return { regraAprendida: false };
+
+  await db.insert(dreRegras).values({ padrao, dreCategoriaId, origem: "aprendida" });
+  await reprocessarPendentes(transacao.unidadeId);
+  return { regraAprendida: true };
+}
+
+/**
+ * Confirma uma sugestão automática sem trocar a categoria — o "tá
+ * certo" de 1 clique. Só age em linha "sugerida"; ignora silenciosamente
+ * qualquer outro estado (evita confirmar algo que já não é sugestão).
+ */
+export async function confirmarSugestao(transacaoId: number) {
   const db = await getDb();
   if (!db) return;
-  await db.update(interExtratos).set({ dreCategoriaId }).where(eq(interExtratos.id, transacaoId));
+  await db.update(interExtratos).set({ categorizacaoStatus: "confirmada" })
+    .where(and(eq(interExtratos.id, transacaoId), eq(interExtratos.categorizacaoStatus, "sugerida")));
 }

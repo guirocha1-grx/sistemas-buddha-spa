@@ -149,3 +149,30 @@ export function sugerirCategoriaNome(
   }
   return null;
 }
+
+const MIN_TAMANHO_PADRAO_APRENDIDO = 5;
+
+/**
+ * Limpa o texto de contraparte pra virar um padrão de regra reutilizável.
+ * O mesmo pagamento recorrente aparece com prefixos numéricos diferentes
+ * a cada mês (ex.: "Cp :90400888-DAIANA..." ou "00019 340114355 53 829
+ * 744 CRISLANE..."), então tira esse ruído antes de usar o nome como
+ * padrão — senão a regra aprendida nunca bate de novo.
+ *
+ * Retorna null se não sobrar nada útil (evita aprender regra genérica
+ * demais, tipo só um número de documento).
+ */
+export function extrairPadraoContraparte(texto: string): string | null {
+  let limpo = texto
+    .replace(/^Cp\s*:\s*\d+\s*-\s*/i, "")
+    .replace(/^\d[\d\s]{4,}(?=[A-Za-zÀ-ÿ])/, "")
+    .replace(/^\d+\s*-\s*/, "")
+    .trim();
+
+  // Se depois de limpar ainda começa com dígito (não achou um nome de
+  // verdade), não é seguro generalizar.
+  if (/^\d/.test(limpo)) return null;
+  if (limpo.length < MIN_TAMANHO_PADRAO_APRENDIDO) return null;
+
+  return limpo;
+}
