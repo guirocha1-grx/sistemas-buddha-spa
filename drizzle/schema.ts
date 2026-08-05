@@ -248,6 +248,9 @@ export const interExtratos = mysqlTable("inter_extratos", {
   cpmf: varchar("cpmf", { length: 64 }),
   origem: mysqlEnum("origem", ["inter", "csv", "pdf", "ofx"]).default("inter").notNull(),
   dreCategoriaId: int("dreCategoriaId"), // null = pendente (ainda não categorizado)
+  // pendente = sem categoria; sugerida = regra bateu sozinha, ainda não
+  // confirmada por humano; confirmada = humano escolheu ou confirmou.
+  categorizacaoStatus: mysqlEnum("categorizacaoStatus", ["pendente", "sugerida", "confirmada"]).default("pendente").notNull(),
   syncedAt: timestamp("syncedAt").defaultNow().notNull(),
 }, (table) => ({
   unidadeDataIdx: index("inter_extratos_unidade_data_idx").on(table.unidadeId, table.dataEntrada),
@@ -297,6 +300,9 @@ export const dreRegras = mysqlTable("dre_regras", {
   id: int("id").autoincrement().primaryKey(),
   padrao: varchar("padrao", { length: 256 }).notNull(),
   dreCategoriaId: int("dreCategoriaId").notNull(),
+  // seed = cadastrada por mim; aprendida = criada automaticamente
+  // quando o usuário categoriza uma transação manualmente.
+  origem: mysqlEnum("origem", ["seed", "aprendida"]).default("aprendida").notNull(),
   ativa: mysqlEnum("ativa", ["true", "false"]).default("true").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
