@@ -11,6 +11,7 @@ import { storagePut, storageGetSignedUrl } from "./storage";
 import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid } from "./interApi";
 import { parseExtratoInterPdf } from "./interExtratoPdfParser";
+import { parseExtratoOfx } from "./interExtratoOfxParser";
 import { PDFParse } from "pdf-parse";
 
 export const appRouter = router({
@@ -921,6 +922,42 @@ Diretrizes:
         status: "sucesso",
         registrosProcessados: inseridos,
         detalhes: `Importação manual via PDF (Banco Inter). ${linhas.length} transação(ões) no arquivo, ${inseridos} nova(s).`,
+      });
+      return { success: true, totalInseridos: inseridos, totalLinhas: linhas.length };
+    }),
+
+    /**
+     * Importa transações de um extrato em OFX (Open Financial Exchange,
+     * exportação padrão de banco). Mais confiável que CSV/PDF porque o
+     * FITID já vem do banco — usamos ele direto como idTransacao, sem
+     * precisar de hash sintético.
+     */
+    importarOfx: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      ofxTexto: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      const linhas = parseExtratoOfx(input.ofxTexto);
+      if (linhas.length === 0) {
+        throw new Error("Nenhuma transação encontrada no OFX. Confirme que o arquivo é um extrato bancário válido.");
+      }
+
+      const transacoes = linhas.map((linha) => ({
+        unidadeId: input.unidadeId,
+        idTransacao: `ofx:${linha.fitid}`,
+        dataEntrada: linha.data,
+        tipoOperacao: linha.tipo,
+        valor: linha.valor.toFixed(2),
+        titulo: linha.descricao,
+        origem: "ofx" as const,
+      }));
+
+      const inseridos = await db.upsertInterExtratos(input.unidadeId, transacoes);
+      await db.createSyncLog({
+        unidadeId: input.unidadeId,
+        tipo: "ofx_extrato",
+        status: "sucesso",
+        registrosProcessados: inseridos,
+        detalhes: `Importação manual via OFX. ${linhas.length} transação(ões) no arquivo, ${inseridos} nova(s).`,
       });
       return { success: true, totalInseridos: inseridos, totalLinhas: linhas.length };
     }),

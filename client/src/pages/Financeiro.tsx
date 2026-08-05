@@ -136,6 +136,7 @@ export default function Financeiro() {
   const [filtroTipoExtrato, setFiltroTipoExtrato] = useState<"todos" | "D" | "C">("todos");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const filePdfInputRef = useRef<HTMLInputElement>(null);
+  const fileOfxInputRef = useRef<HTMLInputElement>(null);
   const utilsExtrato = trpc.useUtils();
 
   const statusInterQuery = trpc.inter.status.useQuery(
@@ -200,6 +201,27 @@ export default function Financeiro() {
       importarPdfMutation.mutate({ unidadeId, pdfBase64 });
     } catch (err: any) {
       toast.error(err.message ?? "Falha ao ler o arquivo PDF");
+    } finally {
+      e.target.value = "";
+    }
+  }
+
+  const importarOfxMutation = trpc.inter.importarOfx.useMutation({
+    onSuccess: (data) => {
+      toast.success(`OFX importado: ${data.totalInseridos} nova(s) transação(ões) de ${data.totalLinhas} encontrada(s).`);
+      utilsExtrato.inter.extratos.invalidate();
+    },
+    onError: (err) => toast.error(`Erro ao importar OFX: ${err.message}`),
+  });
+
+  async function handleImportarOfx(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !unidadeId) return;
+    try {
+      const ofxTexto = await file.text();
+      importarOfxMutation.mutate({ unidadeId, ofxTexto });
+    } catch (err: any) {
+      toast.error(err.message ?? "Falha ao ler o arquivo OFX");
     } finally {
       e.target.value = "";
     }
@@ -489,11 +511,20 @@ export default function Financeiro() {
                       {importarPdfMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
                       Importar PDF
                     </Button>
+                    <input ref={fileOfxInputRef} type="file" accept=".ofx,application/x-ofx" className="hidden" onChange={handleImportarOfx} />
+                    <Button
+                      size="sm"
+                      onClick={() => fileOfxInputRef.current?.click()}
+                      disabled={importarOfxMutation.isPending}
+                    >
+                      {importarOfxMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+                      Importar OFX
+                    </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Formato do CSV: <span className="font-mono">data;descricao;tipo;valor</span> — data em AAAA-MM-DD ou DD/MM/AAAA,
-                    tipo C (entrada) ou D (saída), valor sempre positivo. Cabeçalho opcional. O PDF aceita o modelo
-                    "Extrato completo" exportado direto do Banco Inter.
+                    <strong>OFX</strong> (recomendado — exportação padrão do banco, com ID de transação garantido)
+                    ou <span className="font-mono">data;descricao;tipo;valor</span> em CSV (data AAAA-MM-DD ou DD/MM/AAAA,
+                    tipo C/D, valor sempre positivo, cabeçalho opcional) ou o PDF do "Extrato completo" do Banco Inter.
                   </p>
 
                   <Tabs value={filtroTipoExtrato} onValueChange={(v) => setFiltroTipoExtrato(v as "todos" | "D" | "C")}>
@@ -532,7 +563,7 @@ export default function Financeiro() {
                                   </TableCell>
                                   <TableCell>
                                     <Badge variant="outline" className="text-xs font-normal">
-                                      {t.origem === "csv" ? "CSV" : t.origem === "pdf" ? "PDF" : "Inter"}
+                                      {t.origem === "csv" ? "CSV" : t.origem === "pdf" ? "PDF" : t.origem === "ofx" ? "OFX" : "Inter"}
                                     </Badge>
                                   </TableCell>
                                   <TableCell className="text-right font-medium">
