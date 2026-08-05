@@ -5,7 +5,11 @@ import { publicProcedure, router, protectedProcedure, adminProcedure } from "./_
 import { z } from "zod";
 import * as db from "./db";
 import { belleApi } from "./belleApi";
+import { zapiApi } from "./zapiApi";
+import { buddhaMktApi } from "./buddhaMktApi";
+import { storagePut, storageGetSignedUrl } from "./storage";
 import { invokeLLM } from "./_core/llm";
+import { interApi, getInterAccessToken, isTokenValid } from "./interApi";
 
 export const appRouter = router({
   system: systemRouter,
@@ -30,8 +34,15 @@ export const appRouter = router({
     update: adminProcedure.input(z.object({
       id: z.number(),
       belleToken: z.string().optional(),
+      zapiInstanceId: z.string().optional(),
+      zapiToken: z.string().optional(),
+      zapiClientToken: z.string().optional(),
       codEstab: z.number().optional(),
       corTema: z.string().optional(),
+      // Banco Inter
+      interClientId: z.string().optional(),
+      interClientSecret: z.string().optional(),
+      interContaCorrente: z.string().optional(),
     })).mutation(async ({ input }) => {
       const { id, ...dados } = input;
       await db.updateUnidade(id, dados);
@@ -410,270 +421,6 @@ export const appRouter = router({
     }),
   }),
 
-  // ===== Clientes Locais (banco interno) =====
-  clientesLocais: router({
-    list: protectedProcedure.input(z.object({
-      busca: z.string().optional(),
-      unidadeId: z.number().optional(),
-      status: z.string().optional(),
-      tipo: z.string().optional(),
-      limit: z.number().default(50),
-      offset: z.number().default(0),
-    })).query(async ({ input }) => {
-      return db.listClientes(input);
-    }),
-
-    get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
-      return db.getClienteById(input.id);
-    }),
-
-    getByCpf: protectedProcedure.input(z.object({ cpf: z.string() })).query(async ({ input }) => {
-      return db.getClienteByCpf(input.cpf);
-    }),
-
-    getByCelular: protectedProcedure.input(z.object({ celular: z.string() })).query(async ({ input }) => {
-      return db.getClienteByCelular(input.celular);
-    }),
-
-    create: protectedProcedure.input(z.object({
-      nome: z.string().min(1),
-      tipo: z.enum(["F", "J"]).optional(),
-      cpfCnpj: z.string().optional(),
-      celular: z.string().optional(),
-      telefone: z.string().optional(),
-      email: z.string().optional(),
-      unidadeId: z.number().optional(),
-      canalCaptacao: z.string().optional(),
-      observacoesGerais: z.string().optional(),
-    })).mutation(async ({ input, ctx }) => {
-      await db.createCliente(input as any);
-      return { success: true };
-    }),
-
-    update: protectedProcedure.input(z.object({
-      id: z.number(),
-      nome: z.string().optional(),
-      celular: z.string().optional(),
-      email: z.string().optional(),
-      leadScore: z.number().optional(),
-      engajamento: z.enum(["Alto", "Medio", "Baixo"]).optional(),
-      tagClienteVip: z.boolean().optional(),
-      tagFrequente: z.boolean().optional(),
-      tagPremium: z.boolean().optional(),
-      tagReativacao: z.boolean().optional(),
-      observacoesGerais: z.string().optional(),
-      statusCliente: z.enum(["ativo", "inativo", "trash"]).optional(),
-      discPerfil: z.enum(["D", "I", "S", "C"]).optional(),
-      discObservacoes: z.string().optional(),
-    })).mutation(async ({ input }) => {
-      const { id, ...dados } = input;
-      await db.updateCliente(id, dados);
-      return { success: true };
-    }),
-  }),
-
-  // ===== Atendimentos =====
-  atendimentos: router({
-    listByCliente: protectedProcedure.input(z.object({ clienteId: z.number() })).query(async ({ input }) => {
-      return db.listAtendimentosByCliente(input.clienteId);
-    }),
-
-    create: protectedProcedure.input(z.object({
-      clienteId: z.number(),
-      unidadeId: z.number().optional(),
-      tipoAtendimento: z.enum([
-        "contato_inicial", "follow_up", "negociacao",
-        "venda_concretizada", "pos_venda", "reativacao",
-        "oferta_indireta", "outro",
-      ]),
-      tipoContato: z.enum(["whatsapp", "ligacao", "email", "presencial", "outro"]).optional(),
-      observacoes: z.string().optional(),
-      resultado: z.enum(["positivo", "neutro", "negativo", "sem_resposta"]).optional(),
-      proxContato: z.string().optional(),
-      statusAtendimentoNew: z.number().optional(),
-    })).mutation(async ({ input, ctx }) => {
-      await db.createAtendimento({
-        ...input,
-        agenteId: ctx.user?.id,
-        proxContato: input.proxContato as any,
-      } as any);
-      return { success: true };
-    }),
-  }),
-
-  // ===== Kanban Persistente =====
-  kanbanPersistente: router({
-    list: protectedProcedure.input(z.object({
-      unidadeId: z.number().optional(),
-    })).query(async ({ input }) => {
-      return db.getKanbanOportunidades(input.unidadeId);
-    }),
-
-    fases: protectedProcedure.query(async () => {
-      return db.getFasesVenda();
-    }),
-
-    mover: protectedProcedure.input(z.object({
-      atendimentoId: z.number(),
-      novaFaseCod: z.number(),
-    })).mutation(async ({ input }) => {
-      await db.moverOportunidade(input.atendimentoId, input.novaFaseCod);
-      return { success: true };
-    }),
-
-    registrarPerda: protectedProcedure.input(z.object({
-      atendimentoId: z.number(),
-      motivoPerda: z.string(),
-    })).mutation(async ({ input }) => {
-      await db.registrarPerda(input.atendimentoId, input.motivoPerda);
-      return { success: true };
-    }),
-  }),
-
-  // ===== Inbox WhatsApp =====
-  inbox: router({
-    list: protectedProcedure.input(z.object({
-      unidadeId: z.number().optional(),
-      status: z.string().optional(),
-      limit: z.number().default(50),
-      offset: z.number().default(0),
-    })).query(async ({ input }) => {
-      return db.listInboxConversas(input);
-    }),
-
-    get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
-      return db.getInboxConversa(input.id);
-    }),
-
-    mensagens: protectedProcedure.input(z.object({ conversaId: z.number() })).query(async ({ input }) => {
-      return db.getInboxMensagens(input.conversaId);
-    }),
-
-    marcarLida: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
-      await db.marcarConversaLida(input.id);
-      return { success: true };
-    }),
-
-    enviar: protectedProcedure.input(z.object({
-      conversaId: z.number(),
-      mensagem: z.string().min(1),
-    })).mutation(async ({ input, ctx }) => {
-      const conversa = await db.getInboxConversa(input.conversaId);
-      if (!conversa) throw new Error("Conversa não encontrada");
-
-      const { zapiSendText } = await import("./zapi");
-      const messageId = await zapiSendText(conversa.telefone, input.mensagem);
-
-      await db.insertInboxMensagem({
-        conversaId: input.conversaId,
-        direcao: "enviada",
-        tipo: "texto",
-        conteudo: input.mensagem,
-        lida: true,
-        enviadaPorUserId: ctx.user?.id,
-      });
-
-      await db.updateInboxConversa(input.conversaId, {
-        ultimaMensagemTexto: input.mensagem,
-        ultimaMensagemEm: new Date(),
-        status: "respondida",
-        naoLidas: 0,
-      } as any);
-
-      return { success: true, messageId };
-    }),
-
-    totalNaoLidas: protectedProcedure.input(z.object({
-      unidadeId: z.number().optional(),
-    })).query(async ({ input }) => {
-      return db.totalNaoLidas(input.unidadeId);
-    }),
-  }),
-
-  // ===== Scripts de Atendimento =====
-  scripts: router({
-    list: protectedProcedure.input(z.object({
-      categoria: z.string().optional(),
-    })).query(async ({ input }) => {
-      return db.listScripts(input.categoria);
-    }),
-
-    create: adminProcedure.input(z.object({
-      categoriaScript: z.string().min(1),
-      script: z.string().min(1),
-      observacoes: z.string().optional(),
-      itemQualificacaoId: z.string().optional(),
-    })).mutation(async ({ input }) => {
-      await db.createScript(input);
-      return { success: true };
-    }),
-
-    registrarUso: protectedProcedure.input(z.object({ scriptId: z.number() })).mutation(async ({ input, ctx }) => {
-      if (ctx.user?.id) {
-        await db.registrarUsoScript(input.scriptId, ctx.user.id);
-      }
-      return { success: true };
-    }),
-  }),
-
-  // ===== Tarefas do Dia =====
-  tarefas: router({
-    list: protectedProcedure.input(z.object({
-      data: z.string(),
-    })).query(async ({ input, ctx }) => {
-      if (!ctx.user?.id) return [];
-      return db.getTarefasDia(ctx.user.id, input.data);
-    }),
-
-    create: protectedProcedure.input(z.object({
-      tipo: z.enum(["contato_programado", "contato_atrasado", "aniversario", "retorno_cliente"]),
-      titulo: z.string().min(1),
-      data: z.string(),
-      referenciaId: z.number().optional(),
-    })).mutation(async ({ input, ctx }) => {
-      if (!ctx.user?.id) throw new Error("Usuário não autenticado");
-      await db.createTarefaDia({
-        ...input,
-        userId: ctx.user.id,
-        data: input.data as any,
-      });
-      return { success: true };
-    }),
-
-    toggle: protectedProcedure.input(z.object({
-      id: z.number(),
-      feita: z.boolean(),
-    })).mutation(async ({ input }) => {
-      await db.toggleTarefaDia(input.id, input.feita);
-      return { success: true };
-    }),
-  }),
-
-  // ===== Configurações =====
-  configuracoes: router({
-    list: protectedProcedure.query(async () => {
-      const items = await db.getConfig("");
-      // Return all configs as key-value map
-      const allConfigs = await (await import("drizzle-orm")).getTableName ? null : null;
-      // Simple approach: return known keys
-      const keys = ["zapiInstanceId", "zapiToken", "zapiClientToken", "belleTokenSanta", "belleTokenRibeirao"];
-      const result: Record<string, string> = {};
-      for (const key of keys) {
-        const config = await db.getConfig(key);
-        result[key] = config?.valor || "";
-      }
-      return result;
-    }),
-
-    update: adminProcedure.input(z.object({
-      chave: z.string().min(1),
-      valor: z.string(),
-    })).mutation(async ({ input }) => {
-      await db.setConfig(input.chave, input.valor);
-      return { success: true };
-    }),
-  }),
-
   // ===== Sync Logs =====
   syncLogs: router({
     list: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
@@ -758,6 +505,391 @@ Diretrizes:
       } catch (error: any) {
         return { reply: `Erro ao processar: ${error.message}` };
       }
+    }),
+  }),
+
+  // ===== Mensagens (Inbox) =====
+  inbox: router({
+    conversas: router({
+      list: protectedProcedure.input(z.object({
+        unidadeId: z.number().optional(),
+        canal: z.enum(["zapi", "buddha_mkt"]).optional(),
+      })).query(async ({ input }) => {
+        return db.listInboxConversas(input);
+      }),
+
+      get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+        const conversa = await db.getInboxConversaById(input.id);
+        if (conversa) await db.marcarInboxConversaLida(input.id);
+        return conversa;
+      }),
+    }),
+
+    mensagens: router({
+      list: protectedProcedure.input(z.object({
+        conversaId: z.number(),
+        limit: z.number().default(50),
+      })).query(async ({ input }) => {
+        return db.listInboxMensagens(input.conversaId, input.limit);
+      }),
+
+      enviar: protectedProcedure.input(z.object({
+        conversaId: z.number(),
+        texto: z.string().min(1),
+      })).mutation(async ({ input, ctx }) => {
+        const conversa = await db.getInboxConversaById(input.conversaId);
+        if (!conversa) throw new Error("Conversa não encontrada");
+
+        if (conversa.canal === "zapi") {
+          if (!conversa.unidadeId) throw new Error("Conversa sem unidade associada");
+          const unidade = await db.getUnidadeById(conversa.unidadeId);
+          if (!unidade?.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) {
+            throw new Error("Z-API não configurado para esta unidade");
+          }
+          try {
+            await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, input.texto);
+          } catch (error) {
+            console.error("[Inbox] Falha ao enviar via Z-API:", error);
+          }
+        } else {
+          try {
+            await buddhaMktApi.sendText(conversa.telefone, input.texto);
+          } catch (error) {
+            console.error("[Inbox] Falha ao enviar via Buddha Mkt:", error);
+          }
+        }
+
+        await db.insertInboxMensagem({
+          conversaId: input.conversaId,
+          direcao: "enviada",
+          tipo: "texto",
+          conteudo: input.texto,
+          enviadaPorUserId: ctx.user.id,
+        });
+        await db.upsertInboxConversa({
+          unidadeId: conversa.unidadeId,
+          canal: conversa.canal,
+          telefone: conversa.telefone,
+          nomeContato: conversa.nomeContato ?? undefined,
+          ultimaMensagemTexto: input.texto,
+        });
+
+        return { success: true };
+      }),
+
+      enviarMidia: protectedProcedure.input(z.object({
+        conversaId: z.number(),
+        tipo: z.enum(["imagem", "audio", "documento"]),
+        arquivoBase64: z.string(),
+        contentType: z.string(),
+        fileName: z.string().optional(),
+        legenda: z.string().optional(),
+      })).mutation(async ({ input, ctx }) => {
+        const conversa = await db.getInboxConversaById(input.conversaId);
+        if (!conversa) throw new Error("Conversa não encontrada");
+
+        const buffer = Buffer.from(input.arquivoBase64, "base64");
+        const { key } = await storagePut(
+          `inbox/${input.conversaId}/${input.fileName ?? input.tipo}`,
+          buffer,
+          input.contentType,
+        );
+        const url = await storageGetSignedUrl(key);
+
+        if (conversa.canal === "zapi") {
+          if (!conversa.unidadeId) throw new Error("Conversa sem unidade associada");
+          const unidade = await db.getUnidadeById(conversa.unidadeId);
+          if (!unidade?.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) {
+            throw new Error("Z-API não configurado para esta unidade");
+          }
+          try {
+            if (input.tipo === "imagem") {
+              await zapiApi.sendImage(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url, input.legenda);
+            } else if (input.tipo === "audio") {
+              await zapiApi.sendAudio(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url);
+            }
+          } catch (error) {
+            console.error("[Inbox] Falha ao enviar mídia via Z-API:", error);
+          }
+        }
+        // Buddha Mkt: envio de mídia via Cloud API exige upload prévio pra
+        // biblioteca de mídia da Meta — fica pra quando o canal estiver
+        // configurado de verdade.
+
+        await db.insertInboxMensagem({
+          conversaId: input.conversaId,
+          direcao: "enviada",
+          tipo: input.tipo,
+          conteudo: input.legenda ?? "",
+          metadados: JSON.stringify({ url, legenda: input.legenda, fileName: input.fileName }),
+          enviadaPorUserId: ctx.user.id,
+        });
+
+        return { success: true, url };
+      }),
+    }),
+  }),
+
+  // ===== Banco Inter =====
+  inter: router({
+    /**
+     * Verifica se a unidade tem credenciais Inter configuradas.
+     */
+    status: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      const configurado = !!(unidade?.interClientId && unidade?.interClientSecret);
+      const tokenValido = isTokenValid(unidade?.interTokenExpiresAt);
+      return { configurado, tokenValido, contaCorrente: unidade?.interContaCorrente ?? null };
+    }),
+
+    /**
+     * Obtém (ou renova) o token OAuth e o persiste na unidade.
+     */
+    autenticar: adminProcedure.input(z.object({ unidadeId: z.number() })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.interClientId || !unidade?.interClientSecret) {
+        throw new Error("Credenciais Banco Inter não configuradas para esta unidade");
+      }
+      const { accessToken, expiresAt } = await getInterAccessToken(
+        unidade.interClientId,
+        unidade.interClientSecret,
+      );
+      await db.updateInterToken(input.unidadeId, accessToken, expiresAt);
+      return { success: true };
+    }),
+
+    /**
+     * Consulta saldo em tempo real (sem persistir).
+     */
+    saldo: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.interClientId || !unidade?.interClientSecret) {
+        throw new Error("Credenciais Banco Inter não configuradas");
+      }
+      // Renovar token se necessário
+      let token = unidade.interAccessToken;
+      if (!token || !isTokenValid(unidade.interTokenExpiresAt)) {
+        const { accessToken, expiresAt } = await getInterAccessToken(
+          unidade.interClientId,
+          unidade.interClientSecret,
+        );
+        await db.updateInterToken(input.unidadeId, accessToken, expiresAt);
+        token = accessToken;
+      }
+      return interApi.consultarSaldo(token, unidade.interContaCorrente);
+    }),
+
+    /**
+     * Lista transações já sincronizadas no banco local.
+     */
+    extratos: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).query(async ({ input }) => {
+      return db.listInterExtratos(input.unidadeId, input.dataInicio, input.dataFim);
+    }),
+
+    /**
+     * Sincroniza o extrato enriquecido do período com o banco local.
+     * Usa paginação por scroll para grandes volumes.
+     * Rate limit: 10 req/min — não chamar em loop apertado.
+     */
+    sincronizar: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.interClientId || !unidade?.interClientSecret) {
+        throw new Error("Credenciais Banco Inter não configuradas");
+      }
+
+      // Renovar token se necessário
+      let token = unidade.interAccessToken;
+      if (!token || !isTokenValid(unidade.interTokenExpiresAt)) {
+        const { accessToken, expiresAt } = await getInterAccessToken(
+          unidade.interClientId,
+          unidade.interClientSecret,
+        );
+        await db.updateInterToken(input.unidadeId, accessToken, expiresAt);
+        token = accessToken;
+      }
+
+      let totalInseridos = 0;
+      let totalTransacoes = 0;
+      let scrollId: string | undefined;
+      let hasMore = true;
+      let pagina = 0;
+
+      try {
+        // Primeira página com scroll habilitado
+        const primeira = await interApi.consultarExtratoCompleto(
+          token,
+          input.dataInicio,
+          input.dataFim,
+          {
+            tamanhoPagina: 200,
+            scrollEnabled: !scrollId,
+            contaCorrente: unidade.interContaCorrente,
+          },
+        );
+
+        scrollId = primeira.scrollId;
+        hasMore = primeira.hasMore ?? false;
+        totalTransacoes = primeira.totalElementos;
+
+        const inseridos = await db.upsertInterExtratos(
+          input.unidadeId,
+          primeira.transacoes.map(t => ({
+            unidadeId: input.unidadeId,
+            idTransacao: t.idTransacao,
+            dataEntrada: t.dataEntrada,
+            dataTransacao: t.dataTransacao,
+            tipoTransacao: t.tipoTransacao,
+            tipoOperacao: (t.tipoOperacao === "D" || t.tipoOperacao === "C") ? t.tipoOperacao : "D",
+            valor: t.valor,
+            titulo: t.titulo,
+            descricao: t.descricao,
+            detalhe: t.detalhe,
+            nomeOrigem: t.nomeOrigem,
+            nomeDestino: t.nomeDestino,
+            cpfCnpjOrigem: t.cpfCnpjOrigem,
+            cpfCnpjDestino: t.cpfCnpjDestino,
+            cpmf: t.cpmf,
+          })),
+        );
+        totalInseridos += inseridos;
+        pagina++;
+
+        // Páginas subsequentes via scroll
+        while (hasMore && scrollId) {
+          const proxima = await interApi.consultarExtratoCompleto(
+            token,
+            input.dataInicio,
+            input.dataFim,
+            {
+              scrollId,
+              tamanhoPagina: 200,
+              contaCorrente: unidade.interContaCorrente,
+            },
+          );
+
+          scrollId = proxima.scrollId;
+          hasMore = proxima.hasMore ?? false;
+
+          const ins = await db.upsertInterExtratos(
+            input.unidadeId,
+            proxima.transacoes.map(t => ({
+              unidadeId: input.unidadeId,
+              idTransacao: t.idTransacao,
+              dataEntrada: t.dataEntrada,
+              dataTransacao: t.dataTransacao,
+              tipoTransacao: t.tipoTransacao,
+              tipoOperacao: (t.tipoOperacao === "D" || t.tipoOperacao === "C") ? t.tipoOperacao : "D",
+              valor: t.valor,
+              titulo: t.titulo,
+              descricao: t.descricao,
+              detalhe: t.detalhe,
+              nomeOrigem: t.nomeOrigem,
+              nomeDestino: t.nomeDestino,
+              cpfCnpjOrigem: t.cpfCnpjOrigem,
+              cpfCnpjDestino: t.cpfCnpjDestino,
+              cpmf: t.cpmf,
+            })),
+          );
+          totalInseridos += ins;
+          pagina++;
+        }
+
+        // Registrar log de sincronização
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "inter_extrato",
+          status: "sucesso",
+          registrosProcessados: totalInseridos,
+          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Total API: ${totalTransacoes}. Novos: ${totalInseridos}. Páginas: ${pagina}.`,
+        });
+
+        return { success: true, totalInseridos, totalTransacoes, paginas: pagina };
+      } catch (error: any) {
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "inter_extrato",
+          status: "erro",
+          registrosProcessados: totalInseridos,
+          detalhes: error.message,
+        });
+        throw error;
+      }
+    }),
+
+    /**
+     * Salva as credenciais OAuth do Banco Inter para a unidade.
+     */
+    salvarCredenciais: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      interClientId: z.string().min(1),
+      interClientSecret: z.string().min(1),
+      interContaCorrente: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const { unidadeId, ...dados } = input;
+      await db.updateUnidade(unidadeId, dados);
+      return { success: true };
+    }),
+
+    /**
+     * Importa transações de um extrato em CSV (formato: data, descrição,
+     * tipo C/D, valor). Usa o mesmo dedup por idTransacao do sync do
+     * Inter — reimportar o mesmo arquivo não duplica linhas, já que o
+     * idTransacao é derivado do conteúdo da própria linha.
+     */
+    importarCsv: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      linhas: z.array(z.object({
+        data: z.string(), // AAAA-MM-DD
+        descricao: z.string(),
+        tipo: z.enum(["C", "D"]),
+        valor: z.number().positive(),
+      })).min(1),
+    })).mutation(async ({ input }) => {
+      const transacoes = input.linhas.map((linha, i) => {
+        const idTransacao = `csv:${input.unidadeId}:${linha.data}:${linha.tipo}:${linha.valor}:${i}`;
+        return {
+          unidadeId: input.unidadeId,
+          idTransacao,
+          dataEntrada: linha.data,
+          tipoOperacao: linha.tipo,
+          valor: linha.valor.toFixed(2),
+          titulo: linha.descricao,
+          origem: "csv" as const,
+        };
+      });
+      const inseridos = await db.upsertInterExtratos(input.unidadeId, transacoes);
+      await db.createSyncLog({
+        unidadeId: input.unidadeId,
+        tipo: "csv_extrato",
+        status: "sucesso",
+        registrosProcessados: inseridos,
+        detalhes: `Importação manual via CSV. ${input.linhas.length} linha(s) no arquivo, ${inseridos} nova(s).`,
+      });
+      return { success: true, totalInseridos: inseridos, totalLinhas: input.linhas.length };
+    }),
+  }),
+
+  // ===== Configurações globais (chave-valor) =====
+  configuracoes: router({
+    get: adminProcedure.input(z.object({ chave: z.string() })).query(async ({ input }) => {
+      const config = await db.getConfig(input.chave);
+      return config?.valor ?? null;
+    }),
+
+    set: adminProcedure.input(z.object({
+      chave: z.string(),
+      valor: z.string(),
+    })).mutation(async ({ input }) => {
+      await db.setConfig(input.chave, input.valor);
+      return { success: true };
     }),
   }),
 });

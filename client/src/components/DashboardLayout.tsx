@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, TrendingUp } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -29,11 +29,10 @@ import { Button } from "./ui/button";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: MessageCircle, label: "Inbox WhatsApp", path: "/inbox" },
   { icon: Users, label: "Clientes", path: "/clientes" },
   { icon: KanbanSquare, label: "Reativação", path: "/reativacao" },
-  { icon: TrendingUp, label: "Kanban Vendas", path: "/kanban" },
   { icon: Calendar, label: "Agenda", path: "/agenda" },
+  { icon: MessageCircle, label: "Mensagens", path: "/mensagens" },
   { icon: DollarSign, label: "Financeiro", path: "/financeiro" },
   { icon: Sparkles, label: "Copilot", path: "/copilot" },
   { icon: Image, label: "Lâminas", path: "/laminas" },

@@ -6,19 +6,71 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Save, Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megaphone, Landmark } from "lucide-react";
+
+interface InterForm {
+  interClientId?: string;
+  interClientSecret?: string;
+  interContaCorrente?: string;
+}
+
+interface ZapiForm {
+  zapiInstanceId?: string;
+  zapiToken?: string;
+  zapiClientToken?: string;
+}
+
+const BUDDHA_MKT_CHAVES = ["phone_number_id", "token", "waba_id", "verify_token"] as const;
 
 export default function Configuracoes() {
   const { unidades } = useUnidade();
   const [tokens, setTokens] = useState<Record<number, string>>({});
   const [saved, setSaved] = useState<number | null>(null);
+  const [zapiForms, setZapiForms] = useState<Record<number, ZapiForm>>({});
+  const [zapiSaved, setZapiSaved] = useState<number | null>(null);
+  const [mktForm, setMktForm] = useState<Record<string, string>>({});
+  const [mktSaved, setMktSaved] = useState(false);
+  const [interForms, setInterForms] = useState<Record<number, InterForm>>({});
+  const [interSaved, setInterSaved] = useState<number | null>(null);
 
   const updateUnidade = trpc.unidades.update.useMutation({
     onSuccess: (_data, vars) => {
-      setSaved(vars.id);
-      setTimeout(() => setSaved(null), 3000);
+      if (vars.belleToken !== undefined) {
+        setSaved(vars.id);
+        setTimeout(() => setSaved(null), 3000);
+      }
+      if (vars.zapiInstanceId !== undefined || vars.zapiToken !== undefined || vars.zapiClientToken !== undefined) {
+        setZapiSaved(vars.id);
+        setTimeout(() => setZapiSaved(null), 3000);
+      }
+      if (vars.interClientId !== undefined || vars.interClientSecret !== undefined || vars.interContaCorrente !== undefined) {
+        setInterSaved(vars.id);
+        setTimeout(() => setInterSaved(null), 3000);
+      }
     },
   });
+
+  const utils = trpc.useUtils();
+  const mktConfigQueries = trpc.useQueries((t) =>
+    BUDDHA_MKT_CHAVES.map((sufixo) => t.configuracoes.get({ chave: `buddha_mkt_${sufixo}` })),
+  );
+
+  const setConfig = trpc.configuracoes.set.useMutation({
+    onSuccess: () => {
+      setMktSaved(true);
+      utils.configuracoes.get.invalidate();
+      setTimeout(() => setMktSaved(false), 3000);
+    },
+  });
+
+  function salvarBuddhaMkt() {
+    BUDDHA_MKT_CHAVES.forEach((sufixo) => {
+      const valor = mktForm[sufixo];
+      if (valor) setConfig.mutate({ chave: `buddha_mkt_${sufixo}`, valor });
+    });
+  }
+
+  const mktConfigurado = BUDDHA_MKT_CHAVES.every((sufixo, i) => mktConfigQueries[i]?.data);
 
   return (
     <div className="space-y-6">
@@ -106,10 +158,176 @@ export default function Configuracoes() {
                 )}
                 {saved === unidade.id ? "Salvo!" : "Salvar Token"}
               </Button>
+
+              <div className="border-t pt-3 mt-1 space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-1.5 text-sm">
+                    <MessageCircle className="h-3.5 w-3.5" /> Z-API desta unidade
+                  </Label>
+                  {unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken ? (
+                    <Badge className="bg-green-100 text-green-700">Configurado</Badge>
+                  ) : (
+                    <Badge variant="secondary">Sem token</Badge>
+                  )}
+                </div>
+                <Input
+                  placeholder="Instance ID"
+                  defaultValue={unidade.zapiInstanceId || ""}
+                  onChange={(e) => setZapiForms({ ...zapiForms, [unidade.id]: { ...zapiForms[unidade.id], zapiInstanceId: e.target.value } })}
+                />
+                <Input
+                  type="password"
+                  placeholder="Token"
+                  defaultValue={unidade.zapiToken || ""}
+                  onChange={(e) => setZapiForms({ ...zapiForms, [unidade.id]: { ...zapiForms[unidade.id], zapiToken: e.target.value } })}
+                />
+                <Input
+                  type="password"
+                  placeholder="Client-Token (segurança da conta)"
+                  defaultValue={unidade.zapiClientToken || ""}
+                  onChange={(e) => setZapiForms({ ...zapiForms, [unidade.id]: { ...zapiForms[unidade.id], zapiClientToken: e.target.value } })}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const form = zapiForms[unidade.id];
+                    if (form && (form.zapiInstanceId || form.zapiToken || form.zapiClientToken)) {
+                      updateUnidade.mutate({ id: unidade.id, ...form });
+                    }
+                  }}
+                  disabled={!zapiForms[unidade.id] || updateUnidade.isPending}
+                >
+                  {zapiSaved === unidade.id ? (
+                    <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  {zapiSaved === unidade.id ? "Salvo!" : "Salvar Z-API"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Webhook: <span className="font-mono">/api/webhooks/zapi/{unidade.id}?token=&lt;token acima&gt;</span>
+                </p>
+              </div>
+
+              {/* Banco Inter */}
+              <div className="border-t pt-3 mt-1 space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-1.5 text-sm">
+                    <Landmark className="h-3.5 w-3.5" /> Banco Inter — OAuth
+                  </Label>
+                  {unidade.interClientId && unidade.interClientSecret ? (
+                    <Badge className="bg-green-100 text-green-700">Configurado</Badge>
+                  ) : (
+                    <Badge variant="secondary">Sem credenciais</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Crie uma aplicação em{" "}
+                  <a
+                    href="https://developers.inter.co"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
+                    developers.inter.co
+                  </a>{" "}
+                  com escopo <code>extrato.read</code> e <code>saldo.read</code>, depois insira as credenciais abaixo.
+                </p>
+                <Input
+                  placeholder="Client ID"
+                  defaultValue={unidade.interClientId || ""}
+                  onChange={(e) =>
+                    setInterForms({ ...interForms, [unidade.id]: { ...interForms[unidade.id], interClientId: e.target.value } })
+                  }
+                />
+                <Input
+                  type="password"
+                  placeholder="Client Secret"
+                  defaultValue={unidade.interClientSecret || ""}
+                  onChange={(e) =>
+                    setInterForms({ ...interForms, [unidade.id]: { ...interForms[unidade.id], interClientSecret: e.target.value } })
+                  }
+                />
+                <Input
+                  placeholder="Conta Corrente (opcional, sem zeros à esquerda)"
+                  defaultValue={unidade.interContaCorrente || ""}
+                  onChange={(e) =>
+                    setInterForms({ ...interForms, [unidade.id]: { ...interForms[unidade.id], interContaCorrente: e.target.value } })
+                  }
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const form = interForms[unidade.id];
+                    if (form && (form.interClientId || form.interClientSecret || form.interContaCorrente)) {
+                      updateUnidade.mutate({ id: unidade.id, ...form });
+                    }
+                  }}
+                  disabled={!interForms[unidade.id] || updateUnidade.isPending}
+                >
+                  {interSaved === unidade.id ? (
+                    <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  {interSaved === unidade.id ? "Salvo!" : "Salvar Banco Inter"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ))}
       </div>
+
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                <Megaphone className="h-4 w-4" /> Buddha Mkt (WhatsApp Cloud API)
+              </CardTitle>
+              <CardDescription>Conta única, usada para disparo de marketing nas duas unidades</CardDescription>
+            </div>
+            {mktConfigurado ? (
+              <Badge className="bg-green-100 text-green-700">Configurado</Badge>
+            ) : (
+              <Badge variant="secondary">Não configurado</Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Input
+            placeholder="Phone Number ID"
+            defaultValue={mktConfigQueries[0]?.data || ""}
+            onChange={(e) => setMktForm({ ...mktForm, phone_number_id: e.target.value })}
+          />
+          <Input
+            type="password"
+            placeholder="Access Token"
+            defaultValue={mktConfigQueries[1]?.data || ""}
+            onChange={(e) => setMktForm({ ...mktForm, token: e.target.value })}
+          />
+          <Input
+            placeholder="WABA ID"
+            defaultValue={mktConfigQueries[2]?.data || ""}
+            onChange={(e) => setMktForm({ ...mktForm, waba_id: e.target.value })}
+          />
+          <Input
+            type="password"
+            placeholder="Verify Token (webhook)"
+            defaultValue={mktConfigQueries[3]?.data || ""}
+            onChange={(e) => setMktForm({ ...mktForm, verify_token: e.target.value })}
+          />
+          <Button size="sm" onClick={salvarBuddhaMkt} disabled={setConfig.isPending}>
+            {mktSaved ? <CheckCircle className="h-4 w-4 mr-2 text-green-600" /> : <Save className="h-4 w-4 mr-2" />}
+            {mktSaved ? "Salvo!" : "Salvar Buddha Mkt"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Webhook de verificação: <span className="font-mono">/api/webhooks/buddha-mkt</span>
+          </p>
+        </CardContent>
+      </Card>
 
       <Card className="border-border/50 shadow-sm">
         <CardHeader>

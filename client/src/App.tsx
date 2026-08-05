@@ -7,15 +7,13 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
 import Clientes from "./pages/Clientes";
-import ClienteDetalhe from "./pages/ClienteDetalhe";
 import Reativacao from "./pages/Reativacao";
-import KanbanPersistente from "./pages/KanbanPersistente";
 import Agenda from "./pages/Agenda";
+import Mensagens from "./pages/Mensagens";
 import Financeiro from "./pages/Financeiro";
 import Copilot from "./pages/Copilot";
 import Laminas from "./pages/Laminas";
 import Leads from "./pages/Leads";
-import Inbox from "./pages/Inbox";
 import Configuracoes from "./pages/Configuracoes";
 
 function Router() {
@@ -24,15 +22,13 @@ function Router() {
       <Switch>
         <Route path="/" component={Dashboard} />
         <Route path="/clientes" component={Clientes} />
-        <Route path="/clientes/:id" component={ClienteDetalhe} />
         <Route path="/reativacao" component={Reativacao} />
-        <Route path="/kanban" component={KanbanPersistente} />
         <Route path="/agenda" component={Agenda} />
+        <Route path="/mensagens" component={Mensagens} />
         <Route path="/financeiro" component={Financeiro} />
         <Route path="/copilot" component={Copilot} />
         <Route path="/laminas" component={Laminas} />
         <Route path="/leads" component={Leads} />
-        <Route path="/inbox" component={Inbox} />
         <Route path="/configuracoes" component={Configuracoes} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
