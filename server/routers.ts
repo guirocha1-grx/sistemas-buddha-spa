@@ -689,8 +689,9 @@ Diretrizes:
       unidadeId: z.number(),
       dataInicio: z.string(),
       dataFim: z.string(),
+      contaId: z.number().optional(),
     })).query(async ({ input }) => {
-      return db.listInterExtratos(input.unidadeId, input.dataInicio, input.dataFim);
+      return db.listInterExtratos(input.unidadeId, input.dataInicio, input.dataFim, input.contaId);
     }),
 
     /**
@@ -719,6 +720,8 @@ Diretrizes:
         token = accessToken;
       }
 
+      const contaInter = await db.getOrCreateContaInter(input.unidadeId);
+
       let totalInseridos = 0;
       let totalTransacoes = 0;
       let scrollId: string | undefined;
@@ -746,6 +749,7 @@ Diretrizes:
           input.unidadeId,
           primeira.transacoes.map(t => ({
             unidadeId: input.unidadeId,
+            contaId: contaInter?.id,
             idTransacao: t.idTransacao,
             dataEntrada: t.dataEntrada,
             dataTransacao: t.dataTransacao,
@@ -785,6 +789,7 @@ Diretrizes:
             input.unidadeId,
             proxima.transacoes.map(t => ({
               unidadeId: input.unidadeId,
+              contaId: contaInter?.id,
               idTransacao: t.idTransacao,
               dataEntrada: t.dataEntrada,
               dataTransacao: t.dataTransacao,
@@ -848,7 +853,7 @@ Diretrizes:
      * idTransacao é derivado do conteúdo da própria linha.
      */
     importarCsv: protectedProcedure.input(z.object({
-      unidadeId: z.number(),
+      contaId: z.number(),
       linhas: z.array(z.object({
         data: z.string(), // AAAA-MM-DD
         descricao: z.string(),
@@ -856,10 +861,14 @@ Diretrizes:
         valor: z.number().positive(),
       })).min(1),
     })).mutation(async ({ input }) => {
+      const conta = await db.getContaById(input.contaId);
+      if (!conta) throw new Error("Conta não encontrada");
+
       const transacoes = input.linhas.map((linha, i) => {
-        const idTransacao = `csv:${input.unidadeId}:${linha.data}:${linha.tipo}:${linha.valor}:${i}`;
+        const idTransacao = `csv:${input.contaId}:${linha.data}:${linha.tipo}:${linha.valor}:${i}`;
         return {
-          unidadeId: input.unidadeId,
+          unidadeId: conta.unidadeId,
+          contaId: input.contaId,
           idTransacao,
           dataEntrada: linha.data,
           tipoOperacao: linha.tipo,
@@ -868,13 +877,13 @@ Diretrizes:
           origem: "csv" as const,
         };
       });
-      const inseridos = await db.upsertInterExtratos(input.unidadeId, transacoes);
+      const inseridos = await db.upsertInterExtratos(conta.unidadeId, transacoes);
       await db.createSyncLog({
-        unidadeId: input.unidadeId,
+        unidadeId: conta.unidadeId,
         tipo: "csv_extrato",
         status: "sucesso",
         registrosProcessados: inseridos,
-        detalhes: `Importação manual via CSV. ${input.linhas.length} linha(s) no arquivo, ${inseridos} nova(s).`,
+        detalhes: `Importação manual via CSV na conta "${conta.nome}". ${input.linhas.length} linha(s) no arquivo, ${inseridos} nova(s).`,
       });
       return { success: true, totalInseridos: inseridos, totalLinhas: input.linhas.length };
     }),
@@ -887,9 +896,12 @@ Diretrizes:
      * outros dois modos de importação.
      */
     importarPdf: protectedProcedure.input(z.object({
-      unidadeId: z.number(),
+      contaId: z.number(),
       pdfBase64: z.string().min(1),
     })).mutation(async ({ input }) => {
+      const conta = await db.getContaById(input.contaId);
+      if (!conta) throw new Error("Conta não encontrada");
+
       const buffer = Buffer.from(input.pdfBase64, "base64");
       const parser = new PDFParse({ data: buffer });
       let texto: string;
@@ -906,8 +918,9 @@ Diretrizes:
       }
 
       const transacoes = linhas.map((linha, i) => ({
-        unidadeId: input.unidadeId,
-        idTransacao: `pdf:${input.unidadeId}:${linha.data}:${linha.tipo}:${linha.valor}:${i}`,
+        unidadeId: conta.unidadeId,
+        contaId: input.contaId,
+        idTransacao: `pdf:${input.contaId}:${linha.data}:${linha.tipo}:${linha.valor}:${i}`,
         dataEntrada: linha.data,
         tipoOperacao: linha.tipo,
         valor: linha.valor.toFixed(2),
@@ -915,13 +928,13 @@ Diretrizes:
         origem: "pdf" as const,
       }));
 
-      const inseridos = await db.upsertInterExtratos(input.unidadeId, transacoes);
+      const inseridos = await db.upsertInterExtratos(conta.unidadeId, transacoes);
       await db.createSyncLog({
-        unidadeId: input.unidadeId,
+        unidadeId: conta.unidadeId,
         tipo: "pdf_extrato",
         status: "sucesso",
         registrosProcessados: inseridos,
-        detalhes: `Importação manual via PDF (Banco Inter). ${linhas.length} transação(ões) no arquivo, ${inseridos} nova(s).`,
+        detalhes: `Importação manual via PDF (Banco Inter) na conta "${conta.nome}". ${linhas.length} transação(ões) no arquivo, ${inseridos} nova(s).`,
       });
       return { success: true, totalInseridos: inseridos, totalLinhas: linhas.length };
     }),
@@ -933,17 +946,21 @@ Diretrizes:
      * precisar de hash sintético.
      */
     importarOfx: protectedProcedure.input(z.object({
-      unidadeId: z.number(),
+      contaId: z.number(),
       ofxTexto: z.string().min(1),
     })).mutation(async ({ input }) => {
+      const conta = await db.getContaById(input.contaId);
+      if (!conta) throw new Error("Conta não encontrada");
+
       const linhas = parseExtratoOfx(input.ofxTexto);
       if (linhas.length === 0) {
         throw new Error("Nenhuma transação encontrada no OFX. Confirme que o arquivo é um extrato bancário válido.");
       }
 
       const transacoes = linhas.map((linha) => ({
-        unidadeId: input.unidadeId,
-        idTransacao: `ofx:${linha.fitid}`,
+        unidadeId: conta.unidadeId,
+        contaId: input.contaId,
+        idTransacao: `ofx:${input.contaId}:${linha.fitid}`,
         dataEntrada: linha.data,
         tipoOperacao: linha.tipo,
         valor: linha.valor.toFixed(2),
@@ -951,15 +968,43 @@ Diretrizes:
         origem: "ofx" as const,
       }));
 
-      const inseridos = await db.upsertInterExtratos(input.unidadeId, transacoes);
+      const inseridos = await db.upsertInterExtratos(conta.unidadeId, transacoes);
       await db.createSyncLog({
-        unidadeId: input.unidadeId,
+        unidadeId: conta.unidadeId,
         tipo: "ofx_extrato",
         status: "sucesso",
         registrosProcessados: inseridos,
-        detalhes: `Importação manual via OFX. ${linhas.length} transação(ões) no arquivo, ${inseridos} nova(s).`,
+        detalhes: `Importação manual via OFX na conta "${conta.nome}". ${linhas.length} transação(ões) no arquivo, ${inseridos} nova(s).`,
       });
       return { success: true, totalInseridos: inseridos, totalLinhas: linhas.length };
+    }),
+  }),
+
+  // ===== Contas (bancárias/caixa, por unidade) =====
+  contas: router({
+    /**
+     * Lista as contas da unidade, garantindo que a conta "Banco Inter"
+     * sempre apareça (auto-provisionada na primeira chamada).
+     */
+    list: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      await db.getOrCreateContaInter(input.unidadeId);
+      return db.listContas(input.unidadeId);
+    }),
+
+    create: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      nome: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      const id = await db.createConta(input.unidadeId, input.nome);
+      return { success: true, id };
+    }),
+
+    rename: adminProcedure.input(z.object({
+      id: z.number(),
+      nome: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      await db.renameConta(input.id, input.nome);
+      return { success: true };
     }),
   }),
 

@@ -1,6 +1,6 @@
 import { eq, desc, and, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -380,24 +380,78 @@ export async function upsertInterExtratos(
 }
 
 /**
- * Lista transações do extrato Inter para uma unidade e período.
+ * Lista transações do extrato Inter para uma unidade e período. Sem
+ * `contaId`, traz todas as contas da unidade somadas (comportamento
+ * padrão); com `contaId`, filtra só aquela conta.
  */
 export async function listInterExtratos(
   unidadeId: number,
   dataInicio: string,
   dataFim: string,
+  contaId?: number,
 ) {
   const db = await getDb();
   if (!db) return [];
+  const condicoes = [
+    eq(interExtratos.unidadeId, unidadeId),
+    gte(interExtratos.dataEntrada, dataInicio),
+    lte(interExtratos.dataEntrada, dataFim),
+  ];
+  if (contaId !== undefined) condicoes.push(eq(interExtratos.contaId, contaId));
   return db
     .select()
     .from(interExtratos)
-    .where(
-      and(
-        eq(interExtratos.unidadeId, unidadeId),
-        gte(interExtratos.dataEntrada, dataInicio),
-        lte(interExtratos.dataEntrada, dataFim),
-      ),
-    )
+    .where(and(...condicoes))
     .orderBy(desc(interExtratos.dataEntrada));
+}
+
+// ===== Contas =====
+
+export async function listContas(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(contas).where(eq(contas.unidadeId, unidadeId)).orderBy(contas.createdAt);
+}
+
+/**
+ * Garante que a unidade tenha uma conta "Banco Inter" (auto-cria na
+ * primeira chamada, sem precisar de seed manual). Usada tanto pra listar
+ * contas quanto pelo sync automático, pra ter um contaId real pra marcar
+ * as transações que ele insere.
+ */
+export async function getOrCreateContaInter(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const existente = await db.select().from(contas)
+    .where(and(eq(contas.unidadeId, unidadeId), eq(contas.tipo, "inter_oauth")))
+    .limit(1);
+  if (existente[0]) return existente[0];
+
+  const insertValues: InsertConta = { unidadeId, nome: "Banco Inter", tipo: "inter_oauth" };
+  const result = await db.insert(contas).values(insertValues).$returningId();
+  const novaId = result[0]?.id;
+  if (!novaId) return undefined;
+  const novaConta = await db.select().from(contas).where(eq(contas.id, novaId)).limit(1);
+  return novaConta[0];
+}
+
+export async function createConta(unidadeId: number, nome: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const insertValues: InsertConta = { unidadeId, nome, tipo: "manual" };
+  const result = await db.insert(contas).values(insertValues).$returningId();
+  return result[0]?.id;
+}
+
+export async function renameConta(id: number, nome: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(contas).set({ nome }).where(eq(contas.id, id));
+}
+
+export async function getContaById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(contas).where(eq(contas.id, id)).limit(1);
+  return result[0];
 }

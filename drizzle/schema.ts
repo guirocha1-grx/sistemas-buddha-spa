@@ -205,12 +205,33 @@ export type InboxMensagem = typeof inboxMensagens.$inferSelect;
 export type InsertInboxMensagem = typeof inboxMensagens.$inferInsert;
 
 /**
+ * Contas bancárias/de caixa nomeáveis por unidade. A conta do Banco
+ * Inter (tipo "inter_oauth") é auto-provisionada pela aplicação na
+ * primeira vez que é necessária — não precisa de seed manual. Contas
+ * "manual" só recebem extrato por importação (OFX/CSV/PDF) por enquanto.
+ */
+export const contas = mysqlTable("contas", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  nome: varchar("nome", { length: 128 }).notNull(),
+  tipo: mysqlEnum("tipo", ["inter_oauth", "manual"]).default("manual").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeIdx: index("contas_unidade_idx").on(table.unidadeId),
+}));
+
+export type Conta = typeof contas.$inferSelect;
+export type InsertConta = typeof contas.$inferInsert;
+
+/**
  * Transações do extrato Banco Inter sincronizadas por unidade.
  * Fonte: GET /banking/v2/extrato/completo
  */
 export const interExtratos = mysqlTable("inter_extratos", {
   id: int("id").autoincrement().primaryKey(),
   unidadeId: int("unidadeId").notNull(),
+  contaId: int("contaId"), // null = linha legada, antes do conceito de conta existir
   idTransacao: varchar("idTransacao", { length: 128 }),
   dataEntrada: varchar("dataEntrada", { length: 10 }).notNull(),
   dataTransacao: varchar("dataTransacao", { length: 10 }),
