@@ -265,6 +265,8 @@ export const interExtratos = mysqlTable("inter_extratos", {
   nomeDestino: varchar("nomeDestino", { length: 256 }),
   cpfCnpjOrigem: varchar("cpfCnpjOrigem", { length: 20 }),
   cpfCnpjDestino: varchar("cpfCnpjDestino", { length: 20 }),
+  contaOrigem: varchar("contaOrigem", { length: 32 }),
+  contaDestino: varchar("contaDestino", { length: 32 }),
   cpmf: varchar("cpmf", { length: 64 }),
   origem: mysqlEnum("origem", ["inter", "csv", "pdf", "ofx"]).default("inter").notNull(),
   dreCategoriaId: int("dreCategoriaId"), // null = pendente (ainda não categorizado)
