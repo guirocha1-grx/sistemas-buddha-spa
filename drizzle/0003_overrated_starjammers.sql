@@ -3,6 +3,13 @@ CREATE TABLE `contas` (
 	`unidadeId` int NOT NULL,
 	`nome` varchar(128) NOT NULL,
 	`tipo` enum('inter_oauth','manual') NOT NULL DEFAULT 'manual',
+	`agencia` varchar(20),
+	`numeroConta` varchar(20),
+	`cnpj` varchar(20),
+	`saldoInicial` decimal(12,2),
+	`saldoInicialEm` varchar(10),
+	`saldoImportado` decimal(12,2),
+	`saldoImportadoEm` varchar(10),
 	`createdAt` timestamp NOT NULL DEFAULT (now()),
 	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
 	CONSTRAINT `contas_id` PRIMARY KEY(`id`)
@@ -21,7 +28,10 @@ CREATE TABLE `dre_regras` (
 	`id` int AUTO_INCREMENT NOT NULL,
 	`padrao` varchar(256) NOT NULL,
 	`dreCategoriaId` int NOT NULL,
-	`origem` enum('seed','aprendida') NOT NULL DEFAULT 'aprendida',
+	`valorMin` decimal(12,2),
+	`valorMax` decimal(12,2),
+	`alertaSeRepetirNoMes` enum('true','false') NOT NULL DEFAULT 'false',
+	`origem` enum('seed','aprendida','manual') NOT NULL DEFAULT 'aprendida',
 	`ativa` enum('true','false') NOT NULL DEFAULT 'true',
 	`createdAt` timestamp NOT NULL DEFAULT (now()),
 	CONSTRAINT `dre_regras_id` PRIMARY KEY(`id`)
@@ -78,6 +88,8 @@ CREATE TABLE `inter_extratos` (
 	`origem` enum('inter','csv','pdf','ofx') NOT NULL DEFAULT 'inter',
 	`dreCategoriaId` int,
 	`categorizacaoStatus` enum('pendente','sugerida','confirmada') NOT NULL DEFAULT 'pendente',
+	`nota` text,
+	`alerta` text,
 	`syncedAt` timestamp NOT NULL DEFAULT (now()),
 	CONSTRAINT `inter_extratos_id` PRIMARY KEY(`id`)
 );

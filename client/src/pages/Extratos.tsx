@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
@@ -26,8 +27,42 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Landmark, Check } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Landmark, Check, Pencil, Search, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
+
+// ===== Períodos rápidos =====
+type PeriodoRapido = "mes_vigente" | "15" | "30" | "60" | "mes_anterior" | "livre";
+
+function calcularPeriodo(periodo: PeriodoRapido): { inicio: string; fim: string } {
+  const hoje = new Date();
+  if (periodo === "mes_anterior") {
+    const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+    const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+    return { inicio: toIsoExtrato(inicio), fim: toIsoExtrato(fim) };
+  }
+  if (periodo === "15" || periodo === "30" || periodo === "60") {
+    const dias = Number(periodo);
+    const inicio = new Date(hoje);
+    inicio.setDate(hoje.getDate() - dias);
+    return { inicio: toIsoExtrato(inicio), fim: toIsoExtrato(hoje) };
+  }
+  // mes_vigente (padrão)
+  const inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  return { inicio: toIsoExtrato(inicio), fim: toIsoExtrato(hoje) };
+}
+
+// ===== Agrupamento de tipo de operação (pra filtro) =====
+function agruparOperacao(tipoTransacao: string | null, titulo: string | null): string {
+  const texto = `${tipoTransacao ?? ""} ${titulo ?? ""}`.toLowerCase();
+  if (texto.includes("pix")) return "Pix";
+  if (texto.includes("antecipa")) return "Antecipação";
+  if (texto.includes("boleto")) return "Boleto";
+  if (texto.includes("cartão") || texto.includes("cartao")) return "Cartão";
+  if (texto.includes("transfer")) return "Transferência";
+  if (texto.includes("pagamento")) return "Pagamento";
+  return "Outros";
+}
 
 // ===== Parser de CSV =====
 // Formato esperado (com ou sem cabeçalho): data;descricao;tipo;valor
@@ -111,19 +146,53 @@ function fileParaBase64(file: File): Promise<string> {
   });
 }
 
+const CONTA_FORM_VAZIO = { nome: "", agencia: "", numeroConta: "", cnpj: "", saldoInicial: "", saldoInicialEm: "" };
+
 export default function Extratos() {
   const { unidadeSelecionada } = useUnidade();
   const unidadeId = unidadeSelecionada?.id;
-  const today = new Date();
-  const trintaDiasAtras = new Date(today);
-  trintaDiasAtras.setDate(today.getDate() - 30);
+  const periodoInicial = calcularPeriodo("mes_vigente");
 
-  const [dataInicioExtrato, setDataInicioExtrato] = useState(toIsoExtrato(trintaDiasAtras));
-  const [dataFimExtrato, setDataFimExtrato] = useState(toIsoExtrato(today));
+  const [dataInicioExtrato, setDataInicioExtrato] = useState(periodoInicial.inicio);
+  const [dataFimExtrato, setDataFimExtrato] = useState(periodoInicial.fim);
+  const [periodoAtivo, setPeriodoAtivo] = useState<PeriodoRapido>("mes_vigente");
   const [filtroTipoExtrato, setFiltroTipoExtrato] = useState<"todos" | "D" | "C">("todos");
   const [contaSelecionadaId, setContaSelecionadaId] = useState<string>("todas");
-  const [novaContaNome, setNovaContaNome] = useState("");
-  const [novaContaOpen, setNovaContaOpen] = useState(false);
+  const [contaModalOpen, setContaModalOpen] = useState(false);
+  const [contaEditandoId, setContaEditandoId] = useState<number | null>(null);
+  const [contaForm, setContaForm] = useState(CONTA_FORM_VAZIO);
+  const [soPendentes, setSoPendentes] = useState(false);
+  const [grupoOperacao, setGrupoOperacao] = useState<string>("todos");
+  const [buscaTexto, setBuscaTexto] = useState("");
+  const [buscaValor, setBuscaValor] = useState("");
+
+  function selecionarPeriodo(periodo: PeriodoRapido) {
+    setPeriodoAtivo(periodo);
+    if (periodo === "livre") return;
+    const { inicio, fim } = calcularPeriodo(periodo);
+    setDataInicioExtrato(inicio);
+    setDataFimExtrato(fim);
+  }
+
+  function abrirNovaConta() {
+    setContaEditandoId(null);
+    setContaForm(CONTA_FORM_VAZIO);
+    setContaModalOpen(true);
+  }
+
+  function abrirEditarConta() {
+    if (!contaAtual) return;
+    setContaEditandoId(contaAtual.id);
+    setContaForm({
+      nome: contaAtual.nome,
+      agencia: contaAtual.agencia ?? "",
+      numeroConta: contaAtual.numeroConta ?? "",
+      cnpj: contaAtual.cnpj ?? "",
+      saldoInicial: contaAtual.saldoInicial ?? "",
+      saldoInicialEm: contaAtual.saldoInicialEm ?? "",
+    });
+    setContaModalOpen(true);
+  }
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const filePdfInputRef = useRef<HTMLInputElement>(null);
@@ -141,15 +210,46 @@ export default function Extratos() {
   const criarContaMutation = trpc.contas.create.useMutation({
     onSuccess: () => {
       toast.success("Conta criada.");
-      setNovaContaNome("");
-      setNovaContaOpen(false);
+      setContaModalOpen(false);
       utils.contas.list.invalidate();
     },
     onError: (err) => toast.error(err.message),
   });
 
+  const atualizarContaMutation = trpc.contas.atualizar.useMutation({
+    onSuccess: () => {
+      toast.success("Conta atualizada.");
+      setContaModalOpen(false);
+      utils.contas.list.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  function salvarConta() {
+    if (!contaForm.nome.trim()) return;
+    const saldoInicialNum = contaForm.saldoInicial ? parseFloat(contaForm.saldoInicial.replace(",", ".")) : undefined;
+    const dados = {
+      nome: contaForm.nome.trim(),
+      agencia: contaForm.agencia.trim() || undefined,
+      numeroConta: contaForm.numeroConta.trim() || undefined,
+      cnpj: contaForm.cnpj.trim() || undefined,
+      saldoInicial: saldoInicialNum,
+      saldoInicialEm: contaForm.saldoInicialEm || undefined,
+    };
+    if (contaEditandoId) {
+      atualizarContaMutation.mutate({ id: contaEditandoId, ...dados });
+    } else if (unidadeId) {
+      criarContaMutation.mutate({ unidadeId, ...dados });
+    }
+  }
+
   const categoriasQuery = trpc.dreCategorias.list.useQuery();
   const categorias = categoriasQuery.data ?? [];
+
+  const saldoNaDataQuery = trpc.contas.saldoNaData.useQuery(
+    { contaId: contaIdSelecionada!, data: dataInicioExtrato },
+    { enabled: !!contaIdSelecionada },
+  );
 
   const categorizarMutation = trpc.inter.categorizar.useMutation({
     onSuccess: (data) => {
@@ -162,6 +262,11 @@ export default function Extratos() {
   });
 
   const confirmarMutation = trpc.inter.confirmarSugestao.useMutation({
+    onSuccess: () => utils.inter.extratos.invalidate(),
+    onError: (err) => toast.error(err.message),
+  });
+
+  const atualizarNotaMutation = trpc.inter.atualizarNota.useMutation({
     onSuccess: () => utils.inter.extratos.invalidate(),
     onError: (err) => toast.error(err.message),
   });
@@ -267,12 +372,52 @@ export default function Extratos() {
   }
 
   const transacoesExtrato = extratosQuery.data ?? [];
+
+  const gruposDisponiveis = useMemo(() => {
+    const grupos = new Set(transacoesExtrato.map((t) => agruparOperacao(t.tipoTransacao, t.titulo)));
+    return Array.from(grupos).sort();
+  }, [transacoesExtrato]);
+
+  const valorBuscaNum = buscaValor.trim() ? parseFloat(buscaValor.replace(",", ".")) : null;
+
+  // Todos os filtros exceto o tipo (C/D) — usado pra contar as abas
+  // "Entradas/Saídas" já refletindo os outros filtros ativos.
+  const transacoesAntesDoTipo = transacoesExtrato.filter((t) => {
+    if (soPendentes && t.categorizacaoStatus === "confirmada") return false;
+    if (grupoOperacao !== "todos" && agruparOperacao(t.tipoTransacao, t.titulo) !== grupoOperacao) return false;
+    if (buscaTexto.trim()) {
+      const alvo = `${t.titulo ?? ""} ${t.descricao ?? ""}`.toLowerCase();
+      if (!alvo.includes(buscaTexto.trim().toLowerCase())) return false;
+    }
+    if (valorBuscaNum !== null && !Number.isNaN(valorBuscaNum)) {
+      if (Math.abs(parseFloat(t.valor) - valorBuscaNum) > 0.005) return false;
+    }
+    return true;
+  });
+
   const transacoesFiltradasExtrato = filtroTipoExtrato === "todos"
-    ? transacoesExtrato
-    : transacoesExtrato.filter((t) => t.tipoOperacao === filtroTipoExtrato);
+    ? transacoesAntesDoTipo
+    : transacoesAntesDoTipo.filter((t) => t.tipoOperacao === filtroTipoExtrato);
+
   const totalCreditosExtrato = transacoesExtrato.filter((t) => t.tipoOperacao === "C").reduce((s, t) => s + parseFloat(t.valor ?? "0"), 0);
   const totalDebitosExtrato = transacoesExtrato.filter((t) => t.tipoOperacao === "D").reduce((s, t) => s + parseFloat(t.valor ?? "0"), 0);
   const saldoExtrato = totalCreditosExtrato - totalDebitosExtrato;
+
+  // Saldo corrido por linha — só calculável com uma conta específica
+  // selecionada e com saldo inicial cadastrado (âncora vinda do backend).
+  // transacoesExtrato vem mais recente primeiro; a soma corrida precisa
+  // ser feita da mais antiga pra mais nova, depois mapeada de volta.
+  const saldosPorTransacao = useMemo(() => {
+    const mapa = new Map<number, number>();
+    if (saldoNaDataQuery.data == null) return mapa;
+    const ordemCronologica = [...transacoesExtrato].reverse();
+    let acumulado = saldoNaDataQuery.data;
+    for (const t of ordemCronologica) {
+      acumulado += (t.tipoOperacao === "C" ? 1 : -1) * parseFloat(t.valor);
+      mapa.set(t.id, acumulado);
+    }
+    return mapa;
+  }, [transacoesExtrato, saldoNaDataQuery.data]);
 
   function nomeConta(contaId: number | null) {
     if (!contaId) return "—";
@@ -320,11 +465,23 @@ export default function Extratos() {
             <Card className="border-border/50 shadow-sm">
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-1.5">
-                  <Wallet className="h-4 w-4" /> Saldo Disponível (Inter)
+                  <Wallet className="h-4 w-4" />
+                  {contaAtual && contaAtual.tipo !== "inter_oauth" ? `Saldo (${contaAtual.nome})` : "Saldo Disponível (Inter)"}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {saldoInterQuery.isLoading ? (
+                {contaAtual && contaAtual.tipo !== "inter_oauth" ? (
+                  contaAtual.saldoImportado ? (
+                    <>
+                      <div className="text-2xl font-bold">{fmtCurrencyExtrato(contaAtual.saldoImportado)}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        conforme OFX de {fmtDateExtrato(contaAtual.saldoImportadoEm ?? "")}
+                      </div>
+                    </>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Importe um OFX pra ver o saldo</span>
+                  )
+                ) : saldoInterQuery.isLoading ? (
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 ) : saldoInterQuery.data ? (
                   <div className="text-2xl font-bold">{fmtCurrencyExtrato(saldoInterQuery.data.disponivel)}</div>
@@ -366,56 +523,149 @@ export default function Extratos() {
               <div className="flex flex-wrap gap-3 items-end">
                 <div className="space-y-1">
                   <Label className="text-xs">Conta</Label>
-                  <Select value={contaSelecionadaId} onValueChange={setContaSelecionadaId}>
-                    <SelectTrigger className="w-56 h-8 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todas">Todas as contas</SelectItem>
-                      {contas.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.nome}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-1">
+                    <Select value={contaSelecionadaId} onValueChange={setContaSelecionadaId}>
+                      <SelectTrigger className="w-56 h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todas">Todas as contas</SelectItem>
+                        {contas.map((c) => (
+                          <SelectItem key={c.id} value={String(c.id)}>{c.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {contaAtual && (
+                      <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" title="Editar conta" onClick={abrirEditarConta}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Período</Label>
+                  <div className="flex gap-1 flex-wrap">
+                    {([
+                      ["mes_vigente", "Mês vigente"],
+                      ["15", "15 dias"],
+                      ["30", "30 dias"],
+                      ["60", "60 dias"],
+                      ["mes_anterior", "Mês anterior"],
+                    ] as [PeriodoRapido, string][]).map(([valor, label]) => (
+                      <Button
+                        key={valor}
+                        size="sm"
+                        variant={periodoAtivo === valor ? "default" : "outline"}
+                        className="h-8 text-xs"
+                        onClick={() => selecionarPeriodo(valor)}
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Data início</Label>
-                  <Input type="date" value={dataInicioExtrato} onChange={(e) => setDataInicioExtrato(e.target.value)} className="w-40 h-8 text-sm" />
+                  <Input
+                    type="date"
+                    value={dataInicioExtrato}
+                    onChange={(e) => { setDataInicioExtrato(e.target.value); setPeriodoAtivo("livre"); }}
+                    className="w-40 h-8 text-sm"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Data fim</Label>
-                  <Input type="date" value={dataFimExtrato} onChange={(e) => setDataFimExtrato(e.target.value)} className="w-40 h-8 text-sm" />
+                  <Input
+                    type="date"
+                    value={dataFimExtrato}
+                    onChange={(e) => { setDataFimExtrato(e.target.value); setPeriodoAtivo("livre"); }}
+                    className="w-40 h-8 text-sm"
+                  />
                 </div>
                 <Button size="sm" variant="outline" onClick={() => extratosQuery.refetch()} disabled={extratosQuery.isFetching}>
                   {extratosQuery.isFetching ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
                   Atualizar
                 </Button>
 
-                <Dialog open={novaContaOpen} onOpenChange={setNovaContaOpen}>
+                <Dialog open={contaModalOpen} onOpenChange={setContaModalOpen}>
                   <DialogTrigger asChild>
-                    <Button size="sm" variant="outline">
+                    <Button size="sm" variant="outline" onClick={abrirNovaConta}>
                       <Plus className="h-3.5 w-3.5 mr-1.5" /> Nova conta
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Nova conta</DialogTitle>
+                      <DialogTitle>{contaEditandoId ? "Editar conta" : "Nova conta"}</DialogTitle>
                       <DialogDescription>
                         Ex.: "Caixa", "Poupança", "Maquininha Stone". Contas novas só recebem extrato por importação (OFX/CSV/PDF).
+                        Ag/conta/CNPJ ajudam a identificar transferências entre contas próprias automaticamente.
                       </DialogDescription>
                     </DialogHeader>
-                    <Input
-                      placeholder="Nome da conta"
-                      value={novaContaNome}
-                      onChange={(e) => setNovaContaNome(e.target.value)}
-                    />
+                    <div className="space-y-3">
+                      <div>
+                        <Label className="text-xs">Nome</Label>
+                        <Input
+                          placeholder="Nome da conta"
+                          value={contaForm.nome}
+                          onChange={(e) => setContaForm({ ...contaForm, nome: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs">Agência</Label>
+                          <Input
+                            placeholder="0001"
+                            value={contaForm.agencia}
+                            onChange={(e) => setContaForm({ ...contaForm, agencia: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Conta</Label>
+                          <Input
+                            placeholder="00000-0"
+                            value={contaForm.numeroConta}
+                            onChange={(e) => setContaForm({ ...contaForm, numeroConta: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="text-xs">CNPJ</Label>
+                        <Input
+                          placeholder="00.000.000/0001-00"
+                          value={contaForm.cnpj}
+                          onChange={(e) => setContaForm({ ...contaForm, cnpj: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs">Saldo inicial</Label>
+                          <Input
+                            placeholder="0,00"
+                            value={contaForm.saldoInicial}
+                            onChange={(e) => setContaForm({ ...contaForm, saldoInicial: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Em (data)</Label>
+                          <Input
+                            type="date"
+                            value={contaForm.saldoInicialEm}
+                            onChange={(e) => setContaForm({ ...contaForm, saldoInicialEm: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        O saldo inicial numa data conhecida alimenta a coluna "Saldo" corrido na tabela.
+                      </p>
+                    </div>
                     <DialogFooter>
                       <Button
-                        onClick={() => unidadeId && novaContaNome.trim() && criarContaMutation.mutate({ unidadeId, nome: novaContaNome.trim() })}
-                        disabled={!novaContaNome.trim() || criarContaMutation.isPending}
+                        onClick={salvarConta}
+                        disabled={!contaForm.nome.trim() || criarContaMutation.isPending || atualizarContaMutation.isPending}
                       >
-                        {criarContaMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                        Criar
+                        {(criarContaMutation.isPending || atualizarContaMutation.isPending) ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                        {contaEditandoId ? "Salvar" : "Criar"}
                       </Button>
                     </DialogFooter>
                   </DialogContent>
@@ -472,6 +722,48 @@ export default function Extratos() {
                 tipo C/D, valor sempre positivo, cabeçalho opcional) ou o PDF do "Extrato completo" do Banco Inter.
               </p>
 
+              <div className="flex flex-wrap gap-3 items-end border-t border-border/30 pt-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Tipo de operação</Label>
+                  <Select value={grupoOperacao} onValueChange={setGrupoOperacao}>
+                    <SelectTrigger className="w-40 h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos</SelectItem>
+                      {gruposDisponiveis.map((g) => (
+                        <SelectItem key={g} value={g}>{g}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Buscar por nome</Label>
+                  <div className="relative">
+                    <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Ex.: Yamada, Caju..."
+                      value={buscaTexto}
+                      onChange={(e) => setBuscaTexto(e.target.value)}
+                      className="w-48 h-8 text-sm pl-7"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Buscar por valor</Label>
+                  <Input
+                    placeholder="Ex.: 1500,00"
+                    value={buscaValor}
+                    onChange={(e) => setBuscaValor(e.target.value)}
+                    className="w-32 h-8 text-sm"
+                  />
+                </div>
+                <label className="flex items-center gap-2 h-8 text-sm cursor-pointer">
+                  <Checkbox checked={soPendentes} onCheckedChange={(v) => setSoPendentes(!!v)} />
+                  Só falta tratar (pendente/sugerida)
+                </label>
+              </div>
+
               {(transacoesExtrato.some((t) => t.categorizacaoStatus === "pendente") || transacoesExtrato.some((t) => t.categorizacaoStatus === "sugerida")) && (
                 <div className="flex justify-end items-center gap-2">
                   {transacoesExtrato.some((t) => t.categorizacaoStatus === "sugerida") && (
@@ -498,9 +790,9 @@ export default function Extratos() {
               )}
               <Tabs value={filtroTipoExtrato} onValueChange={(v) => setFiltroTipoExtrato(v as "todos" | "D" | "C")}>
                 <TabsList className="h-8">
-                  <TabsTrigger value="todos" className="text-xs h-7">Todos ({transacoesExtrato.length})</TabsTrigger>
-                  <TabsTrigger value="C" className="text-xs h-7">Entradas ({transacoesExtrato.filter((t) => t.tipoOperacao === "C").length})</TabsTrigger>
-                  <TabsTrigger value="D" className="text-xs h-7">Saídas ({transacoesExtrato.filter((t) => t.tipoOperacao === "D").length})</TabsTrigger>
+                  <TabsTrigger value="todos" className="text-xs h-7">Todos ({transacoesAntesDoTipo.length})</TabsTrigger>
+                  <TabsTrigger value="C" className="text-xs h-7">Entradas ({transacoesAntesDoTipo.filter((t) => t.tipoOperacao === "C").length})</TabsTrigger>
+                  <TabsTrigger value="D" className="text-xs h-7">Saídas ({transacoesAntesDoTipo.filter((t) => t.tipoOperacao === "D").length})</TabsTrigger>
                 </TabsList>
                 <TabsContent value={filtroTipoExtrato} className="mt-3">
                   {extratosQuery.isLoading ? (
@@ -521,7 +813,9 @@ export default function Extratos() {
                             <TableHead className="text-xs w-32">Conta</TableHead>
                             <TableHead className="text-xs w-20">Origem</TableHead>
                             <TableHead className="text-xs w-56">Categoria DRE</TableHead>
+                            <TableHead className="text-xs w-48">Nota</TableHead>
                             <TableHead className="text-xs text-right w-32">Valor</TableHead>
+                            {contaAtual && <TableHead className="text-xs text-right w-32">Saldo</TableHead>}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -529,7 +823,17 @@ export default function Extratos() {
                             <TableRow key={t.id} className="text-sm">
                               <TableCell className="text-xs text-muted-foreground">{fmtDateExtrato(t.dataEntrada)}</TableCell>
                               <TableCell>
-                                <div className="font-medium text-sm leading-tight">{t.titulo || t.tipoTransacao || "—"}</div>
+                                <div className="font-medium text-sm leading-tight flex items-center gap-1.5">
+                                  {t.titulo || t.tipoTransacao || "—"}
+                                  {t.alerta && (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <TriangleAlert className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                                      </TooltipTrigger>
+                                      <TooltipContent>{t.alerta}</TooltipContent>
+                                    </Tooltip>
+                                  )}
+                                </div>
                                 {t.descricao && <div className="text-xs text-muted-foreground truncate max-w-xs">{t.descricao}</div>}
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground">{nomeConta(t.contaId)}</TableCell>
@@ -579,11 +883,29 @@ export default function Extratos() {
                                   )}
                                 </div>
                               </TableCell>
+                              <TableCell>
+                                <Input
+                                  key={t.id}
+                                  defaultValue={t.nota ?? ""}
+                                  placeholder="Do que se trata..."
+                                  className="h-7 text-xs"
+                                  onBlur={(e) => {
+                                    if (e.target.value !== (t.nota ?? "")) {
+                                      atualizarNotaMutation.mutate({ transacaoId: t.id, nota: e.target.value });
+                                    }
+                                  }}
+                                />
+                              </TableCell>
                               <TableCell className="text-right font-medium">
                                 <span className={t.tipoOperacao === "C" ? "text-green-700" : "text-red-600"}>
                                   {t.tipoOperacao === "C" ? "+" : "-"}{fmtCurrencyExtrato(t.valor)}
                                 </span>
                               </TableCell>
+                              {contaAtual && (
+                                <TableCell className="text-right text-xs text-muted-foreground">
+                                  {saldosPorTransacao.has(t.id) ? fmtCurrencyExtrato(saldosPorTransacao.get(t.id)) : "—"}
+                                </TableCell>
+                              )}
                             </TableRow>
                           ))}
                         </TableBody>

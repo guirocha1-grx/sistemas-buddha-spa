@@ -11,8 +11,7 @@ import { storagePut, storageGetSignedUrl } from "./storage";
 import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid } from "./interApi";
 import { parseExtratoInterPdf } from "./interExtratoPdfParser";
-import { parseExtratoOfx } from "./interExtratoOfxParser";
-import { sugerirCategoriaNome } from "./dreCategorizacao";
+import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { PDFParse } from "pdf-parse";
 
 export const appRouter = router({
@@ -723,6 +722,19 @@ Diretrizes:
     }),
 
     /**
+     * Nota livre por transação, separada da categoria — esclarece o
+     * caso específico quando a categoria sozinha agrupa vários tipos
+     * de lançamento diferentes.
+     */
+    atualizarNota: protectedProcedure.input(z.object({
+      transacaoId: z.number(),
+      nota: z.string(),
+    })).mutation(async ({ input }) => {
+      await db.atualizarNota(input.transacaoId, input.nota);
+      return { success: true };
+    }),
+
+    /**
      * Reaplica as regras de categorização atuais só nas transações que
      * ainda estão "Pendente" — usado depois que uma regra nova é
      * adicionada, pra não deixar lançamentos já importados presos.
@@ -762,11 +774,20 @@ Diretrizes:
 
       const contaInter = await db.getOrCreateContaInter(input.unidadeId);
       const regrasDre = await db.listRegrasParaMatch();
-      const categorizar = (t: { tipoTransacao?: string; titulo?: string; descricao?: string }) => {
-        const texto = `${t.tipoTransacao ?? ""} ${t.titulo ?? ""} ${t.descricao ?? ""}`;
-        const categoriaNome = sugerirCategoriaNome(texto, regrasDre);
-        const dreCategoriaId = regrasDre.find((r) => r.categoriaNome === categoriaNome)?.dreCategoriaId;
-        return { dreCategoriaId, categorizacaoStatus: dreCategoriaId ? ("sugerida" as const) : ("pendente" as const) };
+      const cnpjsContasDre = await db.listCnpjsDeContas();
+      const categorizar = async (t: { dataEntrada: string; tipoTransacao?: string; titulo?: string; descricao?: string; valor: string; cpfCnpjOrigem?: string; cpfCnpjDestino?: string }) => {
+        if (!contaInter?.id) return { dreCategoriaId: undefined, categorizacaoStatus: "pendente" as const, alerta: null };
+        const resultado = await db.categorizarTransacaoAutomaticamente({
+          contaId: contaInter.id,
+          dataEntrada: t.dataEntrada,
+          tipoTransacao: t.tipoTransacao,
+          titulo: t.titulo,
+          descricao: t.descricao,
+          valor: parseFloat(t.valor),
+          cpfCnpjOrigem: t.cpfCnpjOrigem,
+          cpfCnpjDestino: t.cpfCnpjDestino,
+        }, regrasDre, cnpjsContasDre);
+        return { dreCategoriaId: resultado.dreCategoriaId ?? undefined, categorizacaoStatus: resultado.categorizacaoStatus, alerta: resultado.alerta };
       };
 
       let totalInseridos = 0;
@@ -794,7 +815,7 @@ Diretrizes:
 
         const inseridos = await db.upsertInterExtratos(
           input.unidadeId,
-          primeira.transacoes.map(t => ({
+          await Promise.all(primeira.transacoes.map(async t => ({
             unidadeId: input.unidadeId,
             contaId: contaInter?.id,
             idTransacao: t.idTransacao,
@@ -811,8 +832,8 @@ Diretrizes:
             cpfCnpjOrigem: t.cpfCnpjOrigem,
             cpfCnpjDestino: t.cpfCnpjDestino,
             cpmf: t.cpmf,
-            ...categorizar(t),
-          })),
+            ...(await categorizar(t)),
+          }))),
         );
         totalInseridos += inseridos;
         pagina++;
@@ -835,7 +856,7 @@ Diretrizes:
 
           const ins = await db.upsertInterExtratos(
             input.unidadeId,
-            proxima.transacoes.map(t => ({
+            await Promise.all(proxima.transacoes.map(async t => ({
               unidadeId: input.unidadeId,
               contaId: contaInter?.id,
               idTransacao: t.idTransacao,
@@ -852,8 +873,8 @@ Diretrizes:
               cpfCnpjOrigem: t.cpfCnpjOrigem,
               cpfCnpjDestino: t.cpfCnpjDestino,
               cpmf: t.cpmf,
-              ...categorizar(t),
-            })),
+              ...(await categorizar(t)),
+            }))),
           );
           totalInseridos += ins;
           pagina++;
@@ -914,10 +935,15 @@ Diretrizes:
       if (!conta) throw new Error("Conta não encontrada");
 
       const regras = await db.listRegrasParaMatch();
-      const transacoes = input.linhas.map((linha, i) => {
+      const cnpjsContas = await db.listCnpjsDeContas();
+      const transacoes = await Promise.all(input.linhas.map(async (linha, i) => {
         const idTransacao = `csv:${input.contaId}:${linha.data}:${linha.tipo}:${linha.valor}:${i}`;
-        const categoriaNome = sugerirCategoriaNome(linha.descricao, regras);
-        const dreCategoriaId = regras.find((r) => r.categoriaNome === categoriaNome)?.dreCategoriaId;
+        const resultado = await db.categorizarTransacaoAutomaticamente({
+          contaId: input.contaId,
+          dataEntrada: linha.data,
+          titulo: linha.descricao,
+          valor: linha.valor,
+        }, regras, cnpjsContas);
         return {
           unidadeId: conta.unidadeId,
           contaId: input.contaId,
@@ -927,10 +953,11 @@ Diretrizes:
           valor: linha.valor.toFixed(2),
           titulo: linha.descricao,
           origem: "csv" as const,
-          dreCategoriaId,
-          categorizacaoStatus: dreCategoriaId ? ("sugerida" as const) : ("pendente" as const),
+          dreCategoriaId: resultado.dreCategoriaId,
+          categorizacaoStatus: resultado.categorizacaoStatus,
+          alerta: resultado.alerta,
         };
-      });
+      }));
       const inseridos = await db.upsertInterExtratos(conta.unidadeId, transacoes);
       await db.createSyncLog({
         unidadeId: conta.unidadeId,
@@ -972,9 +999,14 @@ Diretrizes:
       }
 
       const regras = await db.listRegrasParaMatch();
-      const transacoes = linhas.map((linha, i) => {
-        const categoriaNome = sugerirCategoriaNome(linha.descricao, regras);
-        const dreCategoriaId = regras.find((r) => r.categoriaNome === categoriaNome)?.dreCategoriaId;
+      const cnpjsContas = await db.listCnpjsDeContas();
+      const transacoes = await Promise.all(linhas.map(async (linha, i) => {
+        const resultado = await db.categorizarTransacaoAutomaticamente({
+          contaId: input.contaId,
+          dataEntrada: linha.data,
+          titulo: linha.descricao,
+          valor: linha.valor,
+        }, regras, cnpjsContas);
         return {
           unidadeId: conta.unidadeId,
           contaId: input.contaId,
@@ -984,10 +1016,11 @@ Diretrizes:
           valor: linha.valor.toFixed(2),
           titulo: linha.descricao,
           origem: "pdf" as const,
-          dreCategoriaId,
-          categorizacaoStatus: dreCategoriaId ? ("sugerida" as const) : ("pendente" as const),
+          dreCategoriaId: resultado.dreCategoriaId,
+          categorizacaoStatus: resultado.categorizacaoStatus,
+          alerta: resultado.alerta,
         };
-      });
+      }));
 
       const inseridos = await db.upsertInterExtratos(conta.unidadeId, transacoes);
       await db.createSyncLog({
@@ -1019,24 +1052,42 @@ Diretrizes:
       }
 
       const regras = await db.listRegrasParaMatch();
-      const transacoes = linhas.map((linha) => {
-        const categoriaNome = sugerirCategoriaNome(linha.descricao, regras);
-        const dreCategoriaId = regras.find((r) => r.categoriaNome === categoriaNome)?.dreCategoriaId;
+      const cnpjsContas = await db.listCnpjsDeContas();
+      const transacoes = await Promise.all(linhas.map(async (linha) => {
+        const resultado = await db.categorizarTransacaoAutomaticamente({
+          contaId: input.contaId,
+          dataEntrada: linha.data,
+          tipoTransacao: linha.trnType,
+          titulo: linha.descricao,
+          valor: linha.valor,
+        }, regras, cnpjsContas);
         return {
           unidadeId: conta.unidadeId,
           contaId: input.contaId,
           idTransacao: `ofx:${input.contaId}:${linha.fitid}`,
           dataEntrada: linha.data,
+          tipoTransacao: linha.trnType ?? undefined,
           tipoOperacao: linha.tipo,
           valor: linha.valor.toFixed(2),
           titulo: linha.descricao,
           origem: "ofx" as const,
-          dreCategoriaId,
-          categorizacaoStatus: dreCategoriaId ? ("sugerida" as const) : ("pendente" as const),
+          dreCategoriaId: resultado.dreCategoriaId,
+          categorizacaoStatus: resultado.categorizacaoStatus,
+          alerta: resultado.alerta,
         };
-      });
+      }));
 
       const inseridos = await db.upsertInterExtratos(conta.unidadeId, transacoes);
+
+      // Saldo do <LEDGERBAL> — só grava pra conta manual (a inter_oauth
+      // já tem saldo ao vivo via inter.saldo, não precisa do snapshot do OFX).
+      if (conta.tipo !== "inter_oauth") {
+        const saldoOfx = parseSaldoOfx(input.ofxTexto);
+        if (saldoOfx) {
+          await db.atualizarSaldoImportado(input.contaId, saldoOfx.saldo.toFixed(2), saldoOfx.dataApuracao);
+        }
+      }
+
       await db.createSyncLog({
         unidadeId: conta.unidadeId,
         tipo: "ofx_extrato",
@@ -1062,17 +1113,47 @@ Diretrizes:
     create: adminProcedure.input(z.object({
       unidadeId: z.number(),
       nome: z.string().min(1),
+      agencia: z.string().optional(),
+      numeroConta: z.string().optional(),
+      cnpj: z.string().optional(),
+      saldoInicial: z.number().optional(),
+      saldoInicialEm: z.string().optional(), // AAAA-MM-DD
     })).mutation(async ({ input }) => {
-      const id = await db.createConta(input.unidadeId, input.nome);
+      const { unidadeId, saldoInicial, ...resto } = input;
+      const id = await db.createConta(unidadeId, {
+        ...resto,
+        saldoInicial: saldoInicial !== undefined ? saldoInicial.toFixed(2) : undefined,
+      });
       return { success: true, id };
     }),
 
-    rename: adminProcedure.input(z.object({
+    atualizar: adminProcedure.input(z.object({
       id: z.number(),
       nome: z.string().min(1),
+      agencia: z.string().optional(),
+      numeroConta: z.string().optional(),
+      cnpj: z.string().optional(),
+      saldoInicial: z.number().optional(),
+      saldoInicialEm: z.string().optional(),
     })).mutation(async ({ input }) => {
-      await db.renameConta(input.id, input.nome);
+      const { id, saldoInicial, ...resto } = input;
+      await db.atualizarConta(id, {
+        ...resto,
+        saldoInicial: saldoInicial !== undefined ? saldoInicial.toFixed(2) : undefined,
+      });
       return { success: true };
+    }),
+
+    /**
+     * Saldo real da conta no início do período exibido — usado pra
+     * montar a coluna Saldo (acumulado) na tabela. Null se a conta não
+     * tem saldo inicial cadastrado.
+     */
+    saldoNaData: protectedProcedure.input(z.object({
+      contaId: z.number(),
+      data: z.string(),
+    })).query(async ({ input }) => {
+      return db.calcularSaldoNaData(input.contaId, input.data);
     }),
   }),
 
@@ -1080,6 +1161,61 @@ Diretrizes:
   dreCategorias: router({
     list: protectedProcedure.query(async () => {
       return db.listDreCategorias();
+    }),
+
+    criar: adminProcedure.input(z.object({
+      nome: z.string().min(1),
+      secao: z.enum(["receitas", "impostos", "custos_diretos", "despesas_pessoal", "marketing", "despesas_administrativas", "despesas_financeiras", "devolucoes", "excluido"]),
+    })).mutation(async ({ input }) => {
+      const id = await db.criarDreCategoria(input.nome, input.secao);
+      return { success: true, id };
+    }),
+  }),
+
+  // ===== Regras de categorização automática (tela Parâmetros) =====
+  dreRegras: router({
+    list: protectedProcedure.query(async () => {
+      return db.listDreRegrasCompleto();
+    }),
+
+    criar: adminProcedure.input(z.object({
+      padrao: z.string().min(1),
+      dreCategoriaId: z.number(),
+      valorMin: z.number().optional(),
+      valorMax: z.number().optional(),
+      alertaSeRepetirNoMes: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      const id = await db.criarDreRegra({
+        ...input,
+        valorMin: input.valorMin?.toFixed(2),
+        valorMax: input.valorMax?.toFixed(2),
+      });
+      return { success: true, id };
+    }),
+
+    atualizar: adminProcedure.input(z.object({
+      id: z.number(),
+      padrao: z.string().min(1).optional(),
+      dreCategoriaId: z.number().optional(),
+      valorMin: z.number().nullable().optional(),
+      valorMax: z.number().nullable().optional(),
+      alertaSeRepetirNoMes: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, valorMin, valorMax, ...resto } = input;
+      await db.atualizarDreRegra(id, {
+        ...resto,
+        valorMin: valorMin === null ? undefined : valorMin?.toFixed(2),
+        valorMax: valorMax === null ? undefined : valorMax?.toFixed(2),
+      });
+      return { success: true };
+    }),
+
+    ativarDesativar: adminProcedure.input(z.object({
+      id: z.number(),
+      ativa: z.boolean(),
+    })).mutation(async ({ input }) => {
+      await db.ativarDesativarDreRegra(input.id, input.ativa);
+      return { success: true };
     }),
   }),
 

@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "35ae9395-14e9-4a82-af32-c120be4c6a27",
+  "id": "fdca3477-e117-4bd7-9749-5a965f02063f",
   "prevId": "57be1fff-6ce9-489b-ad2b-c1e999561599",
   "tables": {
     "configuracoes": {
@@ -89,6 +89,55 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'manual'"
+        },
+        "agencia": {
+          "name": "agencia",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "numeroConta": {
+          "name": "numeroConta",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cnpj": {
+          "name": "cnpj",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "saldoInicial": {
+          "name": "saldoInicial",
+          "type": "decimal(12,2)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "saldoInicialEm": {
+          "name": "saldoInicialEm",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "saldoImportado": {
+          "name": "saldoImportado",
+          "type": "decimal(12,2)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "saldoImportadoEm": {
+          "name": "saldoImportadoEm",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "createdAt": {
           "name": "createdAt",
@@ -298,9 +347,31 @@
           "notNull": true,
           "autoincrement": false
         },
+        "valorMin": {
+          "name": "valorMin",
+          "type": "decimal(12,2)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "valorMax": {
+          "name": "valorMax",
+          "type": "decimal(12,2)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "alertaSeRepetirNoMes": {
+          "name": "alertaSeRepetirNoMes",
+          "type": "enum('true','false')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'false'"
+        },
         "origem": {
           "name": "origem",
-          "type": "enum('seed','aprendida')",
+          "type": "enum('seed','aprendida','manual')",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
@@ -700,6 +771,20 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'pendente'"
+        },
+        "nota": {
+          "name": "nota",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "alerta": {
+          "name": "alerta",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "syncedAt": {
           "name": "syncedAt",
