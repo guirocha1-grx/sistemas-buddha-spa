@@ -320,6 +320,11 @@ export type InsertDreCategoria = typeof dreCategorias.$inferInsert;
  */
 export const dreRegras = mysqlTable("dre_regras", {
   id: int("id").autoincrement().primaryKey(),
+  // Rótulo legível pra essa regra específica (ex.: "Escritório de
+  // advocacia Herdade Martini") — null = mostra o nome da categoria
+  // como fallback. Diferente do padrão (texto técnico de match) e da
+  // categoria (agrupa várias regras); a descrição esclarece o caso.
+  descricao: varchar("descricao", { length: 256 }),
   padrao: varchar("padrao", { length: 256 }).notNull(),
   dreCategoriaId: int("dreCategoriaId").notNull(),
   // Faixa de valor opcional — mesma contraparte pode significar coisas

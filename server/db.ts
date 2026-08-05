@@ -586,6 +586,7 @@ export async function criarDreCategoria(nome: string, secao: string) {
 }
 
 export interface DadosDreRegra {
+  descricao?: string;
   padrao: string;
   dreCategoriaId: number;
   valorMin?: string;
@@ -603,6 +604,7 @@ export async function listDreRegrasCompleto() {
   if (!db) return [];
   return db.select({
     id: dreRegras.id,
+    descricao: dreRegras.descricao,
     padrao: dreRegras.padrao,
     dreCategoriaId: dreRegras.dreCategoriaId,
     categoriaNome: dreCategorias.nome,
@@ -621,6 +623,7 @@ export async function criarDreRegra(dados: DadosDreRegra) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.insert(dreRegras).values({
+    descricao: dados.descricao,
     padrao: dados.padrao,
     dreCategoriaId: dados.dreCategoriaId,
     valorMin: dados.valorMin,
@@ -629,6 +632,12 @@ export async function criarDreRegra(dados: DadosDreRegra) {
     origem: "manual",
   }).$returningId();
   return result[0]?.id;
+}
+
+export async function atualizarDescricaoDreRegra(id: number, descricao: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(dreRegras).set({ descricao: descricao || null }).where(eq(dreRegras.id, id));
 }
 
 export async function atualizarDreRegra(id: number, dados: Partial<DadosDreRegra>) {
