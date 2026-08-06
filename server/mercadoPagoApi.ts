@@ -132,7 +132,8 @@ export interface MpRelatorioInfo {
   end_date?: string;
 }
 
-export async function criarRelatorioLiberado(accessToken: string, dataInicio: string, dataFim: string): Promise<void> {
+/** Retorna status+corpo bruto — quem chama decide se loga pra diagnóstico. */
+export async function criarRelatorioLiberado(accessToken: string, dataInicio: string, dataFim: string): Promise<{ status: number; corpo: string }> {
   const res = await fetch(`${MP_BASE_URL}/v1/account/release_report`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
@@ -141,17 +142,33 @@ export async function criarRelatorioLiberado(accessToken: string, dataInicio: st
       end_date: `${dataFim}T23:59:59Z`,
     }),
   });
+  const corpo = await res.text();
   if (res.status !== 202 && !res.ok) {
-    const corpo = await res.text();
     throw new Error(`[Mercado Pago] Falha ao gerar relatório de conta: ${res.status} — ${corpo}`);
   }
+  return { status: res.status, corpo };
 }
 
+/** Texto bruto da resposta, sem nenhuma suposição de formato — pra diagnóstico. */
+export async function listarRelatoriosLiberadosBruto(accessToken: string): Promise<string> {
+  const res = await fetch(`${MP_BASE_URL}/v1/account/release_report/list`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const corpo = await res.text();
+  if (!res.ok) throw new Error(`[Mercado Pago] Falha ao listar relatórios: ${res.status} — ${corpo}`);
+  return corpo;
+}
+
+/**
+ * Versão tipada — ainda sem confirmação com payload real de quais
+ * campos/valores de status a API realmente usa, então tenta os
+ * formatos de envelope mais comuns (array direto, {data}, {results}).
+ * Se o mapeamento estiver errado, listarRelatoriosLiberadosBruto acima
+ * é a fonte de verdade pra corrigir.
+ */
 export async function listarRelatoriosLiberados(accessToken: string): Promise<MpRelatorioInfo[]> {
-  const dados = await mpRequest<MpRelatorioInfo[] | { data?: MpRelatorioInfo[]; results?: MpRelatorioInfo[] }>(
-    "/v1/account/release_report/list",
-    accessToken,
-  );
+  const bruto = await listarRelatoriosLiberadosBruto(accessToken);
+  const dados = JSON.parse(bruto) as MpRelatorioInfo[] | { data?: MpRelatorioInfo[]; results?: MpRelatorioInfo[] };
   if (Array.isArray(dados)) return dados;
   return dados.data ?? dados.results ?? [];
 }
