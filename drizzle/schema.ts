@@ -315,7 +315,11 @@ export const adquirenteVendas = mysqlTable("adquirente_vendas", {
   // "AAAA-MM-DD HH:mm:ss" — string, mesmo padrão comparável usado em
   // dataEntrada (varchar) no resto do projeto.
   dataHora: varchar("dataHora", { length: 19 }).notNull(),
-  tipo: varchar("tipo", { length: 64 }), // Débito/Crédito/Pix/Pagamento Instantâneo — texto livre, varia por adquirente
+  // Texto livre, varia por adquirente — pode ser curto ("Débito", "Pix")
+  // ou uma descrição longa de cobrança de taxa ("155 - DÉBITO COBRANÇA
+  // REFERENTE A UTILIZAÇÃO DO CHIP DE TELEFONIA", confirmado em CSV
+  // real do Interpag) — por isso text, não varchar.
+  tipo: text("tipo"),
   status: varchar("status", { length: 64 }), // Pago/Em Processamento/Cancelado — texto livre
   parcela: varchar("parcela", { length: 8 }), // "1/3"
   bandeira: varchar("bandeira", { length: 32 }), // Mastercard/Visa/Elo/Pix
