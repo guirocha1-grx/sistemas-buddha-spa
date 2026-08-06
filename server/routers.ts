@@ -1210,6 +1210,14 @@ Diretrizes:
         // end_date que a API devolve também pode vir com o dia seguinte
         // (fuso: 23:59:59Z do dia pedido vira madrugada UTC do dia
         // depois), então a comparação de período tolera esse +1 dia.
+        // O MP retorna begin_date/end_date em UTC (ex.: 2026-07-31T03:00:00Z
+        // = 2026-08-01 00:00 BRT). Por isso a comparação precisa aceitar
+        // início um dia antes e fim um dia depois do período solicitado.
+        const diaAnterior = (data: string) => {
+          const d = new Date(`${data}T00:00:00Z`);
+          d.setUTCDate(d.getUTCDate() - 1);
+          return d.toISOString().slice(0, 10);
+        };
         const diaSeguinte = (data: string) => {
           const d = new Date(`${data}T00:00:00Z`);
           d.setUTCDate(d.getUTCDate() + 1);
@@ -1218,7 +1226,8 @@ Diretrizes:
         const mesmoPeriodo = (r: { begin_date?: string; end_date?: string }) => {
           const inicio = (r.begin_date ?? "").slice(0, 10);
           const fim = (r.end_date ?? "").slice(0, 10);
-          return inicio === input.dataInicio && (fim === input.dataFim || fim === diaSeguinte(input.dataFim));
+          return (inicio === input.dataInicio || inicio === diaAnterior(input.dataInicio))
+            && (fim === input.dataFim || fim === diaSeguinte(input.dataFim));
         };
 
         const tentarBaixar = async (nome: string): Promise<string | undefined> => {
