@@ -886,19 +886,23 @@ Diretrizes:
           pagina++;
         }
 
-        // Registrar log de sincronização — inclui uma amostra bruta de
-        // crédito e outra de débito (todos os campos, sem filtro), útil
-        // pra auditar se o mapeamento em InterTransacaoCompleta cobre
-        // tudo que a API realmente devolve hoje. O lado débito ainda é
-        // uma suposição (nomeRecebedor/cpfCnpjRecebedor por simetria com
-        // o lado crédito, nunca visto num payload real) — por isso pegar
-        // uma amostra de cada é mais valioso que só a primeira da lista.
-        const amostraCredito = primeira.transacoes.find((t) => t.tipoOperacao === "C");
-        const amostraDebito = primeira.transacoes.find((t) => t.tipoOperacao === "D");
-        const amostras = [
-          amostraCredito ? `Crédito: ${JSON.stringify(amostraCredito).slice(0, 1500)}` : null,
-          amostraDebito ? `Débito: ${JSON.stringify(amostraDebito).slice(0, 1500)}` : null,
-        ].filter(Boolean).join(" | ");
+        // Registrar log de sincronização — inclui amostras brutas (todos
+        // os campos, sem filtro) úteis pra auditar se o mapeamento em
+        // InterTransacaoCompleta cobre tudo que a API devolve hoje.
+        // `detalhes` muda de formato conforme tipoTransacao (confirmado:
+        // Pix recebido ≠ pagamento de boleto), então pega 1 amostra por
+        // combinação tipoOperacao+tipoTransacao encontrada na página —
+        // Pix enviado (débito) ainda não tinha sido confirmado.
+        const vistos = new Set<string>();
+        const amostrasPorTipo = primeira.transacoes.filter((t) => {
+          const chave = `${t.tipoOperacao}:${t.tipoTransacao}`;
+          if (vistos.has(chave)) return false;
+          vistos.add(chave);
+          return true;
+        });
+        const amostras = amostrasPorTipo
+          .map((t) => `${t.tipoOperacao}/${t.tipoTransacao}: ${JSON.stringify(t).slice(0, 1200)}`)
+          .join(" | ");
         await db.createSyncLog({
           unidadeId: input.unidadeId,
           tipo: "inter_extrato",
