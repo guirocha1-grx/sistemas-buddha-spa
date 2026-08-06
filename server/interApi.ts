@@ -50,23 +50,46 @@ export interface InterExtratoResponse {
 }
 
 /**
- * Formato confirmado em produção (payload real de 2026-08-05, transação
- * Pix recebido) — bem diferente do que a doc sugeria. Alguns campos
- * (lado "recebedor"/débito) ainda não foram confirmados com um exemplo
- * real, só inferidos por simetria com o lado "pagador".
+ * Formato confirmado em produção com 2 payloads reais (2026-08-05,
+ * unidade Ribeirão Shopping): um Pix recebido (crédito) e um pagamento
+ * de boleto (débito) — bem diferentes do que a doc sugeria, e bem
+ * diferentes ENTRE SI. `detalhes` muda de formato conforme tipoTransacao
+ * (PIX vs PAGAMENTO/boleto), não é uma estrutura fixa.
+ *
+ * IMPORTANTE: no boleto, `cpfCnpj` é o CNPJ de QUEM PAGA (nós), não do
+ * destinatário — confirmado batendo com `chavePixRecebedor` de outro
+ * payload. Não usar esse campo pra identificar a contraparte.
+ *
+ * Pix enviado (débito) ainda não foi visto num payload real — os campos
+ * nomeRecebedor/cpfCnpjRecebedor abaixo são só uma suposição por
+ * simetria com o lado pagador do Pix recebido.
  */
 export interface InterDetalhesTransacao {
+  // Pix recebido (crédito) — confirmado
   txId?: string;
   nomePagador?: string;
-  nomeRecebedor?: string;
   descricaoPix?: string;
   cpfCnpjPagador?: string;
-  cpfCnpjRecebedor?: string;
   nomeEmpresaPagador?: string;
-  nomeEmpresaRecebedor?: string;
+  chavePixRecebedor?: string;
+  // Pagamento de boleto (débito) — confirmado
+  valorTotal?: string;
+  detalheDescricao?: string;
+  contaBancaria?: string;
+  agencia?: string;
+  dataVencimento?: string;
+  empresaEmissora?: string;
+  codBarras?: string;
+  linhaDigitavel?: string;
+  empresaOrigem?: string;
+  nomeDestinatario?: string;
+  autenticacao?: string;
+  // Comuns
   tipoDetalhe?: string;
   endToEndId?: string;
-  chavePixRecebedor?: string;
+  // Pix enviado (débito) — NÃO confirmado, só suposição por simetria
+  nomeRecebedor?: string;
+  cpfCnpjRecebedor?: string;
   chavePixPagador?: string;
   [chaveNaoMapeada: string]: unknown;
 }
@@ -84,8 +107,9 @@ export interface InterTransacaoCompleta {
   descricao: string;
   numeroDocumento?: string;
   detalhes?: InterDetalhesTransacao;
-  // Não confirmados num payload real ainda — mantidos por segurança
-  // caso apareçam em outros tipos de transação (TED, boleto).
+  // Não apareceram em nenhum dos 2 payloads confirmados (Pix recebido,
+  // pagamento de boleto) — mantidos por segurança caso existam em outro
+  // tipo de transação (TED?) não visto ainda.
   contaOrigem?: string;
   contaDestino?: string;
 }
@@ -95,10 +119,17 @@ export function dataEntradaDe(t: InterTransacaoCompleta): string {
   return t.dataInclusao?.slice(0, 10) ?? t.dataTransacao;
 }
 
+function strOrUndef(v: unknown): string | undefined {
+  return typeof v === "string" && v.trim() ? v : undefined;
+}
+
 /**
  * Extrai nome/CPF-CNPJ da contraparte a partir do lado certo (pagador
- * pra crédito recebido, recebedor pra débito enviado) — a API não manda
- * isso em campos planos como cpfCnpjOrigem/cpfCnpjDestino.
+ * pra crédito recebido, destinatário pra débito enviado) — a API não
+ * manda isso em campos planos como cpfCnpjOrigem/cpfCnpjDestino, e o
+ * formato de `detalhes` muda conforme o tipo de transação (ver comentário
+ * em InterDetalhesTransacao). Propositalmente NÃO usa `detalhes.cpfCnpj`
+ * pro lado débito — é o CNPJ de quem paga (nós), não do destinatário.
  */
 export function extrairContraparte(t: InterTransacaoCompleta): {
   nomeOrigem?: string;
@@ -109,9 +140,12 @@ export function extrairContraparte(t: InterTransacaoCompleta): {
   const d = t.detalhes;
   if (!d) return {};
   if (t.tipoOperacao === "C") {
-    return { nomeOrigem: d.nomePagador, cpfCnpjOrigem: d.cpfCnpjPagador };
+    return { nomeOrigem: strOrUndef(d.nomePagador), cpfCnpjOrigem: strOrUndef(d.cpfCnpjPagador) };
   }
-  return { nomeDestino: d.nomeRecebedor, cpfCnpjDestino: d.cpfCnpjRecebedor };
+  return {
+    nomeDestino: strOrUndef(d.nomeDestinatario) ?? strOrUndef(d.nomeRecebedor) ?? strOrUndef(d.detalheDescricao),
+    cpfCnpjDestino: strOrUndef(d.cpfCnpjRecebedor),
+  };
 }
 
 export interface InterExtratoCompletoResponse {
