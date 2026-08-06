@@ -12,7 +12,7 @@ import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
 import { parseExtratoInterPdf } from "./interExtratoPdfParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
-import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
+import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, listarRelatoriosLiberadosBruto, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
 
 export const appRouter = router({
@@ -1201,6 +1201,8 @@ Diretrizes:
         throw new Error("Mercado Pago não configurado (falta o Access Token)");
       }
 
+      let ultimaListaBruta = "";
+      let respostaCriacao = "";
       try {
         // Antes de gerar um relatório novo, verifica se já existe um
         // pro mesmo período (pronto ou ainda processando) — sem isso,
@@ -1210,25 +1212,43 @@ Diretrizes:
         const mesmoPeriodo = (r: { begin_date?: string; end_date?: string }) =>
           (r.begin_date ?? "").slice(0, 10) === input.dataInicio && (r.end_date ?? "").slice(0, 10) === input.dataFim;
 
+        ultimaListaBruta = await listarRelatoriosLiberadosBruto(unidade.mpAccessToken);
         let lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
         let existente = lista.find((r) => mesmoPeriodo(r));
 
         if (!existente) {
-          await criarRelatorioLiberado(unidade.mpAccessToken, input.dataInicio, input.dataFim);
+          const criacao = await criarRelatorioLiberado(unidade.mpAccessToken, input.dataInicio, input.dataFim);
+          respostaCriacao = `status ${criacao.status}: ${criacao.corpo}`;
         }
 
-        // Assíncrono no lado do MP (pode levar minutos) — espera até
-        // ~20s (12 tentativas de 1.7s) antes de desistir, sem nunca
-        // gerar outro relatório enquanto espera.
+        // Assíncrono no lado do MP — espera até ~20s (12 tentativas de
+        // 1.7s) antes de desistir, sem nunca gerar outro relatório
+        // enquanto espera. Se você sabe que esse relatório costuma
+        // ficar pronto rápido, o mais provável de dar errado aqui não é
+        // o tempo — é o parsing do formato de resposta não bater com o
+        // que a API realmente devolve (ainda sem confirmação com
+        // payload real). Por isso guarda a última resposta bruta pra
+        // diagnosticar caso desista.
         let arquivo: string | undefined = (existente?.status === "processed" && existente.file_name) ? existente.file_name : undefined;
         for (let tentativa = 0; !arquivo && tentativa < 12; tentativa++) {
           await new Promise((resolve) => setTimeout(resolve, 1700));
+          ultimaListaBruta = await listarRelatoriosLiberadosBruto(unidade.mpAccessToken);
           lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
           const pronto = lista.find((r) => mesmoPeriodo(r) && r.status === "processed" && r.file_name);
           if (pronto?.file_name) arquivo = pronto.file_name;
         }
         if (!arquivo) {
-          throw new Error("O relatório do Mercado Pago ainda está sendo gerado (pode levar alguns minutos na primeira vez) — tente sincronizar de novo daqui a pouco. Não vai gerar um relatório novo, só verifica se o mesmo já ficou pronto.");
+          // Diagnóstico completo (resposta bruta da API) vai só pro
+          // log — o erro que sobe pra tela fica curto, senão vira um
+          // toast enorme e ilegível.
+          await db.createSyncLog({
+            unidadeId: input.unidadeId,
+            tipo: "mercadopago_extrato_diagnostico",
+            status: "erro",
+            registrosProcessados: 0,
+            detalhes: `Resposta da criação: ${respostaCriacao || "(reaproveitou relatório existente, não criou um novo)"}. Última listagem (bruta): ${ultimaListaBruta.slice(0, 2500)}`,
+          });
+          throw new Error("O relatório do Mercado Pago ainda não ficou pronto. Diagnóstico completo salvo no log de sincronização (tipo mercadopago_extrato_diagnostico) — peça pro Claude conferir.");
         }
 
         const csvTexto = await baixarRelatorioLiberado(unidade.mpAccessToken, arquivo);
