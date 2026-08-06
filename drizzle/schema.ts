@@ -401,3 +401,23 @@ export const dreRegras = mysqlTable("dre_regras", {
 
 export type DreRegra = typeof dreRegras.$inferSelect;
 export type InsertDreRegra = typeof dreRegras.$inferInsert;
+
+/**
+ * Caixa Físico — lançamentos de pequeno caixa importados do Google Sheets.
+ * Sincronizado das planilhas "Caixa RBS" e "Caixa SSU" via Google Sheets API.
+ * Cada lançamento tem data, tipo (entrada/saída), ocorrência (descrição),
+ * valor e saldo acumulado. Dedup por unidadeId + data + ocorrência + valor.
+ */
+export const caixaFisico = mysqlTable("caixa_fisico", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  data: varchar("data", { length: 10 }).notNull(), // AAAA-MM-DD
+  tipoOperacao: mysqlEnum("tipoOperacao", ["C", "D"]).notNull(), // C=entrada, D=saída
+  ocorrencia: varchar("ocorrencia", { length: 256 }).notNull(), // "Vendas do dia", "Sangria Boleto", etc.
+  valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
+  saldo: decimal("saldo", { precision: 12, scale: 2 }), // saldo acumulado após o lançamento
+  conferidoPor: varchar("conferidoPor", { length: 256 }), // quem conferiu
+  syncedAt: timestamp("syncedAt").defaultNow().notNull(),
+});
+export type CaixaFisico = typeof caixaFisico.$inferSelect;
+export type InsertCaixaFisico = typeof caixaFisico.$inferInsert;

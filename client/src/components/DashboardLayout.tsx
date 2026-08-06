@@ -44,6 +44,7 @@ const menuItems = [
       { label: "Extratos", path: "/financeiro/extratos" },
       { label: "Adquirentes", path: "/financeiro/adquirentes" },
       { label: "Parâmetros", path: "/financeiro/parametros" },
+      { label: "Caixa Físico", path: "/financeiro/caixa-fisico" },
     ],
   },
   { icon: Sparkles, label: "Copilot", path: "/copilot" },

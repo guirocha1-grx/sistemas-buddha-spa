@@ -14,6 +14,7 @@ import { parseExtratoInterPdf } from "./interExtratoPdfParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
+import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS } from "./googleSheets";
 
 export const appRouter = router({
   system: systemRouter,
@@ -1539,8 +1540,44 @@ Diretrizes:
       const totalInseridos = await db.upsertAdquirenteVendas(input.unidadeId, linhas);
       return { success: true, totalInseridos, totalLinhas: input.linhas.length };
     }),
+    }),
+  // ===== Caixa Físico (Google Sheets) =====
+  caixaFisico: router({
+    sincronizar: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) throw new Error("Unidade não encontrada");
+      const isRbs = unidade.slug.includes("ribeirao") || unidade.slug.includes("rbs");
+      const spreadsheetId = isRbs ? SPREADSHEET_IDS.rbs : SPREADSHEET_IDS.ssu;
+      const aba = isRbs ? SPREADSHEET_ABAS.rbs : SPREADSHEET_ABAS.ssu;
+      const linhas = await lerCaixaFisicoSheet(spreadsheetId, aba, 60);
+      const inseridos = await db.upsertCaixaFisico(input.unidadeId, linhas.map((l: any) => ({
+        unidadeId: input.unidadeId,
+        data: l.data,
+        tipoOperacao: l.tipoOperacao,
+        ocorrencia: l.ocorrencia,
+        valor: l.valor.toString(),
+        saldo: l.saldo?.toString() ?? null,
+        conferidoPor: l.conferidoPor,
+      })) as any);
+      await db.createSyncLog({
+        unidadeId: input.unidadeId,
+        tipo: "caixa_fisico",
+        status: "sucesso",
+        registrosProcessados: inseridos,
+        detalhes: `Lidos: ${linhas.length}. Novos: ${inseridos}.`,
+      });
+      return { success: true, totalLidos: linhas.length, totalInseridos: inseridos };
+    }),
+    listar: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string().optional(),
+      dataFim: z.string().optional(),
+    })).query(async ({ input }) => {
+      return db.listCaixaFisico(input.unidadeId, input.dataInicio, input.dataFim);
+    }),
   }),
-
   // ===== Configurações globais (chave-valor) =====
   configuracoes: router({
     get: adminProcedure.input(z.object({ chave: z.string() })).query(async ({ input }) => {
