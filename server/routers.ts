@@ -12,7 +12,7 @@ import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
 import { parseExtratoInterPdf } from "./interExtratoPdfParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
-import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, listarRelatoriosLiberadosBruto, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
+import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
 
 export const appRouter = router({
@@ -1201,57 +1201,65 @@ Diretrizes:
         throw new Error("Mercado Pago não configurado (falta o Access Token)");
       }
 
-      let ultimaListaBruta = "";
-      let respostaCriacao = "";
+      let diagnostico = "";
       try {
-        // Antes de gerar um relatório novo, verifica se já existe um
-        // pro mesmo período (pronto ou ainda processando) — sem isso,
-        // cada tentativa criava um relatório diferente e nunca
-        // encontrava o anterior pronto (o relógio de "processando"
-        // sempre reiniciava do zero a cada clique em Sincronizar).
-        const mesmoPeriodo = (r: { begin_date?: string; end_date?: string }) =>
-          (r.begin_date ?? "").slice(0, 10) === input.dataInicio && (r.end_date ?? "").slice(0, 10) === input.dataFim;
+        // Confirmado com payload real: nem o "status" da criação
+        // ("pending") nem o da listagem ("enabled", sempre — não muda
+        // quando fica pronto) indicam se o arquivo já pode ser baixado.
+        // A única forma confiável é tentar baixar de verdade. O
+        // end_date que a API devolve também pode vir com o dia seguinte
+        // (fuso: 23:59:59Z do dia pedido vira madrugada UTC do dia
+        // depois), então a comparação de período tolera esse +1 dia.
+        const diaSeguinte = (data: string) => {
+          const d = new Date(`${data}T00:00:00Z`);
+          d.setUTCDate(d.getUTCDate() + 1);
+          return d.toISOString().slice(0, 10);
+        };
+        const mesmoPeriodo = (r: { begin_date?: string; end_date?: string }) => {
+          const inicio = (r.begin_date ?? "").slice(0, 10);
+          const fim = (r.end_date ?? "").slice(0, 10);
+          return inicio === input.dataInicio && (fim === input.dataFim || fim === diaSeguinte(input.dataFim));
+        };
 
-        ultimaListaBruta = await listarRelatoriosLiberadosBruto(unidade.mpAccessToken);
+        const tentarBaixar = async (nome: string): Promise<string | undefined> => {
+          try {
+            return await baixarRelatorioLiberado(unidade.mpAccessToken!, nome);
+          } catch (erroDownload: any) {
+            diagnostico += ` | Download de "${nome}" falhou: ${erroDownload.message}`;
+            return undefined;
+          }
+        };
+
         let lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
-        let existente = lista.find((r) => mesmoPeriodo(r));
+        let existente = lista.find((r) => mesmoPeriodo(r) && r.file_name);
+        let csvTexto = existente?.file_name ? await tentarBaixar(existente.file_name) : undefined;
 
-        if (!existente) {
-          const criacao = await criarRelatorioLiberado(unidade.mpAccessToken, input.dataInicio, input.dataFim);
-          respostaCriacao = `status ${criacao.status}: ${criacao.corpo}`;
+        if (!csvTexto) {
+          if (!existente) {
+            const criacao = await criarRelatorioLiberado(unidade.mpAccessToken, input.dataInicio, input.dataFim);
+            diagnostico += ` | Criação: status ${criacao.status} — ${criacao.corpo.slice(0, 500)}`;
+          }
+          // Espera até ~24s (8 tentativas de 3s) — na primeira tentativa
+          // já tenta baixar assim que o arquivo aparecer na listagem,
+          // sem depender de nenhum campo de status.
+          for (let tentativa = 0; !csvTexto && tentativa < 8; tentativa++) {
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+            lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
+            const pronto = lista.find((r) => mesmoPeriodo(r) && r.file_name);
+            if (pronto?.file_name) csvTexto = await tentarBaixar(pronto.file_name);
+          }
         }
 
-        // Assíncrono no lado do MP — espera até ~20s (12 tentativas de
-        // 1.7s) antes de desistir, sem nunca gerar outro relatório
-        // enquanto espera. Se você sabe que esse relatório costuma
-        // ficar pronto rápido, o mais provável de dar errado aqui não é
-        // o tempo — é o parsing do formato de resposta não bater com o
-        // que a API realmente devolve (ainda sem confirmação com
-        // payload real). Por isso guarda a última resposta bruta pra
-        // diagnosticar caso desista.
-        let arquivo: string | undefined = (existente?.status === "processed" && existente.file_name) ? existente.file_name : undefined;
-        for (let tentativa = 0; !arquivo && tentativa < 12; tentativa++) {
-          await new Promise((resolve) => setTimeout(resolve, 1700));
-          ultimaListaBruta = await listarRelatoriosLiberadosBruto(unidade.mpAccessToken);
-          lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
-          const pronto = lista.find((r) => mesmoPeriodo(r) && r.status === "processed" && r.file_name);
-          if (pronto?.file_name) arquivo = pronto.file_name;
-        }
-        if (!arquivo) {
-          // Diagnóstico completo (resposta bruta da API) vai só pro
-          // log — o erro que sobe pra tela fica curto, senão vira um
-          // toast enorme e ilegível.
+        if (!csvTexto) {
           await db.createSyncLog({
             unidadeId: input.unidadeId,
             tipo: "mercadopago_extrato_diagnostico",
             status: "erro",
             registrosProcessados: 0,
-            detalhes: `Resposta da criação: ${respostaCriacao || "(reaproveitou relatório existente, não criou um novo)"}. Última listagem (bruta): ${ultimaListaBruta.slice(0, 2500)}`,
+            detalhes: `Nenhum arquivo baixável encontrado.${diagnostico}`,
           });
-          throw new Error("O relatório do Mercado Pago ainda não ficou pronto. Diagnóstico completo salvo no log de sincronização (tipo mercadopago_extrato_diagnostico) — peça pro Claude conferir.");
+          throw new Error("O relatório do Mercado Pago ainda não ficou pronto pra baixar. Diagnóstico salvo no log (tipo mercadopago_extrato_diagnostico) — peça pro Claude conferir.");
         }
-
-        const csvTexto = await baixarRelatorioLiberado(unidade.mpAccessToken, arquivo);
         const linhasCsv = parseRelatorioLiberadoMp(csvTexto);
 
         const contaMp = await db.getOrCreateContaMercadoPago(input.unidadeId);
