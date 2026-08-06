@@ -169,6 +169,17 @@ export interface LinhaExtratoMp {
 }
 
 /**
+ * RECORD_TYPE que são snapshot de saldo, não transação de verdade —
+ * confirmado na doc oficial ("campos do relatório" de Liberações).
+ * Precisa pular, senão viram linhas fantasma no extrato. Tudo que não
+ * estiver nessa lista entra (release, payout — inclui transferência/
+ * saque pra outra conta, com o RECORD_TYPE "payout" confirmado na doc
+ * — dispute, refund, etc.), mesmo sem confirmação individual, pra não
+ * perder movimento real por não reconhecer o tipo.
+ */
+const MP_RECORD_TYPES_SALDO = new Set(["initial_available_balance", "available_balance", "total"]);
+
+/**
  * Parser do CSV do relatório "Dinheiro liberado" — por NOME de coluna
  * (não posição), porque o layout exato (DATE, SOURCE_ID, RECORD_TYPE,
  * DESCRIPTION, NET_CREDIT_AMOUNT, NET_DEBIT_AMOUNT, ...) vem só da doc
@@ -199,6 +210,10 @@ export function parseRelatorioLiberadoMp(texto: string): LinhaExtratoMp[] {
   const linhasDados: LinhaExtratoMp[] = [];
   for (const linha of linhas.slice(1)) {
     const campos = linha.split(delimitador).map((c) => c.trim().replace(/^"|"$/g, ""));
+
+    const tipoRegistro = (iTipo !== -1 ? campos[iTipo] : "")?.trim().toLowerCase();
+    if (tipoRegistro && MP_RECORD_TYPES_SALDO.has(tipoRegistro)) continue;
+
     const credito = parseFloat((campos[iCredito] ?? "0").replace(",", ".")) || 0;
     const debito = parseFloat((campos[iDebito] ?? "0").replace(",", ".")) || 0;
     if (credito === 0 && debito === 0) continue;
