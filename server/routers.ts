@@ -1301,21 +1301,23 @@ Diretrizes:
         while (true) {
           const pagina = await consultarPagamentos(unidade.mpAccessToken, input.dataInicio, input.dataFim, offset, limit);
           totalNaApi = pagina.paging.total;
-          if (offset === 0 && pagina.results[0]) {
-            // Amostra focada — o objeto de pagamento completo tem tanta
-            // coisa (payer, additional_info, order...) que o campo que
-            // eu realmente preciso auditar (fee_details) fica truncado
-            // se eu logar o objeto inteiro. Pega só o que interessa pro
-            // mapeamento de taxa/antecipação.
-            const p0 = pagina.results[0];
-            amostraBruta = JSON.stringify({
-              installments: p0.installments,
-              transaction_amount: p0.transaction_amount,
-              fee_details: p0.fee_details,
-              transaction_details: p0.transaction_details,
-              money_release_date: p0.money_release_date,
-              financing_group: p0.financing_group,
-            }).slice(0, 2000);
+          if (offset === 0 && pagina.results.length > 0) {
+            // Amostra focada em TODAS as vendas da 1ª página (não só a
+            // primeira) — o objeto de pagamento completo tem tanta coisa
+            // (payer, additional_info, order...) que fee_details ficaria
+            // truncado se eu logasse tudo. Precisa de mais de uma amostra
+            // porque o fee_details muda conforme parcelas/tipo — já vi
+            // 1 caso onde bruto - taxa não bate com net_received_amount,
+            // então tem algo em outra transação que ainda não vi.
+            amostraBruta = JSON.stringify(pagina.results.map((p) => ({
+              id: p.id,
+              installments: p.installments,
+              transaction_amount: p.transaction_amount,
+              fee_details: p.fee_details,
+              transaction_details: p.transaction_details,
+              money_release_date: p.money_release_date,
+              financing_group: p.financing_group,
+            }))).slice(0, 4000);
           }
 
           const linhas = pagina.results.map((p) => {
