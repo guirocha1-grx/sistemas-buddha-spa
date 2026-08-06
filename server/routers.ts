@@ -12,7 +12,7 @@ import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
 import { parseExtratoInterPdf } from "./interExtratoPdfParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
-import { consultarPagamentos, extrairValoresMp } from "./mercadoPagoApi";
+import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
 
 export const appRouter = router({
@@ -1183,6 +1183,83 @@ Diretrizes:
     })).query(async ({ input }) => {
       return db.calcularSaldoNaData(input.contaId, input.data);
     }),
+
+    /**
+     * Sincroniza o extrato da conta Mercado Pago (relatório "Dinheiro
+     * liberado" — assíncrono: gera, espera ficar pronto, baixa o CSV).
+     * Diferente de adquirentes.sincronizarMercadoPago: aqui é o
+     * movimento da conta (dinheiro entrando/saindo do saldo), não a
+     * venda em si.
+     */
+    sincronizarMercadoPago: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.mpAccessToken) {
+        throw new Error("Mercado Pago não configurado (falta o Access Token)");
+      }
+
+      try {
+        await criarRelatorioLiberado(unidade.mpAccessToken, input.dataInicio, input.dataFim);
+
+        // Assíncrono no lado do MP — espera até ~15s (10 tentativas de
+        // 1.5s) o relatório ficar pronto antes de desistir.
+        let arquivo: string | undefined;
+        for (let tentativa = 0; tentativa < 10; tentativa++) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          const lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
+          const pronto = lista.find((r) => r.status === "processed" && r.file_name);
+          if (pronto?.file_name) {
+            arquivo = pronto.file_name;
+            break;
+          }
+        }
+        if (!arquivo) {
+          throw new Error("O relatório do Mercado Pago ainda não ficou pronto — tente sincronizar de novo em alguns segundos.");
+        }
+
+        const csvTexto = await baixarRelatorioLiberado(unidade.mpAccessToken, arquivo);
+        const linhasCsv = parseRelatorioLiberadoMp(csvTexto);
+
+        const contaMp = await db.getOrCreateContaMercadoPago(input.unidadeId);
+        const inseridos = await db.upsertInterExtratos(
+          input.unidadeId,
+          linhasCsv.map((l) => ({
+            unidadeId: input.unidadeId,
+            contaId: contaMp?.id,
+            idTransacao: l.idTransacao,
+            dataEntrada: l.dataEntrada,
+            tipoTransacao: l.tipoTransacao,
+            tipoOperacao: l.tipoOperacao,
+            valor: l.valor,
+            titulo: l.titulo,
+            descricao: l.descricao,
+            origem: "mercadopago" as const,
+          })),
+        );
+
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "mercadopago_extrato",
+          status: "sucesso",
+          registrosProcessados: inseridos,
+          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Linhas no CSV: ${linhasCsv.length}. Novos: ${inseridos}. Amostra CSV (500 chars): ${csvTexto.slice(0, 500)}`,
+        });
+
+        return { success: true, totalInseridos: inseridos, totalNoCsv: linhasCsv.length };
+      } catch (error: any) {
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "mercadopago_extrato",
+          status: "erro",
+          registrosProcessados: 0,
+          detalhes: error.message,
+        });
+        throw error;
+      }
+    }),
   }),
 
   // ===== Plano de contas do DRE =====
@@ -1301,21 +1378,23 @@ Diretrizes:
         while (true) {
           const pagina = await consultarPagamentos(unidade.mpAccessToken, input.dataInicio, input.dataFim, offset, limit);
           totalNaApi = pagina.paging.total;
-          if (offset === 0 && pagina.results[0]) {
-            // Amostra focada — o objeto de pagamento completo tem tanta
-            // coisa (payer, additional_info, order...) que o campo que
-            // eu realmente preciso auditar (fee_details) fica truncado
-            // se eu logar o objeto inteiro. Pega só o que interessa pro
-            // mapeamento de taxa/antecipação.
-            const p0 = pagina.results[0];
-            amostraBruta = JSON.stringify({
-              installments: p0.installments,
-              transaction_amount: p0.transaction_amount,
-              fee_details: p0.fee_details,
-              transaction_details: p0.transaction_details,
-              money_release_date: p0.money_release_date,
-              financing_group: p0.financing_group,
-            }).slice(0, 2000);
+          if (offset === 0 && pagina.results.length > 0) {
+            // Amostra focada em TODAS as vendas da 1ª página (não só a
+            // primeira) — o objeto de pagamento completo tem tanta coisa
+            // (payer, additional_info, order...) que fee_details ficaria
+            // truncado se eu logasse tudo. Precisa de mais de uma amostra
+            // porque o fee_details muda conforme parcelas/tipo — já vi
+            // 1 caso onde bruto - taxa não bate com net_received_amount,
+            // então tem algo em outra transação que ainda não vi.
+            amostraBruta = JSON.stringify(pagina.results.map((p) => ({
+              id: p.id,
+              installments: p.installments,
+              transaction_amount: p.transaction_amount,
+              fee_details: p.fee_details,
+              transaction_details: p.transaction_details,
+              money_release_date: p.money_release_date,
+              financing_group: p.financing_group,
+            }))).slice(0, 4000);
           }
 
           const linhas = pagina.results.map((p) => {

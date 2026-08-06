@@ -106,3 +106,119 @@ export function extrairValoresMp(p: MpPagamento): { bruto?: number; taxa?: numbe
   }
   return { bruto, taxa, antecipacao, liquido };
 }
+
+// ===== Relatório "Dinheiro liberado" (extrato da conta — assíncrono) =====
+// POST gera o relatório (202, processamento em background) → GET .../list
+// pra saber quando ficou pronto (status "processed") → GET .../:file_name
+// baixa o CSV. Formato de colunas documentado (DATE, SOURCE_ID,
+// RECORD_TYPE, DESCRIPTION, NET_CREDIT_AMOUNT, NET_DEBIT_AMOUNT, ...)
+// mas ainda sem confirmação com payload real — parser em routers.ts é
+// por nome de coluna (não posição) e loga uma amostra bruta no primeiro
+// sync, mesma cautela usada em toda a integração com o Inter.
+
+export interface MpRelatorioInfo {
+  file_name?: string;
+  status?: string; // "processed" | "in_process" | ...
+  begin_date?: string;
+  end_date?: string;
+}
+
+export async function criarRelatorioLiberado(accessToken: string, dataInicio: string, dataFim: string): Promise<void> {
+  const res = await fetch(`${MP_BASE_URL}/v1/account/release_report`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      begin_date: `${dataInicio}T00:00:00Z`,
+      end_date: `${dataFim}T23:59:59Z`,
+    }),
+  });
+  if (res.status !== 202 && !res.ok) {
+    const corpo = await res.text();
+    throw new Error(`[Mercado Pago] Falha ao gerar relatório de conta: ${res.status} — ${corpo}`);
+  }
+}
+
+export async function listarRelatoriosLiberados(accessToken: string): Promise<MpRelatorioInfo[]> {
+  const dados = await mpRequest<MpRelatorioInfo[] | { data?: MpRelatorioInfo[]; results?: MpRelatorioInfo[] }>(
+    "/v1/account/release_report/list",
+    accessToken,
+  );
+  if (Array.isArray(dados)) return dados;
+  return dados.data ?? dados.results ?? [];
+}
+
+export async function baixarRelatorioLiberado(accessToken: string, fileName: string): Promise<string> {
+  const res = await fetch(`${MP_BASE_URL}/v1/account/release_report/${encodeURIComponent(fileName)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const corpo = await res.text();
+    throw new Error(`[Mercado Pago] Falha ao baixar relatório de conta: ${res.status} — ${corpo}`);
+  }
+  return res.text();
+}
+
+export interface LinhaExtratoMp {
+  idTransacao: string;
+  dataEntrada: string;
+  tipoTransacao?: string;
+  tipoOperacao: "C" | "D";
+  valor: string;
+  titulo?: string;
+  descricao?: string;
+}
+
+/**
+ * Parser do CSV do relatório "Dinheiro liberado" — por NOME de coluna
+ * (não posição), porque o layout exato (DATE, SOURCE_ID, RECORD_TYPE,
+ * DESCRIPTION, NET_CREDIT_AMOUNT, NET_DEBIT_AMOUNT, ...) vem só da doc
+ * pública, sem confirmação com arquivo real ainda — se a ordem ou algum
+ * nome vier diferente, isso ainda funciona (ou falha visivelmente por
+ * coluna não encontrada, em vez de ler a coluna errada em silêncio).
+ */
+export function parseRelatorioLiberadoMp(texto: string): LinhaExtratoMp[] {
+  const linhas = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (linhas.length < 2) return [];
+
+  const delimitador = linhas[0].includes(";") ? ";" : ",";
+  const cabecalho = linhas[0].split(delimitador).map((c) => c.trim().toUpperCase().replace(/^"|"$/g, ""));
+  const indice = (nome: string) => cabecalho.indexOf(nome);
+
+  const iData = indice("DATE");
+  const iSourceId = indice("SOURCE_ID");
+  const iExternalRef = indice("EXTERNAL_REFERENCE");
+  const iTipo = indice("RECORD_TYPE");
+  const iDescricao = indice("DESCRIPTION");
+  const iCredito = indice("NET_CREDIT_AMOUNT");
+  const iDebito = indice("NET_DEBIT_AMOUNT");
+
+  if (iData === -1 || (iCredito === -1 && iDebito === -1)) {
+    throw new Error(`Colunas esperadas não encontradas no CSV (cabeçalho: ${cabecalho.join(", ")})`);
+  }
+
+  const linhasDados: LinhaExtratoMp[] = [];
+  for (const linha of linhas.slice(1)) {
+    const campos = linha.split(delimitador).map((c) => c.trim().replace(/^"|"$/g, ""));
+    const credito = parseFloat((campos[iCredito] ?? "0").replace(",", ".")) || 0;
+    const debito = parseFloat((campos[iDebito] ?? "0").replace(",", ".")) || 0;
+    if (credito === 0 && debito === 0) continue;
+
+    const dataEntrada = (campos[iData] ?? "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataEntrada)) continue;
+
+    const tipoOperacao: "C" | "D" = credito > 0 ? "C" : "D";
+    const valor = Math.abs(credito > 0 ? credito : debito);
+    const idBase = campos[iSourceId] || campos[iExternalRef] || `${dataEntrada}-${valor}`;
+
+    linhasDados.push({
+      idTransacao: `mp:${idBase}:${dataEntrada}`,
+      dataEntrada,
+      tipoTransacao: iTipo !== -1 ? campos[iTipo] : undefined,
+      tipoOperacao,
+      valor: valor.toFixed(2),
+      titulo: iTipo !== -1 ? campos[iTipo] : undefined,
+      descricao: iDescricao !== -1 ? campos[iDescricao] : undefined,
+    });
+  }
+  return linhasDados;
+}

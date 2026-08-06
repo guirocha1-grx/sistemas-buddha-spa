@@ -270,7 +270,7 @@ export const interExtratos = mysqlTable("inter_extratos", {
   contaOrigem: varchar("contaOrigem", { length: 32 }),
   contaDestino: varchar("contaDestino", { length: 32 }),
   cpmf: varchar("cpmf", { length: 64 }),
-  origem: mysqlEnum("origem", ["inter", "csv", "pdf", "ofx"]).default("inter").notNull(),
+  origem: mysqlEnum("origem", ["inter", "csv", "pdf", "ofx", "mercadopago"]).default("inter").notNull(),
   dreCategoriaId: int("dreCategoriaId"), // null = pendente (ainda não categorizado)
   // pendente = sem categoria; sugerida = regra bateu sozinha, ainda não
   // confirmada por humano; confirmada = humano escolheu ou confirmou.
