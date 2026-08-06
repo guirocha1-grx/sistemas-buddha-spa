@@ -1230,23 +1230,32 @@ Diretrizes:
           }
         };
 
+        // Tenta baixar o relatório mais recente do período imediatamente.
+        // O MP retorna file_name mesmo com download_date=null — o arquivo
+        // já está disponível para download, o campo de status não é confiável.
         let lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
-        let existente = lista.find((r) => mesmoPeriodo(r) && r.file_name);
-        let csvTexto = existente?.file_name ? await tentarBaixar(existente.file_name) : undefined;
+        const doPeriodo = lista.filter((r) => mesmoPeriodo(r) && r.file_name);
+        let csvTexto: string | undefined;
+        // Tenta baixar do mais recente para o mais antigo
+        for (const r of doPeriodo) {
+          csvTexto = await tentarBaixar(r.file_name!);
+          if (csvTexto) break;
+        }
 
         if (!csvTexto) {
-          if (!existente) {
-            const criacao = await criarRelatorioLiberado(unidade.mpAccessToken, input.dataInicio, input.dataFim);
-            diagnostico += ` | Criação: status ${criacao.status} — ${criacao.corpo.slice(0, 500)}`;
-          }
+          // Nenhum relatório existente do período funcionou — cria um novo
+          const criacao = await criarRelatorioLiberado(unidade.mpAccessToken, input.dataInicio, input.dataFim);
+          diagnostico += ` | Criação: status ${criacao.status} — ${criacao.corpo.slice(0, 500)}`;
           // Polling: aguarda 60s, tenta baixar. Se não tiver, aguarda
           // mais 60s e tenta novamente. Se ainda não der, erro.
-          // O MP processa o relatório em background e pode demorar ~2min.
           for (let tentativa = 1; !csvTexto && tentativa <= 2; tentativa++) {
             await new Promise((resolve) => setTimeout(resolve, 60000));
             lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
-            const pronto = lista.find((r) => mesmoPeriodo(r) && r.file_name);
-            if (pronto?.file_name) csvTexto = await tentarBaixar(pronto.file_name);
+            const novos = lista.filter((r) => mesmoPeriodo(r) && r.file_name);
+            for (const r of novos) {
+              csvTexto = await tentarBaixar(r.file_name!);
+              if (csvTexto) break;
+            }
             diagnostico += ` | Tentativa ${tentativa} (60s): ${csvTexto ? 'CSV baixado' : 'ainda não pronto'}`;
           }
         }
