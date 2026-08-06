@@ -1319,7 +1319,7 @@ Diretrizes:
           }
 
           const linhas = pagina.results.map((p) => {
-            const { bruto, taxa, liquido } = extrairValoresMp(p);
+            const { bruto, taxa, antecipacao, liquido } = extrairValoresMp(p);
             return {
               unidadeId: input.unidadeId,
               adquirente: "mercadopago" as const,
@@ -1331,7 +1331,7 @@ Diretrizes:
               bandeira: p.payment_method_id,
               valorBruto: bruto?.toFixed(2),
               valorTaxa: taxa?.toFixed(2),
-              valorAntecipacao: "0.00",
+              valorAntecipacao: antecipacao?.toFixed(2),
               valorLiquido: liquido?.toFixed(2),
               dataPagamento: p.money_release_date?.slice(0, 10),
             };

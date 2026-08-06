@@ -82,10 +82,27 @@ export async function consultarPagamentos(
   return mpRequest<MpPaymentsSearchResponse>(`/v1/payments/search?${params.toString()}`, accessToken);
 }
 
-/** Extrai bruto/taxa/líquido de um pagamento — undefined se algum campo não vier como esperado. */
-export function extrairValoresMp(p: MpPagamento): { bruto?: number; taxa?: number; liquido?: number } {
+/**
+ * Extrai bruto/taxa/antecipação/líquido de um pagamento — undefined se
+ * algum campo não vier como esperado.
+ *
+ * Confirmado em payload real (venda parcelada 3x, Ribeirão Shopping,
+ * 2026-08-05): fee_details vem com tipos separados — "mercadopago_fee"
+ * (taxa normal da maquininha) e "financing_fee" (custo do parcelamento,
+ * equivalente à "antecipação" do Interpag). Qualquer outro tipo que
+ * apareça no futuro (ainda não visto: débito, Pix) cai em "taxa" por
+ * padrão, pra não perder valor mesmo sem reconhecer o tipo.
+ */
+export function extrairValoresMp(p: MpPagamento): { bruto?: number; taxa?: number; antecipacao?: number; liquido?: number } {
   const bruto = p.transaction_amount;
-  const taxa = p.fee_details?.reduce((soma, f) => soma + (f.amount ?? 0), 0);
   const liquido = p.transaction_details?.net_received_amount;
-  return { bruto, taxa, liquido };
+  if (!p.fee_details) return { bruto, liquido };
+
+  let taxa = 0;
+  let antecipacao = 0;
+  for (const f of p.fee_details) {
+    if (f.type === "financing_fee") antecipacao += f.amount ?? 0;
+    else taxa += f.amount ?? 0;
+  }
+  return { bruto, taxa, antecipacao, liquido };
 }
