@@ -767,7 +767,12 @@ export default function Extratos() {
                 {contaAtual?.nome === "Mercado Pago" && statusMpQuery.data?.mercadoPagoConfigurado && (
                   <Button
                     size="sm"
-                    onClick={() => unidadeId && sincronizarMpMutation.mutate({ unidadeId, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato })}
+                    onClick={() => {
+                      if (unidadeId) {
+                        toast.info("A sincronização do extrato do Mercado Pago pode demorar até 2 minutos. Aguarde enquanto o relatório é gerado.");
+                        sincronizarMpMutation.mutate({ unidadeId, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato });
+                      }
+                    }}
                     disabled={sincronizarMpMutation.isPending}
                   >
                     {sincronizarMpMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}

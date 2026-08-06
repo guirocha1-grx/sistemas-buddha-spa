@@ -1239,14 +1239,15 @@ Diretrizes:
             const criacao = await criarRelatorioLiberado(unidade.mpAccessToken, input.dataInicio, input.dataFim);
             diagnostico += ` | Criação: status ${criacao.status} — ${criacao.corpo.slice(0, 500)}`;
           }
-          // Espera até ~24s (8 tentativas de 3s) — na primeira tentativa
-          // já tenta baixar assim que o arquivo aparecer na listagem,
-          // sem depender de nenhum campo de status.
-          for (let tentativa = 0; !csvTexto && tentativa < 8; tentativa++) {
-            await new Promise((resolve) => setTimeout(resolve, 3000));
+          // Polling: aguarda 60s, tenta baixar. Se não tiver, aguarda
+          // mais 60s e tenta novamente. Se ainda não der, erro.
+          // O MP processa o relatório em background e pode demorar ~2min.
+          for (let tentativa = 1; !csvTexto && tentativa <= 2; tentativa++) {
+            await new Promise((resolve) => setTimeout(resolve, 60000));
             lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
             const pronto = lista.find((r) => mesmoPeriodo(r) && r.file_name);
             if (pronto?.file_name) csvTexto = await tentarBaixar(pronto.file_name);
+            diagnostico += ` | Tentativa ${tentativa} (60s): ${csvTexto ? 'CSV baixado' : 'ainda não pronto'}`;
           }
         }
 
@@ -1258,7 +1259,7 @@ Diretrizes:
             registrosProcessados: 0,
             detalhes: `Nenhum arquivo baixável encontrado.${diagnostico}`,
           });
-          throw new Error("O relatório do Mercado Pago ainda não ficou pronto pra baixar. Diagnóstico salvo no log (tipo mercadopago_extrato_diagnostico) — peça pro Claude conferir.");
+          throw new Error("O relatório do Mercado Pago não ficou pronto após 2 minutos. Tente novamente em alguns instantes. Diagnóstico salvo no log (tipo mercadopago_extrato_diagnostico).");
         }
         const linhasCsv = parseRelatorioLiberadoMp(csvTexto);
 
