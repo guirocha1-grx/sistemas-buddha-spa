@@ -17,6 +17,7 @@ interface UnidadeInfo {
   interCertificado?: string | null;
   interChavePrivada?: string | null;
   interContaCorrente?: string | null;
+  mpAccessToken?: string | null;
 }
 
 interface UnidadeContextValue {

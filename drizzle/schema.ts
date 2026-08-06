@@ -42,6 +42,8 @@ export const unidades = mysqlTable("unidades", {
   interContaCorrente: varchar("interContaCorrente", { length: 20 }),
   interAccessToken: text("interAccessToken"),
   interTokenExpiresAt: bigint("interTokenExpiresAt", { mode: "number" }),
+  // Mercado Pago — só precisa do Access Token (self-service, sem mTLS).
+  mpAccessToken: text("mpAccessToken"),
   corTema: varchar("corTema", { length: 32 }),
   ativa: mysqlEnum("ativa", ["true", "false"]).default("true").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -288,6 +290,48 @@ export const interExtratos = mysqlTable("inter_extratos", {
 
 export type InterExtrato = typeof interExtratos.$inferSelect;
 export type InsertInterExtrato = typeof interExtratos.$inferInsert;
+
+/**
+ * Vendas de adquirente (maquininha) — diferente de inter_extratos: aqui é
+ * a venda no ponto de venda (data/hora exata, bandeira, parcela, taxa),
+ * não o crédito agregado que cai na conta depois (esse já aparece em
+ * inter_extratos como DOMICILIO_CARTAO). Serve pra conferir as comandas
+ * da recepção contra o que a maquininha realmente processou.
+ *
+ * "interpag" chega só por CSV (sem API pública confirmada, ver
+ * server/mercadoPagoApi.ts e conversa no histórico do projeto) —
+ * "mercadopago" chega via API (/v1/payments/search).
+ *
+ * Dedup: Interpag repete o mesmo idTransacaoExterno pra cada parcela de
+ * uma venda parcelada (linhas idênticas exceto o campo parcela) — por
+ * isso a chave de dedup é adquirente+idTransacaoExterno+parcela, não só
+ * idTransacaoExterno.
+ */
+export const adquirenteVendas = mysqlTable("adquirente_vendas", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  adquirente: mysqlEnum("adquirente", ["mercadopago", "interpag"]).notNull(),
+  idTransacaoExterno: varchar("idTransacaoExterno", { length: 128 }).notNull(),
+  // "AAAA-MM-DD HH:mm:ss" — string, mesmo padrão comparável usado em
+  // dataEntrada (varchar) no resto do projeto.
+  dataHora: varchar("dataHora", { length: 19 }).notNull(),
+  tipo: varchar("tipo", { length: 64 }), // Débito/Crédito/Pix/Pagamento Instantâneo — texto livre, varia por adquirente
+  status: varchar("status", { length: 64 }), // Pago/Em Processamento/Cancelado — texto livre
+  parcela: varchar("parcela", { length: 8 }), // "1/3"
+  bandeira: varchar("bandeira", { length: 32 }), // Mastercard/Visa/Elo/Pix
+  valorBruto: decimal("valorBruto", { precision: 12, scale: 2 }),
+  valorTaxa: decimal("valorTaxa", { precision: 12, scale: 2 }),
+  valorAntecipacao: decimal("valorAntecipacao", { precision: 12, scale: 2 }),
+  valorLiquido: decimal("valorLiquido", { precision: 12, scale: 2 }),
+  dataPagamento: varchar("dataPagamento", { length: 10 }), // AAAA-MM-DD — quando o valor efetivamente cai na conta
+  syncedAt: timestamp("syncedAt").defaultNow().notNull(),
+}, (table) => ({
+  unidadeDataIdx: index("adquirente_vendas_unidade_data_idx").on(table.unidadeId, table.dataHora),
+  dedupIdx: index("adquirente_vendas_dedup_idx").on(table.adquirente, table.idTransacaoExterno, table.parcela),
+}));
+
+export type AdquirenteVenda = typeof adquirenteVendas.$inferSelect;
+export type InsertAdquirenteVenda = typeof adquirenteVendas.$inferInsert;
 
 /**
  * Plano de contas do DRE (estrutura definida em 2026-08-04, revisão

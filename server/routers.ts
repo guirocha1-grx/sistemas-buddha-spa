@@ -12,6 +12,7 @@ import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
 import { parseExtratoInterPdf } from "./interExtratoPdfParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
+import { consultarPagamentos, extrairValoresMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
 
 export const appRouter = router({
@@ -48,6 +49,8 @@ export const appRouter = router({
       interCertificado: z.string().optional(),
       interChavePrivada: z.string().optional(),
       interContaCorrente: z.string().optional(),
+      // Mercado Pago
+      mpAccessToken: z.string().optional(),
     })).mutation(async ({ input }) => {
       const { id, ...dados } = input;
       await db.updateUnidade(id, dados);
@@ -1254,6 +1257,137 @@ Diretrizes:
     })).mutation(async ({ input }) => {
       await db.ativarDesativarDreRegra(input.id, input.ativa);
       return { success: true };
+    }),
+  }),
+
+  // ===== Adquirentes (vendas de maquininha — sub-seção Adquirentes) =====
+  adquirentes: router({
+    status: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      return { mercadoPagoConfigurado: !!unidade?.mpAccessToken };
+    }),
+
+    vendas: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+      adquirente: z.enum(["mercadopago", "interpag"]).optional(),
+    })).query(async ({ input }) => {
+      return db.listAdquirenteVendas(input.unidadeId, input.dataInicio, input.dataFim, input.adquirente);
+    }),
+
+    /**
+     * Puxa vendas do Mercado Pago via /v1/payments/search. Só crédito/
+     * débito/pix aprovados chegam com date_approved preenchido — usamos
+     * isso como filtro de período (mesmo padrão de dataEntrada no Inter).
+     */
+    sincronizarMercadoPago: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.mpAccessToken) {
+        throw new Error("Mercado Pago não configurado (falta o Access Token)");
+      }
+
+      let totalInseridos = 0;
+      let totalNaApi = 0;
+      let offset = 0;
+      const limit = 50;
+      let amostraBruta: string | null = null;
+
+      try {
+        while (true) {
+          const pagina = await consultarPagamentos(unidade.mpAccessToken, input.dataInicio, input.dataFim, offset, limit);
+          totalNaApi = pagina.paging.total;
+          if (offset === 0 && pagina.results[0]) {
+            amostraBruta = JSON.stringify(pagina.results[0]).slice(0, 2000);
+          }
+
+          const linhas = pagina.results.map((p) => {
+            const { bruto, taxa, liquido } = extrairValoresMp(p);
+            return {
+              unidadeId: input.unidadeId,
+              adquirente: "mercadopago" as const,
+              idTransacaoExterno: String(p.id),
+              dataHora: (p.date_approved ?? "").replace("T", " ").slice(0, 19),
+              tipo: p.payment_type_id,
+              status: p.status,
+              parcela: p.installments ? `1/${p.installments}` : undefined,
+              bandeira: p.payment_method_id,
+              valorBruto: bruto?.toFixed(2),
+              valorTaxa: taxa?.toFixed(2),
+              valorAntecipacao: "0.00",
+              valorLiquido: liquido?.toFixed(2),
+              dataPagamento: p.money_release_date?.slice(0, 10),
+            };
+          });
+
+          totalInseridos += await db.upsertAdquirenteVendas(input.unidadeId, linhas);
+          offset += limit;
+          if (offset >= totalNaApi) break;
+        }
+
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "mercadopago_vendas",
+          status: "sucesso",
+          registrosProcessados: totalInseridos,
+          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Total API: ${totalNaApi}. Novos: ${totalInseridos}.${amostraBruta ? ` Amostra bruta: ${amostraBruta}` : ""}`,
+        });
+
+        return { success: true, totalInseridos, totalNaApi };
+      } catch (error: any) {
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "mercadopago_vendas",
+          status: "erro",
+          registrosProcessados: totalInseridos,
+          detalhes: error.message,
+        });
+        throw error;
+      }
+    }),
+
+    /**
+     * Importa o CSV exportado do Portal Interpag (schedules) — formato:
+     * ID Transação;Data e Hora;Tipo;Status;Parcela;Bandeira;Valor bruto;
+     * Valor taxa;Valor antecipação;Valor líquido;Data pagamento
+     */
+    importarCsvInterpag: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      linhas: z.array(z.object({
+        idTransacaoExterno: z.string(),
+        dataHora: z.string(),
+        tipo: z.string().optional(),
+        status: z.string().optional(),
+        parcela: z.string().optional(),
+        bandeira: z.string().optional(),
+        valorBruto: z.number().optional(),
+        valorTaxa: z.number().optional(),
+        valorAntecipacao: z.number().optional(),
+        valorLiquido: z.number().optional(),
+        dataPagamento: z.string().optional(),
+      })),
+    })).mutation(async ({ input }) => {
+      const linhas = input.linhas.map((l) => ({
+        unidadeId: input.unidadeId,
+        adquirente: "interpag" as const,
+        idTransacaoExterno: l.idTransacaoExterno,
+        dataHora: l.dataHora,
+        tipo: l.tipo,
+        status: l.status,
+        parcela: l.parcela,
+        bandeira: l.bandeira,
+        valorBruto: l.valorBruto?.toFixed(2),
+        valorTaxa: l.valorTaxa?.toFixed(2),
+        valorAntecipacao: l.valorAntecipacao?.toFixed(2),
+        valorLiquido: l.valorLiquido?.toFixed(2),
+        dataPagamento: l.dataPagamento,
+      }));
+      const totalInseridos = await db.upsertAdquirenteVendas(input.unidadeId, linhas);
+      return { success: true, totalInseridos, totalLinhas: input.linhas.length };
     }),
   }),
 
