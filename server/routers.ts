@@ -1202,22 +1202,33 @@ Diretrizes:
       }
 
       try {
-        await criarRelatorioLiberado(unidade.mpAccessToken, input.dataInicio, input.dataFim);
+        // Antes de gerar um relatório novo, verifica se já existe um
+        // pro mesmo período (pronto ou ainda processando) — sem isso,
+        // cada tentativa criava um relatório diferente e nunca
+        // encontrava o anterior pronto (o relógio de "processando"
+        // sempre reiniciava do zero a cada clique em Sincronizar).
+        const mesmoPeriodo = (r: { begin_date?: string; end_date?: string }) =>
+          (r.begin_date ?? "").slice(0, 10) === input.dataInicio && (r.end_date ?? "").slice(0, 10) === input.dataFim;
 
-        // Assíncrono no lado do MP — espera até ~15s (10 tentativas de
-        // 1.5s) o relatório ficar pronto antes de desistir.
-        let arquivo: string | undefined;
-        for (let tentativa = 0; tentativa < 10; tentativa++) {
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-          const lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
-          const pronto = lista.find((r) => r.status === "processed" && r.file_name);
-          if (pronto?.file_name) {
-            arquivo = pronto.file_name;
-            break;
-          }
+        let lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
+        let existente = lista.find((r) => mesmoPeriodo(r));
+
+        if (!existente) {
+          await criarRelatorioLiberado(unidade.mpAccessToken, input.dataInicio, input.dataFim);
+        }
+
+        // Assíncrono no lado do MP (pode levar minutos) — espera até
+        // ~20s (12 tentativas de 1.7s) antes de desistir, sem nunca
+        // gerar outro relatório enquanto espera.
+        let arquivo: string | undefined = (existente?.status === "processed" && existente.file_name) ? existente.file_name : undefined;
+        for (let tentativa = 0; !arquivo && tentativa < 12; tentativa++) {
+          await new Promise((resolve) => setTimeout(resolve, 1700));
+          lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
+          const pronto = lista.find((r) => mesmoPeriodo(r) && r.status === "processed" && r.file_name);
+          if (pronto?.file_name) arquivo = pronto.file_name;
         }
         if (!arquivo) {
-          throw new Error("O relatório do Mercado Pago ainda não ficou pronto — tente sincronizar de novo em alguns segundos.");
+          throw new Error("O relatório do Mercado Pago ainda está sendo gerado (pode levar alguns minutos na primeira vez) — tente sincronizar de novo daqui a pouco. Não vai gerar um relatório novo, só verifica se o mesmo já ficou pronto.");
         }
 
         const csvTexto = await baixarRelatorioLiberado(unidade.mpAccessToken, arquivo);
