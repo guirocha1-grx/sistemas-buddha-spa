@@ -365,6 +365,19 @@ export default function Extratos() {
     onError: (err) => toast.error(`Erro na sincronização: ${err.message}`),
   });
 
+  const statusMpQuery = trpc.adquirentes.status.useQuery(
+    { unidadeId: unidadeId! },
+    { enabled: !!unidadeId },
+  );
+
+  const sincronizarMpMutation = trpc.contas.sincronizarMercadoPago.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Sincronização concluída: ${data.totalInseridos} nova(s) transação(ões) de ${data.totalNoCsv} no relatório.`);
+      extratosQuery.refetch();
+    },
+    onError: (err) => toast.error(`Erro na sincronização: ${err.message}`),
+  });
+
   const importarCsvMutation = trpc.inter.importarCsv.useMutation({
     onSuccess: (data) => {
       toast.success(`CSV importado: ${data.totalInseridos} nova(s) transação(ões) de ${data.totalLinhas} linha(s).`);
@@ -750,6 +763,17 @@ export default function Extratos() {
                     Sincronizar com Inter
                   </Button>
                 )}
+
+                {contaAtual?.nome === "Mercado Pago" && statusMpQuery.data?.mercadoPagoConfigurado && (
+                  <Button
+                    size="sm"
+                    onClick={() => unidadeId && sincronizarMpMutation.mutate({ unidadeId, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato })}
+                    disabled={sincronizarMpMutation.isPending}
+                  >
+                    {sincronizarMpMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+                    Sincronizar com Mercado Pago
+                  </Button>
+                )}
                 <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportarCsv} />
                 <Button
                   size="sm"
@@ -898,7 +922,7 @@ export default function Extratos() {
                               <TableCell className="text-xs text-muted-foreground">{nomeConta(t.contaId)}</TableCell>
                               <TableCell>
                                 <Badge variant="outline" className="text-xs font-normal">
-                                  {t.origem === "csv" ? "CSV" : t.origem === "pdf" ? "PDF" : t.origem === "ofx" ? "OFX" : "Inter"}
+                                  {t.origem === "csv" ? "CSV" : t.origem === "pdf" ? "PDF" : t.origem === "ofx" ? "OFX" : t.origem === "mercadopago" ? "Mercado Pago" : "Inter"}
                                 </Badge>
                               </TableCell>
                               <TableCell>

@@ -516,6 +516,29 @@ export async function getOrCreateContaInter(unidadeId: number) {
 }
 
 /**
+ * Garante que a unidade tenha a conta "Mercado Pago" (mesmo espírito do
+ * getOrCreateContaInter) — usada pelo sync do extrato da conta MP pra
+ * ter um contaId real, independente de contas.list já ter sido chamado
+ * antes (ensureContasPadrao abaixo cobre isso na listagem, mas o sync
+ * pode ser a primeira coisa a rodar).
+ */
+export async function getOrCreateContaMercadoPago(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const existente = await db.select().from(contas)
+    .where(and(eq(contas.unidadeId, unidadeId), eq(contas.nome, "Mercado Pago")))
+    .limit(1);
+  if (existente[0]) return existente[0];
+
+  const insertValues: InsertConta = { unidadeId, nome: "Mercado Pago", tipo: "manual" };
+  const result = await db.insert(contas).values(insertValues).$returningId();
+  const novaId = result[0]?.id;
+  if (!novaId) return undefined;
+  const novaConta = await db.select().from(contas).where(eq(contas.id, novaId)).limit(1);
+  return novaConta[0];
+}
+
+/**
  * Garante que a unidade tenha as contas "manuais" padrão do negócio
  * (Sicredi, Mercado Pago) — auto-provisiona na primeira chamada, mesmo
  * espírito do getOrCreateContaInter, sem precisar de seed manual. Não

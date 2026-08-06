@@ -12,7 +12,7 @@ import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
 import { parseExtratoInterPdf } from "./interExtratoPdfParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
-import { consultarPagamentos, extrairValoresMp } from "./mercadoPagoApi";
+import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
 
 export const appRouter = router({
@@ -1182,6 +1182,83 @@ Diretrizes:
       data: z.string(),
     })).query(async ({ input }) => {
       return db.calcularSaldoNaData(input.contaId, input.data);
+    }),
+
+    /**
+     * Sincroniza o extrato da conta Mercado Pago (relatório "Dinheiro
+     * liberado" — assíncrono: gera, espera ficar pronto, baixa o CSV).
+     * Diferente de adquirentes.sincronizarMercadoPago: aqui é o
+     * movimento da conta (dinheiro entrando/saindo do saldo), não a
+     * venda em si.
+     */
+    sincronizarMercadoPago: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.mpAccessToken) {
+        throw new Error("Mercado Pago não configurado (falta o Access Token)");
+      }
+
+      try {
+        await criarRelatorioLiberado(unidade.mpAccessToken, input.dataInicio, input.dataFim);
+
+        // Assíncrono no lado do MP — espera até ~15s (10 tentativas de
+        // 1.5s) o relatório ficar pronto antes de desistir.
+        let arquivo: string | undefined;
+        for (let tentativa = 0; tentativa < 10; tentativa++) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          const lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
+          const pronto = lista.find((r) => r.status === "processed" && r.file_name);
+          if (pronto?.file_name) {
+            arquivo = pronto.file_name;
+            break;
+          }
+        }
+        if (!arquivo) {
+          throw new Error("O relatório do Mercado Pago ainda não ficou pronto — tente sincronizar de novo em alguns segundos.");
+        }
+
+        const csvTexto = await baixarRelatorioLiberado(unidade.mpAccessToken, arquivo);
+        const linhasCsv = parseRelatorioLiberadoMp(csvTexto);
+
+        const contaMp = await db.getOrCreateContaMercadoPago(input.unidadeId);
+        const inseridos = await db.upsertInterExtratos(
+          input.unidadeId,
+          linhasCsv.map((l) => ({
+            unidadeId: input.unidadeId,
+            contaId: contaMp?.id,
+            idTransacao: l.idTransacao,
+            dataEntrada: l.dataEntrada,
+            tipoTransacao: l.tipoTransacao,
+            tipoOperacao: l.tipoOperacao,
+            valor: l.valor,
+            titulo: l.titulo,
+            descricao: l.descricao,
+            origem: "mercadopago" as const,
+          })),
+        );
+
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "mercadopago_extrato",
+          status: "sucesso",
+          registrosProcessados: inseridos,
+          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Linhas no CSV: ${linhasCsv.length}. Novos: ${inseridos}. Amostra CSV (500 chars): ${csvTexto.slice(0, 500)}`,
+        });
+
+        return { success: true, totalInseridos: inseridos, totalNoCsv: linhasCsv.length };
+      } catch (error: any) {
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "mercadopago_extrato",
+          status: "erro",
+          registrosProcessados: 0,
+          detalhes: error.message,
+        });
+        throw error;
+      }
     }),
   }),
 
