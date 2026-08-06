@@ -86,24 +86,33 @@ export async function consultarPagamentos(
  * Extrai bruto/taxa/antecipação/líquido de um pagamento — undefined se
  * algum campo não vier como esperado.
  *
- * Confirmado em payload real (venda parcelada 3x, Ribeirão Shopping,
- * 2026-08-05): fee_details vem com tipos separados — "mercadopago_fee"
- * (taxa normal da maquininha) e "financing_fee" (custo do parcelamento,
- * equivalente à "antecipação" do Interpag). Qualquer outro tipo que
- * apareça no futuro (ainda não visto: débito, Pix) cai em "taxa" por
- * padrão, pra não perder valor mesmo sem reconhecer o tipo.
+ * Confirmado com payload real (6 vendas, Ribeirão Shopping, 2026-08-05,
+ * depuração via Manus): em vendas parceladas, fee_details tem
+ * "mercadopago_fee" + "financing_fee" separados e bruto - taxa -
+ * financing_fee bate exatamente com net_received_amount. Em vendas à
+ * vista (1x), só "mercadopago_fee" aparece — mas net_received_amount
+ * ainda vem menor do que bruto - taxa (ex.: venda de R$532,00, taxa
+ * R$10,91, líquido real R$516,09 — R$5,00 "sumindo"). O MP cobra um
+ * custo de antecipação em 1x sem declarar isso em fee_details.
+ *
+ * Por isso "antecipação" não vem de fee_details — vem por resíduo:
+ * bruto - taxa - líquido. Nos casos parcelados isso dá exatamente o
+ * mesmo valor que financing_fee (confirmado), e nos casos à vista
+ * captura o custo escondido que não tem type próprio. net_received_amount
+ * é o valor real recebido, então usar ele como âncora e calcular
+ * antecipação por diferença é mais confiável do que confiar em
+ * fee_details estar completo.
  */
 export function extrairValoresMp(p: MpPagamento): { bruto?: number; taxa?: number; antecipacao?: number; liquido?: number } {
   const bruto = p.transaction_amount;
   const liquido = p.transaction_details?.net_received_amount;
   if (!p.fee_details) return { bruto, liquido };
 
-  let taxa = 0;
-  let antecipacao = 0;
-  for (const f of p.fee_details) {
-    if (f.type === "financing_fee") antecipacao += f.amount ?? 0;
-    else taxa += f.amount ?? 0;
-  }
+  const taxa = p.fee_details
+    .filter((f) => f.type !== "financing_fee")
+    .reduce((soma, f) => soma + (f.amount ?? 0), 0);
+  const antecipacao = (bruto !== undefined && liquido !== undefined) ? bruto - taxa - liquido : undefined;
+
   return { bruto, taxa, antecipacao, liquido };
 }
 
