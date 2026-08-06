@@ -1302,7 +1302,20 @@ Diretrizes:
           const pagina = await consultarPagamentos(unidade.mpAccessToken, input.dataInicio, input.dataFim, offset, limit);
           totalNaApi = pagina.paging.total;
           if (offset === 0 && pagina.results[0]) {
-            amostraBruta = JSON.stringify(pagina.results[0]).slice(0, 2000);
+            // Amostra focada — o objeto de pagamento completo tem tanta
+            // coisa (payer, additional_info, order...) que o campo que
+            // eu realmente preciso auditar (fee_details) fica truncado
+            // se eu logar o objeto inteiro. Pega só o que interessa pro
+            // mapeamento de taxa/antecipação.
+            const p0 = pagina.results[0];
+            amostraBruta = JSON.stringify({
+              installments: p0.installments,
+              transaction_amount: p0.transaction_amount,
+              fee_details: p0.fee_details,
+              transaction_details: p0.transaction_details,
+              money_release_date: p0.money_release_date,
+              financing_group: p0.financing_group,
+            }).slice(0, 2000);
           }
 
           const linhas = pagina.results.map((p) => {

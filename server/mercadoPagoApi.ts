@@ -40,6 +40,7 @@ export interface MpPagamento {
   money_release_date?: string | null; // ISO 8601 — quando o valor é liberado/cai
   description?: string;
   external_reference?: string;
+  financing_group?: string; // ex.: "PSJ_LINK_HASTA_3X" — parcelamento sem juros
 }
 
 export interface MpPaymentsSearchResponse {
