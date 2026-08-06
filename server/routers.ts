@@ -9,7 +9,7 @@ import { zapiApi } from "./zapiApi";
 import { buddhaMktApi } from "./buddhaMktApi";
 import { storagePut, storageGetSignedUrl } from "./storage";
 import { invokeLLM } from "./_core/llm";
-import { interApi, getInterAccessToken, isTokenValid } from "./interApi";
+import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
 import { parseExtratoInterPdf } from "./interExtratoPdfParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { PDFParse } from "pdf-parse";
@@ -782,17 +782,18 @@ Diretrizes:
       const contaInter = await db.getOrCreateContaInter(input.unidadeId);
       const regrasDre = await db.listRegrasParaMatch();
       const cnpjsContasDre = await db.listCnpjsDeContas();
-      const categorizar = async (t: { dataEntrada?: string; dataTransacao?: string; tipoTransacao?: string; titulo?: string; descricao?: string; valor: string; cpfCnpjOrigem?: string; cpfCnpjDestino?: string }) => {
+      const categorizar = async (t: InterTransacaoCompleta) => {
         if (!contaInter?.id) return { dreCategoriaId: undefined, categorizacaoStatus: "pendente" as const, alerta: null };
+        const contraparte = extrairContraparte(t);
         const resultado = await db.categorizarTransacaoAutomaticamente({
           contaId: contaInter.id,
-          dataEntrada: t.dataEntrada ?? t.dataTransacao ?? "",
+          dataEntrada: dataEntradaDe(t),
           tipoTransacao: t.tipoTransacao,
           titulo: t.titulo,
           descricao: t.descricao,
           valor: parseFloat(t.valor),
-          cpfCnpjOrigem: t.cpfCnpjOrigem,
-          cpfCnpjDestino: t.cpfCnpjDestino,
+          cpfCnpjOrigem: contraparte.cpfCnpjOrigem,
+          cpfCnpjDestino: contraparte.cpfCnpjDestino,
         }, regrasDre, cnpjsContasDre);
         return { dreCategoriaId: resultado.dreCategoriaId ?? undefined, categorizacaoStatus: resultado.categorizacaoStatus, alerta: resultado.alerta };
       };
@@ -827,21 +828,17 @@ Diretrizes:
             unidadeId: input.unidadeId,
             contaId: contaInter?.id,
             idTransacao: t.idTransacao,
-            dataEntrada: t.dataEntrada ?? t.dataTransacao,
+            dataEntrada: dataEntradaDe(t),
             dataTransacao: t.dataTransacao,
             tipoTransacao: t.tipoTransacao,
             tipoOperacao: (t.tipoOperacao === "D" || t.tipoOperacao === "C") ? t.tipoOperacao : "D",
             valor: t.valor,
             titulo: t.titulo,
             descricao: t.descricao,
-            detalhe: t.detalhe,
-            nomeOrigem: t.nomeOrigem,
-            nomeDestino: t.nomeDestino,
-            cpfCnpjOrigem: t.cpfCnpjOrigem,
-            cpfCnpjDestino: t.cpfCnpjDestino,
+            detalhe: t.detalhes ? JSON.stringify({ ...t.detalhes, numeroDocumento: t.numeroDocumento }) : undefined,
+            ...extrairContraparte(t),
             contaOrigem: t.contaOrigem,
             contaDestino: t.contaDestino,
-            cpmf: t.cpmf,
             ...(await categorizar(t)),
           }))),
         );
@@ -871,21 +868,17 @@ Diretrizes:
               unidadeId: input.unidadeId,
               contaId: contaInter?.id,
               idTransacao: t.idTransacao,
-              dataEntrada: t.dataEntrada ?? t.dataTransacao,
+              dataEntrada: dataEntradaDe(t),
               dataTransacao: t.dataTransacao,
               tipoTransacao: t.tipoTransacao,
               tipoOperacao: (t.tipoOperacao === "D" || t.tipoOperacao === "C") ? t.tipoOperacao : "D",
               valor: t.valor,
               titulo: t.titulo,
               descricao: t.descricao,
-              detalhe: t.detalhe,
-              nomeOrigem: t.nomeOrigem,
-              nomeDestino: t.nomeDestino,
-              cpfCnpjOrigem: t.cpfCnpjOrigem,
-              cpfCnpjDestino: t.cpfCnpjDestino,
+              detalhe: t.detalhes ? JSON.stringify({ ...t.detalhes, numeroDocumento: t.numeroDocumento }) : undefined,
+              ...extrairContraparte(t),
               contaOrigem: t.contaOrigem,
               contaDestino: t.contaDestino,
-              cpmf: t.cpmf,
               ...(await categorizar(t)),
             }))),
           );
@@ -893,17 +886,25 @@ Diretrizes:
           pagina++;
         }
 
-        // Registrar log de sincronização — inclui uma amostra bruta da
-        // 1ª transação da API (todos os campos, sem filtro), útil pra
-        // auditar se o mapeamento em InterTransacaoCompleta cobre tudo
-        // que a API realmente devolve hoje.
-        const amostraBruta = primeira.transacoes[0] ? JSON.stringify(primeira.transacoes[0]).slice(0, 2000) : null;
+        // Registrar log de sincronização — inclui uma amostra bruta de
+        // crédito e outra de débito (todos os campos, sem filtro), útil
+        // pra auditar se o mapeamento em InterTransacaoCompleta cobre
+        // tudo que a API realmente devolve hoje. O lado débito ainda é
+        // uma suposição (nomeRecebedor/cpfCnpjRecebedor por simetria com
+        // o lado crédito, nunca visto num payload real) — por isso pegar
+        // uma amostra de cada é mais valioso que só a primeira da lista.
+        const amostraCredito = primeira.transacoes.find((t) => t.tipoOperacao === "C");
+        const amostraDebito = primeira.transacoes.find((t) => t.tipoOperacao === "D");
+        const amostras = [
+          amostraCredito ? `Crédito: ${JSON.stringify(amostraCredito).slice(0, 1500)}` : null,
+          amostraDebito ? `Débito: ${JSON.stringify(amostraDebito).slice(0, 1500)}` : null,
+        ].filter(Boolean).join(" | ");
         await db.createSyncLog({
           unidadeId: input.unidadeId,
           tipo: "inter_extrato",
           status: "sucesso",
           registrosProcessados: totalInseridos,
-          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Total API: ${totalTransacoes}. Novos: ${totalInseridos}. Páginas: ${pagina}.${amostraBruta ? ` Amostra bruta: ${amostraBruta}` : ""}`,
+          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Total API: ${totalTransacoes}. Novos: ${totalInseridos}. Páginas: ${pagina}.${amostras ? ` Amostra bruta: ${amostras}` : ""}`,
         });
 
         return { success: true, totalInseridos, totalTransacoes, paginas: pagina };

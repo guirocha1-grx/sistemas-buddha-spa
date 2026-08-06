@@ -49,25 +49,69 @@ export interface InterExtratoResponse {
   transacoes: InterTransacao[];
 }
 
+/**
+ * Formato confirmado em produção (payload real de 2026-08-05, transação
+ * Pix recebido) — bem diferente do que a doc sugeria. Alguns campos
+ * (lado "recebedor"/débito) ainda não foram confirmados com um exemplo
+ * real, só inferidos por simetria com o lado "pagador".
+ */
+export interface InterDetalhesTransacao {
+  txId?: string;
+  nomePagador?: string;
+  nomeRecebedor?: string;
+  descricaoPix?: string;
+  cpfCnpjPagador?: string;
+  cpfCnpjRecebedor?: string;
+  nomeEmpresaPagador?: string;
+  nomeEmpresaRecebedor?: string;
+  tipoDetalhe?: string;
+  endToEndId?: string;
+  chavePixRecebedor?: string;
+  chavePixPagador?: string;
+  [chaveNaoMapeada: string]: unknown;
+}
+
 export interface InterTransacaoCompleta {
   idTransacao: string;
-  // A API às vezes não devolve dataEntrada (observado em produção) —
-  // por isso opcional aqui; quem consome usa dataTransacao como fallback.
-  dataEntrada?: string;
+  // Data+hora de inclusão ("AAAA-MM-DD HH:mm:ss.SSS") — não "dataEntrada"
+  // como a doc sugeria. Usar .slice(0, 10) pra virar AAAA-MM-DD.
+  dataInclusao?: string;
   dataTransacao: string;
   tipoTransacao: string;
   tipoOperacao: string;
   valor: string;
   titulo: string;
   descricao: string;
-  detalhe: string;
+  numeroDocumento?: string;
+  detalhes?: InterDetalhesTransacao;
+  // Não confirmados num payload real ainda — mantidos por segurança
+  // caso apareçam em outros tipos de transação (TED, boleto).
   contaOrigem?: string;
   contaDestino?: string;
+}
+
+/** AAAA-MM-DD a partir de dataInclusao ("...HH:mm:ss") ou dataTransacao. */
+export function dataEntradaDe(t: InterTransacaoCompleta): string {
+  return t.dataInclusao?.slice(0, 10) ?? t.dataTransacao;
+}
+
+/**
+ * Extrai nome/CPF-CNPJ da contraparte a partir do lado certo (pagador
+ * pra crédito recebido, recebedor pra débito enviado) — a API não manda
+ * isso em campos planos como cpfCnpjOrigem/cpfCnpjDestino.
+ */
+export function extrairContraparte(t: InterTransacaoCompleta): {
   nomeOrigem?: string;
   nomeDestino?: string;
   cpfCnpjOrigem?: string;
   cpfCnpjDestino?: string;
-  cpmf?: string;
+} {
+  const d = t.detalhes;
+  if (!d) return {};
+  if (t.tipoOperacao === "C") {
+    return { nomeOrigem: d.nomePagador, cpfCnpjOrigem: d.cpfCnpjPagador };
+  }
+  return { nomeDestino: d.nomeRecebedor, cpfCnpjDestino: d.cpfCnpjRecebedor };
 }
 
 export interface InterExtratoCompletoResponse {
