@@ -16,7 +16,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, RefreshCw, Upload, AlertCircle, CreditCard, Wallet, Percent, TrendingUp } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Loader2, RefreshCw, Upload, AlertCircle, CreditCard, Wallet, MinusCircle, TrendingUp, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
 // ===== Períodos rápidos (mesmo padrão de Extratos.tsx) =====
@@ -233,9 +234,12 @@ export default function Adquirentes() {
             <Card className="border-border/50 shadow-sm py-2.5">
               <CardContent className="px-4">
                 <CardDescription className="flex items-center gap-1.5 text-xs">
-                  <Percent className="h-3.5 w-3.5 text-red-500" /> Taxas no período
+                  <MinusCircle className="h-3.5 w-3.5 text-red-500" /> Taxas no período
                 </CardDescription>
-                <div className="text-base font-bold text-red-600 mt-0.5">{fmtCurrencyAdq(totalTaxa)}</div>
+                <div className="text-base font-bold text-red-600 mt-0.5">
+                  {fmtCurrencyAdq(totalTaxa)}
+                  {totalBruto > 0 && <span className="text-xs font-normal text-muted-foreground ml-1">({fmtPercentAdq(totalTaxa, totalBruto)})</span>}
+                </div>
               </CardContent>
             </Card>
             <Card className="border-border/50 shadow-sm py-2.5">
@@ -375,7 +379,12 @@ export default function Adquirentes() {
                     <TableBody>
                       {vendas.map((v) => {
                         const bruto = numAdq(v.valorBruto);
+                        const liquido = numAdq(v.valorLiquido);
                         const totalEncargos = numAdq(v.valorTaxa) + numAdq(v.valorAntecipacao);
+                        // Tolerância de 1 centavo pra arredondamento — acima
+                        // disso, bruto - encargos deveria bater com líquido;
+                        // se não bate, algum valor não capturado ficou de fora.
+                        const inconsistente = Math.abs(bruto - totalEncargos - liquido) > 0.01;
                         return (
                           <TableRow key={v.id} className="text-sm">
                             <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDataHoraAdq(v.dataHora)}</TableCell>
@@ -390,7 +399,21 @@ export default function Adquirentes() {
                             <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">{fmtCurrencyAdq(v.valorAntecipacao)}</TableCell>
                             <TableCell className="text-right text-xs text-red-600 whitespace-nowrap">{fmtCurrencyAdq(totalEncargos)}</TableCell>
                             <TableCell className="text-right text-xs text-red-600 whitespace-nowrap">{fmtPercentAdq(totalEncargos, bruto)}</TableCell>
-                            <TableCell className="text-right text-xs font-medium text-green-700 whitespace-nowrap">{fmtCurrencyAdq(v.valorLiquido)}</TableCell>
+                            <TableCell className="text-right text-xs font-medium text-green-700 whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1 justify-end">
+                                {inconsistente && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <TriangleAlert className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      Bruto - Total Encargos ({fmtCurrencyAdq(bruto - totalEncargos)}) não bate com o Líquido ({fmtCurrencyAdq(liquido)}) — diferença de {fmtCurrencyAdq(bruto - totalEncargos - liquido)}.
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                                {fmtCurrencyAdq(v.valorLiquido)}
+                              </span>
+                            </TableCell>
                             <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDataAdq(v.dataPagamento)}</TableCell>
                           </TableRow>
                         );
