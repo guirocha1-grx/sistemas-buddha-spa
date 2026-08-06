@@ -383,10 +383,13 @@ export async function upsertInterExtratos(
 // ===== Adquirentes (vendas de maquininha) =====
 
 /**
- * Grava vendas de adquirente, ignorando duplicatas. Dedup por
- * adquirente+idTransacaoExterno+parcela — necessário porque o Interpag
- * repete o mesmo idTransacaoExterno em cada parcela de uma venda
- * parcelada (só o campo parcela muda entre as linhas).
+ * Grava vendas de adquirente — upsert de verdade: atualiza a linha se
+ * já existir (não só ignora), pra que rodar "Sincronizar" de novo
+ * corrija dados gravados com um mapeamento antigo (ex.: quando um bug
+ * no cálculo de taxa/antecipação é corrigido depois de já ter
+ * sincronizado). Dedup/match por adquirente+idTransacaoExterno+parcela
+ * — necessário porque o Interpag repete o mesmo idTransacaoExterno em
+ * cada parcela de uma venda parcelada (só o campo parcela muda).
  */
 export async function upsertAdquirenteVendas(
   unidadeId: number,
@@ -411,7 +414,10 @@ export async function upsertAdquirenteVendas(
           ),
         )
         .limit(1);
-      if (existente.length > 0) continue;
+      if (existente.length > 0) {
+        await db.update(adquirenteVendas).set(v).where(eq(adquirenteVendas.id, existente[0].id));
+        continue;
+      }
     }
     await db.insert(adquirenteVendas).values({ ...v, unidadeId });
     inseridos++;
