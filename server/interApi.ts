@@ -50,19 +50,21 @@ export interface InterExtratoResponse {
 }
 
 /**
- * Formato confirmado em produção com 2 payloads reais (2026-08-05,
- * unidade Ribeirão Shopping): um Pix recebido (crédito) e um pagamento
- * de boleto (débito) — bem diferentes do que a doc sugeria, e bem
- * diferentes ENTRE SI. `detalhes` muda de formato conforme tipoTransacao
- * (PIX vs PAGAMENTO/boleto), não é uma estrutura fixa.
+ * Formato confirmado em produção com 5 payloads reais (2026-08-05/06,
+ * ambas unidades): Pix recebido, Pix enviado, pagamento de boleto,
+ * crédito de domicílio de cartão (liquidação InterPag/Granito) e
+ * boleto recebido. `detalhes` muda de formato conforme tipoTransacao —
+ * não é uma estrutura fixa — e às vezes nem existe (DOMICILIO_CARTAO
+ * não tem `detalhes` nenhum, só os campos de nível raiz).
  *
- * IMPORTANTE: no boleto, `cpfCnpj` é o CNPJ de QUEM PAGA (nós), não do
- * destinatário — confirmado batendo com `chavePixRecebedor` de outro
- * payload. Não usar esse campo pra identificar a contraparte.
+ * IMPORTANTE: no boleto pago (PAGAMENTO), `cpfCnpj` é o CNPJ de QUEM
+ * PAGA (nós), não do destinatário — confirmado 2x batendo com
+ * cpfCnpjPagador/chavePixRecebedor de outros payloads da mesma unidade.
+ * Não usar esse campo pra identificar a contraparte.
  *
- * Pix enviado (débito) ainda não foi visto num payload real — os campos
- * nomeRecebedor/cpfCnpjRecebedor abaixo são só uma suposição por
- * simetria com o lado pagador do Pix recebido.
+ * DOMICILIO_CARTAO (liquidação da maquininha/InterPag) e boleto
+ * recebido não trazem nome/CNPJ de contraparte em campo nenhum — só dá
+ * pra categorizar por título/valor, não por quem pagou.
  */
 export interface InterDetalhesTransacao {
   // Pix recebido (crédito) — confirmado
@@ -72,6 +74,15 @@ export interface InterDetalhesTransacao {
   cpfCnpjPagador?: string;
   nomeEmpresaPagador?: string;
   chavePixRecebedor?: string;
+  // Pix enviado (débito) — confirmado
+  nomeRecebedor?: string;
+  cpfCnpjRecebedor?: string;
+  nomeEmpresaRecebedor?: string;
+  contaBancariaRecebedor?: string;
+  agenciaRecebedor?: string;
+  chavePixPagador?: string;
+  origemMovimentacao?: string;
+  codigoSolicitacao?: string;
   // Pagamento de boleto (débito) — confirmado
   valorTotal?: string;
   detalheDescricao?: string;
@@ -84,13 +95,13 @@ export interface InterDetalhesTransacao {
   empresaOrigem?: string;
   nomeDestinatario?: string;
   autenticacao?: string;
+  // Boleto recebido (crédito, DEPOSITO_BOLETO) — confirmado, sem dado
+  // de contraparte (nem nome nem CNPJ, só identificação do boleto)
+  dataEmissao?: string;
+  nossoNumero?: string;
   // Comuns
   tipoDetalhe?: string;
   endToEndId?: string;
-  // Pix enviado (débito) — NÃO confirmado, só suposição por simetria
-  nomeRecebedor?: string;
-  cpfCnpjRecebedor?: string;
-  chavePixPagador?: string;
   [chaveNaoMapeada: string]: unknown;
 }
 

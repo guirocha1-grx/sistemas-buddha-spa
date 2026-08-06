@@ -42,6 +42,7 @@ const menuItems = [
     children: [
       { label: "Visão Geral", path: "/financeiro" },
       { label: "Extratos", path: "/financeiro/extratos" },
+      { label: "Adquirentes", path: "/financeiro/adquirentes" },
       { label: "Parâmetros", path: "/financeiro/parametros" },
     ],
   },

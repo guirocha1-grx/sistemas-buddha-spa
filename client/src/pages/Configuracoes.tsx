@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megaphone, Landmark } from "lucide-react";
+import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megaphone, Landmark, CreditCard } from "lucide-react";
 
 interface InterForm {
   interClientId?: string;
@@ -15,6 +15,10 @@ interface InterForm {
   interCertificado?: string;
   interChavePrivada?: string;
   interContaCorrente?: string;
+}
+
+interface MpForm {
+  mpAccessToken?: string;
 }
 
 interface ZapiForm {
@@ -35,6 +39,8 @@ export default function Configuracoes() {
   const [mktSaved, setMktSaved] = useState(false);
   const [interForms, setInterForms] = useState<Record<number, InterForm>>({});
   const [interSaved, setInterSaved] = useState<number | null>(null);
+  const [mpForms, setMpForms] = useState<Record<number, MpForm>>({});
+  const [mpSaved, setMpSaved] = useState<number | null>(null);
 
   const updateUnidade = trpc.unidades.update.useMutation({
     onSuccess: (_data, vars) => {
@@ -49,6 +55,10 @@ export default function Configuracoes() {
       if (vars.interClientId !== undefined || vars.interClientSecret !== undefined || vars.interCertificado !== undefined || vars.interChavePrivada !== undefined || vars.interContaCorrente !== undefined) {
         setInterSaved(vars.id);
         setTimeout(() => setInterSaved(null), 3000);
+      }
+      if (vars.mpAccessToken !== undefined) {
+        setMpSaved(vars.id);
+        setTimeout(() => setMpSaved(null), 3000);
       }
     },
   });
@@ -303,6 +313,58 @@ export default function Configuracoes() {
                     <Save className="h-4 w-4 mr-2" />
                   )}
                   {interSaved === unidade.id ? "Salvo!" : "Salvar Banco Inter"}
+                </Button>
+              </div>
+
+              {/* Mercado Pago */}
+              <div className="border-t pt-3 mt-1 space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-1.5 text-sm">
+                    <CreditCard className="h-3.5 w-3.5" /> Mercado Pago
+                  </Label>
+                  {unidade.mpAccessToken ? (
+                    <Badge className="bg-green-100 text-green-700">Configurado</Badge>
+                  ) : (
+                    <Badge variant="secondary">Sem credenciais</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Gere o Access Token em{" "}
+                  <a
+                    href="https://www.mercadopago.com.br/developers/panel/app"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
+                    Suas integrações → Credenciais
+                  </a>{" "}
+                  (self-service, sem certificado — diferente do Inter).
+                </p>
+                <Input
+                  type="password"
+                  placeholder="Access Token"
+                  defaultValue={unidade.mpAccessToken || ""}
+                  onChange={(e) =>
+                    setMpForms({ ...mpForms, [unidade.id]: { mpAccessToken: e.target.value } })
+                  }
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const form = mpForms[unidade.id];
+                    if (form?.mpAccessToken) {
+                      updateUnidade.mutate({ id: unidade.id, ...form });
+                    }
+                  }}
+                  disabled={!mpForms[unidade.id]?.mpAccessToken || updateUnidade.isPending}
+                >
+                  {mpSaved === unidade.id ? (
+                    <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  {mpSaved === unidade.id ? "Salvo!" : "Salvar Mercado Pago"}
                 </Button>
               </div>
             </CardContent>

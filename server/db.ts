@@ -1,6 +1,6 @@
 import { eq, desc, and, gte, lte, isNull, like, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreRegras, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreRegras, adquirenteVendas, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { DRE_CATEGORIAS_SEED, DRE_REGRAS_SEED, sugerirCategoriaNome, extrairPadraoContraparte, ehTransferenciaEntreContas, EXCLUIDO_NOME, type RegraMatch } from "./dreCategorizacao";
 
@@ -378,6 +378,66 @@ export async function upsertInterExtratos(
     inseridos++;
   }
   return inseridos;
+}
+
+// ===== Adquirentes (vendas de maquininha) =====
+
+/**
+ * Grava vendas de adquirente, ignorando duplicatas. Dedup por
+ * adquirente+idTransacaoExterno+parcela — necessário porque o Interpag
+ * repete o mesmo idTransacaoExterno em cada parcela de uma venda
+ * parcelada (só o campo parcela muda entre as linhas).
+ */
+export async function upsertAdquirenteVendas(
+  unidadeId: number,
+  vendas: InsertAdquirenteVenda[],
+): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  if (vendas.length === 0) return 0;
+
+  let inseridos = 0;
+  for (const v of vendas) {
+    if (v.idTransacaoExterno) {
+      const existente = await db
+        .select({ id: adquirenteVendas.id })
+        .from(adquirenteVendas)
+        .where(
+          and(
+            eq(adquirenteVendas.unidadeId, unidadeId),
+            eq(adquirenteVendas.adquirente, v.adquirente),
+            eq(adquirenteVendas.idTransacaoExterno, v.idTransacaoExterno),
+            v.parcela ? eq(adquirenteVendas.parcela, v.parcela) : isNull(adquirenteVendas.parcela),
+          ),
+        )
+        .limit(1);
+      if (existente.length > 0) continue;
+    }
+    await db.insert(adquirenteVendas).values({ ...v, unidadeId });
+    inseridos++;
+  }
+  return inseridos;
+}
+
+export async function listAdquirenteVendas(
+  unidadeId: number,
+  dataInicio: string,
+  dataFim: string,
+  adquirente?: "mercadopago" | "interpag",
+) {
+  const db = await getDb();
+  if (!db) return [];
+  const condicoes = [
+    eq(adquirenteVendas.unidadeId, unidadeId),
+    gte(adquirenteVendas.dataHora, `${dataInicio} 00:00:00`),
+    lte(adquirenteVendas.dataHora, `${dataFim} 23:59:59`),
+  ];
+  if (adquirente) condicoes.push(eq(adquirenteVendas.adquirente, adquirente));
+  return db
+    .select()
+    .from(adquirenteVendas)
+    .where(and(...condicoes))
+    .orderBy(desc(adquirenteVendas.dataHora));
 }
 
 /**
