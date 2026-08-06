@@ -112,6 +112,16 @@ function fmtCurrencyAdq(value: string | number | null | undefined): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 }
 
+function numAdq(value: string | number | null | undefined): number {
+  const n = typeof value === "string" ? parseFloat(value) : (value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function fmtPercentAdq(numerador: number, denominador: number): string {
+  if (!denominador) return "—";
+  return `${((numerador / denominador) * 100).toFixed(2)}%`;
+}
+
 function fmtDataHoraAdq(raw: string | null): string {
   if (!raw) return "-";
   const [data, hora] = raw.split(" ");
@@ -356,27 +366,35 @@ export default function Adquirentes() {
                         <TableHead className="text-xs text-right w-24">Bruto</TableHead>
                         <TableHead className="text-xs text-right w-20">Taxa</TableHead>
                         <TableHead className="text-xs text-right w-24">Antecip.</TableHead>
+                        <TableHead className="text-xs text-right w-28">Total Encargos</TableHead>
+                        <TableHead className="text-xs text-right w-20">% Encargos</TableHead>
                         <TableHead className="text-xs text-right w-24">Líquido</TableHead>
                         <TableHead className="text-xs w-24">Pagamento</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {vendas.map((v) => (
-                        <TableRow key={v.id} className="text-sm">
-                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDataHoraAdq(v.dataHora)}</TableCell>
-                          <TableCell className="text-xs max-w-56 truncate" title={v.tipo ?? undefined}>{v.tipo ?? "—"}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-xs font-normal whitespace-nowrap">{v.status ?? "—"}</Badge>
-                          </TableCell>
-                          <TableCell className="text-xs">{v.parcela ?? "—"}</TableCell>
-                          <TableCell className="text-xs">{v.bandeira ?? "—"}</TableCell>
-                          <TableCell className="text-right text-xs whitespace-nowrap">{fmtCurrencyAdq(v.valorBruto)}</TableCell>
-                          <TableCell className="text-right text-xs text-red-600 whitespace-nowrap">{fmtCurrencyAdq(v.valorTaxa)}</TableCell>
-                          <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">{fmtCurrencyAdq(v.valorAntecipacao)}</TableCell>
-                          <TableCell className="text-right text-xs font-medium text-green-700 whitespace-nowrap">{fmtCurrencyAdq(v.valorLiquido)}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDataAdq(v.dataPagamento)}</TableCell>
-                        </TableRow>
-                      ))}
+                      {vendas.map((v) => {
+                        const bruto = numAdq(v.valorBruto);
+                        const totalEncargos = numAdq(v.valorTaxa) + numAdq(v.valorAntecipacao);
+                        return (
+                          <TableRow key={v.id} className="text-sm">
+                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDataHoraAdq(v.dataHora)}</TableCell>
+                            <TableCell className="text-xs max-w-56 truncate" title={v.tipo ?? undefined}>{v.tipo ?? "—"}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs font-normal whitespace-nowrap">{v.status ?? "—"}</Badge>
+                            </TableCell>
+                            <TableCell className="text-xs">{v.parcela ?? "—"}</TableCell>
+                            <TableCell className="text-xs">{v.bandeira ?? "—"}</TableCell>
+                            <TableCell className="text-right text-xs whitespace-nowrap">{fmtCurrencyAdq(v.valorBruto)}</TableCell>
+                            <TableCell className="text-right text-xs text-red-600 whitespace-nowrap">{fmtCurrencyAdq(v.valorTaxa)}</TableCell>
+                            <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">{fmtCurrencyAdq(v.valorAntecipacao)}</TableCell>
+                            <TableCell className="text-right text-xs text-red-600 whitespace-nowrap">{fmtCurrencyAdq(totalEncargos)}</TableCell>
+                            <TableCell className="text-right text-xs text-red-600 whitespace-nowrap">{fmtPercentAdq(totalEncargos, bruto)}</TableCell>
+                            <TableCell className="text-right text-xs font-medium text-green-700 whitespace-nowrap">{fmtCurrencyAdq(v.valorLiquido)}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDataAdq(v.dataPagamento)}</TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
