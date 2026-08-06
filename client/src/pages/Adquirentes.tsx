@@ -344,37 +344,37 @@ export default function Adquirentes() {
                   Nenhuma venda neste período.
                 </div>
               ) : (
-                <div className="rounded-md border border-border/50 overflow-hidden">
+                <div className="rounded-md border border-border/50 overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/30">
-                        <TableHead className="text-xs w-36">Data/Hora</TableHead>
-                        <TableHead className="text-xs">Tipo</TableHead>
-                        <TableHead className="text-xs">Status</TableHead>
-                        <TableHead className="text-xs w-16">Parc.</TableHead>
-                        <TableHead className="text-xs">Bandeira</TableHead>
-                        <TableHead className="text-xs text-right">Bruto</TableHead>
-                        <TableHead className="text-xs text-right">Taxa</TableHead>
-                        <TableHead className="text-xs text-right">Antecipação</TableHead>
-                        <TableHead className="text-xs text-right">Líquido</TableHead>
+                        <TableHead className="text-xs w-32">Data/Hora</TableHead>
+                        <TableHead className="text-xs w-56">Tipo</TableHead>
+                        <TableHead className="text-xs w-24">Status</TableHead>
+                        <TableHead className="text-xs w-14">Parc.</TableHead>
+                        <TableHead className="text-xs w-24">Bandeira</TableHead>
+                        <TableHead className="text-xs text-right w-24">Bruto</TableHead>
+                        <TableHead className="text-xs text-right w-20">Taxa</TableHead>
+                        <TableHead className="text-xs text-right w-24">Antecip.</TableHead>
+                        <TableHead className="text-xs text-right w-24">Líquido</TableHead>
                         <TableHead className="text-xs w-24">Pagamento</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {vendas.map((v) => (
                         <TableRow key={v.id} className="text-sm">
-                          <TableCell className="text-xs text-muted-foreground">{fmtDataHoraAdq(v.dataHora)}</TableCell>
-                          <TableCell className="text-xs">{v.tipo ?? "—"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDataHoraAdq(v.dataHora)}</TableCell>
+                          <TableCell className="text-xs max-w-56 truncate" title={v.tipo ?? undefined}>{v.tipo ?? "—"}</TableCell>
                           <TableCell>
-                            <Badge variant="outline" className="text-xs font-normal">{v.status ?? "—"}</Badge>
+                            <Badge variant="outline" className="text-xs font-normal whitespace-nowrap">{v.status ?? "—"}</Badge>
                           </TableCell>
                           <TableCell className="text-xs">{v.parcela ?? "—"}</TableCell>
                           <TableCell className="text-xs">{v.bandeira ?? "—"}</TableCell>
-                          <TableCell className="text-right text-xs">{fmtCurrencyAdq(v.valorBruto)}</TableCell>
-                          <TableCell className="text-right text-xs text-red-600">{fmtCurrencyAdq(v.valorTaxa)}</TableCell>
-                          <TableCell className="text-right text-xs text-muted-foreground">{fmtCurrencyAdq(v.valorAntecipacao)}</TableCell>
-                          <TableCell className="text-right text-xs font-medium text-green-700">{fmtCurrencyAdq(v.valorLiquido)}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{fmtDataAdq(v.dataPagamento)}</TableCell>
+                          <TableCell className="text-right text-xs whitespace-nowrap">{fmtCurrencyAdq(v.valorBruto)}</TableCell>
+                          <TableCell className="text-right text-xs text-red-600 whitespace-nowrap">{fmtCurrencyAdq(v.valorTaxa)}</TableCell>
+                          <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">{fmtCurrencyAdq(v.valorAntecipacao)}</TableCell>
+                          <TableCell className="text-right text-xs font-medium text-green-700 whitespace-nowrap">{fmtCurrencyAdq(v.valorLiquido)}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDataAdq(v.dataPagamento)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
