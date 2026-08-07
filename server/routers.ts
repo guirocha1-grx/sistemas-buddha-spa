@@ -1452,6 +1452,14 @@ Diretrizes:
       }
     }),
 
+    detalhe: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).query(async ({ input }) => {
+      return db.detalheContasBancariasPorDia(input.unidadeId, input.dataInicio, input.dataFim);
+    }),
+
     resumo: protectedProcedure.input(z.object({
       unidadeId: z.number(),
       dataInicio: z.string(),

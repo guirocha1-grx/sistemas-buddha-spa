@@ -567,33 +567,34 @@ export interface ResumoContasBancariasDia {
   pix: number;
 }
 
+export interface ItemContaBancaria {
+  data: string;
+  forma: "dinheiro" | "debito" | "credito" | "pix";
+  horario: string; // "HH:mm" — vazio quando a fonte não tem horário (ex: extrato Inter, Caixa Físico)
+  descricao: string;
+  valor: number;
+}
+
 /**
- * Lado "Contas bancárias" da conciliação — sempre calculado ao vivo a
- * partir do que já está sincronizado (sem tabela própria): Dinheiro =
- * entradas do Caixa Físico; Débito/Crédito = adquirente_vendas
- * classificado por tipo; Pix = adquirente_vendas tipo pix + inter_extratos
- * com "pix" no histórico (mesmo padrão da regra DRE "Pix recebido").
- * Agrupado pelo dia da venda (dataHora/dataEntrada), não pela data de
- * liquidação — o objetivo é comparar "o que a recepção lançou hoje" com
- * "o que realmente aconteceu hoje", não quando o dinheiro caiu na conta.
+ * Lado "Contas bancárias" da conciliação, item a item — sempre calculado
+ * ao vivo a partir do que já está sincronizado (sem tabela própria):
+ * Dinheiro = entradas do Caixa Físico; Débito/Crédito/Pix (de máquina) =
+ * adquirente_vendas classificado por tipo; Pix (direto no banco) =
+ * inter_extratos com "pix" no histórico (mesmo padrão da regra DRE "Pix
+ * recebido"). Agrupado pelo dia da venda (dataHora/dataEntrada), não pela
+ * data de liquidação — o objetivo é comparar "o que a recepção lançou
+ * hoje" com "o que realmente aconteceu hoje", não quando o dinheiro caiu
+ * na conta. Serve tanto pro resumo (agregado) quanto pro tooltip de
+ * auditoria (lançamento a lançamento).
  */
-export async function resumoContasBancariasPorDia(
+export async function detalheContasBancariasPorDia(
   unidadeId: number,
   dataInicio: string,
   dataFim: string,
-): Promise<Map<string, ResumoContasBancariasDia>> {
-  const porDia = new Map<string, ResumoContasBancariasDia>();
-  const linha = (data: string) => {
-    let l = porDia.get(data);
-    if (!l) {
-      l = { data, dinheiro: 0, cartaoDebito: 0, cartaoCredito: 0, pix: 0 };
-      porDia.set(data, l);
-    }
-    return l;
-  };
-
+): Promise<ItemContaBancaria[]> {
+  const itens: ItemContaBancaria[] = [];
   const db = await getDb();
-  if (!db) return porDia;
+  if (!db) return itens;
 
   const vendas = await db.select().from(adquirenteVendas).where(and(
     eq(adquirenteVendas.unidadeId, unidadeId),
@@ -603,11 +604,15 @@ export async function resumoContasBancariasPorDia(
   for (const v of vendas) {
     const balde = classificarFormaPagamentoAdquirente(v.tipo);
     if (!balde) continue;
-    const data = v.dataHora.slice(0, 10);
-    const valor = Number(v.valorBruto ?? 0);
-    if (balde === "debito") linha(data).cartaoDebito += valor;
-    else if (balde === "credito") linha(data).cartaoCredito += valor;
-    else linha(data).pix += valor;
+    const [data, hora] = v.dataHora.split(" ");
+    const adquirenteLabel = v.adquirente === "mercadopago" ? "Mercado Pago" : "Granito";
+    itens.push({
+      data,
+      forma: balde,
+      horario: (hora || "").slice(0, 5),
+      descricao: `${adquirenteLabel} · ${v.bandeira || v.tipo || "-"}${v.parcela ? ` (${v.parcela})` : ""}`,
+      valor: Number(v.valorBruto ?? 0),
+    });
   }
 
   const extratos = await db.select().from(interExtratos).where(and(
@@ -619,13 +624,46 @@ export async function resumoContasBancariasPorDia(
   for (const e of extratos) {
     const valor = Number(e.valor);
     if (e.origem === "caixa_fisico") {
-      linha(e.dataEntrada).dinheiro += valor;
+      itens.push({ data: e.dataEntrada, forma: "dinheiro", horario: "", descricao: e.titulo || "Caixa Físico", valor });
       continue;
     }
     const texto = `${e.titulo || ""} ${e.descricao || ""} ${e.tipoTransacao || ""}`.toLowerCase();
-    if (texto.includes("pix")) linha(e.dataEntrada).pix += valor;
+    if (texto.includes("pix")) {
+      itens.push({
+        data: e.dataEntrada,
+        forma: "pix",
+        horario: "",
+        descricao: `${e.titulo || e.tipoTransacao || "Pix recebido"}${e.nomeOrigem ? ` — ${e.nomeOrigem}` : ""}`,
+        valor,
+      });
+    }
   }
 
+  return itens;
+}
+
+export async function resumoContasBancariasPorDia(
+  unidadeId: number,
+  dataInicio: string,
+  dataFim: string,
+): Promise<Map<string, ResumoContasBancariasDia>> {
+  const itens = await detalheContasBancariasPorDia(unidadeId, dataInicio, dataFim);
+  const porDia = new Map<string, ResumoContasBancariasDia>();
+  const linha = (data: string) => {
+    let l = porDia.get(data);
+    if (!l) {
+      l = { data, dinheiro: 0, cartaoDebito: 0, cartaoCredito: 0, pix: 0 };
+      porDia.set(data, l);
+    }
+    return l;
+  };
+  for (const item of itens) {
+    const l = linha(item.data);
+    if (item.forma === "dinheiro") l.dinheiro += item.valor;
+    else if (item.forma === "debito") l.cartaoDebito += item.valor;
+    else if (item.forma === "credito") l.cartaoCredito += item.valor;
+    else l.pix += item.valor;
+  }
   return porDia;
 }
 

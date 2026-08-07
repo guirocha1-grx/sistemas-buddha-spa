@@ -1,11 +1,21 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Loader2, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
+
+type FormaServer = "dinheiro" | "debito" | "credito" | "pix";
+interface ItemContaBancaria {
+  data: string;
+  forma: FormaServer;
+  horario: string;
+  descricao: string;
+  valor: number;
+}
 
 function fmtCurrencyCom(value: number): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -36,10 +46,10 @@ function fmtDiaSemana(iso: string): string {
 }
 
 const FORMAS = [
-  { chave: "dinheiro" as const, label: "Dinheiro" },
-  { chave: "cartaoDebito" as const, label: "Cartão de débito" },
-  { chave: "cartaoCredito" as const, label: "Cartão de crédito" },
-  { chave: "pix" as const, label: "Pix" },
+  { chave: "dinheiro" as const, label: "Dinheiro", formaServer: "dinheiro" as const },
+  { chave: "cartaoDebito" as const, label: "Cartão de débito", formaServer: "debito" as const },
+  { chave: "cartaoCredito" as const, label: "Cartão de crédito", formaServer: "credito" as const },
+  { chave: "pix" as const, label: "Pix", formaServer: "pix" as const },
 ];
 
 type ValoresForma = { dinheiro: number; cartaoDebito: number; cartaoCredito: number; pix: number };
@@ -64,6 +74,24 @@ export default function ComandaRecepcao() {
     { unidadeId: unidadeId!, dataInicio, dataFim },
     { enabled: !!unidadeId },
   );
+
+  const detalheQuery = trpc.comandaRecepcao.detalhe.useQuery(
+    { unidadeId: unidadeId!, dataInicio, dataFim },
+    { enabled: !!unidadeId },
+  );
+
+  // Agrupa os lançamentos individuais por "data|forma" pra alimentar o
+  // hover de auditoria nas células de Contas bancárias.
+  const itensPorCelula = useMemo(() => {
+    const mapa = new Map<string, ItemContaBancaria[]>();
+    for (const item of (detalheQuery.data ?? []) as ItemContaBancaria[]) {
+      const chave = `${item.data}|${item.forma}`;
+      const lista = mapa.get(chave) ?? [];
+      lista.push(item);
+      mapa.set(chave, lista);
+    }
+    return mapa;
+  }, [detalheQuery.data]);
 
   const sincronizarMutation = trpc.comandaRecepcao.sincronizar.useMutation({
     onError: (err) => toast.error(`Erro na sincronização: ${err.message}`),
@@ -114,14 +142,78 @@ export default function ComandaRecepcao() {
     );
   }
 
+  function itensDoDia(data: string, formas: FormaServer[]): ItemContaBancaria[] {
+    return formas.flatMap((f) => itensPorCelula.get(`${data}|${f}`) ?? []);
+  }
+
+  function ConteudoAuditoria({ itens, valor }: { itens: ItemContaBancaria[]; valor: number }) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-xs font-semibold">
+          <span>{itens.length} lançamento{itens.length === 1 ? "" : "s"}</span>
+          <span>{fmtCurrencyCom(valor)}</span>
+        </div>
+        {itens.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Nenhum lançamento encontrado nessa data.</p>
+        ) : (
+          <ul className="space-y-1 max-h-64 overflow-y-auto">
+            {itens.map((item, i) => (
+              <li key={i} className="flex items-start justify-between gap-2 text-xs border-t pt-1 first:border-t-0 first:pt-0">
+                <span className="text-muted-foreground">
+                  {item.horario && <span className="tabular-nums">{item.horario} — </span>}
+                  {item.descricao}
+                </span>
+                <span className="whitespace-nowrap font-medium">{fmtCurrencyCom(item.valor)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  function CelulaValor({
+    valor,
+    diferente,
+    itens,
+    auditavel,
+    negrito,
+  }: {
+    valor: number;
+    diferente?: boolean;
+    itens?: ItemContaBancaria[];
+    auditavel?: boolean;
+    negrito?: boolean;
+  }) {
+    const conteudo = (
+      <span className={`tabular-nums ${auditavel ? "underline decoration-dotted decoration-muted-foreground/50 cursor-help" : ""}`}>
+        {fmtCurrencyCom(valor)}
+      </span>
+    );
+    const classe = `px-3 py-1.5 text-xs text-right whitespace-nowrap ${negrito ? "font-semibold" : ""} ${diferente ? "bg-red-100 text-red-700 font-medium" : ""}`;
+    if (!auditavel) return <td className={classe}>{conteudo}</td>;
+    return (
+      <td className={classe}>
+        <HoverCard openDelay={150}>
+          <HoverCardTrigger asChild>{conteudo}</HoverCardTrigger>
+          <HoverCardContent className="w-72">
+            <ConteudoAuditoria itens={itens ?? []} valor={valor} />
+          </HoverCardContent>
+        </HoverCard>
+      </td>
+    );
+  }
+
   function Secao({
     titulo,
     campo,
     destacarDiferenca,
+    auditavel,
   }: {
     titulo: string;
     campo: "comanda" | "contasBancarias" | "diferenca";
     destacarDiferenca?: boolean;
+    auditavel?: boolean;
   }) {
     const totaisSecao = totais(campo);
     return (
@@ -141,13 +233,15 @@ export default function ComandaRecepcao() {
             {dias.map((dia) => {
               const valor = dia[campo][forma.chave];
               const diferente = destacarDiferenca && Math.abs(dia.diferenca[forma.chave]) > 0.005;
+              const podeAuditar = auditavel && forma.chave !== "dinheiro";
               return (
-                <td
+                <CelulaValor
                   key={dia.data}
-                  className={`px-3 py-1.5 text-xs text-right whitespace-nowrap ${diferente ? "bg-red-100 text-red-700 font-medium" : ""}`}
-                >
-                  {fmtCurrencyCom(valor)}
-                </td>
+                  valor={valor}
+                  diferente={diferente}
+                  auditavel={podeAuditar}
+                  itens={podeAuditar ? itensDoDia(dia.data, [forma.formaServer]) : undefined}
+                />
               );
             })}
             <td className="px-3 py-1.5 text-xs text-right whitespace-nowrap font-medium border-l">
@@ -163,12 +257,14 @@ export default function ComandaRecepcao() {
             const valor = total(dia[campo]);
             const diferente = destacarDiferenca && Math.abs(total(dia.diferenca)) > 0.005;
             return (
-              <td
+              <CelulaValor
                 key={dia.data}
-                className={`px-3 py-1.5 text-xs text-right font-semibold whitespace-nowrap ${diferente ? "bg-red-100 text-red-700" : ""}`}
-              >
-                {fmtCurrencyCom(valor)}
-              </td>
+                valor={valor}
+                diferente={diferente}
+                negrito
+                auditavel={auditavel}
+                itens={auditavel ? itensDoDia(dia.data, ["dinheiro", "debito", "credito", "pix"]) : undefined}
+              />
             );
           })}
           <td className="px-3 py-1.5 text-xs text-right font-semibold whitespace-nowrap border-l">
@@ -259,7 +355,7 @@ export default function ComandaRecepcao() {
                   </thead>
                   <tbody>
                     <Secao titulo="Comanda (Recepção)" campo="comanda" />
-                    <Secao titulo="Contas bancárias" campo="contasBancarias" />
+                    <Secao titulo="Contas bancárias" campo="contasBancarias" auditavel />
                     <Secao titulo="Diferença" campo="diferenca" destacarDiferenca />
                   </tbody>
                 </table>
@@ -268,7 +364,9 @@ export default function ComandaRecepcao() {
           </Card>
           <p className="text-xs text-muted-foreground">
             Diferença positiva = recepção lançou a mais na comanda; negativa = lançou a menos.
-            Células destacadas em vermelho indicam uma diferença a investigar.
+            Células destacadas em vermelho indicam uma diferença a investigar. Passe o mouse
+            sobre os valores sublinhados de "Contas bancárias" (exceto Dinheiro) pra ver os
+            lançamentos individuais que compõem a soma.
           </p>
         </>
       )}
