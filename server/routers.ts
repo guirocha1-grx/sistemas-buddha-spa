@@ -14,7 +14,6 @@ import { parseExtratoInterPdf } from "./interExtratoPdfParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
-import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS } from "./googleSheets";
 
 export const appRouter = router({
   system: systemRouter,
@@ -1211,14 +1210,6 @@ Diretrizes:
         // end_date que a API devolve também pode vir com o dia seguinte
         // (fuso: 23:59:59Z do dia pedido vira madrugada UTC do dia
         // depois), então a comparação de período tolera esse +1 dia.
-        // O MP retorna begin_date/end_date em UTC (ex.: 2026-07-31T03:00:00Z
-        // = 2026-08-01 00:00 BRT). Por isso a comparação precisa aceitar
-        // início um dia antes e fim um dia depois do período solicitado.
-        const diaAnterior = (data: string) => {
-          const d = new Date(`${data}T00:00:00Z`);
-          d.setUTCDate(d.getUTCDate() - 1);
-          return d.toISOString().slice(0, 10);
-        };
         const diaSeguinte = (data: string) => {
           const d = new Date(`${data}T00:00:00Z`);
           d.setUTCDate(d.getUTCDate() + 1);
@@ -1227,8 +1218,7 @@ Diretrizes:
         const mesmoPeriodo = (r: { begin_date?: string; end_date?: string }) => {
           const inicio = (r.begin_date ?? "").slice(0, 10);
           const fim = (r.end_date ?? "").slice(0, 10);
-          return (inicio === input.dataInicio || inicio === diaAnterior(input.dataInicio))
-            && (fim === input.dataFim || fim === diaSeguinte(input.dataFim));
+          return inicio === input.dataInicio && (fim === input.dataFim || fim === diaSeguinte(input.dataFim));
         };
 
         const tentarBaixar = async (nome: string): Promise<string | undefined> => {
@@ -1240,33 +1230,23 @@ Diretrizes:
           }
         };
 
-        // Tenta baixar o relatório mais recente do período imediatamente.
-        // O MP retorna file_name mesmo com download_date=null — o arquivo
-        // já está disponível para download, o campo de status não é confiável.
         let lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
-        const doPeriodo = lista.filter((r) => mesmoPeriodo(r) && r.file_name);
-        let csvTexto: string | undefined;
-        // Tenta baixar do mais recente para o mais antigo
-        for (const r of doPeriodo) {
-          csvTexto = await tentarBaixar(r.file_name!);
-          if (csvTexto) break;
-        }
+        let existente = lista.find((r) => mesmoPeriodo(r) && r.file_name);
+        let csvTexto = existente?.file_name ? await tentarBaixar(existente.file_name) : undefined;
 
         if (!csvTexto) {
-          // Nenhum relatório existente do período funcionou — cria um novo
-          const criacao = await criarRelatorioLiberado(unidade.mpAccessToken, input.dataInicio, input.dataFim);
-          diagnostico += ` | Criação: status ${criacao.status} — ${criacao.corpo.slice(0, 500)}`;
-          // Polling: aguarda 60s, tenta baixar. Se não tiver, aguarda
-          // mais 60s e tenta novamente. Se ainda não der, erro.
-          for (let tentativa = 1; !csvTexto && tentativa <= 2; tentativa++) {
-            await new Promise((resolve) => setTimeout(resolve, 60000));
+          if (!existente) {
+            const criacao = await criarRelatorioLiberado(unidade.mpAccessToken, input.dataInicio, input.dataFim);
+            diagnostico += ` | Criação: status ${criacao.status} — ${criacao.corpo.slice(0, 500)}`;
+          }
+          // Espera até ~24s (8 tentativas de 3s) — na primeira tentativa
+          // já tenta baixar assim que o arquivo aparecer na listagem,
+          // sem depender de nenhum campo de status.
+          for (let tentativa = 0; !csvTexto && tentativa < 8; tentativa++) {
+            await new Promise((resolve) => setTimeout(resolve, 3000));
             lista = await listarRelatoriosLiberados(unidade.mpAccessToken);
-            const novos = lista.filter((r) => mesmoPeriodo(r) && r.file_name);
-            for (const r of novos) {
-              csvTexto = await tentarBaixar(r.file_name!);
-              if (csvTexto) break;
-            }
-            diagnostico += ` | Tentativa ${tentativa} (60s): ${csvTexto ? 'CSV baixado' : 'ainda não pronto'}`;
+            const pronto = lista.find((r) => mesmoPeriodo(r) && r.file_name);
+            if (pronto?.file_name) csvTexto = await tentarBaixar(pronto.file_name);
           }
         }
 
@@ -1278,7 +1258,7 @@ Diretrizes:
             registrosProcessados: 0,
             detalhes: `Nenhum arquivo baixável encontrado.${diagnostico}`,
           });
-          throw new Error("O relatório do Mercado Pago não ficou pronto após 2 minutos. Tente novamente em alguns instantes. Diagnóstico salvo no log (tipo mercadopago_extrato_diagnostico).");
+          throw new Error("O relatório do Mercado Pago ainda não ficou pronto pra baixar. Diagnóstico salvo no log (tipo mercadopago_extrato_diagnostico) — peça pro Claude conferir.");
         }
         const linhasCsv = parseRelatorioLiberadoMp(csvTexto);
 
@@ -1540,44 +1520,8 @@ Diretrizes:
       const totalInseridos = await db.upsertAdquirenteVendas(input.unidadeId, linhas);
       return { success: true, totalInseridos, totalLinhas: input.linhas.length };
     }),
-    }),
-  // ===== Caixa Físico (Google Sheets) =====
-  caixaFisico: router({
-    sincronizar: protectedProcedure.input(z.object({
-      unidadeId: z.number(),
-    })).mutation(async ({ input }) => {
-      const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade) throw new Error("Unidade não encontrada");
-      const isRbs = unidade.slug.includes("ribeirao") || unidade.slug.includes("rbs");
-      const spreadsheetId = isRbs ? SPREADSHEET_IDS.rbs : SPREADSHEET_IDS.ssu;
-      const aba = isRbs ? SPREADSHEET_ABAS.rbs : SPREADSHEET_ABAS.ssu;
-      const linhas = await lerCaixaFisicoSheet(spreadsheetId, aba, 60);
-      const inseridos = await db.upsertCaixaFisico(input.unidadeId, linhas.map((l: any) => ({
-        unidadeId: input.unidadeId,
-        data: l.data,
-        tipoOperacao: l.tipoOperacao,
-        ocorrencia: l.ocorrencia,
-        valor: l.valor.toString(),
-        saldo: l.saldo?.toString() ?? null,
-        conferidoPor: l.conferidoPor,
-      })) as any);
-      await db.createSyncLog({
-        unidadeId: input.unidadeId,
-        tipo: "caixa_fisico",
-        status: "sucesso",
-        registrosProcessados: inseridos,
-        detalhes: `Lidos: ${linhas.length}. Novos: ${inseridos}.`,
-      });
-      return { success: true, totalLidos: linhas.length, totalInseridos: inseridos };
-    }),
-    listar: protectedProcedure.input(z.object({
-      unidadeId: z.number(),
-      dataInicio: z.string().optional(),
-      dataFim: z.string().optional(),
-    })).query(async ({ input }) => {
-      return db.listCaixaFisico(input.unidadeId, input.dataInicio, input.dataFim);
-    }),
   }),
+
   // ===== Configurações globais (chave-valor) =====
   configuracoes: router({
     get: adminProcedure.input(z.object({ chave: z.string() })).query(async ({ input }) => {

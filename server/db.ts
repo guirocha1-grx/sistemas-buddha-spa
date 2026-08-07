@@ -1,6 +1,6 @@
 import { eq, desc, and, gte, lte, isNull, like, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreRegras, adquirenteVendas, caixaFisico, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCaixaFisico, type CaixaFisico } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreRegras, adquirenteVendas, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { DRE_CATEGORIAS_SEED, DRE_REGRAS_SEED, sugerirCategoriaNome, extrairPadraoContraparte, ehTransferenciaEntreContas, EXCLUIDO_NOME, type RegraMatch } from "./dreCategorizacao";
 
@@ -972,37 +972,4 @@ export async function atualizarNota(transacaoId: number, nota: string) {
   const db = await getDb();
   if (!db) return;
   await db.update(interExtratos).set({ nota: nota || null }).where(eq(interExtratos.id, transacaoId));
-}
-
-// ===== Caixa Físico =====
-export async function upsertCaixaFisico(unidadeId: number, linhas: InsertCaixaFisico[]): Promise<number> {
-  const db = await getDb();
-  if (!db || linhas.length === 0) return 0;
-  let inseridos = 0;
-  for (const linha of linhas) {
-    try {
-      const existentes = await db.select().from(caixaFisico)
-        .where(and(
-          eq(caixaFisico.unidadeId, unidadeId),
-          eq(caixaFisico.data, linha.data),
-          eq(caixaFisico.ocorrencia, linha.ocorrencia),
-          eq(caixaFisico.tipoOperacao, linha.tipoOperacao),
-        ));
-      const jaExiste = existentes.some(e => parseFloat(String(e.valor)) === parseFloat(String(linha.valor)));
-      if (!jaExiste) {
-        await db.insert(caixaFisico).values({ ...linha, unidadeId });
-        inseridos++;
-      }
-    } catch { /* ignore dup */ }
-  }
-  return inseridos;
-}
-
-export async function listCaixaFisico(unidadeId: number, dataInicio?: string, dataFim?: string): Promise<CaixaFisico[]> {
-  const db = await getDb();
-  if (!db) return [];
-  const condicoes = [eq(caixaFisico.unidadeId, unidadeId)];
-  if (dataInicio) condicoes.push(gte(caixaFisico.data, dataInicio));
-  if (dataFim) condicoes.push(lte(caixaFisico.data, dataFim));
-  return db.select().from(caixaFisico).where(and(...condicoes)).orderBy(desc(caixaFisico.data));
 }
