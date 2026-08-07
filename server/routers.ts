@@ -1677,7 +1677,7 @@ Diretrizes:
      * Exclui em cascata (todas as Descrições da categoria + regras que
      * apontam pra elas) — lançamentos afetados voltam pra "Pendente".
      * Bloqueia se a categoria tiver alguma Descrição usada internamente
-     * pelo sistema (ver db.ts: DESCRICOES_PROTEGIDAS).
+     * pelo sistema (identificada por ter uma `chave` não nula).
      */
     excluir: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       return db.excluirDreCategoria(input.id);

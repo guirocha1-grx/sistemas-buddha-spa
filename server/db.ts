@@ -2,7 +2,7 @@ import { eq, desc, and, gte, lte, isNull, like, ne, inArray } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda } from "../drizzle/schema";
 import { ENV } from './_core/env';
-import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, extrairPadraoContraparte, ehTransferenciaEntreContas, EXCLUIDO_NOME, type RegraMatch } from "./dreCategorizacao";
+import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, extrairPadraoContraparte, ehTransferenciaEntreContas, CHAVE_EXCLUIDO, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, type RegraMatch } from "./dreCategorizacao";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -446,11 +446,11 @@ export async function upsertInterExtratos(
  * "crédito" → "credito" bate em "credit", cobrindo os dois idiomas com
  * a mesma checagem.
  */
-function nomeDescricaoAdquirente(tipo: string | null | undefined): string | null {
+function chaveDescricaoAdquirente(tipo: string | null | undefined): string | null {
   const t = (tipo || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  if (t.includes("pix")) return "Receita de Pix";
-  if (t.includes("debit")) return "Receita C. Débito";
-  if (t.includes("credit")) return "Receita C. Crédito";
+  if (t.includes("pix")) return CHAVE_RECEITA_PIX;
+  if (t.includes("debit")) return CHAVE_RECEITA_CARTAO_DEBITO;
+  if (t.includes("credit")) return CHAVE_RECEITA_CARTAO_CREDITO;
   return null;
 }
 
@@ -464,19 +464,19 @@ export async function upsertAdquirenteVendas(
 
   // Resolve os ids das Descrições de receita uma vez (não numa query
   // por linha) — mesmo espírito de listRegrasParaMatch/listCnpjsDeContas.
-  const nomesNecessarios = Array.from(new Set(
-    vendas.map((v) => nomeDescricaoAdquirente(v.tipo)).filter((n): n is string => n !== null),
+  const chavesNecessarias = Array.from(new Set(
+    vendas.map((v) => chaveDescricaoAdquirente(v.tipo)).filter((c): c is string => c !== null),
   ));
-  const idPorNomeDescricao = new Map<string, number>();
-  for (const nome of nomesNecessarios) {
-    const id = await resolverDescricaoIdPorNome(nome);
-    if (id) idPorNomeDescricao.set(nome, id);
+  const idPorChaveDescricao = new Map<string, number>();
+  for (const chave of chavesNecessarias) {
+    const id = await resolverDescricaoIdPorChave(chave);
+    if (id) idPorChaveDescricao.set(chave, id);
   }
 
   let inseridos = 0;
   for (const v of vendas) {
-    const nomeDescricao = nomeDescricaoAdquirente(v.tipo);
-    const dreDescricaoId = nomeDescricao ? idPorNomeDescricao.get(nomeDescricao) : undefined;
+    const chaveDescricao = chaveDescricaoAdquirente(v.tipo);
+    const dreDescricaoId = chaveDescricao ? idPorChaveDescricao.get(chaveDescricao) : undefined;
     const linha = { ...v, dreDescricaoId };
 
     if (v.idTransacaoExterno) {
@@ -611,11 +611,11 @@ export interface ItemContaBancaria {
   valor: number;
 }
 
-const NOME_DESCRICAO_POR_FORMA: Record<ItemContaBancaria["forma"], string> = {
-  dinheiro: "Receita em Espécie",
-  debito: "Receita C. Débito",
-  credito: "Receita C. Crédito",
-  pix: "Receita de Pix",
+const CHAVE_DESCRICAO_POR_FORMA: Record<ItemContaBancaria["forma"], string> = {
+  dinheiro: CHAVE_RECEITA_ESPECIE,
+  debito: CHAVE_RECEITA_CARTAO_DEBITO,
+  credito: CHAVE_RECEITA_CARTAO_CREDITO,
+  pix: CHAVE_RECEITA_PIX,
 };
 
 /**
@@ -644,8 +644,8 @@ export async function detalheContasBancariasPorDia(
   if (!db) return itens;
 
   const formaPorDescricaoId = new Map<number, ItemContaBancaria["forma"]>();
-  for (const [forma, nome] of Object.entries(NOME_DESCRICAO_POR_FORMA) as [ItemContaBancaria["forma"], string][]) {
-    const id = await resolverDescricaoIdPorNome(nome);
+  for (const [forma, chave] of Object.entries(CHAVE_DESCRICAO_POR_FORMA) as [ItemContaBancaria["forma"], string][]) {
+    const id = await resolverDescricaoIdPorChave(chave);
     if (id) formaPorDescricaoId.set(id, forma);
   }
   const idsReceita = Array.from(formaPorDescricaoId.keys());
@@ -931,7 +931,7 @@ export async function ensureDreSeed() {
     .map((d) => {
       const dreCategoriaId = categoriaIdPorNome.get(d.categoriaNome);
       if (!dreCategoriaId) return null;
-      return { nome: d.nome, dreCategoriaId };
+      return { nome: d.nome, dreCategoriaId, chave: d.chave ?? null };
     })
     .filter((d): d is NonNullable<typeof d> => d !== null);
 
@@ -1033,15 +1033,6 @@ export async function atualizarDreDescricao(id: number, dados: { nome?: string; 
   await db.update(dreDescricoes).set(dados).where(eq(dreDescricoes.id, id));
 }
 
-// Nomes usados internamente por lookup exato (Comanda Recepção,
-// categorização determinística de Mercado Pago/Caixa Físico) — excluir
-// qualquer um desses quebraria funcionalidade em produção, não só
-// histórico. Bloqueado na exclusão, tanto direto quanto em cascata
-// (categoria que contenha uma dessas descrições).
-const DESCRICOES_PROTEGIDAS = new Set([
-  "Receita de Pix", "Receita em Espécie", "Receita C. Débito", "Receita C. Crédito", EXCLUIDO_NOME,
-]);
-
 export interface RelatorioExclusaoDescricao {
   nome: string;
   regrasRemovidas: number;
@@ -1063,7 +1054,7 @@ export async function excluirDreDescricao(id: number): Promise<RelatorioExclusao
 
   const [descricao] = await db.select().from(dreDescricoes).where(eq(dreDescricoes.id, id)).limit(1);
   if (!descricao) return vazio;
-  if (DESCRICOES_PROTEGIDAS.has(descricao.nome)) {
+  if (descricao.chave !== null) {
     throw new Error(`"${descricao.nome}" é usada internamente pelo sistema (Comanda Recepção / categorização automática) e não pode ser excluída.`);
   }
 
@@ -1098,7 +1089,7 @@ export interface RelatorioExclusaoCategoria extends RelatorioExclusaoDescricao {
  * Exclui uma Categoria — em cascata, exclui (via excluirDreDescricao)
  * todas as Descrições que pertencem a ela, revertendo pra "Pendente"
  * tudo que estava categorizado com alguma delas. Bloqueia se qualquer
- * Descrição da categoria for protegida (ver DESCRICOES_PROTEGIDAS).
+ * Descrição da categoria tiver uma chave (uso interno do sistema).
  */
 export async function excluirDreCategoria(id: number): Promise<RelatorioExclusaoCategoria> {
   const vazio = { nome: "", descricoesRemovidas: 0, regrasRemovidas: 0, extratosAfetados: 0, adquirenteAfetados: 0 };
@@ -1109,7 +1100,7 @@ export async function excluirDreCategoria(id: number): Promise<RelatorioExclusao
   if (!categoria) return vazio;
 
   const descricoesDaCategoria = await db.select().from(dreDescricoes).where(eq(dreDescricoes.dreCategoriaId, id));
-  const protegida = descricoesDaCategoria.find((d) => DESCRICOES_PROTEGIDAS.has(d.nome));
+  const protegida = descricoesDaCategoria.find((d) => d.chave !== null);
   if (protegida) {
     throw new Error(`Não dá pra excluir "${categoria.nome}" — a descrição "${protegida.nome}" dentro dela é usada internamente pelo sistema.`);
   }
@@ -1135,10 +1126,10 @@ export async function excluirDreCategoria(id: number): Promise<RelatorioExclusao
   };
 }
 
-async function resolverDescricaoIdPorNome(nome: string): Promise<number | null> {
+async function resolverDescricaoIdPorChave(chave: string): Promise<number | null> {
   const db = await getDb();
   if (!db) return null;
-  const linha = await db.select({ id: dreDescricoes.id }).from(dreDescricoes).where(eq(dreDescricoes.nome, nome)).limit(1);
+  const linha = await db.select({ id: dreDescricoes.id }).from(dreDescricoes).where(eq(dreDescricoes.chave, chave)).limit(1);
   return linha[0]?.id ?? null;
 }
 
@@ -1289,19 +1280,17 @@ export async function categorizarTransacaoAutomaticamente(
   transacaoIdParaExcluirDoAlerta?: number,
 ): Promise<{ dreDescricaoId: number | null; categorizacaoStatus: "sugerida" | "pendente"; alerta: string | null }> {
   if (ehTransferenciaEntreContas(dados.cpfCnpjOrigem, dados.cpfCnpjDestino, cnpjsContas)) {
-    const excluidoId = regras.find((r) => r.descricaoNome === EXCLUIDO_NOME)?.dreDescricaoId
-      ?? await resolverDescricaoIdPorNome(EXCLUIDO_NOME);
+    const excluidoId = await resolverDescricaoIdPorChave(CHAVE_EXCLUIDO);
     if (excluidoId) return { dreDescricaoId: excluidoId, categorizacaoStatus: "sugerida", alerta: null };
   }
 
   if (dados.origem === "mercadopago") {
-    const excluidoId = regras.find((r) => r.descricaoNome === EXCLUIDO_NOME)?.dreDescricaoId
-      ?? await resolverDescricaoIdPorNome(EXCLUIDO_NOME);
+    const excluidoId = await resolverDescricaoIdPorChave(CHAVE_EXCLUIDO);
     if (excluidoId) return { dreDescricaoId: excluidoId, categorizacaoStatus: "sugerida", alerta: null };
   }
 
   if (dados.origem === "caixa_fisico" && dados.tipoOperacao === "C") {
-    const especieId = await resolverDescricaoIdPorNome("Receita em Espécie");
+    const especieId = await resolverDescricaoIdPorChave(CHAVE_RECEITA_ESPECIE);
     if (especieId) return { dreDescricaoId: especieId, categorizacaoStatus: "sugerida", alerta: null };
   }
 

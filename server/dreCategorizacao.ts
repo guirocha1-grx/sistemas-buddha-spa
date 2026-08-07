@@ -119,6 +119,18 @@ export const DRE_CATEGORIAS_SEED: { nome: string; secao: DreSecao; ordem: number
   { nome: EXCLUIDO_NOME, secao: "excluido", ordem: 1 },
 ];
 
+// Chaves estáveis das Descrições especiais — o código interno (Comanda
+// Recepção, classificação de adquirente, exclusão automática) sempre
+// busca por uma dessas chaves, nunca pelo `nome` de exibição, que o
+// usuário pode renomear livremente em Parâmetros sem quebrar nada
+// (confirmado em 2026-08-07: renomeou "Receita C. Débito"/"Receita C.
+// Crédito" pra "Receita Cartão de Débito"/"Receita Cartão de Crédito").
+export const CHAVE_EXCLUIDO = "excluido";
+export const CHAVE_RECEITA_PIX = "receita_pix";
+export const CHAVE_RECEITA_ESPECIE = "receita_especie";
+export const CHAVE_RECEITA_CARTAO_DEBITO = "receita_c_debito";
+export const CHAVE_RECEITA_CARTAO_CREDITO = "receita_c_credito";
+
 /**
  * Descrições semeadas — o nível intermediário entre Categoria e
  * lançamento (ver server/db.ts: ensureDreSeed). Toda Descrição usada em
@@ -128,28 +140,29 @@ export const DRE_CATEGORIAS_SEED: { nome: string; secao: DreSecao; ordem: number
  * quebrada em Descrições mais específicas — fica um bucket genérico até
  * o usuário refinar em Parâmetros.
  *
- * As 4 de "Receitas de Vendas" foram confirmadas pelo usuário em
- * 2026-08-07 (áudio) e são atribuídas de forma determinística (não por
- * regra de texto) — ver categorizarTransacaoAutomaticamente e
- * classificarDescricaoAdquirente em server/db.ts.
+ * As 5 com `chave` são especiais — Excluído do DRE e as 4 de "Receitas
+ * de Vendas" (confirmadas pelo usuário em 2026-08-07, áudio), atribuídas
+ * de forma determinística (não por regra de texto) — ver
+ * categorizarTransacaoAutomaticamente e classificarDescricaoAdquirente
+ * em server/db.ts. O `nome` delas pode mudar; a `chave` não.
  */
-export const DRE_DESCRICOES_SEED: { nome: string; categoriaNome: string }[] = [
+export const DRE_DESCRICOES_SEED: { nome: string; categoriaNome: string; chave?: string }[] = [
   { nome: "Sistemas / Softwares", categoriaNome: "Sistemas / Softwares" },
   { nome: "Yamada Contabilidade", categoriaNome: "Consultoria / Assessoria / Contabilidade / Advocacia" },
   { nome: "Herdade, Martini Advogados", categoriaNome: "Consultoria / Assessoria / Contabilidade / Advocacia" },
   { nome: "Benefícios (Vale transporte, Plano de saude, Vale Alimentação e Seguro de Vida)", categoriaNome: "Benefícios (Vale transporte, Plano de saude, Vale Alimentação e Seguro de Vida)" },
   { nome: "Contribuição Sindical", categoriaNome: "Contribuição Sindical" },
   { nome: "Juros + Multas", categoriaNome: "Juros + Multas" },
-  { nome: EXCLUIDO_NOME, categoriaNome: EXCLUIDO_NOME },
+  { nome: EXCLUIDO_NOME, categoriaNome: EXCLUIDO_NOME, chave: CHAVE_EXCLUIDO },
   { nome: "Parcerias Comerciais", categoriaNome: "Parcerias Comerciais" },
   { nome: "Totalpass", categoriaNome: "Parcerias Comerciais" },
   { nome: "Wellhub", categoriaNome: "Parcerias Comerciais" },
   { nome: "Limpeza", categoriaNome: "Limpeza" },
   { nome: "Lavanderia", categoriaNome: "Lavanderia" },
-  { nome: "Receita de Pix", categoriaNome: "Receitas de Vendas" },
-  { nome: "Receita em Espécie", categoriaNome: "Receitas de Vendas" },
-  { nome: "Receita C. Débito", categoriaNome: "Receitas de Vendas" },
-  { nome: "Receita C. Crédito", categoriaNome: "Receitas de Vendas" },
+  { nome: "Receita de Pix", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_PIX },
+  { nome: "Receita em Espécie", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_ESPECIE },
+  { nome: "Receita Cartão de Débito", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_CARTAO_DEBITO },
+  { nome: "Receita Cartão de Crédito", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_CARTAO_CREDITO },
 ];
 
 export interface DreRegraSeed {

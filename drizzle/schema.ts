@@ -434,9 +434,18 @@ export const dreDescricoes = mysqlTable("dre_descricoes", {
   id: int("id").autoincrement().primaryKey(),
   nome: varchar("nome", { length: 256 }).notNull(),
   dreCategoriaId: int("dreCategoriaId").notNull(),
+  // Chave estável usada internamente pelo código (Comanda Recepção,
+  // classificação de adquirente, exclusão automática de liquidação MP,
+  // proteção contra exclusão) pra achar as Descrições especiais sem
+  // depender do nome de exibição — o usuário pode renomear a Descrição
+  // à vontade (ex.: "Receita C. Débito" → "Receita Cartão de Débito")
+  // sem quebrar nada, porque o código nunca compara por `nome`. Null =
+  // Descrição comum, sem papel especial no sistema.
+  chave: varchar("chave", { length: 64 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({
   categoriaIdx: index("dre_descricoes_categoria_idx").on(table.dreCategoriaId),
+  chaveIdx: index("dre_descricoes_chave_idx").on(table.chave),
 }));
 
 export type DreDescricao = typeof dreDescricoes.$inferSelect;
