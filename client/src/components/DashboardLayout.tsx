@@ -200,10 +200,7 @@ function DashboardLayoutContent({
                     <PanelLeft className="h-4 w-4 text-muted-foreground" />
                   </button>
                 </div>
-                <img src="/logo.png" alt="Buddha Spa" className="h-20 w-auto -mt-1" />
-                <span className="font-semibold tracking-tight truncate" style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "1.15rem" }}>
-                  Buddha Spa
-                </span>
+                <img src="/logo.png" alt="Buddha Spa" className="h-[100px] w-auto -mt-1" />
               </div>
             )}
           </SidebarHeader>
