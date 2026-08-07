@@ -1,6 +1,6 @@
 /**
  * googleSheets.ts
- * v1.1 — sincronização de Caixa Físico via Google Sheets API
+ * v1.2 — sincronização de Caixa Físico via Google Sheets API
  * Cliente de leitura para Google Sheets via Service Account.
  * Usado para sincronizar o Caixa Físico das planilhas das duas unidades.
  *
@@ -8,8 +8,12 @@
  * essencial é a mesma: Data | Entradas (Ocorrência + Valor) | Saídas
  * (Ocorrência + Valor) | Saldo | Conferido por.
  *
- * RBS: linha 0 = título, linha 1 = cabeçalho, dados começam na linha 2.
+ * RBS: linha 0 = título, linha 1 = cabeçalho, linha 2 = sub-cabeçalho, dados começam na linha 3.
  * SSU: linha 0 = cabeçalho, linha 1 = sub-cabeçalho, dados começam na linha 2.
+ *
+ * IMPORTANTE: As planilhas têm linhas pré-preenchidas com datas futuras
+ * (vazias, sem vendas reais). Filtramos apenas linhas com data <= hoje
+ * e que tenham pelo menos uma ocorrência real (não "--" nem vazio).
  */
 
 import { google } from "googleapis";
@@ -44,97 +48,92 @@ function parseData(data: string): string {
 
 /**
  * Parse de valor brasileiro: "1.101,00" -> 1101.00, "-1000,00" -> -1000.00
+ * Também lida com valores vazios ("") retornando 0.
  */
 function parseValor(valor: string): number {
-  if (!valor) return 0;
+  if (!valor || valor.trim() === "") return 0;
   const limpo = valor.replace(/[R$\s]/g, "").replace(/\./g, "").replace(",", ".");
   const n = parseFloat(limpo);
   return isNaN(n) ? 0 : n;
 }
 
 /**
- * Lê os últimos N lançamentos de uma planilha de Caixa Físico.
- * spreadsheetId: ID da planilha
- * aba: nome da aba (ex: "Caixa RBS", "Caixa SSU")
- * maxLinhas: número máximo de lançamentos a retornar (default 60)
+ * Retorna a data de hoje no formato AAAA-MM-DD.
+ */
+function hoje(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Lê TODOS os lançamentos de uma planilha de Caixa Físico desde uma data
+ * mínima (default: 2025-12-01). Filtra linhas com datas futuras (pré-preenchidas
+ * vazias na planilha) e linhas sem ocorrência real.
+ *
+ * @param spreadsheetId ID da planilha
+ * @param aba Nome da aba (ex: "Caixa RBS", "Caixa SSU")
+ * @param maxLinhas Número máximo de lançamentos a retornar (default 9999 = todos)
+ * @param dataMinima Data mínima no formato AAAA-MM-DD (default: 2025-12-01)
  */
 export async function lerCaixaFisicoSheet(
   spreadsheetId: string,
   aba: string,
-  maxLinhas = 60,
+  maxLinhas = 9999,
+  dataMinima = "2025-12-01",
 ): Promise<LinhaCaixaFisico[]> {
   const auth = getAuth();
   if (!auth) throw new Error("Credenciais do Google Sheets não configuradas");
 
   const sheets = google.sheets({ version: "v4", auth });
 
-  // Lê só a coluna A pra saber quantas linhas a planilha tem (leve e
-  // rápido) — o livro-caixa cresce com lançamentos novos adicionados
-  // EMBAIXO com o tempo, então uma leitura fixa das primeiras ~70
-  // linhas (como era antes) só pega dado antigo do início da planilha
-  // depois de alguns meses de uso, nunca os lançamentos recentes.
-  const colA = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${aba}!A:A` });
-  const totalLinhas = (colA.data.values || []).length;
-
-  // Cabeçalho fica sempre no início — lê separado, independente de
-  // onde a "cauda" (dados recentes) começa.
-  const cabecalhoRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${aba}!A1:T5` });
-  const linhasCabecalho = cabecalhoRes.data.values || [];
-
-  // Cauda: margem de 3x maxLinhas (cada linha pode virar até 2
-  // lançamentos — entrada e saída no mesmo dia) + 20 de folga.
-  const linhaInicio = Math.max(1, totalLinhas - (maxLinhas * 3 + 20));
-  const range = `${aba}!A${linhaInicio}:T${totalLinhas}`;
-  const res = totalLinhas > 0
-    ? await sheets.spreadsheets.values.get({ spreadsheetId, range })
-    : { data: { values: [] } };
+  // Lê todas as linhas da planilha (A até J)
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${aba}!A1:J`,
+  });
   const rows = res.data.values || [];
-  // Se a cauda já inclui o cabeçalho (planilha pequena), pula essas
-  // linhas — senão processa tudo, já que aqui não tem cabeçalho.
-  const linhasParaPular = linhaInicio <= 2 ? (2 - linhaInicio + 1) : 0;
 
+  if (rows.length === 0) return [];
+
+  // Detectar layout: RBS vs SSU
+  const headerRow0 = rows[0] || [];
+  const isSSU = headerRow0.some((c: string) => (c || "").toString().toLowerCase().trim() === "data numero");
+
+  let dataCol: number;
+  let entradaOcorCol: number;
+  let entradaValorCol: number;
+  let saidaOcorCol: number;
+  let saidaValorCol: number;
+  let saldoCol: number;
+  let conferidoCol: number;
+  let linhaInicio: number;
+
+  if (isSSU) {
+    // SSU: A=Data numero, B=Data, C=Ocorrência entrada, D=Valor entrada, E=Ocorrência saída, F=Valor saída, G=Saldo, H=Conciliado por
+    dataCol = 1;
+    entradaOcorCol = 2;
+    entradaValorCol = 3;
+    saidaOcorCol = 4;
+    saidaValorCol = 5;
+    saldoCol = 6;
+    conferidoCol = 7;
+    linhaInicio = 2;
+  } else {
+    // RBS: A=Data, B=Ocorrência entrada, C=Valor entrada, D=Ocorrência saída, E=Valor saída, F=Saldo, G=Conferido por
+    dataCol = 0;
+    entradaOcorCol = 1;
+    entradaValorCol = 2;
+    saidaOcorCol = 3;
+    saidaValorCol = 4;
+    saldoCol = 5;
+    conferidoCol = 6;
+    linhaInicio = 3;
+  }
+
+  const hojeStr = hoje();
   const linhas: LinhaCaixaFisico[] = [];
 
-  // Detectar a coluna de data baseada no cabeçalho
-  // RBS: coluna A (index 0) = "Data"
-  // SSU: coluna B (index 1) = "Data" (coluna A = "Data numero")
-  let dataCol = 0;
-  let entradaOcorCol = 1;
-  let entradaValorCol = 2;
-  let saidaOcorCol = 3;
-  let saidaValorCol = 4;
-  let saldoCol = 5;
-  let conferidoCol = 6;
-
-  // Procurar a linha de cabeçalho para identificar colunas
-  for (let i = 0; i < linhasCabecalho.length; i++) {
-    const row = linhasCabecalho[i];
-    if (!row) continue;
-    for (let j = 0; j < row.length; j++) {
-      const val = (row[j] || "").toString().toLowerCase().trim();
-      if (val === "data" && dataCol === 0) dataCol = j;
-      if (val === "data numero") dataCol = j;
-    }
-  }
-
-  // SSU tem "Data" na coluna B (index 1), RBS tem "Data" na coluna A (index 0)
-  // Detectar: se a coluna A do cabeçalho for "Data numero", então dataCol = 1
-  const headerRow = linhasCabecalho.find((r) => r && r.some((c) => (c || "").toString().toLowerCase().trim() === "data numero"));
-  if (headerRow) {
-    dataCol = headerRow.findIndex((c) => (c || "").toString().toLowerCase().trim() === "data");
-    // SSU layout: A=Data numero, B=Data, C=Ocorrência entrada, D=Valor entrada, E=Ocorrência saída, F=Valor saída, G=Saldo, H=Conciliado por
-    entradaOcorCol = dataCol + 1;
-    entradaValorCol = dataCol + 2;
-    saidaOcorCol = dataCol + 3;
-    saidaValorCol = dataCol + 4;
-    saldoCol = dataCol + 5;
-    conferidoCol = dataCol + 6;
-  }
-
-  // Processar linhas de dados. `rows` já é a cauda da planilha (lida a
-  // partir de linhaInicio) — só pula cabeçalho se a cauda calculada
-  // acabou incluindo essas linhas (planilha pequena, poucos dados).
-  for (let i = linhasParaPular; i < rows.length; i++) {
+  for (let i = linhaInicio; i < rows.length; i++) {
     const row = rows[i];
     if (!row) continue;
 
@@ -144,12 +143,20 @@ export async function lerCaixaFisicoSheet(
     const data = parseData(dataRaw);
     if (!data) continue;
 
+    // Filtrar datas futuras (planilha tem linhas pré-preenchidas vazias)
+    if (data > hojeStr) continue;
+
+    // Filtrar datas anteriores à data mínima
+    if (data < dataMinima) continue;
+
     const entradaOcor = (row[entradaOcorCol] || "").toString().trim();
     const entradaValor = parseValor((row[entradaValorCol] || "").toString());
     const saidaOcor = (row[saidaOcorCol] || "").toString().trim();
     const saidaValorRaw = parseValor((row[saidaValorCol] || "").toString());
     const saldo = parseValor((row[saldoCol] || "").toString());
     const conferidoPor = (row[conferidoCol] || "").toString().trim() || null;
+
+    let temLancamento = false;
 
     // Entrada (crédito)
     if (entradaOcor && entradaOcor !== "--" && entradaValor > 0) {
@@ -161,6 +168,7 @@ export async function lerCaixaFisicoSheet(
         saldo: saldo > 0 ? saldo : null,
         conferidoPor,
       });
+      temLancamento = true;
     }
 
     // Saída (débito)
@@ -175,11 +183,12 @@ export async function lerCaixaFisicoSheet(
           saldo: saldo > 0 ? saldo : null,
           conferidoPor,
         });
+        temLancamento = true;
       }
     }
 
     // "Vendas do dia" com valor 0 também conta como lançamento (registra o dia)
-    if (entradaOcor === "Vendas do dia" && entradaValor === 0 && saidaOcor === "--" && saidaValorRaw === 0) {
+    if (!temLancamento && entradaOcor === "Vendas do dia" && entradaValor === 0) {
       linhas.push({
         data,
         tipoOperacao: "C",
@@ -191,8 +200,9 @@ export async function lerCaixaFisicoSheet(
     }
   }
 
-  // Retornar os últimos maxLinhas lançamentos
-  return linhas.slice(-maxLinhas);
+  // Ordenar por data (mais recente primeiro) e limitar
+  linhas.sort((a, b) => b.data.localeCompare(a.data));
+  return linhas.slice(0, maxLinhas);
 }
 
 // IDs das planilhas de Caixa Físico (hardcoded — não mudam)

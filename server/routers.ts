@@ -1338,7 +1338,7 @@ Diretrizes:
         const isRbs = unidade.slug.includes("ribeirao") || unidade.slug.includes("rbs");
         const spreadsheetId = isRbs ? SPREADSHEET_IDS.rbs : SPREADSHEET_IDS.ssu;
         const aba = isRbs ? SPREADSHEET_ABAS.rbs : SPREADSHEET_ABAS.ssu;
-        const linhas = await lerCaixaFisicoSheet(spreadsheetId, aba, 60);
+        const linhas = await lerCaixaFisicoSheet(spreadsheetId, aba, 9999, "2025-12-01");
 
         const contaCaixa = await db.getOrCreateContaCaixaFisico(input.unidadeId);
         const inseridos = await db.upsertInterExtratos(
