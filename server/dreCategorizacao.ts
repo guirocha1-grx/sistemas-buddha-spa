@@ -80,6 +80,9 @@ export const DRE_CATEGORIAS_SEED: { nome: string; secao: DreSecao; ordem: number
   { nome: "Rescisões", secao: "despesas_pessoal", ordem: 7 },
   { nome: "Salários e Adiantamentos", secao: "despesas_pessoal", ordem: 8 },
   { nome: "Benefícios (Vale transporte, Plano de saude, Vale Alimentação e Seguro de Vida)", secao: "despesas_pessoal", ordem: 9 },
+  // Separado de "Salários e Adiantamentos" (CLT) porque tem regra
+  // trabalhista diferente — decidido com o usuário em 2026-08-07.
+  { nome: "Freelancers / Prestadores Autônomos", secao: "despesas_pessoal", ordem: 10 },
 
   // Marketing
   { nome: "Despesas com Marketing", secao: "marketing", ordem: 1 },
