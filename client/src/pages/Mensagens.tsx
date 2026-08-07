@@ -22,6 +22,15 @@ function canalBadgeClass(canal: string) {
     : "border-emerald-300 text-emerald-700 bg-emerald-50";
 }
 
+function parseMetadados(metadados: string | null): { url?: string; legenda?: string; fileName?: string } {
+  if (!metadados) return {};
+  try {
+    return JSON.parse(metadados);
+  } catch {
+    return {};
+  }
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -163,9 +172,16 @@ export default function Mensagens() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground truncate mt-0.5">{c.ultimaMensagemTexto || "—"}</p>
-                  <Badge variant="outline" className={`text-[10px] py-0 mt-1 ${canalBadgeClass(c.canal)}`}>
-                    {canalLabel(c.canal)}
-                  </Badge>
+                  <div className="flex gap-1 mt-1">
+                    <Badge variant="outline" className={`text-[10px] py-0 ${canalBadgeClass(c.canal)}`}>
+                      {canalLabel(c.canal)}
+                    </Badge>
+                    {c.isLidPendente === "true" && (
+                      <Badge variant="outline" className="text-[10px] py-0 border-orange-300 text-orange-700 bg-orange-50">
+                        sem número confirmado
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               </button>
             ))}
@@ -202,7 +218,9 @@ export default function Mensagens() {
                   </div>
                 )}
                 <div className="space-y-3">
-                  {(mensagens ?? []).map((m) => (
+                  {(mensagens ?? []).map((m) => {
+                    const meta = parseMetadados(m.metadados);
+                    return (
                     <div key={m.id} className={`flex ${m.direcao === "enviada" ? "justify-end" : "justify-start"}`}>
                       <div
                         className={`max-w-[70%] rounded-lg px-3 py-2 text-sm ${
@@ -212,29 +230,46 @@ export default function Mensagens() {
                         {m.tipo === "texto" && <p className="whitespace-pre-wrap">{m.conteudo}</p>}
                         {m.tipo === "imagem" && (
                           <div className="space-y-1">
-                            {m.conteudo && <p>{m.conteudo}</p>}
-                            <span className="text-xs opacity-70">[imagem]</span>
+                            {meta.url ? (
+                              <img src={meta.url} alt={meta.legenda || "imagem"} className="rounded max-w-full max-h-64 object-contain" />
+                            ) : (
+                              <span className="text-xs opacity-70">[imagem indisponível]</span>
+                            )}
+                            {(meta.legenda || m.conteudo) && <p>{meta.legenda || m.conteudo}</p>}
                           </div>
                         )}
                         {m.tipo === "audio" && (
                           <div className="space-y-1">
-                            <span className="text-xs opacity-70">[áudio]</span>
+                            {meta.url ? (
+                              <audio controls src={meta.url} className="max-w-full h-9" />
+                            ) : (
+                              <span className="text-xs opacity-70">[áudio indisponível]</span>
+                            )}
                             {m.transcricao && <p className="italic">"{m.transcricao}"</p>}
                           </div>
                         )}
-                        {m.tipo === "documento" && <span className="text-xs opacity-70">[documento]</span>}
+                        {m.tipo === "documento" && (
+                          meta.url ? (
+                            <a href={meta.url} target="_blank" rel="noreferrer" className="text-xs underline opacity-90">
+                              {meta.fileName || "documento"}
+                            </a>
+                          ) : (
+                            <span className="text-xs opacity-70">[documento indisponível]</span>
+                          )
+                        )}
                         <p className="text-[10px] opacity-60 mt-1">
                           {new Date(m.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                         </p>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                   <div ref={bottomRef} />
                 </div>
               </ScrollArea>
 
               <div className="p-3 border-t flex items-end gap-2">
-                <input ref={fileInputRef} type="file" accept="image/*,audio/*" className="hidden" onChange={handleAnexo} />
+                <input ref={fileInputRef} type="file" accept="image/*,audio/*,application/pdf" className="hidden" onChange={handleAnexo} />
                 <Button
                   variant="outline"
                   size="icon"

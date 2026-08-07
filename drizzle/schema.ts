@@ -174,6 +174,15 @@ export const inboxConversas = mysqlTable("inbox_conversas", {
   unidadeId: int("unidadeId"),
   canal: mysqlEnum("canal", ["zapi", "buddha_mkt"]).notNull(),
   telefone: varchar("telefone", { length: 30 }).notNull(),
+  // Identificador estável de chat que a Z-API sempre envia, mesmo quando
+  // o telefone real vem ofuscado como "@lid" (contato via anúncio
+  // "clique para WhatsApp" — não dá pra converter @lid em telefone via
+  // nenhuma API, restrição de privacidade do próprio WhatsApp). Nesse
+  // caso telefone fica com o valor "@lid" recebido (serve pra enviar
+  // mensagem de volta) e chatLid guarda o mesmo valor pra indexação/
+  // exibição, com isLidPendente marcando que o número real é desconhecido.
+  chatLid: varchar("chatLid", { length: 64 }),
+  isLidPendente: mysqlEnum("isLidPendente", ["true", "false"]).default("false").notNull(),
   nomeContato: varchar("nomeContato", { length: 256 }),
   clienteBelleCodigo: int("clienteBelleCodigo"),
   status: mysqlEnum("status", ["aberta", "encerrada"]).default("aberta").notNull(),
@@ -185,6 +194,7 @@ export const inboxConversas = mysqlTable("inbox_conversas", {
 }, (table) => ({
   telefoneCanalIdx: index("inbox_conversas_telefone_canal_idx").on(table.telefone, table.canal),
   unidadeIdx: index("inbox_conversas_unidade_idx").on(table.unidadeId),
+  chatLidIdx: index("inbox_conversas_chat_lid_idx").on(table.chatLid),
 }));
 
 export type InboxConversa = typeof inboxConversas.$inferSelect;

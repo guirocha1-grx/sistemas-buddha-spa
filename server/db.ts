@@ -233,6 +233,16 @@ export async function setConfig(chave: string, valor: string) {
   });
 }
 
+/**
+ * Kill switch de mensageria: pausa TODO envio (WhatsApp, todas as
+ * unidades/canais) a partir de um único toggle. Padrão ausente = ativo,
+ * pra não exigir seed manual antes do primeiro uso.
+ */
+export async function mensageriaEstaAtiva(): Promise<boolean> {
+  const config = await getConfig("mensageria_ativa");
+  return config?.valor !== "false";
+}
+
 // ===== Inbox (Mensagens) =====
 
 export async function listInboxConversas(filtros: { unidadeId?: number; canal?: "zapi" | "buddha_mkt" }) {
@@ -267,6 +277,8 @@ export async function upsertInboxConversa(params: {
   unidadeId: number | null;
   canal: "zapi" | "buddha_mkt";
   telefone: string;
+  chatLid?: string;
+  isLidPendente?: boolean;
   nomeContato?: string;
   ultimaMensagemTexto: string;
   incrementarNaoLidas?: boolean;
@@ -284,6 +296,8 @@ export async function upsertInboxConversa(params: {
     const naoLidas = params.incrementarNaoLidas ? existente[0].naoLidas + 1 : existente[0].naoLidas;
     await db.update(inboxConversas).set({
       nomeContato: params.nomeContato ?? existente[0].nomeContato,
+      chatLid: params.chatLid ?? existente[0].chatLid,
+      isLidPendente: params.isLidPendente !== undefined ? (params.isLidPendente ? "true" : "false") : existente[0].isLidPendente,
       ultimaMensagemEm: agora,
       ultimaMensagemTexto: params.ultimaMensagemTexto,
       naoLidas,
@@ -296,6 +310,8 @@ export async function upsertInboxConversa(params: {
     unidadeId: params.unidadeId,
     canal: params.canal,
     telefone: params.telefone,
+    chatLid: params.chatLid,
+    isLidPendente: params.isLidPendente ? "true" : "false",
     nomeContato: params.nomeContato,
     ultimaMensagemEm: agora,
     ultimaMensagemTexto: params.ultimaMensagemTexto,
@@ -303,6 +319,18 @@ export async function upsertInboxConversa(params: {
   };
   const result = await db.insert(inboxConversas).values(insertValues).$returningId();
   return result[0]?.id;
+}
+
+/**
+ * Junta uma conversa "@lid" (número real desconhecido) a uma conversa já
+ * identificada pelo telefone real — move as mensagens e apaga a duplicata.
+ * Uso manual, quando o número aparece depois por outro canal/atendimento.
+ */
+export async function unificarInboxConversas(idLid: number, idReal: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inboxMensagens).set({ conversaId: idReal }).where(eq(inboxMensagens.conversaId, idLid));
+  await db.delete(inboxConversas).where(eq(inboxConversas.id, idLid));
 }
 
 export async function listInboxMensagens(conversaId: number, limit: number = 50) {

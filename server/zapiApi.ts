@@ -36,6 +36,20 @@ async function zapiRequest<T>(
   return response.json() as Promise<T>;
 }
 
+async function zapiGet<T>(
+  instanceId: string,
+  token: string,
+  clientToken: string,
+  endpoint: string,
+): Promise<T | null> {
+  const response = await fetch(buildUrl(instanceId, token, endpoint), {
+    method: "GET",
+    headers: { "Client-Token": clientToken },
+  });
+  if (!response.ok) return null;
+  return response.json() as Promise<T>;
+}
+
 export interface ZapiSendResult {
   messageId?: string;
   zaapId?: string;
@@ -81,5 +95,52 @@ export const zapiApi = {
       phone,
       audio: audioUrl,
     });
+  },
+
+  async sendDocument(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    documentUrl: string,
+    fileName?: string,
+  ): Promise<ZapiSendResult> {
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-document/pdf", {
+      phone,
+      document: documentUrl,
+      ...(fileName ? { fileName } : {}),
+    });
+  },
+
+  /**
+   * Resolve um identificador "@lid" (contato via anúncio "clique para
+   * WhatsApp", que chega sem o telefone real) para o número de verdade.
+   * Retorna null se a Z-API não conseguir resolver — nesse caso a
+   * conversa continua identificada só pelo lid.
+   */
+  async resolveLid(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    lid: string,
+  ): Promise<{ phone: string; name: string; imgUrl?: string } | null> {
+    const data = await zapiGet<any>(instanceId, token, clientToken, `/contacts/${encodeURIComponent(lid)}`);
+    const rawPhone = data?.phone;
+    if (!rawPhone || typeof rawPhone !== "string" || rawPhone.includes("@")) return null;
+    const digits = rawPhone.replace(/\D/g, "");
+    if (digits.length < 10) return null;
+    if (rawPhone === lid || digits === lid.replace(/\D/g, "")) return null;
+    return { phone: rawPhone, name: data.name || data.short || "", imgUrl: data.imgUrl };
+  },
+
+  async getProfilePicture(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+  ): Promise<string | null> {
+    const data = await zapiGet<any>(instanceId, token, clientToken, `/profile-picture?phone=${phone}`);
+    const url = data?.value || data?.profilePictureUrl || null;
+    return typeof url === "string" && url.startsWith("http") ? url : null;
   },
 };

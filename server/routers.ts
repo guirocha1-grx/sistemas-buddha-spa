@@ -546,6 +546,9 @@ Diretrizes:
         conversaId: z.number(),
         texto: z.string().min(1),
       })).mutation(async ({ input, ctx }) => {
+        if (!(await db.mensageriaEstaAtiva())) {
+          throw new Error("Envio de mensagens pausado — kill switch de mensageria ativado por um administrador");
+        }
         const conversa = await db.getInboxConversaById(input.conversaId);
         if (!conversa) throw new Error("Conversa não encontrada");
 
@@ -594,6 +597,9 @@ Diretrizes:
         fileName: z.string().optional(),
         legenda: z.string().optional(),
       })).mutation(async ({ input, ctx }) => {
+        if (!(await db.mensageriaEstaAtiva())) {
+          throw new Error("Envio de mensagens pausado — kill switch de mensageria ativado por um administrador");
+        }
         const conversa = await db.getInboxConversaById(input.conversaId);
         if (!conversa) throw new Error("Conversa não encontrada");
 
@@ -616,6 +622,8 @@ Diretrizes:
               await zapiApi.sendImage(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url, input.legenda);
             } else if (input.tipo === "audio") {
               await zapiApi.sendAudio(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url);
+            } else if (input.tipo === "documento") {
+              await zapiApi.sendDocument(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url, input.fileName);
             }
           } catch (error) {
             console.error("[Inbox] Falha ao enviar mídia via Z-API:", error);
@@ -636,6 +644,26 @@ Diretrizes:
 
         return { success: true, url };
       }),
+    }),
+
+    unificarConversas: adminProcedure.input(z.object({
+      idOrigemLid: z.number(),
+      idDestinoReal: z.number(),
+    })).mutation(async ({ input }) => {
+      await db.unificarInboxConversas(input.idOrigemLid, input.idDestinoReal);
+      return { success: true };
+    }),
+  }),
+
+  // Kill switch de mensageria: pausa envio de WhatsApp em todas as
+  // unidades/canais a partir de um único toggle.
+  mensageria: router({
+    status: protectedProcedure.query(async () => {
+      return { ativa: await db.mensageriaEstaAtiva() };
+    }),
+    setStatus: adminProcedure.input(z.object({ ativa: z.boolean() })).mutation(async ({ input }) => {
+      await db.setConfig("mensageria_ativa", input.ativa ? "true" : "false");
+      return { success: true };
     }),
   }),
 

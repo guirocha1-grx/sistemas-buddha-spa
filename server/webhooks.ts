@@ -12,11 +12,29 @@ export function registerWhatsappWebhookRoutes(app: Express) {
   registerBuddhaMktWebhook(app);
 }
 
+// Z-API pode reentregar o mesmo evento (retry de rede). Dedup simples em
+// memória por messageId, com expiração curta — mesmo padrão do mobai-crm.
+const mensagensRecentes = new Map<string, number>();
+const DEDUP_TTL_MS = 5 * 60 * 1000;
+
+function jaProcessada(messageId: string | undefined): boolean {
+  if (!messageId) return false;
+  const agora = Date.now();
+  for (const [id, ts] of Array.from(mensagensRecentes.entries())) {
+    if (agora - ts > DEDUP_TTL_MS) mensagensRecentes.delete(id);
+  }
+  if (mensagensRecentes.has(messageId)) return true;
+  mensagensRecentes.set(messageId, agora);
+  return false;
+}
+
 // ===== Z-API (por unidade) =====
 
 interface ZapiWebhookPayload {
   type?: string;
   phone?: string;
+  chatLid?: string;
+  messageId?: string;
   senderName?: string;
   fromMe?: boolean;
   isGroup?: boolean;
@@ -50,6 +68,19 @@ function registerZapiWebhook(app: Express) {
       return;
     }
 
+    if (jaProcessada(payload.messageId)) {
+      res.status(200).json({ ignored: true, motivo: "duplicado" });
+      return;
+    }
+
+    // Contato via anúncio "clique para WhatsApp" às vezes chega com o
+    // telefone ofuscado como "@lid" — não existe API pra converter @lid
+    // em número real (restrição de privacidade do WhatsApp). Nesse caso
+    // usamos o próprio chatLid como identificador estável: dá pra
+    // responder normalmente, só não sabemos o número de verdade ainda.
+    const ehLid = payload.phone.includes("@lid") || (!payload.phone.match(/^\d+$/) && !!payload.chatLid);
+    const identificadorContato = ehLid ? (payload.chatLid ?? payload.phone) : payload.phone;
+
     let tipo: "texto" | "imagem" | "audio" | "documento" = "texto";
     let conteudo = payload.text?.message ?? "";
     let metadados: Record<string, unknown> | null = null;
@@ -71,7 +102,9 @@ function registerZapiWebhook(app: Express) {
     const conversaId = await db.upsertInboxConversa({
       unidadeId,
       canal: "zapi",
-      telefone: payload.phone,
+      telefone: identificadorContato,
+      chatLid: payload.chatLid,
+      isLidPendente: ehLid,
       nomeContato: payload.senderName,
       ultimaMensagemTexto: resumo,
       incrementarNaoLidas: true,
