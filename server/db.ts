@@ -977,6 +977,16 @@ export async function criarDreCategoria(nome: string, secao: string) {
   return result[0]?.id;
 }
 
+/**
+ * Edita nome/seção de uma categoria já existente — não mexe em
+ * Descrições/lançamentos ligados a ela (continuam pelo mesmo id).
+ */
+export async function atualizarDreCategoria(id: number, dados: { nome?: string; secao?: string }) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(dreCategorias).set(dados as any).where(eq(dreCategorias.id, id));
+}
+
 export async function listDreDescricoes() {
   await ensureDreSeed();
   const db = await getDb();
@@ -1014,6 +1024,108 @@ export async function atualizarDreDescricao(id: number, dados: { nome?: string; 
   const db = await getDb();
   if (!db) return;
   await db.update(dreDescricoes).set(dados).where(eq(dreDescricoes.id, id));
+}
+
+// Nomes usados internamente por lookup exato (Comanda Recepção,
+// categorização determinística de Mercado Pago/Caixa Físico) — excluir
+// qualquer um desses quebraria funcionalidade em produção, não só
+// histórico. Bloqueado na exclusão, tanto direto quanto em cascata
+// (categoria que contenha uma dessas descrições).
+const DESCRICOES_PROTEGIDAS = new Set([
+  "Receita de Pix", "Receita em Espécie", "Receita C. Débito", "Receita C. Crédito", EXCLUIDO_NOME,
+]);
+
+export interface RelatorioExclusaoDescricao {
+  nome: string;
+  regrasRemovidas: number;
+  extratosAfetados: number;
+  adquirenteAfetados: number;
+}
+
+/**
+ * Exclui uma Descrição — lançamentos já categorizados com ela (extrato
+ * e adquirente) voltam pra "Pendente"/sem descrição, e as regras que
+ * apontavam pra ela são removidas junto (não faz sentido uma regra
+ * apontando pra uma Descrição que não existe mais). Retorna quantos
+ * itens de cada tipo foram afetados, pro relatório na tela.
+ */
+export async function excluirDreDescricao(id: number): Promise<RelatorioExclusaoDescricao> {
+  const vazio = { nome: "", regrasRemovidas: 0, extratosAfetados: 0, adquirenteAfetados: 0 };
+  const db = await getDb();
+  if (!db) return vazio;
+
+  const [descricao] = await db.select().from(dreDescricoes).where(eq(dreDescricoes.id, id)).limit(1);
+  if (!descricao) return vazio;
+  if (DESCRICOES_PROTEGIDAS.has(descricao.nome)) {
+    throw new Error(`"${descricao.nome}" é usada internamente pelo sistema (Comanda Recepção / categorização automática) e não pode ser excluída.`);
+  }
+
+  const extratosAtingidos = await db.select({ id: interExtratos.id }).from(interExtratos).where(eq(interExtratos.dreDescricaoId, id));
+  const adquirenteAtingidos = await db.select({ id: adquirenteVendas.id }).from(adquirenteVendas).where(eq(adquirenteVendas.dreDescricaoId, id));
+  const regrasAtingidas = await db.select({ id: dreRegras.id }).from(dreRegras).where(eq(dreRegras.dreDescricaoId, id));
+
+  if (extratosAtingidos.length > 0) {
+    await db.update(interExtratos).set({ dreDescricaoId: null, categorizacaoStatus: "pendente" }).where(eq(interExtratos.dreDescricaoId, id));
+  }
+  if (adquirenteAtingidos.length > 0) {
+    await db.update(adquirenteVendas).set({ dreDescricaoId: null }).where(eq(adquirenteVendas.dreDescricaoId, id));
+  }
+  if (regrasAtingidas.length > 0) {
+    await db.delete(dreRegras).where(eq(dreRegras.dreDescricaoId, id));
+  }
+  await db.delete(dreDescricoes).where(eq(dreDescricoes.id, id));
+
+  return {
+    nome: descricao.nome,
+    regrasRemovidas: regrasAtingidas.length,
+    extratosAfetados: extratosAtingidos.length,
+    adquirenteAfetados: adquirenteAtingidos.length,
+  };
+}
+
+export interface RelatorioExclusaoCategoria extends RelatorioExclusaoDescricao {
+  descricoesRemovidas: number;
+}
+
+/**
+ * Exclui uma Categoria — em cascata, exclui (via excluirDreDescricao)
+ * todas as Descrições que pertencem a ela, revertendo pra "Pendente"
+ * tudo que estava categorizado com alguma delas. Bloqueia se qualquer
+ * Descrição da categoria for protegida (ver DESCRICOES_PROTEGIDAS).
+ */
+export async function excluirDreCategoria(id: number): Promise<RelatorioExclusaoCategoria> {
+  const vazio = { nome: "", descricoesRemovidas: 0, regrasRemovidas: 0, extratosAfetados: 0, adquirenteAfetados: 0 };
+  const db = await getDb();
+  if (!db) return vazio;
+
+  const [categoria] = await db.select().from(dreCategorias).where(eq(dreCategorias.id, id)).limit(1);
+  if (!categoria) return vazio;
+
+  const descricoesDaCategoria = await db.select().from(dreDescricoes).where(eq(dreDescricoes.dreCategoriaId, id));
+  const protegida = descricoesDaCategoria.find((d) => DESCRICOES_PROTEGIDAS.has(d.nome));
+  if (protegida) {
+    throw new Error(`Não dá pra excluir "${categoria.nome}" — a descrição "${protegida.nome}" dentro dela é usada internamente pelo sistema.`);
+  }
+
+  let regrasRemovidas = 0;
+  let extratosAfetados = 0;
+  let adquirenteAfetados = 0;
+  for (const d of descricoesDaCategoria) {
+    const relatorio = await excluirDreDescricao(d.id);
+    regrasRemovidas += relatorio.regrasRemovidas;
+    extratosAfetados += relatorio.extratosAfetados;
+    adquirenteAfetados += relatorio.adquirenteAfetados;
+  }
+
+  await db.delete(dreCategorias).where(eq(dreCategorias.id, id));
+
+  return {
+    nome: categoria.nome,
+    descricoesRemovidas: descricoesDaCategoria.length,
+    regrasRemovidas,
+    extratosAfetados,
+    adquirenteAfetados,
+  };
 }
 
 async function resolverDescricaoIdPorNome(nome: string): Promise<number | null> {

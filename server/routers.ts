@@ -1662,6 +1662,26 @@ Diretrizes:
       const id = await db.criarDreCategoria(input.nome, input.secao);
       return { success: true, id };
     }),
+
+    atualizar: adminProcedure.input(z.object({
+      id: z.number(),
+      nome: z.string().min(1).optional(),
+      secao: z.enum(["receitas", "impostos", "custos_diretos", "despesas_pessoal", "marketing", "despesas_administrativas", "despesas_financeiras", "devolucoes", "excluido"]).optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...dados } = input;
+      await db.atualizarDreCategoria(id, dados);
+      return { success: true };
+    }),
+
+    /**
+     * Exclui em cascata (todas as Descrições da categoria + regras que
+     * apontam pra elas) — lançamentos afetados voltam pra "Pendente".
+     * Bloqueia se a categoria tiver alguma Descrição usada internamente
+     * pelo sistema (ver db.ts: DESCRICOES_PROTEGIDAS).
+     */
+    excluir: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      return db.excluirDreCategoria(input.id);
+    }),
   }),
 
   // ===== Descrições (nível intermediário entre Categoria e lançamento) =====
@@ -1692,6 +1712,16 @@ Diretrizes:
       const { id, ...dados } = input;
       await db.atualizarDreDescricao(id, dados);
       return { success: true };
+    }),
+
+    /**
+     * Exclui a Descrição — lançamentos já categorizados com ela (extrato
+     * e adquirente) voltam pra "Pendente", e as regras que apontavam
+     * pra ela são removidas junto. Bloqueia as 4 de "Receitas de Vendas"
+     * e "Excluído do DRE" (usadas internamente).
+     */
+    excluir: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      return db.excluirDreDescricao(input.id);
     }),
   }),
 
