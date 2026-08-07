@@ -68,11 +68,30 @@ export async function lerCaixaFisicoSheet(
 
   const sheets = google.sheets({ version: "v4", auth });
 
-  // Ler um range amplo para garantir que pegamos os últimos 60 lançamentos
-  // Começamos da linha 3 (após cabeçalho) até a linha maxLinhas+10
-  const range = `${aba}!A1:T${maxLinhas + 10}`;
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+  // Lê só a coluna A pra saber quantas linhas a planilha tem (leve e
+  // rápido) — o livro-caixa cresce com lançamentos novos adicionados
+  // EMBAIXO com o tempo, então uma leitura fixa das primeiras ~70
+  // linhas (como era antes) só pega dado antigo do início da planilha
+  // depois de alguns meses de uso, nunca os lançamentos recentes.
+  const colA = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${aba}!A:A` });
+  const totalLinhas = (colA.data.values || []).length;
+
+  // Cabeçalho fica sempre no início — lê separado, independente de
+  // onde a "cauda" (dados recentes) começa.
+  const cabecalhoRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${aba}!A1:T5` });
+  const linhasCabecalho = cabecalhoRes.data.values || [];
+
+  // Cauda: margem de 3x maxLinhas (cada linha pode virar até 2
+  // lançamentos — entrada e saída no mesmo dia) + 20 de folga.
+  const linhaInicio = Math.max(1, totalLinhas - (maxLinhas * 3 + 20));
+  const range = `${aba}!A${linhaInicio}:T${totalLinhas}`;
+  const res = totalLinhas > 0
+    ? await sheets.spreadsheets.values.get({ spreadsheetId, range })
+    : { data: { values: [] } };
   const rows = res.data.values || [];
+  // Se a cauda já inclui o cabeçalho (planilha pequena), pula essas
+  // linhas — senão processa tudo, já que aqui não tem cabeçalho.
+  const linhasParaPular = linhaInicio <= 2 ? (2 - linhaInicio + 1) : 0;
 
   const linhas: LinhaCaixaFisico[] = [];
 
@@ -88,8 +107,8 @@ export async function lerCaixaFisicoSheet(
   let conferidoCol = 6;
 
   // Procurar a linha de cabeçalho para identificar colunas
-  for (let i = 0; i < Math.min(rows.length, 3); i++) {
-    const row = rows[i];
+  for (let i = 0; i < linhasCabecalho.length; i++) {
+    const row = linhasCabecalho[i];
     if (!row) continue;
     for (let j = 0; j < row.length; j++) {
       const val = (row[j] || "").toString().toLowerCase().trim();
@@ -100,7 +119,7 @@ export async function lerCaixaFisicoSheet(
 
   // SSU tem "Data" na coluna B (index 1), RBS tem "Data" na coluna A (index 0)
   // Detectar: se a coluna A do cabeçalho for "Data numero", então dataCol = 1
-  const headerRow = rows.find((r) => r && r.some((c) => (c || "").toString().toLowerCase().trim() === "data numero"));
+  const headerRow = linhasCabecalho.find((r) => r && r.some((c) => (c || "").toString().toLowerCase().trim() === "data numero"));
   if (headerRow) {
     dataCol = headerRow.findIndex((c) => (c || "").toString().toLowerCase().trim() === "data");
     // SSU layout: A=Data numero, B=Data, C=Ocorrência entrada, D=Valor entrada, E=Ocorrência saída, F=Valor saída, G=Saldo, H=Conciliado por
@@ -112,8 +131,10 @@ export async function lerCaixaFisicoSheet(
     conferidoCol = dataCol + 6;
   }
 
-  // Processar linhas de dados (após cabeçalho)
-  for (let i = 2; i < rows.length; i++) {
+  // Processar linhas de dados. `rows` já é a cauda da planilha (lida a
+  // partir de linhaInicio) — só pula cabeçalho se a cauda calculada
+  // acabou incluindo essas linhas (planilha pequena, poucos dados).
+  for (let i = linhasParaPular; i < rows.length; i++) {
     const row = rows[i];
     if (!row) continue;
 

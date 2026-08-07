@@ -1359,12 +1359,18 @@ Diretrizes:
           })),
         );
 
+        // Diagnóstico: intervalo de datas encontrado — se um dia vier
+        // muito antigo (ex.: meses atrás), é sinal de que a "cauda" da
+        // planilha ainda não está pegando os lançamentos certos.
+        const datas = linhas.map((l) => l.data).sort();
+        const intervalo = datas.length > 0 ? `${datas[0]} a ${datas[datas.length - 1]}` : "nenhuma data";
+
         await db.createSyncLog({
           unidadeId: input.unidadeId,
           tipo: "caixa_fisico",
           status: "sucesso",
           registrosProcessados: inseridos,
-          detalhes: `Lidos: ${linhas.length}. Novos: ${inseridos}.`,
+          detalhes: `Lidos: ${linhas.length}. Novos: ${inseridos}. Intervalo de datas: ${intervalo}.`,
         });
         return { success: true, totalLidos: linhas.length, totalInseridos: inseridos };
       } catch (error: any) {
