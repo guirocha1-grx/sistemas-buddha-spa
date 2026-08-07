@@ -32,7 +32,8 @@ import {
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DescricaoCombobox } from "@/components/DescricaoCombobox";
-import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Landmark, Check, Pencil, Search, TriangleAlert, ChevronsUpDown } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Landmark, Check, Pencil, Search, TriangleAlert, ChevronsUpDown, StickyNote } from "lucide-react";
 import { toast } from "sonner";
 
 // ===== Períodos rápidos =====
@@ -275,9 +276,25 @@ export default function Extratos() {
   });
 
   const atualizarNotaMutation = trpc.inter.atualizarNota.useMutation({
-    onSuccess: () => utils.inter.extratos.invalidate(),
+    onSuccess: () => {
+      utils.inter.extratos.invalidate();
+      setNotaModalId(null);
+    },
     onError: (err) => toast.error(err.message),
   });
+
+  const [notaModalId, setNotaModalId] = useState<number | null>(null);
+  const [notaModalValor, setNotaModalValor] = useState("");
+
+  function abrirNota(transacaoId: number, notaAtual: string | null) {
+    setNotaModalId(transacaoId);
+    setNotaModalValor(notaAtual ?? "");
+  }
+
+  function salvarNota() {
+    if (notaModalId === null) return;
+    atualizarNotaMutation.mutate({ transacaoId: notaModalId, nota: notaModalValor });
+  }
 
   const reprocessarMutation = trpc.inter.reprocessarCategorias.useMutation({
     onSuccess: (data) => {
@@ -939,8 +956,7 @@ export default function Extratos() {
                             <TableHead className="text-xs">Descrição</TableHead>
                             <TableHead className="text-xs w-32">Conta</TableHead>
                             <TableHead className="text-xs w-20">Origem</TableHead>
-                            <TableHead className="text-xs w-56">Descrição DRE</TableHead>
-                            <TableHead className="text-xs w-48">Nota</TableHead>
+                            <TableHead className="text-xs w-64">Descrição DRE</TableHead>
                             <TableHead className="text-xs text-right w-32">Valor</TableHead>
                             {contaAtual && <TableHead className="text-xs text-right w-32">Saldo</TableHead>}
                           </TableRow>
@@ -970,7 +986,7 @@ export default function Extratos() {
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1">
                                   <DescricaoCombobox
                                     descricoes={descricoes}
                                     categorias={categorias}
@@ -981,32 +997,30 @@ export default function Extratos() {
                                       dreDescricaoId: id,
                                     })}
                                   />
-                                  {t.categorizacaoStatus === "sugerida" && (
+                                  <div className="flex items-center shrink-0">
+                                    {t.categorizacaoStatus === "sugerida" && (
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-6 w-6 text-blue-700 hover:text-green-700 hover:bg-green-50"
+                                        title="Confirmar sugestão"
+                                        onClick={() => confirmarMutation.mutate({ transacaoId: t.id })}
+                                        disabled={confirmarMutation.isPending}
+                                      >
+                                        <Check className="h-3.5 w-3.5" />
+                                      </Button>
+                                    )}
                                     <Button
                                       size="icon"
                                       variant="ghost"
-                                      className="h-6 w-6 text-blue-700 hover:text-green-700 hover:bg-green-50 shrink-0"
-                                      title="Confirmar sugestão"
-                                      onClick={() => confirmarMutation.mutate({ transacaoId: t.id })}
-                                      disabled={confirmarMutation.isPending}
+                                      className={`h-6 w-6 ${t.nota ? "text-amber-600 hover:text-amber-700 hover:bg-amber-50" : "text-muted-foreground hover:text-foreground"}`}
+                                      title={t.nota ? "Editar nota" : "Adicionar nota"}
+                                      onClick={() => abrirNota(t.id, t.nota)}
                                     >
-                                      <Check className="h-3.5 w-3.5" />
+                                      <StickyNote className="h-3.5 w-3.5" />
                                     </Button>
-                                  )}
+                                  </div>
                                 </div>
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  key={t.id}
-                                  defaultValue={t.nota ?? ""}
-                                  placeholder="Do que se trata..."
-                                  className="h-7 text-xs"
-                                  onBlur={(e) => {
-                                    if (e.target.value !== (t.nota ?? "")) {
-                                      atualizarNotaMutation.mutate({ transacaoId: t.id, nota: e.target.value });
-                                    }
-                                  }}
-                                />
                               </TableCell>
                               <TableCell className="text-right font-medium">
                                 <span className={t.tipoOperacao === "C" ? "text-green-700" : "text-red-600"}>
@@ -1039,6 +1053,27 @@ export default function Extratos() {
           </Card>
         </>
       )}
+
+      <Dialog open={notaModalId !== null} onOpenChange={(v) => { if (!v) setNotaModalId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Nota</DialogTitle>
+            <DialogDescription>Esclarece o caso específico desse lançamento — separado da Descrição DRE.</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            placeholder="Do que se trata..."
+            rows={4}
+            value={notaModalValor}
+            onChange={(e) => setNotaModalValor(e.target.value)}
+          />
+          <DialogFooter>
+            <Button onClick={salvarNota} disabled={atualizarNotaMutation.isPending}>
+              {atualizarNotaMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
