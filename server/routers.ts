@@ -14,7 +14,7 @@ import { parseExtratoInterPdf } from "./interExtratoPdfParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
-import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS } from "./googleSheets";
+import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA } from "./googleSheets";
 
 export const appRouter = router({
   system: systemRouter,
@@ -1411,6 +1411,87 @@ Diretrizes:
         });
         throw error;
       }
+    }),
+  }),
+
+  // ===== Comanda Recepção (conciliação semanal de caixa) =====
+  comandaRecepcao: router({
+    sincronizar: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      ano: z.number(),
+      mes: z.number().min(1).max(12),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) throw new Error("Unidade não encontrada");
+
+      const isRbs = unidade.slug.includes("ribeirao") || unidade.slug.includes("rbs");
+      const slug = isRbs ? "rbs" as const : "ssu" as const;
+      const spreadsheetId = SPREADSHEET_IDS_COMANDA[slug];
+
+      try {
+        const linhas = await lerComandaConsolidadoSheet(spreadsheetId, slug, input.ano, input.mes);
+        const gravados = await db.upsertComandaDiaria(input.unidadeId, linhas);
+
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "comanda_recepcao",
+          status: "sucesso",
+          registrosProcessados: gravados,
+          detalhes: `Mês ${input.mes}/${input.ano}. Dias lidos: ${linhas.length}.`,
+        });
+        return { success: true, totalDias: linhas.length };
+      } catch (error: any) {
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "comanda_recepcao",
+          status: "erro",
+          registrosProcessados: 0,
+          detalhes: error.message,
+        });
+        throw error;
+      }
+    }),
+
+    resumo: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).query(async ({ input }) => {
+      const [comanda, contas] = await Promise.all([
+        db.listComandaDiaria(input.unidadeId, input.dataInicio, input.dataFim),
+        db.resumoContasBancariasPorDia(input.unidadeId, input.dataInicio, input.dataFim),
+      ]);
+
+      const porData = new Map(comanda.map((c) => [c.data, c]));
+      const datas = Array.from(new Set([...Array.from(porData.keys()), ...Array.from(contas.keys())])).sort();
+
+      return datas.map((data) => {
+        const c = porData.get(data);
+        const b = contas.get(data);
+        const comandaDia = {
+          dinheiro: Number(c?.dinheiro ?? 0),
+          cartaoDebito: Number(c?.cartaoDebito ?? 0),
+          cartaoCredito: Number(c?.cartaoCredito ?? 0),
+          pix: Number(c?.pix ?? 0),
+        };
+        const contasDia = {
+          dinheiro: b?.dinheiro ?? 0,
+          cartaoDebito: b?.cartaoDebito ?? 0,
+          cartaoCredito: b?.cartaoCredito ?? 0,
+          pix: b?.pix ?? 0,
+        };
+        return {
+          data,
+          comanda: comandaDia,
+          contasBancarias: contasDia,
+          diferenca: {
+            dinheiro: comandaDia.dinheiro - contasDia.dinheiro,
+            cartaoDebito: comandaDia.cartaoDebito - contasDia.cartaoDebito,
+            cartaoCredito: comandaDia.cartaoCredito - contasDia.cartaoCredito,
+            pix: comandaDia.pix - contasDia.pix,
+          },
+        };
+      });
     }),
   }),
 

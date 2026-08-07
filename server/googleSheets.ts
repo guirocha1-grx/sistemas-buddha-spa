@@ -215,3 +215,96 @@ export const SPREADSHEET_ABAS = {
   rbs: "Caixa RBS",
   ssu: "Caixa SSU",
 };
+
+// ===== Consolidado comanda (conciliação semanal de caixa) =====
+
+export interface LinhaComandaDiaria {
+  data: string; // AAAA-MM-DD
+  dinheiro: number;
+  cartaoDebito: number;
+  cartaoCredito: number;
+  pix: number;
+}
+
+// IDs das planilhas "Consolidado comanda" (hardcoded — não mudam)
+export const SPREADSHEET_IDS_COMANDA = {
+  rbs: "1X1ar_a-4ciO2xaDfOoxmTj5NxB3VUrj_R77-HkVYN3k",
+  ssu: "17DcgOWxBvllF2LtLOrRHE63C5uCHk5AalNWmz182RL4",
+};
+
+const MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+function nomeAbaComanda(unidadeSlug: "rbs" | "ssu", ano: number, mes: number): string {
+  const prefixo = unidadeSlug === "rbs" ? "RBS" : "SSU";
+  return `${prefixo} ${MESES_ABREV[mes - 1]}.${String(ano).slice(-2)}`;
+}
+
+function normalizarRotulo(s: unknown): string {
+  return (s || "").toString().toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+/**
+ * Acha a linha (índice 0-based) de um rótulo específico ("Dinheiro",
+ * "Cartão de débito"...) dentro da seção "Comanda (Recepção)" da
+ * planilha — a mesma expectativa por posição do usuário (linhas 3-7,
+ * índices 2-6), com um fallback tolerante caso a planilha mude uma
+ * linha, pra não quebrar silenciosamente lendo o valor errado.
+ */
+function acharLinhaComanda(rows: unknown[][], idxEsperado: number, ...substrings: string[]): number {
+  const rotuloEsperado = normalizarRotulo((rows[idxEsperado] as unknown[])?.[2]);
+  if (substrings.some((s) => rotuloEsperado.includes(s))) return idxEsperado;
+  const achado = rows.slice(0, 8).findIndex((r) => substrings.some((s) => normalizarRotulo(r[2]).includes(s)));
+  if (achado < 0) throw new Error(`Linha "${substrings[0]}" não encontrada na seção Comanda (Recepção)`);
+  return achado;
+}
+
+/**
+ * Lê a "Comanda (Recepção)" por dia de uma aba mensal da planilha
+ * "Consolidado comanda" (uma aba por mês, ex: "SSU Ago.26"). O
+ * cabeçalho de datas e as linhas Dinheiro/Débito/Crédito/Pix são
+ * localizados por conteúdo, não só por posição fixa.
+ */
+export async function lerComandaConsolidadoSheet(
+  spreadsheetId: string,
+  unidadeSlug: "rbs" | "ssu",
+  ano: number,
+  mes: number,
+): Promise<LinhaComandaDiaria[]> {
+  const auth = getAuth();
+  if (!auth) throw new Error("Credenciais do Google Sheets não configuradas");
+
+  const sheets = google.sheets({ version: "v4", auth });
+  const aba = nomeAbaComanda(unidadeSlug, ano, mes);
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${aba}'!A1:AH20`,
+  });
+  const rows = res.data.values || [];
+  if (rows.length === 0) return [];
+
+  const linhaHeader = rows.findIndex((r) => r.some((c) => /^\d{2}\/\d{2}\/\d{4}$/.test((c || "").toString().trim())));
+  if (linhaHeader < 0) throw new Error(`Não achei o cabeçalho de datas na aba "${aba}"`);
+
+  const linhaDinheiro = acharLinhaComanda(rows, linhaHeader + 2, "dinheiro");
+  const linhaDebito = acharLinhaComanda(rows, linhaHeader + 3, "debito");
+  const linhaCredito = acharLinhaComanda(rows, linhaHeader + 4, "credito");
+  const linhaPix = acharLinhaComanda(rows, linhaHeader + 5, "pix");
+
+  const header = rows[linhaHeader];
+  const linhas: LinhaComandaDiaria[] = [];
+  for (let col = 0; col < header.length; col++) {
+    const dataRaw = (header[col] || "").toString().trim();
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dataRaw)) continue;
+    const data = parseData(dataRaw);
+    if (!data) continue;
+    linhas.push({
+      data,
+      dinheiro: parseValor((rows[linhaDinheiro]?.[col] || "").toString()),
+      cartaoDebito: parseValor((rows[linhaDebito]?.[col] || "").toString()),
+      cartaoCredito: parseValor((rows[linhaCredito]?.[col] || "").toString()),
+      pix: parseValor((rows[linhaPix]?.[col] || "").toString()),
+    });
+  }
+  return linhas;
+}

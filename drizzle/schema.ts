@@ -348,6 +348,31 @@ export type AdquirenteVenda = typeof adquirenteVendas.$inferSelect;
 export type InsertAdquirenteVenda = typeof adquirenteVendas.$inferInsert;
 
 /**
+ * Snapshot diário da "Comanda (Recepção)" — valores por forma de
+ * pagamento que a recepção lançou no dia, sincronizados da planilha
+ * "Consolidado comanda" (Google Sheets, uma aba por mês, linhas
+ * Dinheiro/Cartão de débito/Cartão de crédito/Pix). Serve de lado
+ * esquerdo da conciliação semanal; o lado direito ("Contas bancárias")
+ * é sempre calculado ao vivo a partir do que já está sincronizado em
+ * inter_extratos/adquirente_vendas, sem tabela própria.
+ */
+export const comandaDiaria = mysqlTable("comanda_diaria", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  data: varchar("data", { length: 10 }).notNull(), // AAAA-MM-DD
+  dinheiro: decimal("dinheiro", { precision: 12, scale: 2 }).default("0").notNull(),
+  cartaoDebito: decimal("cartaoDebito", { precision: 12, scale: 2 }).default("0").notNull(),
+  cartaoCredito: decimal("cartaoCredito", { precision: 12, scale: 2 }).default("0").notNull(),
+  pix: decimal("pix", { precision: 12, scale: 2 }).default("0").notNull(),
+  syncedAt: timestamp("syncedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeDataIdx: index("comanda_diaria_unidade_data_idx").on(table.unidadeId, table.data),
+}));
+
+export type ComandaDiaria = typeof comandaDiaria.$inferSelect;
+export type InsertComandaDiaria = typeof comandaDiaria.$inferInsert;
+
+/**
  * Plano de contas do DRE (estrutura definida em 2026-08-04, revisão
  * pendente pra Receitas/Pronampe/alguns itens sem exemplo real ainda —
  * ver comentário em server/dreCategorizacao.ts). "excluido" é uma seção

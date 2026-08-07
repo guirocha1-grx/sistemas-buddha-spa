@@ -1,6 +1,6 @@
 import { eq, desc, and, gte, lte, isNull, like, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreRegras, adquirenteVendas, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreRegras, adquirenteVendas, comandaDiaria, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { DRE_CATEGORIAS_SEED, DRE_REGRAS_SEED, sugerirCategoriaNome, extrairPadraoContraparte, ehTransferenciaEntreContas, EXCLUIDO_NOME, type RegraMatch } from "./dreCategorizacao";
 
@@ -498,6 +498,135 @@ export async function listInterExtratos(
     .from(interExtratos)
     .where(and(...condicoes))
     .orderBy(desc(interExtratos.dataEntrada));
+}
+
+// ===== Comanda Recepção (conciliação semanal de caixa) =====
+
+/**
+ * Grava/atualiza os valores diários da "Comanda (Recepção)" lidos da
+ * planilha Consolidado comanda (linhas 3-6, ver server/googleSheets.ts).
+ */
+export async function upsertComandaDiaria(
+  unidadeId: number,
+  linhas: { data: string; dinheiro: number; cartaoDebito: number; cartaoCredito: number; pix: number }[],
+): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  let gravados = 0;
+  for (const l of linhas) {
+    const existente = await db.select({ id: comandaDiaria.id }).from(comandaDiaria)
+      .where(and(eq(comandaDiaria.unidadeId, unidadeId), eq(comandaDiaria.data, l.data)))
+      .limit(1);
+    const valores = {
+      unidadeId,
+      data: l.data,
+      dinheiro: l.dinheiro.toFixed(2),
+      cartaoDebito: l.cartaoDebito.toFixed(2),
+      cartaoCredito: l.cartaoCredito.toFixed(2),
+      pix: l.pix.toFixed(2),
+    };
+    if (existente[0]) {
+      await db.update(comandaDiaria).set(valores).where(eq(comandaDiaria.id, existente[0].id));
+    } else {
+      await db.insert(comandaDiaria).values(valores);
+    }
+    gravados++;
+  }
+  return gravados;
+}
+
+export async function listComandaDiaria(unidadeId: number, dataInicio: string, dataFim: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(comandaDiaria).where(and(
+    eq(comandaDiaria.unidadeId, unidadeId),
+    gte(comandaDiaria.data, dataInicio),
+    lte(comandaDiaria.data, dataFim),
+  ));
+}
+
+/**
+ * Classifica o campo `tipo` de uma venda de adquirente (payment_type_id
+ * do Mercado Pago — em inglês — ou texto livre do CSV Interpag/Granito
+ * — em português) num dos baldes da conciliação. Qualquer outra coisa
+ * (boleto, taxa avulsa) fica de fora da comparação.
+ */
+function classificarFormaPagamentoAdquirente(tipo: string | null): "debito" | "credito" | "pix" | null {
+  const t = (tipo || "").toLowerCase();
+  if (t.includes("pix")) return "pix";
+  if (t.includes("debit")) return "debito";
+  if (t.includes("credit")) return "credito";
+  return null;
+}
+
+export interface ResumoContasBancariasDia {
+  data: string;
+  dinheiro: number;
+  cartaoDebito: number;
+  cartaoCredito: number;
+  pix: number;
+}
+
+/**
+ * Lado "Contas bancárias" da conciliação — sempre calculado ao vivo a
+ * partir do que já está sincronizado (sem tabela própria): Dinheiro =
+ * entradas do Caixa Físico; Débito/Crédito = adquirente_vendas
+ * classificado por tipo; Pix = adquirente_vendas tipo pix + inter_extratos
+ * com "pix" no histórico (mesmo padrão da regra DRE "Pix recebido").
+ * Agrupado pelo dia da venda (dataHora/dataEntrada), não pela data de
+ * liquidação — o objetivo é comparar "o que a recepção lançou hoje" com
+ * "o que realmente aconteceu hoje", não quando o dinheiro caiu na conta.
+ */
+export async function resumoContasBancariasPorDia(
+  unidadeId: number,
+  dataInicio: string,
+  dataFim: string,
+): Promise<Map<string, ResumoContasBancariasDia>> {
+  const porDia = new Map<string, ResumoContasBancariasDia>();
+  const linha = (data: string) => {
+    let l = porDia.get(data);
+    if (!l) {
+      l = { data, dinheiro: 0, cartaoDebito: 0, cartaoCredito: 0, pix: 0 };
+      porDia.set(data, l);
+    }
+    return l;
+  };
+
+  const db = await getDb();
+  if (!db) return porDia;
+
+  const vendas = await db.select().from(adquirenteVendas).where(and(
+    eq(adquirenteVendas.unidadeId, unidadeId),
+    gte(adquirenteVendas.dataHora, `${dataInicio} 00:00:00`),
+    lte(adquirenteVendas.dataHora, `${dataFim} 23:59:59`),
+  ));
+  for (const v of vendas) {
+    const balde = classificarFormaPagamentoAdquirente(v.tipo);
+    if (!balde) continue;
+    const data = v.dataHora.slice(0, 10);
+    const valor = Number(v.valorBruto ?? 0);
+    if (balde === "debito") linha(data).cartaoDebito += valor;
+    else if (balde === "credito") linha(data).cartaoCredito += valor;
+    else linha(data).pix += valor;
+  }
+
+  const extratos = await db.select().from(interExtratos).where(and(
+    eq(interExtratos.unidadeId, unidadeId),
+    eq(interExtratos.tipoOperacao, "C"),
+    gte(interExtratos.dataEntrada, dataInicio),
+    lte(interExtratos.dataEntrada, dataFim),
+  ));
+  for (const e of extratos) {
+    const valor = Number(e.valor);
+    if (e.origem === "caixa_fisico") {
+      linha(e.dataEntrada).dinheiro += valor;
+      continue;
+    }
+    const texto = `${e.titulo || ""} ${e.descricao || ""} ${e.tipoTransacao || ""}`.toLowerCase();
+    if (texto.includes("pix")) linha(e.dataEntrada).pix += valor;
+  }
+
+  return porDia;
 }
 
 // ===== Contas =====
