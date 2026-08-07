@@ -378,6 +378,14 @@ export default function Extratos() {
     onError: (err) => toast.error(`Erro na sincronização: ${err.message}`),
   });
 
+  const sincronizarCaixaFisicoMutation = trpc.contas.sincronizarCaixaFisico.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Caixa Físico sincronizado: ${data.totalInseridos} nova(s) transação(ões) de ${data.totalLidos} lida(s).`);
+      extratosQuery.refetch();
+    },
+    onError: (err) => toast.error(`Erro na sincronização do Caixa Físico: ${err.message}`),
+  });
+
   const importarCsvMutation = trpc.inter.importarCsv.useMutation({
     onSuccess: (data) => {
       toast.success(`CSV importado: ${data.totalInseridos} nova(s) transação(ões) de ${data.totalLinhas} linha(s).`);
@@ -520,10 +528,10 @@ export default function Extratos() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-            Extratos
+            Contas
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Contas bancárias e de caixa — somadas para alimentar os relatórios financeiros
+            Todas as movimentações num único lugar — bancos, adquirente, caixa físico
           </p>
         </div>
         <UnidadeSelector />
@@ -753,7 +761,29 @@ export default function Extratos() {
                   Atualizar
                 </Button>
 
-                {statusInterQuery.data?.configurado && (
+                {!contaAtual && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      if (!unidadeId) return;
+                      if (statusInterQuery.data?.configurado) {
+                        sincronizarInterMutation.mutate({ unidadeId, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato });
+                      }
+                      if (statusMpQuery.data?.mercadoPagoConfigurado) {
+                        sincronizarMpMutation.mutate({ unidadeId, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato });
+                      }
+                      sincronizarCaixaFisicoMutation.mutate({ unidadeId });
+                    }}
+                    disabled={sincronizarInterMutation.isPending || sincronizarMpMutation.isPending || sincronizarCaixaFisicoMutation.isPending}
+                  >
+                    {(sincronizarInterMutation.isPending || sincronizarMpMutation.isPending || sincronizarCaixaFisicoMutation.isPending)
+                      ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                      : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+                    Sincronizar todas
+                  </Button>
+                )}
+
+                {contaAtual?.tipo === "inter_oauth" && statusInterQuery.data?.configurado && (
                   <Button
                     size="sm"
                     onClick={() => sincronizarInterMutation.mutate({ unidadeId, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato })}
@@ -772,6 +802,17 @@ export default function Extratos() {
                   >
                     {sincronizarMpMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
                     Sincronizar com Mercado Pago
+                  </Button>
+                )}
+
+                {contaAtual?.nome === "Caixa Físico" && (
+                  <Button
+                    size="sm"
+                    onClick={() => unidadeId && sincronizarCaixaFisicoMutation.mutate({ unidadeId })}
+                    disabled={sincronizarCaixaFisicoMutation.isPending}
+                  >
+                    {sincronizarCaixaFisicoMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+                    Sincronizar Caixa Físico
                   </Button>
                 )}
                 <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportarCsv} />
@@ -922,7 +963,7 @@ export default function Extratos() {
                               <TableCell className="text-xs text-muted-foreground">{nomeConta(t.contaId)}</TableCell>
                               <TableCell>
                                 <Badge variant="outline" className="text-xs font-normal">
-                                  {t.origem === "csv" ? "CSV" : t.origem === "pdf" ? "PDF" : t.origem === "ofx" ? "OFX" : t.origem === "mercadopago" ? "Mercado Pago" : "Inter"}
+                                  {t.origem === "csv" ? "CSV" : t.origem === "pdf" ? "PDF" : t.origem === "ofx" ? "OFX" : t.origem === "mercadopago" ? "Mercado Pago" : t.origem === "caixa_fisico" ? "Caixa Físico" : "Inter"}
                                 </Badge>
                               </TableCell>
                               <TableCell>

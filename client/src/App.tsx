@@ -18,7 +18,6 @@ import Copilot from "./pages/Copilot";
 import Laminas from "./pages/Laminas";
 import Leads from "./pages/Leads";
 import Configuracoes from "@/pages/Configuracoes";
-import CaixaFisico from "@/pages/CaixaFisico";
 
 function Router() {
   return (
@@ -33,7 +32,6 @@ function Router() {
         <Route path="/financeiro/extratos" component={Extratos} />
         <Route path="/financeiro/adquirentes" component={Adquirentes} />
         <Route path="/financeiro/parametros" component={Parametros} />
-        <Route path="/financeiro/caixa-fisico" component={CaixaFisico} />
         <Route path="/copilot" component={Copilot} />
         <Route path="/laminas" component={Laminas} />
         <Route path="/leads" component={Leads} />

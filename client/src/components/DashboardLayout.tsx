@@ -41,10 +41,9 @@ const menuItems = [
     icon: DollarSign, label: "Financeiro", path: "/financeiro",
     children: [
       { label: "Visão Geral", path: "/financeiro" },
-      { label: "Extratos", path: "/financeiro/extratos" },
+      { label: "Contas", path: "/financeiro/extratos" },
       { label: "Adquirentes", path: "/financeiro/adquirentes" },
       { label: "Parâmetros", path: "/financeiro/parametros" },
-      { label: "Caixa Físico", path: "/financeiro/caixa-fisico" },
     ],
   },
   { icon: Sparkles, label: "Copilot", path: "/copilot" },
@@ -179,23 +178,34 @@ function DashboardLayoutContent({
           className="border-r-0"
           disableTransition={isResizing}
         >
-          <SidebarHeader className="h-16 justify-center">
-            <div className="flex items-center gap-3 px-2 transition-all w-full">
-              <button
-                onClick={toggleSidebar}
-                className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
-                aria-label="Toggle navigation"
-              >
-                <PanelLeft className="h-4 w-4 text-muted-foreground" />
-              </button>
-              {!isCollapsed ? (
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-semibold tracking-tight truncate" style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "1.25rem" }}>
-                    Buddha Spa
-                  </span>
+          <SidebarHeader className={isCollapsed ? "h-16 justify-center" : "py-3"}>
+            {isCollapsed ? (
+              <div className="flex items-center justify-center px-2 w-full">
+                <button
+                  onClick={toggleSidebar}
+                  className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
+                  aria-label="Toggle navigation"
+                >
+                  <img src="/logo.png" alt="Buddha Spa" className="h-6 w-auto" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-1.5 px-2 w-full">
+                <div className="flex items-center justify-end w-full">
+                  <button
+                    onClick={toggleSidebar}
+                    className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
+                    aria-label="Toggle navigation"
+                  >
+                    <PanelLeft className="h-4 w-4 text-muted-foreground" />
+                  </button>
                 </div>
-              ) : null}
-            </div>
+                <img src="/logo.png" alt="Buddha Spa" className="h-10 w-auto -mt-1" />
+                <span className="font-semibold tracking-tight truncate" style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "1.15rem" }}>
+                  Buddha Spa
+                </span>
+              </div>
+            )}
           </SidebarHeader>
 
           <SidebarContent className="gap-0">

@@ -1135,6 +1135,7 @@ Diretrizes:
      */
     list: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
       await db.getOrCreateContaInter(input.unidadeId);
+      await db.getOrCreateContaCaixaFisico(input.unidadeId);
       await db.ensureContasPadrao(input.unidadeId);
       return db.listContas(input.unidadeId);
     }),
@@ -1312,6 +1313,64 @@ Diretrizes:
         await db.createSyncLog({
           unidadeId: input.unidadeId,
           tipo: "mercadopago_extrato",
+          status: "erro",
+          registrosProcessados: 0,
+          detalhes: error.message,
+        });
+        throw error;
+      }
+    }),
+
+    /**
+     * Sincroniza o Caixa Físico (planilha Google Sheets da unidade —
+     * RBS ou SSU) direto pra inter_extratos, junto de todas as outras
+     * contas — assim participa do Consolidado normalmente. Lê sempre
+     * os últimos 60 lançamentos da planilha; o filtro de período da
+     * tela só afeta a apresentação, não a busca.
+     */
+    sincronizarCaixaFisico: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) throw new Error("Unidade não encontrada");
+
+      try {
+        const isRbs = unidade.slug.includes("ribeirao") || unidade.slug.includes("rbs");
+        const spreadsheetId = isRbs ? SPREADSHEET_IDS.rbs : SPREADSHEET_IDS.ssu;
+        const aba = isRbs ? SPREADSHEET_ABAS.rbs : SPREADSHEET_ABAS.ssu;
+        const linhas = await lerCaixaFisicoSheet(spreadsheetId, aba, 60);
+
+        const contaCaixa = await db.getOrCreateContaCaixaFisico(input.unidadeId);
+        const inseridos = await db.upsertInterExtratos(
+          input.unidadeId,
+          linhas.map((l) => ({
+            unidadeId: input.unidadeId,
+            contaId: contaCaixa?.id,
+            // Sintético — a planilha não tem um ID de transação próprio.
+            // Inclui valor no id pra não colidir quando há mais de um
+            // lançamento igual (ocorrência+tipo) no mesmo dia.
+            idTransacao: `caixa:${l.data}:${l.tipoOperacao}:${l.ocorrencia.slice(0, 60)}:${l.valor}`,
+            dataEntrada: l.data,
+            tipoOperacao: l.tipoOperacao,
+            valor: l.valor.toFixed(2),
+            titulo: l.ocorrencia,
+            descricao: l.conferidoPor ? `Conferido por: ${l.conferidoPor}` : undefined,
+            origem: "caixa_fisico" as const,
+          })),
+        );
+
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "caixa_fisico",
+          status: "sucesso",
+          registrosProcessados: inseridos,
+          detalhes: `Lidos: ${linhas.length}. Novos: ${inseridos}.`,
+        });
+        return { success: true, totalLidos: linhas.length, totalInseridos: inseridos };
+      } catch (error: any) {
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "caixa_fisico",
           status: "erro",
           registrosProcessados: 0,
           detalhes: error.message,
@@ -1540,44 +1599,8 @@ Diretrizes:
       const totalInseridos = await db.upsertAdquirenteVendas(input.unidadeId, linhas);
       return { success: true, totalInseridos, totalLinhas: input.linhas.length };
     }),
-    }),
-  // ===== Caixa Físico (Google Sheets) =====
-  caixaFisico: router({
-    sincronizar: protectedProcedure.input(z.object({
-      unidadeId: z.number(),
-    })).mutation(async ({ input }) => {
-      const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade) throw new Error("Unidade não encontrada");
-      const isRbs = unidade.slug.includes("ribeirao") || unidade.slug.includes("rbs");
-      const spreadsheetId = isRbs ? SPREADSHEET_IDS.rbs : SPREADSHEET_IDS.ssu;
-      const aba = isRbs ? SPREADSHEET_ABAS.rbs : SPREADSHEET_ABAS.ssu;
-      const linhas = await lerCaixaFisicoSheet(spreadsheetId, aba, 60);
-      const inseridos = await db.upsertCaixaFisico(input.unidadeId, linhas.map((l: any) => ({
-        unidadeId: input.unidadeId,
-        data: l.data,
-        tipoOperacao: l.tipoOperacao,
-        ocorrencia: l.ocorrencia,
-        valor: l.valor.toString(),
-        saldo: l.saldo?.toString() ?? null,
-        conferidoPor: l.conferidoPor,
-      })) as any);
-      await db.createSyncLog({
-        unidadeId: input.unidadeId,
-        tipo: "caixa_fisico",
-        status: "sucesso",
-        registrosProcessados: inseridos,
-        detalhes: `Lidos: ${linhas.length}. Novos: ${inseridos}.`,
-      });
-      return { success: true, totalLidos: linhas.length, totalInseridos: inseridos };
-    }),
-    listar: protectedProcedure.input(z.object({
-      unidadeId: z.number(),
-      dataInicio: z.string().optional(),
-      dataFim: z.string().optional(),
-    })).query(async ({ input }) => {
-      return db.listCaixaFisico(input.unidadeId, input.dataInicio, input.dataFim);
-    }),
   }),
+
   // ===== Configurações globais (chave-valor) =====
   configuracoes: router({
     get: adminProcedure.input(z.object({ chave: z.string() })).query(async ({ input }) => {
