@@ -186,7 +186,7 @@ function DashboardLayoutContent({
                   className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
                   aria-label="Toggle navigation"
                 >
-                  <img src="/logo.png" alt="Buddha Spa" className="h-6 w-auto" />
+                  <img src="/logo.png" alt="Buddha Spa" className="h-7 w-auto" />
                 </button>
               </div>
             ) : (
@@ -200,7 +200,7 @@ function DashboardLayoutContent({
                     <PanelLeft className="h-4 w-4 text-muted-foreground" />
                   </button>
                 </div>
-                <img src="/logo.png" alt="Buddha Spa" className="h-10 w-auto -mt-1" />
+                <img src="/logo.png" alt="Buddha Spa" className="h-20 w-auto -mt-1" />
                 <span className="font-semibold tracking-tight truncate" style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "1.15rem" }}>
                   Buddha Spa
                 </span>
