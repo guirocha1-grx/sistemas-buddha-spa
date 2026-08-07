@@ -434,13 +434,20 @@ export async function upsertInterExtratos(
  */
 /**
  * Classifica o tipo de uma venda de adquirente (payment_type_id do
- * Mercado Pago — em inglês — ou texto livre do CSV Interpag/Granito —
- * em português) numa das 3 Descrições de receita "de máquina". Pix
- * direto no banco (não pela maquininha) é tratado à parte, via regra de
- * texto "Pix recebido" em inter_extratos.
+ * Mercado Pago — em inglês, ex.: "debit_card" — ou texto livre do CSV
+ * Interpag/Granito — em português, ex.: "155 - DÉBITO COBRANÇA
+ * REFERENTE..." — confirmado num CSV real) numa das 3 Descrições de
+ * receita "de máquina". Pix direto no banco (não pela maquininha) é
+ * tratado à parte, via regra de texto "Pix recebido" em inter_extratos.
+ *
+ * Bug real encontrado: "débito"/"crédito" (com acento) não batem no
+ * substring em inglês "debit"/"credit" — normaliza removendo acentos
+ * antes de comparar, daí "débito" → "debito" bate em "debit" e
+ * "crédito" → "credito" bate em "credit", cobrindo os dois idiomas com
+ * a mesma checagem.
  */
 function nomeDescricaoAdquirente(tipo: string | null | undefined): string | null {
-  const t = (tipo || "").toLowerCase();
+  const t = (tipo || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   if (t.includes("pix")) return "Receita de Pix";
   if (t.includes("debit")) return "Receita C. Débito";
   if (t.includes("credit")) return "Receita C. Crédito";
