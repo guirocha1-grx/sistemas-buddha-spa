@@ -985,18 +985,20 @@ export default function Extratos() {
                                   {t.origem === "csv" ? "CSV" : t.origem === "pdf" ? "PDF" : t.origem === "ofx" ? "OFX" : t.origem === "mercadopago" ? "Mercado Pago" : t.origem === "caixa_fisico" ? "Caixa Físico" : "Inter"}
                                 </Badge>
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="max-w-0">
                                 <div className="flex items-center gap-1">
-                                  <DescricaoCombobox
-                                    descricoes={descricoes}
-                                    categorias={categorias}
-                                    value={t.dreDescricaoId}
-                                    status={t.categorizacaoStatus}
-                                    onChange={(id) => categorizarMutation.mutate({
-                                      transacaoId: t.id,
-                                      dreDescricaoId: id,
-                                    })}
-                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <DescricaoCombobox
+                                      descricoes={descricoes}
+                                      categorias={categorias}
+                                      value={t.dreDescricaoId}
+                                      status={t.categorizacaoStatus}
+                                      onChange={(id) => categorizarMutation.mutate({
+                                        transacaoId: t.id,
+                                        dreDescricaoId: id,
+                                      })}
+                                    />
+                                  </div>
                                   <div className="flex items-center shrink-0">
                                     {t.categorizacaoStatus === "sugerida" && (
                                       <Button
