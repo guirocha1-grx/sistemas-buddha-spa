@@ -1683,6 +1683,16 @@ Diretrizes:
       const id = await db.criarDreDescricao(input.nome, input.dreCategoriaId);
       return { success: true, id };
     }),
+
+    atualizar: protectedProcedure.input(z.object({
+      id: z.number(),
+      nome: z.string().min(1).optional(),
+      dreCategoriaId: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...dados } = input;
+      await db.atualizarDreDescricao(id, dados);
+      return { success: true };
+    }),
   }),
 
   // ===== Regras de categorização automática (tela Parâmetros) =====

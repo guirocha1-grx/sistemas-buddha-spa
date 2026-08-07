@@ -1010,6 +1010,12 @@ export async function criarDreDescricao(nome: string, dreCategoriaId: number) {
   return result[0]?.id;
 }
 
+export async function atualizarDreDescricao(id: number, dados: { nome?: string; dreCategoriaId?: number }) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(dreDescricoes).set(dados).where(eq(dreDescricoes.id, id));
+}
+
 async function resolverDescricaoIdPorNome(nome: string): Promise<number | null> {
   const db = await getDb();
   if (!db) return null;
