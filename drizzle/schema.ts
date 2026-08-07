@@ -44,6 +44,19 @@ export const unidades = mysqlTable("unidades", {
   interTokenExpiresAt: bigint("interTokenExpiresAt", { mode: "number" }),
   // Mercado Pago — só precisa do Access Token (self-service, sem mTLS).
   mpAccessToken: text("mpAccessToken"),
+  // Sicredi — mesmo modelo do Inter (OAuth2 client_credentials + mTLS
+  // obrigatório em toda chamada). Cooperativa/agência/conta identificam
+  // a conta corrente (o Sicredi não usa um único "número de conta" como
+  // o Inter, é cooperativa+agência+conta).
+  sicrediClientId: text("sicrediClientId"),
+  sicrediClientSecret: text("sicrediClientSecret"),
+  sicrediCertificado: text("sicrediCertificado"), // .crt em PEM
+  sicrediChavePrivada: text("sicrediChavePrivada"), // .key em PEM
+  sicrediCooperativa: varchar("sicrediCooperativa", { length: 20 }),
+  sicrediAgencia: varchar("sicrediAgencia", { length: 20 }),
+  sicrediConta: varchar("sicrediConta", { length: 20 }),
+  sicrediAccessToken: text("sicrediAccessToken"),
+  sicrediTokenExpiresAt: bigint("sicrediTokenExpiresAt", { mode: "number" }),
   corTema: varchar("corTema", { length: 32 }),
   ativa: mysqlEnum("ativa", ["true", "false"]).default("true").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -231,7 +244,7 @@ export const contas = mysqlTable("contas", {
   id: int("id").autoincrement().primaryKey(),
   unidadeId: int("unidadeId").notNull(),
   nome: varchar("nome", { length: 128 }).notNull(),
-  tipo: mysqlEnum("tipo", ["inter_oauth", "manual"]).default("manual").notNull(),
+  tipo: mysqlEnum("tipo", ["inter_oauth", "sicredi_oauth", "manual"]).default("manual").notNull(),
   // Ag/conta/CNPJ — identifica a conta pra bater contra
   // cpfCnpjOrigem/cpfCnpjDestino do extrato e detectar transferência
   // entre contas próprias automaticamente (sem depender de texto).
@@ -280,7 +293,7 @@ export const interExtratos = mysqlTable("inter_extratos", {
   contaOrigem: varchar("contaOrigem", { length: 32 }),
   contaDestino: varchar("contaDestino", { length: 32 }),
   cpmf: varchar("cpmf", { length: 64 }),
-  origem: mysqlEnum("origem", ["inter", "csv", "pdf", "ofx", "mercadopago", "caixa_fisico"]).default("inter").notNull(),
+  origem: mysqlEnum("origem", ["inter", "csv", "pdf", "ofx", "mercadopago", "caixa_fisico", "sicredi"]).default("inter").notNull(),
   dreCategoriaId: int("dreCategoriaId"), // null = pendente (ainda não categorizado)
   // pendente = sem categoria; sugerida = regra bateu sozinha, ainda não
   // confirmada por humano; confirmada = humano escolheu ou confirmou.

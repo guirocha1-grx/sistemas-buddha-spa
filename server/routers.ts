@@ -10,6 +10,7 @@ import { buddhaMktApi } from "./buddhaMktApi";
 import { storagePut, storageGetSignedUrl } from "./storage";
 import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
+import { sicrediApi, getSicrediAccessToken, isSicrediTokenValid } from "./sicrediApi";
 import { parseExtratoInterPdf } from "./interExtratoPdfParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
@@ -52,6 +53,14 @@ export const appRouter = router({
       interContaCorrente: z.string().optional(),
       // Mercado Pago
       mpAccessToken: z.string().optional(),
+      // Sicredi
+      sicrediClientId: z.string().optional(),
+      sicrediClientSecret: z.string().optional(),
+      sicrediCertificado: z.string().optional(),
+      sicrediChavePrivada: z.string().optional(),
+      sicrediCooperativa: z.string().optional(),
+      sicrediAgencia: z.string().optional(),
+      sicrediConta: z.string().optional(),
     })).mutation(async ({ input }) => {
       const { id, ...dados } = input;
       await db.updateUnidade(id, dados);
@@ -1152,6 +1161,132 @@ Diretrizes:
         detalhes: `Importação manual via OFX na conta "${conta.nome}". ${linhas.length} transação(ões) no arquivo, ${inseridos} nova(s).`,
       });
       return { success: true, totalInseridos: inseridos, totalLinhas: linhas.length };
+    }),
+  }),
+
+  // ===== Sicredi =====
+  // PROVISÓRIO (ver server/sicrediApi.ts): sem adesão aprovada no Portal
+  // do Desenvolvedor ainda, então o formato do payload de extrato não
+  // está confirmado. O sync abaixo já grava uma amostra bruta da
+  // resposta no log — assim que rodar contra credencial real pela
+  // primeira vez, uso esse log pra corrigir o mapeamento (mesmo processo
+  // usado pro Inter em InterTransacaoCompleta).
+  sicredi: router({
+    status: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      const configurado = !!(unidade?.sicrediClientId && unidade?.sicrediClientSecret && unidade?.sicrediCertificado && unidade?.sicrediChavePrivada);
+      const tokenValido = isSicrediTokenValid(unidade?.sicrediTokenExpiresAt);
+      return { configurado, tokenValido, cooperativa: unidade?.sicrediCooperativa ?? null, agencia: unidade?.sicrediAgencia ?? null, conta: unidade?.sicrediConta ?? null };
+    }),
+
+    autenticar: adminProcedure.input(z.object({ unidadeId: z.number() })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.sicrediClientId || !unidade?.sicrediClientSecret || !unidade?.sicrediCertificado || !unidade?.sicrediChavePrivada) {
+        throw new Error("Credenciais Sicredi não configuradas para esta unidade (client_id/secret + certificado)");
+      }
+      const { accessToken, expiresAt } = await getSicrediAccessToken(
+        unidade.sicrediClientId,
+        unidade.sicrediClientSecret,
+        { certificado: unidade.sicrediCertificado, chavePrivada: unidade.sicrediChavePrivada },
+      );
+      await db.updateSicrediToken(input.unidadeId, accessToken, expiresAt);
+      return { success: true };
+    }),
+
+    saldo: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.sicrediClientId || !unidade?.sicrediClientSecret || !unidade?.sicrediCertificado || !unidade?.sicrediChavePrivada) {
+        throw new Error("Credenciais Sicredi não configuradas (client_id/secret + certificado)");
+      }
+      const credenciais = { certificado: unidade.sicrediCertificado, chavePrivada: unidade.sicrediChavePrivada };
+      let token = unidade.sicrediAccessToken;
+      if (!token || !isSicrediTokenValid(unidade.sicrediTokenExpiresAt)) {
+        const { accessToken, expiresAt } = await getSicrediAccessToken(unidade.sicrediClientId, unidade.sicrediClientSecret, credenciais);
+        await db.updateSicrediToken(input.unidadeId, accessToken, expiresAt);
+        token = accessToken;
+      }
+      return sicrediApi.consultarSaldo(token, { cooperativa: unidade.sicrediCooperativa, agencia: unidade.sicrediAgencia, numeroConta: unidade.sicrediConta }, credenciais);
+    }),
+
+    sincronizar: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.sicrediClientId || !unidade?.sicrediClientSecret || !unidade?.sicrediCertificado || !unidade?.sicrediChavePrivada) {
+        throw new Error("Credenciais Sicredi não configuradas (client_id/secret + certificado)");
+      }
+      const credenciais = { certificado: unidade.sicrediCertificado, chavePrivada: unidade.sicrediChavePrivada };
+
+      let token = unidade.sicrediAccessToken;
+      if (!token || !isSicrediTokenValid(unidade.sicrediTokenExpiresAt)) {
+        const { accessToken, expiresAt } = await getSicrediAccessToken(unidade.sicrediClientId, unidade.sicrediClientSecret, credenciais);
+        await db.updateSicrediToken(input.unidadeId, accessToken, expiresAt);
+        token = accessToken;
+      }
+
+      const contaSicredi = await db.getOrCreateContaSicredi(input.unidadeId);
+      const regrasDre = await db.listRegrasParaMatch();
+      const cnpjsContasDre = await db.listCnpjsDeContas();
+
+      try {
+        const resposta = await sicrediApi.consultarExtrato(
+          token,
+          input.dataInicio,
+          input.dataFim,
+          { cooperativa: unidade.sicrediCooperativa, agencia: unidade.sicrediAgencia, numeroConta: unidade.sicrediConta },
+          credenciais,
+        );
+
+        const transacoes = await Promise.all(resposta.transacoes.map(async (t) => {
+          const resultado = contaSicredi?.id
+            ? await db.categorizarTransacaoAutomaticamente({
+              contaId: contaSicredi.id,
+              dataEntrada: t.data,
+              tipoTransacao: t.historico ?? "",
+              titulo: t.descricao,
+              descricao: t.historico ?? "",
+              valor: parseFloat(t.valor),
+            }, regrasDre, cnpjsContasDre)
+            : { dreCategoriaId: undefined, categorizacaoStatus: "pendente" as const };
+          return {
+            unidadeId: input.unidadeId,
+            contaId: contaSicredi?.id,
+            idTransacao: t.documento || `sicredi:${t.data}:${t.tipoOperacao}:${t.descricao.slice(0, 60)}:${t.valor}`,
+            dataEntrada: t.data,
+            tipoTransacao: t.historico,
+            tipoOperacao: t.tipoOperacao,
+            valor: t.valor,
+            titulo: t.descricao,
+            descricao: t.historico,
+            origem: "sicredi" as const,
+            dreCategoriaId: resultado.dreCategoriaId ?? undefined,
+            categorizacaoStatus: resultado.categorizacaoStatus,
+          };
+        }));
+
+        const inseridos = await db.upsertInterExtratos(input.unidadeId, transacoes);
+
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "sicredi_extrato",
+          status: "sucesso",
+          registrosProcessados: inseridos,
+          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Total API: ${resposta.transacoes.length}. Novos: ${inseridos}. Amostra bruta: ${JSON.stringify(resposta).slice(0, 2000)}`,
+        });
+
+        return { success: true, totalInseridos: inseridos, totalTransacoes: resposta.transacoes.length };
+      } catch (error: any) {
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "sicredi_extrato",
+          status: "erro",
+          registrosProcessados: 0,
+          detalhes: error.message,
+        });
+        throw error;
+      }
     }),
   }),
 

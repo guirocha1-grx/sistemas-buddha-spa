@@ -18,6 +18,14 @@ interface UnidadeInfo {
   interChavePrivada?: string | null;
   interContaCorrente?: string | null;
   mpAccessToken?: string | null;
+  // Sicredi
+  sicrediClientId?: string | null;
+  sicrediClientSecret?: string | null;
+  sicrediCertificado?: string | null;
+  sicrediChavePrivada?: string | null;
+  sicrediCooperativa?: string | null;
+  sicrediAgencia?: string | null;
+  sicrediConta?: string | null;
 }
 
 interface UnidadeContextValue {
@@ -53,7 +61,17 @@ export function UnidadeProvider({ children }: { children: ReactNode }) {
     zapiClientToken: u.zapiClientToken,
     interClientId: u.interClientId,
     interClientSecret: u.interClientSecret,
+    interCertificado: u.interCertificado,
+    interChavePrivada: u.interChavePrivada,
     interContaCorrente: u.interContaCorrente,
+    mpAccessToken: u.mpAccessToken,
+    sicrediClientId: u.sicrediClientId,
+    sicrediClientSecret: u.sicrediClientSecret,
+    sicrediCertificado: u.sicrediCertificado,
+    sicrediChavePrivada: u.sicrediChavePrivada,
+    sicrediCooperativa: u.sicrediCooperativa,
+    sicrediAgencia: u.sicrediAgencia,
+    sicrediConta: u.sicrediConta,
   }));
 
   const unidadeSelecionada = unidades.find((u) => u.id === unidadeId) || unidades[0] || null;

@@ -21,6 +21,16 @@ interface MpForm {
   mpAccessToken?: string;
 }
 
+interface SicrediForm {
+  sicrediClientId?: string;
+  sicrediClientSecret?: string;
+  sicrediCertificado?: string;
+  sicrediChavePrivada?: string;
+  sicrediCooperativa?: string;
+  sicrediAgencia?: string;
+  sicrediConta?: string;
+}
+
 interface ZapiForm {
   zapiInstanceId?: string;
   zapiToken?: string;
@@ -41,6 +51,8 @@ export default function Configuracoes() {
   const [interSaved, setInterSaved] = useState<number | null>(null);
   const [mpForms, setMpForms] = useState<Record<number, MpForm>>({});
   const [mpSaved, setMpSaved] = useState<number | null>(null);
+  const [sicrediForms, setSicrediForms] = useState<Record<number, SicrediForm>>({});
+  const [sicrediSaved, setSicrediSaved] = useState<number | null>(null);
 
   const updateUnidade = trpc.unidades.update.useMutation({
     onSuccess: (_data, vars) => {
@@ -59,6 +71,10 @@ export default function Configuracoes() {
       if (vars.mpAccessToken !== undefined) {
         setMpSaved(vars.id);
         setTimeout(() => setMpSaved(null), 3000);
+      }
+      if (vars.sicrediClientId !== undefined || vars.sicrediClientSecret !== undefined || vars.sicrediCertificado !== undefined || vars.sicrediChavePrivada !== undefined || vars.sicrediCooperativa !== undefined || vars.sicrediAgencia !== undefined || vars.sicrediConta !== undefined) {
+        setSicrediSaved(vars.id);
+        setTimeout(() => setSicrediSaved(null), 3000);
       }
     },
   });
@@ -365,6 +381,108 @@ export default function Configuracoes() {
                     <Save className="h-4 w-4 mr-2" />
                   )}
                   {mpSaved === unidade.id ? "Salvo!" : "Salvar Mercado Pago"}
+                </Button>
+              </div>
+
+              {/* Sicredi */}
+              <div className="border-t pt-3 mt-1 space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-1.5 text-sm">
+                    <Landmark className="h-3.5 w-3.5" /> Sicredi — OAuth
+                  </Label>
+                  {unidade.sicrediClientId && unidade.sicrediClientSecret && unidade.sicrediCertificado && unidade.sicrediChavePrivada ? (
+                    <Badge className="bg-green-100 text-green-700">Configurado</Badge>
+                  ) : (
+                    <Badge variant="secondary">Sem credenciais</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Solicite adesão aos produtos "Extrato de Conta Corrente" e "Saldo de Conta Corrente" à sua
+                  cooperativa no{" "}
+                  <a
+                    href="https://developers.sicredi.com.br"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
+                    Portal do Desenvolvedor
+                  </a>{" "}
+                  — igual ao Inter, o Sicredi também exige certificado digital (mTLS) gerado via CSR. Cole as
+                  credenciais e o certificado/chave abaixo assim que a adesão sair.
+                </p>
+                <Input
+                  placeholder="Client ID"
+                  defaultValue={unidade.sicrediClientId || ""}
+                  onChange={(e) =>
+                    setSicrediForms({ ...sicrediForms, [unidade.id]: { ...sicrediForms[unidade.id], sicrediClientId: e.target.value } })
+                  }
+                />
+                <Input
+                  type="password"
+                  placeholder="Client Secret"
+                  defaultValue={unidade.sicrediClientSecret || ""}
+                  onChange={(e) =>
+                    setSicrediForms({ ...sicrediForms, [unidade.id]: { ...sicrediForms[unidade.id], sicrediClientSecret: e.target.value } })
+                  }
+                />
+                <Textarea
+                  placeholder="Certificado (.crt) — conteúdo completo em PEM"
+                  className="font-mono text-xs"
+                  rows={4}
+                  defaultValue={unidade.sicrediCertificado || ""}
+                  onChange={(e) =>
+                    setSicrediForms({ ...sicrediForms, [unidade.id]: { ...sicrediForms[unidade.id], sicrediCertificado: e.target.value } })
+                  }
+                />
+                <Textarea
+                  placeholder="Chave privada (.key) — conteúdo completo em PEM"
+                  className="font-mono text-xs"
+                  rows={4}
+                  defaultValue={unidade.sicrediChavePrivada || ""}
+                  onChange={(e) =>
+                    setSicrediForms({ ...sicrediForms, [unidade.id]: { ...sicrediForms[unidade.id], sicrediChavePrivada: e.target.value } })
+                  }
+                />
+                <div className="grid grid-cols-3 gap-2">
+                  <Input
+                    placeholder="Cooperativa"
+                    defaultValue={unidade.sicrediCooperativa || ""}
+                    onChange={(e) =>
+                      setSicrediForms({ ...sicrediForms, [unidade.id]: { ...sicrediForms[unidade.id], sicrediCooperativa: e.target.value } })
+                    }
+                  />
+                  <Input
+                    placeholder="Agência"
+                    defaultValue={unidade.sicrediAgencia || ""}
+                    onChange={(e) =>
+                      setSicrediForms({ ...sicrediForms, [unidade.id]: { ...sicrediForms[unidade.id], sicrediAgencia: e.target.value } })
+                    }
+                  />
+                  <Input
+                    placeholder="Conta"
+                    defaultValue={unidade.sicrediConta || ""}
+                    onChange={(e) =>
+                      setSicrediForms({ ...sicrediForms, [unidade.id]: { ...sicrediForms[unidade.id], sicrediConta: e.target.value } })
+                    }
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const form = sicrediForms[unidade.id];
+                    if (form && Object.values(form).some((v) => v)) {
+                      updateUnidade.mutate({ id: unidade.id, ...form });
+                    }
+                  }}
+                  disabled={!sicrediForms[unidade.id] || updateUnidade.isPending}
+                >
+                  {sicrediSaved === unidade.id ? (
+                    <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  {sicrediSaved === unidade.id ? "Salvo!" : "Salvar Sicredi"}
                 </Button>
               </div>
             </CardContent>

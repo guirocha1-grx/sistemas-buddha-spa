@@ -389,6 +389,19 @@ export default function Extratos() {
     onError: (err) => toast.error(`Erro na sincronização do Caixa Físico: ${err.message}`),
   });
 
+  const statusSicrediQuery = trpc.sicredi.status.useQuery(
+    { unidadeId: unidadeId! },
+    { enabled: !!unidadeId },
+  );
+
+  const sincronizarSicrediMutation = trpc.sicredi.sincronizar.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Sincronização concluída: ${data.totalInseridos} nova(s) transação(ões).`);
+      extratosQuery.refetch();
+    },
+    onError: (err) => toast.error(`Erro na sincronização: ${err.message}`),
+  });
+
   const importarCsvMutation = trpc.inter.importarCsv.useMutation({
     onSuccess: (data) => {
       toast.success(`CSV importado: ${data.totalInseridos} nova(s) transação(ões) de ${data.totalLinhas} linha(s).`);
@@ -771,9 +784,9 @@ export default function Extratos() {
                     <AlertDialogTrigger asChild>
                       <Button
                         size="sm"
-                        disabled={sincronizarInterMutation.isPending || sincronizarMpMutation.isPending || sincronizarCaixaFisicoMutation.isPending}
+                        disabled={sincronizarInterMutation.isPending || sincronizarMpMutation.isPending || sincronizarCaixaFisicoMutation.isPending || sincronizarSicrediMutation.isPending}
                       >
-                        {(sincronizarInterMutation.isPending || sincronizarMpMutation.isPending || sincronizarCaixaFisicoMutation.isPending)
+                        {(sincronizarInterMutation.isPending || sincronizarMpMutation.isPending || sincronizarCaixaFisicoMutation.isPending || sincronizarSicrediMutation.isPending)
                           ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                           : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
                         Sincronizar todas
@@ -783,7 +796,7 @@ export default function Extratos() {
                       <AlertDialogHeader>
                         <AlertDialogTitle>Confirmar sincronização de todas as contas</AlertDialogTitle>
                         <AlertDialogDescription>
-                          Isso vai sincronizar todas as contas configuradas (Banco Inter, Mercado Pago e Caixa Físico) para a unidade selecionada no período atual. A sincronização do Mercado Pago pode demorar até 2 minutos. Deseja continuar?
+                          Isso vai sincronizar todas as contas configuradas (Banco Inter, Mercado Pago, Sicredi e Caixa Físico) para a unidade selecionada no período atual. A sincronização do Mercado Pago pode demorar até 2 minutos. Deseja continuar?
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -795,6 +808,9 @@ export default function Extratos() {
                           }
                           if (statusMpQuery.data?.mercadoPagoConfigurado) {
                             sincronizarMpMutation.mutate({ unidadeId, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato });
+                          }
+                          if (statusSicrediQuery.data?.configurado) {
+                            sincronizarSicrediMutation.mutate({ unidadeId, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato });
                           }
                           sincronizarCaixaFisicoMutation.mutate({ unidadeId });
                           setConfirmarSyncTodas(false);
@@ -814,6 +830,17 @@ export default function Extratos() {
                   >
                     {sincronizarInterMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
                     Sincronizar com Inter
+                  </Button>
+                )}
+
+                {contaAtual?.tipo === "sicredi_oauth" && statusSicrediQuery.data?.configurado && (
+                  <Button
+                    size="sm"
+                    onClick={() => unidadeId && sincronizarSicrediMutation.mutate({ unidadeId, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato })}
+                    disabled={sincronizarSicrediMutation.isPending}
+                  >
+                    {sincronizarSicrediMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+                    Sincronizar com Sicredi
                   </Button>
                 )}
 

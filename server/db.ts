@@ -374,6 +374,19 @@ export async function updateInterToken(
   }).where(eq(unidades.id, unidadeId));
 }
 
+export async function updateSicrediToken(
+  unidadeId: number,
+  accessToken: string,
+  expiresAt: number,
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(unidades).set({
+    sicrediAccessToken: accessToken,
+    sicrediTokenExpiresAt: expiresAt,
+  }).where(eq(unidades.id, unidadeId));
+}
+
 /**
  * Insere transações do extrato Inter, ignorando duplicatas por idTransacao.
  * Retorna o número de registros efetivamente inseridos.
@@ -703,6 +716,34 @@ export async function getOrCreateContaInter(unidadeId: number) {
   if (existente[0]) return existente[0];
 
   const insertValues: InsertConta = { unidadeId, nome: "Banco Inter", tipo: "inter_oauth" };
+  const result = await db.insert(contas).values(insertValues).$returningId();
+  const novaId = result[0]?.id;
+  if (!novaId) return undefined;
+  const novaConta = await db.select().from(contas).where(eq(contas.id, novaId)).limit(1);
+  return novaConta[0];
+}
+
+/**
+ * Garante que a unidade tenha a conta "Sicredi" com tipo "sicredi_oauth"
+ * — a linha "Sicredi" já existe hoje como conta "manual" (criada por
+ * ensureContasPadrao), então aqui não cria uma segunda: promove a
+ * existente pra "sicredi_oauth" na primeira sincronização automática,
+ * preservando as transações já importadas manualmente sob a mesma conta.
+ */
+export async function getOrCreateContaSicredi(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const existente = await db.select().from(contas)
+    .where(and(eq(contas.unidadeId, unidadeId), eq(contas.nome, "Sicredi")))
+    .limit(1);
+  if (existente[0]) {
+    if (existente[0].tipo !== "sicredi_oauth") {
+      await db.update(contas).set({ tipo: "sicredi_oauth" }).where(eq(contas.id, existente[0].id));
+    }
+    return { ...existente[0], tipo: "sicredi_oauth" as const };
+  }
+
+  const insertValues: InsertConta = { unidadeId, nome: "Sicredi", tipo: "sicredi_oauth" };
   const result = await db.insert(contas).values(insertValues).$returningId();
   const novaId = result[0]?.id;
   if (!novaId) return undefined;
