@@ -1,5 +1,6 @@
 /**
  * googleSheets.ts
+ * v1.1 — sincronização de Caixa Físico via Google Sheets API
  * Cliente de leitura para Google Sheets via Service Account.
  * Usado para sincronizar o Caixa Físico das planilhas das duas unidades.
  *
