@@ -96,10 +96,7 @@ export async function lerCaixaFisicoSheet(
   if (rows.length === 0) return [];
 
   // Detectar layout: RBS vs SSU
-  // RBS: linha 0 = título, linha 1 = cabeçalho com "Data" na coluna A
-  // SSU: linha 0 = cabeçalho com "Data numero" na coluna A e "Data" na coluna B
   const headerRow0 = rows[0] || [];
-  const headerRow1 = rows[1] || [];
   const isSSU = headerRow0.some((c: string) => (c || "").toString().toLowerCase().trim() === "data numero");
 
   let dataCol: number;
@@ -120,7 +117,7 @@ export async function lerCaixaFisicoSheet(
     saidaValorCol = 5;
     saldoCol = 6;
     conferidoCol = 7;
-    linhaInicio = 2; // linha 0 = cabeçalho, linha 1 = sub-cabeçalho
+    linhaInicio = 2;
   } else {
     // RBS: A=Data, B=Ocorrência entrada, C=Valor entrada, D=Ocorrência saída, E=Valor saída, F=Saldo, G=Conferido por
     dataCol = 0;
@@ -130,7 +127,7 @@ export async function lerCaixaFisicoSheet(
     saidaValorCol = 4;
     saldoCol = 5;
     conferidoCol = 6;
-    linhaInicio = 3; // linha 0 = título, linha 1 = cabeçalho, linha 2 = sub-cabeçalho
+    linhaInicio = 3;
   }
 
   const hojeStr = hoje();
