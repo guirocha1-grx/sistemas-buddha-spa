@@ -1201,6 +1201,18 @@ export async function ativarDesativarDreRegra(id: number, ativa: boolean) {
 }
 
 /**
+ * Apaga um padrão específico — diferente de desativar, some de vez.
+ * Não mexe em lançamentos já categorizados (o dreDescricaoId fica onde
+ * está); só deixa de existir como candidato pra bater em novas
+ * transações.
+ */
+export async function excluirDreRegra(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(dreRegras).where(eq(dreRegras.id, id));
+}
+
+/**
  * Regras ativas com o id da descrição já resolvido — buscar uma vez e
  * reusar num loop de importação em lote, em vez de uma query por
  * transação.

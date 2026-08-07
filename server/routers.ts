@@ -1770,6 +1770,11 @@ Diretrizes:
       await db.ativarDesativarDreRegra(input.id, input.ativa);
       return { success: true };
     }),
+
+    excluir: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.excluirDreRegra(input.id);
+      return { success: true };
+    }),
   }),
 
   // ===== Adquirentes (vendas de maquininha — sub-seção Adquirentes) =====

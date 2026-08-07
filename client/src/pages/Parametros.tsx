@@ -34,11 +34,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DescricaoCombobox } from "@/components/DescricaoCombobox";
-import { Loader2, Plus, Settings2, ListTree, Tags, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Loader2, Plus, ListTree, Tags, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { toast } from "sonner";
 
-type ColunaOrdenavel = "descricaoNome" | "categoriaNome" | "padrao";
+type ColunaDescricao = "nome" | "categoriaNome";
 
 const SECOES: { value: string; label: string }[] = [
   { value: "receitas", label: "Receitas" },
@@ -52,11 +51,6 @@ const SECOES: { value: string; label: string }[] = [
   { value: "excluido", label: "Excluído do DRE" },
 ];
 
-function labelSecao(secao: string) {
-  return SECOES.find((s) => s.value === secao)?.label ?? secao;
-}
-
-const REGRA_FORM_VAZIO = { padrao: "", dreDescricaoId: "", valorMin: "", valorMax: "", alertaSeRepetirNoMes: false };
 const DESCRICAO_FORM_VAZIO = { nome: "", dreCategoriaId: "" };
 
 interface RelatorioExclusao {
@@ -163,16 +157,19 @@ export default function Parametros() {
     }
   }
 
-  // ===== Nova/editar descrição =====
+  // ===== Nova/editar descrição (+ padrões, gerenciados dentro do mesmo modal) =====
   const [descricaoModalOpen, setDescricaoModalOpen] = useState(false);
   const [descricaoEditandoId, setDescricaoEditandoId] = useState<number | null>(null);
   const [descricaoForm, setDescricaoForm] = useState(DESCRICAO_FORM_VAZIO);
+  const [novoPadraoTexto, setNovoPadraoTexto] = useState("");
 
   const criarDescricaoMutation = trpc.dreDescricoes.criar.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast.success("Descrição criada.");
-      setDescricaoModalOpen(false);
       utils.dreDescricoes.list.invalidate();
+      if (data.id) {
+        setDescricaoEditandoId(data.id);
+      }
     },
     onError: (err) => toast.error(err.message),
   });
@@ -180,8 +177,33 @@ export default function Parametros() {
   const atualizarDescricaoMutation = trpc.dreDescricoes.atualizar.useMutation({
     onSuccess: () => {
       toast.success("Descrição atualizada.");
-      setDescricaoModalOpen(false);
       utils.dreDescricoes.list.invalidate();
+      utils.dreRegras.list.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const criarRegraMutation = trpc.dreRegras.criar.useMutation({
+    onSuccess: () => {
+      setNovoPadraoTexto("");
+      utils.dreRegras.list.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const atualizarRegraMutation = trpc.dreRegras.atualizar.useMutation({
+    onSuccess: () => utils.dreRegras.list.invalidate(),
+    onError: (err) => toast.error(err.message),
+  });
+
+  const ativarDesativarMutation = trpc.dreRegras.ativarDesativar.useMutation({
+    onSuccess: () => utils.dreRegras.list.invalidate(),
+    onError: (err) => toast.error(err.message),
+  });
+
+  const excluirRegraMutation = trpc.dreRegras.excluir.useMutation({
+    onSuccess: () => {
+      toast.success("Padrão removido.");
       utils.dreRegras.list.invalidate();
     },
     onError: (err) => toast.error(err.message),
@@ -190,12 +212,14 @@ export default function Parametros() {
   function abrirNovaDescricao() {
     setDescricaoEditandoId(null);
     setDescricaoForm(DESCRICAO_FORM_VAZIO);
+    setNovoPadraoTexto("");
     setDescricaoModalOpen(true);
   }
 
   function abrirEditarDescricao(d: typeof descricoes[number]) {
     setDescricaoEditandoId(d.id);
     setDescricaoForm({ nome: d.nome, dreCategoriaId: String(d.dreCategoriaId) });
+    setNovoPadraoTexto("");
     setDescricaoModalOpen(true);
   }
 
@@ -209,73 +233,20 @@ export default function Parametros() {
     }
   }
 
-  // ===== Nova/editar regra =====
-  const [regraModalOpen, setRegraModalOpen] = useState(false);
-  const [regraEditandoId, setRegraEditandoId] = useState<number | null>(null);
-  const [regraForm, setRegraForm] = useState(REGRA_FORM_VAZIO);
-
-  const criarRegraMutation = trpc.dreRegras.criar.useMutation({
-    onSuccess: () => {
-      toast.success("Regra criada — já vale pro próximo import ou reprocessamento.");
-      setRegraModalOpen(false);
-      utils.dreRegras.list.invalidate();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const atualizarRegraMutation = trpc.dreRegras.atualizar.useMutation({
-    onSuccess: () => {
-      toast.success("Regra atualizada.");
-      setRegraModalOpen(false);
-      utils.dreRegras.list.invalidate();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const ativarDesativarMutation = trpc.dreRegras.ativarDesativar.useMutation({
-    onSuccess: () => utils.dreRegras.list.invalidate(),
-    onError: (err) => toast.error(err.message),
-  });
-
-  function abrirNovaRegra() {
-    setRegraEditandoId(null);
-    setRegraForm(REGRA_FORM_VAZIO);
-    setRegraModalOpen(true);
+  function adicionarPadrao() {
+    if (!novoPadraoTexto.trim() || descricaoEditandoId === null) return;
+    criarRegraMutation.mutate({ padrao: novoPadraoTexto.trim(), dreDescricaoId: descricaoEditandoId });
   }
 
-  function abrirEditarRegra(r: typeof regras[number]) {
-    setRegraEditandoId(r.id);
-    setRegraForm({
-      padrao: r.padrao,
-      dreDescricaoId: String(r.dreDescricaoId),
-      valorMin: r.valorMin ?? "",
-      valorMax: r.valorMax ?? "",
-      alertaSeRepetirNoMes: r.alertaSeRepetirNoMes === "true",
-    });
-    setRegraModalOpen(true);
-  }
+  const padroesDaDescricaoEditando = descricaoEditandoId
+    ? regras.filter((r) => r.dreDescricaoId === descricaoEditandoId)
+    : [];
 
-  function salvarRegra() {
-    if (!regraForm.padrao.trim() || !regraForm.dreDescricaoId) return;
-    const dados = {
-      padrao: regraForm.padrao.trim(),
-      dreDescricaoId: Number(regraForm.dreDescricaoId),
-      valorMin: regraForm.valorMin ? parseFloat(regraForm.valorMin.replace(",", ".")) : undefined,
-      valorMax: regraForm.valorMax ? parseFloat(regraForm.valorMax.replace(",", ".")) : undefined,
-      alertaSeRepetirNoMes: regraForm.alertaSeRepetirNoMes,
-    };
-    if (regraEditandoId) {
-      atualizarRegraMutation.mutate({ id: regraEditandoId, ...dados });
-    } else {
-      criarRegraMutation.mutate(dados);
-    }
-  }
-
-  // ===== Ordenação =====
-  const [ordenarPor, setOrdenarPor] = useState<ColunaOrdenavel>("descricaoNome");
+  // ===== Ordenação da tabela de Descrições =====
+  const [ordenarPor, setOrdenarPor] = useState<ColunaDescricao>("nome");
   const [ordemAsc, setOrdemAsc] = useState(true);
 
-  function alternarOrdenacao(coluna: ColunaOrdenavel) {
+  function alternarOrdenacao(coluna: ColunaDescricao) {
     if (ordenarPor === coluna) {
       setOrdemAsc(!ordemAsc);
     } else {
@@ -284,28 +255,26 @@ export default function Parametros() {
     }
   }
 
-  function valorOrdenavel(r: typeof regras[number], coluna: ColunaOrdenavel): string {
-    return r[coluna].toLowerCase();
-  }
-
-  const regrasOrdenadas = [...regras].sort((a, b) => {
-    const cmp = valorOrdenavel(a, ordenarPor).localeCompare(valorOrdenavel(b, ordenarPor), "pt-BR");
+  const descricoesOrdenadas = [...descricoes].sort((a, b) => {
+    const cmp = a[ordenarPor].toLowerCase().localeCompare(b[ordenarPor].toLowerCase(), "pt-BR");
     return ordemAsc ? cmp : -cmp;
   });
 
-  function IconeOrdenacao({ coluna }: { coluna: ColunaOrdenavel }) {
+  function IconeOrdenacao({ coluna }: { coluna: ColunaDescricao }) {
     if (ordenarPor !== coluna) return <ArrowUpDown className="h-3 w-3 opacity-40" />;
     return ordemAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
+  }
+
+  function padroesPreview(descricaoId: number): string {
+    const padroes = regras.filter((r) => r.dreDescricaoId === descricaoId).map((r) => r.padrao);
+    if (padroes.length === 0) return "—";
+    return padroes.join(" ou ");
   }
 
   const categoriasPorSecao = SECOES.map((s) => ({
     ...s,
     itens: categorias.filter((c) => c.secao === s.value),
   })).filter((s) => s.itens.length > 0);
-
-  const descricoesPorCategoria = categorias
-    .map((c) => ({ categoria: c, itens: descricoes.filter((d) => d.dreCategoriaId === c.id) }))
-    .filter((g) => g.itens.length > 0);
 
   return (
     <div className="space-y-6">
@@ -323,171 +292,22 @@ export default function Parametros() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-base flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-                <Settings2 className="h-4 w-4" /> Regras de categorização
-              </CardTitle>
-              <CardDescription>Nome no extrato → Descrição do DRE. Aplicadas na importação e no "Reprocessar pendentes".</CardDescription>
-            </div>
-            <Dialog open={regraModalOpen} onOpenChange={setRegraModalOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" onClick={abrirNovaRegra}>
-                  <Plus className="h-3.5 w-3.5 mr-1.5" /> Nova regra
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>{regraEditandoId ? "Editar regra" : "Nova regra"}</DialogTitle>
-                  <DialogDescription>
-                    O padrão é comparado (sem diferenciar maiúsculas) contra o tipo + descrição da transação. Faixa de valor é opcional —
-                    útil quando a mesma contraparte significa coisas diferentes dependendo do valor.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-3">
-                  <div>
-                    <Label className="text-xs">Padrão de texto</Label>
-                    <Input
-                      placeholder='Ex.: "MDS SERVICOS TERCEIRIZADOS"'
-                      value={regraForm.padrao}
-                      onChange={(e) => setRegraForm({ ...regraForm, padrao: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Descrição (a categoria vem por herança)</Label>
-                    <DescricaoCombobox
-                      descricoes={descricoes}
-                      categorias={categorias}
-                      value={regraForm.dreDescricaoId ? Number(regraForm.dreDescricaoId) : null}
-                      placeholder="Selecione ou crie..."
-                      onChange={(id) => setRegraForm({ ...regraForm, dreDescricaoId: id ? String(id) : "" })}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label className="text-xs">Valor mínimo (opcional)</Label>
-                      <Input
-                        placeholder="0,00"
-                        value={regraForm.valorMin}
-                        onChange={(e) => setRegraForm({ ...regraForm, valorMin: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Valor máximo (opcional)</Label>
-                      <Input
-                        placeholder="0,00"
-                        value={regraForm.valorMax}
-                        onChange={(e) => setRegraForm({ ...regraForm, valorMax: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <Checkbox
-                      checked={regraForm.alertaSeRepetirNoMes}
-                      onCheckedChange={(v) => setRegraForm({ ...regraForm, alertaSeRepetirNoMes: !!v })}
-                    />
-                    Alertar se repetir no mesmo mês (despesa mensal única esperada)
-                  </label>
-                </div>
-                <DialogFooter>
-                  <Button
-                    onClick={salvarRegra}
-                    disabled={!regraForm.padrao.trim() || !regraForm.dreDescricaoId || criarRegraMutation.isPending || atualizarRegraMutation.isPending}
-                  >
-                    {(criarRegraMutation.isPending || atualizarRegraMutation.isPending) ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                    {regraEditandoId ? "Salvar" : "Criar"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {regrasQuery.isLoading ? (
-            <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-          ) : regras.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">Nenhuma regra cadastrada.</p>
-          ) : (
-            <div className="rounded-md border border-border/50 overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/30">
-                    <TableHead className="text-xs min-w-[220px]">
-                      <button className="flex items-center gap-1 hover:text-foreground" onClick={() => alternarOrdenacao("descricaoNome")}>
-                        Descrição <IconeOrdenacao coluna="descricaoNome" />
-                      </button>
-                    </TableHead>
-                    <TableHead className="text-xs">
-                      <button className="flex items-center gap-1 hover:text-foreground" onClick={() => alternarOrdenacao("categoriaNome")}>
-                        Categoria <IconeOrdenacao coluna="categoriaNome" />
-                      </button>
-                    </TableHead>
-                    <TableHead className="text-xs">
-                      <button className="flex items-center gap-1 hover:text-foreground" onClick={() => alternarOrdenacao("padrao")}>
-                        Padrão <IconeOrdenacao coluna="padrao" />
-                      </button>
-                    </TableHead>
-                    <TableHead className="text-xs">Faixa de valor</TableHead>
-                    <TableHead className="text-xs w-24">Origem</TableHead>
-                    <TableHead className="text-xs w-20">Ativa</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {regrasOrdenadas.map((r) => (
-                    <TableRow
-                      key={r.id}
-                      className={`text-sm cursor-pointer hover:bg-muted/40 ${r.ativa === "false" ? "opacity-50" : ""}`}
-                      onClick={() => abrirEditarRegra(r)}
-                    >
-                      <TableCell className="text-sm min-w-[220px] whitespace-normal">{r.descricaoNome}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{r.categoriaNome}</TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">{r.padrao}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {r.valorMin || r.valorMax
-                          ? `${r.valorMin ? `de R$ ${r.valorMin}` : ""} ${r.valorMax ? `até R$ ${r.valorMax}` : ""}`.trim()
-                          : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs font-normal">
-                          {r.origem === "seed" ? "Padrão" : r.origem === "aprendida" ? "Aprendida" : "Manual"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={r.ativa === "true"}
-                          onCheckedChange={(v) => ativarDesativarMutation.mutate({ id: r.id, ativa: !!v })}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="border-border/50 shadow-sm">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
                 <Tags className="h-4 w-4" /> Descrições
               </CardTitle>
               <CardDescription>
-                O nível que fica direto no lançamento — clique numa descrição pra editar ou excluir.
+                Cada Descrição pode ter vários padrões de texto (usados com "ou") — clique numa linha pra gerenciar.
               </CardDescription>
             </div>
             <Dialog open={descricaoModalOpen} onOpenChange={setDescricaoModalOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" variant="outline" onClick={abrirNovaDescricao}>
+                <Button size="sm" onClick={abrirNovaDescricao}>
                   <Plus className="h-3.5 w-3.5 mr-1.5" /> Nova descrição
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>{descricaoEditandoId ? "Editar descrição" : "Nova descrição"}</DialogTitle>
-                  <DialogDescription>
-                    Toda Descrição pertence a 1 Categoria. Pra definir o padrão de texto que identifica ela sozinha no
-                    extrato, use "Nova regra" acima (uma Descrição pode ter várias regras).
-                  </DialogDescription>
+                  <DialogDescription>Toda Descrição pertence a 1 Categoria.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">
                   <div>
@@ -509,6 +329,77 @@ export default function Parametros() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={salvarDescricao}
+                      disabled={!descricaoForm.nome.trim() || !descricaoForm.dreCategoriaId || criarDescricaoMutation.isPending || atualizarDescricaoMutation.isPending}
+                    >
+                      {(criarDescricaoMutation.isPending || atualizarDescricaoMutation.isPending) ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                      {descricaoEditandoId ? "Salvar nome/categoria" : "Criar descrição"}
+                    </Button>
+                  </div>
+
+                  {descricaoEditandoId && (
+                    <div className="space-y-2 border-t pt-3">
+                      <Label className="text-xs">Padrões de texto no extrato (qualquer um identifica essa descrição — relação "ou")</Label>
+                      <div className="space-y-1.5">
+                        {padroesDaDescricaoEditando.length === 0 && (
+                          <p className="text-xs text-muted-foreground">Nenhum padrão ainda — sem padrão, essa descrição só pode ser aplicada manualmente.</p>
+                        )}
+                        {padroesDaDescricaoEditando.map((r) => (
+                          <div key={r.id} className="flex items-center gap-1.5">
+                            <Input
+                              key={r.id}
+                              defaultValue={r.padrao}
+                              className="h-7 text-xs font-mono"
+                              onBlur={(e) => {
+                                const novoValor = e.target.value.trim();
+                                if (novoValor && novoValor !== r.padrao) {
+                                  atualizarRegraMutation.mutate({ id: r.id, padrao: novoValor });
+                                }
+                              }}
+                            />
+                            <Checkbox
+                              checked={r.ativa === "true"}
+                              onCheckedChange={(v) => ativarDesativarMutation.mutate({ id: r.id, ativa: !!v })}
+                              title="Ativo"
+                            />
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                              title="Excluir padrão"
+                              onClick={() => excluirRegraMutation.mutate({ id: r.id })}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                        <div className="flex items-center gap-1.5">
+                          <Input
+                            placeholder='Novo padrão, ex.: "MDS SERVICOS TERCEIRIZADOS"'
+                            className="h-7 text-xs"
+                            value={novoPadraoTexto}
+                            onChange={(e) => setNovoPadraoTexto(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); adicionarPadrao(); } }}
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="shrink-0"
+                            onClick={adicionarPadrao}
+                            disabled={!novoPadraoTexto.trim() || criarRegraMutation.isPending}
+                          >
+                            <Plus className="h-3.5 w-3.5 mr-1" /> Adicionar
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <DialogFooter className="flex items-center justify-between sm:justify-between">
                   {descricaoEditandoId ? (
@@ -521,39 +412,53 @@ export default function Parametros() {
                         if (d) setConfirmacaoExclusao({ tipo: "descricao", id: d.id, nome: d.nome });
                       }}
                     >
-                      <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Excluir
+                      <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Excluir descrição
                     </Button>
                   ) : <span />}
-                  <Button
-                    onClick={salvarDescricao}
-                    disabled={!descricaoForm.nome.trim() || !descricaoForm.dreCategoriaId || criarDescricaoMutation.isPending || atualizarDescricaoMutation.isPending}
-                  >
-                    {(criarDescricaoMutation.isPending || atualizarDescricaoMutation.isPending) ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                    {descricaoEditandoId ? "Salvar" : "Criar"}
-                  </Button>
+                  <Button variant="ghost" onClick={() => setDescricaoModalOpen(false)}>Fechar</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {descricoesQuery.isLoading ? (
+        <CardContent>
+          {descricoesQuery.isLoading || regrasQuery.isLoading ? (
             <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-          ) : descricoesPorCategoria.length === 0 ? (
+          ) : descricoes.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">Nenhuma descrição cadastrada.</p>
           ) : (
-            descricoesPorCategoria.map((g) => (
-              <div key={g.categoria.id}>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{g.categoria.nome}</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {g.itens.map((d) => (
-                    <button key={d.id} onClick={() => abrirEditarDescricao(d)}>
-                      <Badge variant="outline" className="text-xs font-normal cursor-pointer hover:bg-muted">{d.nome}</Badge>
-                    </button>
+            <div className="rounded-md border border-border/50 overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/30">
+                    <TableHead className="text-xs min-w-[220px]">
+                      <button className="flex items-center gap-1 hover:text-foreground" onClick={() => alternarOrdenacao("nome")}>
+                        Descrição <IconeOrdenacao coluna="nome" />
+                      </button>
+                    </TableHead>
+                    <TableHead className="text-xs min-w-[200px]">
+                      <button className="flex items-center gap-1 hover:text-foreground" onClick={() => alternarOrdenacao("categoriaNome")}>
+                        Categoria <IconeOrdenacao coluna="categoriaNome" />
+                      </button>
+                    </TableHead>
+                    <TableHead className="text-xs">Padrões (ou)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {descricoesOrdenadas.map((d) => (
+                    <TableRow
+                      key={d.id}
+                      className="text-sm cursor-pointer hover:bg-muted/40"
+                      onClick={() => abrirEditarDescricao(d)}
+                    >
+                      <TableCell className="text-sm min-w-[220px] whitespace-normal">{d.nome}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{d.categoriaNome}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground truncate max-w-xs">{padroesPreview(d.id)}</TableCell>
+                    </TableRow>
                   ))}
-                </div>
-              </div>
-            ))
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -652,8 +557,8 @@ export default function Parametros() {
             <AlertDialogTitle>Excluir "{confirmacaoExclusao?.nome}"?</AlertDialogTitle>
             <AlertDialogDescription>
               {confirmacaoExclusao?.tipo === "categoria"
-                ? "Isso exclui todas as Descrições dentro dessa categoria e as regras ligadas a elas. Lançamentos já categorizados voltam pra \"Pendente\"."
-                : "Isso exclui as regras ligadas a essa Descrição. Lançamentos já categorizados com ela voltam pra \"Pendente\"."}
+                ? "Isso exclui todas as Descrições dentro dessa categoria e os padrões ligados a elas. Lançamentos já categorizados voltam pra \"Pendente\"."
+                : "Isso exclui os padrões ligados a essa Descrição. Lançamentos já categorizados com ela voltam pra \"Pendente\"."}
               {" "}Não dá pra desfazer.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -684,7 +589,7 @@ export default function Parametros() {
               </div>
             )}
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Regras removidas</span>
+              <span className="text-muted-foreground">Padrões removidos</span>
               <span className="font-medium">{relatorioExclusao?.regrasRemovidas}</span>
             </div>
             <div className="flex justify-between">
