@@ -294,8 +294,8 @@ export const interExtratos = mysqlTable("inter_extratos", {
   contaDestino: varchar("contaDestino", { length: 32 }),
   cpmf: varchar("cpmf", { length: 64 }),
   origem: mysqlEnum("origem", ["inter", "csv", "pdf", "ofx", "mercadopago", "caixa_fisico", "sicredi"]).default("inter").notNull(),
-  dreCategoriaId: int("dreCategoriaId"), // null = pendente (ainda não categorizado)
-  // pendente = sem categoria; sugerida = regra bateu sozinha, ainda não
+  dreDescricaoId: int("dreDescricaoId"), // null = pendente (ainda não categorizado)
+  // pendente = sem descrição; sugerida = regra bateu sozinha, ainda não
   // confirmada por humano; confirmada = humano escolheu ou confirmou.
   categorizacaoStatus: mysqlEnum("categorizacaoStatus", ["pendente", "sugerida", "confirmada"]).default("pendente").notNull(),
   // Nota livre, separada da categoria — a categoria agrupa (ex.: "Custos
@@ -351,6 +351,11 @@ export const adquirenteVendas = mysqlTable("adquirente_vendas", {
   valorAntecipacao: decimal("valorAntecipacao", { precision: 12, scale: 2 }),
   valorLiquido: decimal("valorLiquido", { precision: 12, scale: 2 }),
   dataPagamento: varchar("dataPagamento", { length: 10 }), // AAAA-MM-DD — quando o valor efetivamente cai na conta
+  // Atribuído de forma determinística no sync (não precisa de match de
+  // texto — `tipo` já diz se é débito/crédito/pix) pra uma das 4
+  // Descrições de "Receitas de Vendas". Null quando `tipo` não é
+  // reconhecido (ex.: linha de taxa avulsa do Interpag).
+  dreDescricaoId: int("dreDescricaoId"),
   syncedAt: timestamp("syncedAt").defaultNow().notNull(),
 }, (table) => ({
   unidadeDataIdx: index("adquirente_vendas_unidade_data_idx").on(table.unidadeId, table.dataHora),
@@ -415,21 +420,40 @@ export type DreCategoria = typeof dreCategorias.$inferSelect;
 export type InsertDreCategoria = typeof dreCategorias.$inferInsert;
 
 /**
+ * Nível intermediário entre Categoria e lançamento: toda transação
+ * categorizada aponta pra uma Descrição (ex.: "Yamada Contabilidade",
+ * "Receita C. Débito"), nunca direto pra Categoria — a Categoria é
+ * sempre herdada daqui. Uma Descrição pertence a exatamente 1 Categoria;
+ * uma Categoria agrupa N Descrições. Modelo definido com o usuário em
+ * 2026-08-07 (áudio) — antes disso a "descrição" era só um rótulo livre
+ * opcional em cima da regra, sem estrutura própria, o que não dava pra
+ * saber "quanto é de cada contraparte" dentro de uma categoria que
+ * agrupa várias (ex.: "Consultoria/Assessoria" com vários escritórios).
+ */
+export const dreDescricoes = mysqlTable("dre_descricoes", {
+  id: int("id").autoincrement().primaryKey(),
+  nome: varchar("nome", { length: 256 }).notNull(),
+  dreCategoriaId: int("dreCategoriaId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  categoriaIdx: index("dre_descricoes_categoria_idx").on(table.dreCategoriaId),
+}));
+
+export type DreDescricao = typeof dreDescricoes.$inferSelect;
+export type InsertDreDescricao = typeof dreDescricoes.$inferInsert;
+
+/**
  * Regras de categorização automática: se `padrao` aparece (case-
  * insensitive) no histórico+descrição da transação, sugere
- * `dreCategoriaId`. Fica em tabela (não hardcoded) pra dar pra adicionar
- * regra nova sem deploy — mesmo espírito da planilha antiga, mas sem
- * ficar preso a fórmula quebrada.
+ * `dreDescricaoId` (a Categoria vem por herança da Descrição). Fica em
+ * tabela (não hardcoded) pra dar pra adicionar regra nova sem deploy —
+ * mesmo espírito da planilha antiga, mas sem ficar preso a fórmula
+ * quebrada.
  */
 export const dreRegras = mysqlTable("dre_regras", {
   id: int("id").autoincrement().primaryKey(),
-  // Rótulo legível pra essa regra específica (ex.: "Escritório de
-  // advocacia Herdade Martini") — null = mostra o nome da categoria
-  // como fallback. Diferente do padrão (texto técnico de match) e da
-  // categoria (agrupa várias regras); a descrição esclarece o caso.
-  descricao: varchar("descricao", { length: 256 }),
   padrao: varchar("padrao", { length: 256 }).notNull(),
-  dreCategoriaId: int("dreCategoriaId").notNull(),
+  dreDescricaoId: int("dreDescricaoId").notNull(),
   // Faixa de valor opcional — mesma contraparte pode significar coisas
   // diferentes dependendo do valor (ex.: MDS Serviços até R$1.600 é
   // limpeza, acima é lavanderia). Null = sem restrição de valor.

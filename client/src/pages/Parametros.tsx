@@ -24,10 +24,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DescricaoCombobox } from "@/components/DescricaoCombobox";
 import { Loader2, Plus, Settings2, ListTree, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { toast } from "sonner";
 
-type ColunaOrdenavel = "descricao" | "categoriaNome" | "padrao";
+type ColunaOrdenavel = "descricaoNome" | "categoriaNome" | "padrao";
 
 const SECOES: { value: string; label: string }[] = [
   { value: "receitas", label: "Receitas" },
@@ -45,13 +46,16 @@ function labelSecao(secao: string) {
   return SECOES.find((s) => s.value === secao)?.label ?? secao;
 }
 
-const REGRA_FORM_VAZIO = { descricao: "", padrao: "", dreCategoriaId: "", valorMin: "", valorMax: "", alertaSeRepetirNoMes: false };
+const REGRA_FORM_VAZIO = { padrao: "", dreDescricaoId: "", valorMin: "", valorMax: "", alertaSeRepetirNoMes: false };
 
 export default function Parametros() {
   const utils = trpc.useUtils();
 
   const categoriasQuery = trpc.dreCategorias.list.useQuery();
   const categorias = categoriasQuery.data ?? [];
+
+  const descricoesQuery = trpc.dreDescricoes.list.useQuery();
+  const descricoes = descricoesQuery.data ?? [];
 
   const regrasQuery = trpc.dreRegras.list.useQuery();
   const regras = regrasQuery.data ?? [];
@@ -99,11 +103,6 @@ export default function Parametros() {
     onError: (err) => toast.error(err.message),
   });
 
-  const atualizarDescricaoMutation = trpc.dreRegras.atualizarDescricao.useMutation({
-    onSuccess: () => utils.dreRegras.list.invalidate(),
-    onError: (err) => toast.error(err.message),
-  });
-
   function abrirNovaRegra() {
     setRegraEditandoId(null);
     setRegraForm(REGRA_FORM_VAZIO);
@@ -113,9 +112,8 @@ export default function Parametros() {
   function abrirEditarRegra(r: typeof regras[number]) {
     setRegraEditandoId(r.id);
     setRegraForm({
-      descricao: r.descricao ?? "",
       padrao: r.padrao,
-      dreCategoriaId: String(r.dreCategoriaId),
+      dreDescricaoId: String(r.dreDescricaoId),
       valorMin: r.valorMin ?? "",
       valorMax: r.valorMax ?? "",
       alertaSeRepetirNoMes: r.alertaSeRepetirNoMes === "true",
@@ -124,11 +122,10 @@ export default function Parametros() {
   }
 
   function salvarRegra() {
-    if (!regraForm.padrao.trim() || !regraForm.dreCategoriaId) return;
+    if (!regraForm.padrao.trim() || !regraForm.dreDescricaoId) return;
     const dados = {
-      descricao: regraForm.descricao.trim() || undefined,
       padrao: regraForm.padrao.trim(),
-      dreCategoriaId: Number(regraForm.dreCategoriaId),
+      dreDescricaoId: Number(regraForm.dreDescricaoId),
       valorMin: regraForm.valorMin ? parseFloat(regraForm.valorMin.replace(",", ".")) : undefined,
       valorMax: regraForm.valorMax ? parseFloat(regraForm.valorMax.replace(",", ".")) : undefined,
       alertaSeRepetirNoMes: regraForm.alertaSeRepetirNoMes,
@@ -141,7 +138,7 @@ export default function Parametros() {
   }
 
   // ===== Ordenação =====
-  const [ordenarPor, setOrdenarPor] = useState<ColunaOrdenavel>("descricao");
+  const [ordenarPor, setOrdenarPor] = useState<ColunaOrdenavel>("descricaoNome");
   const [ordemAsc, setOrdemAsc] = useState(true);
 
   function alternarOrdenacao(coluna: ColunaOrdenavel) {
@@ -154,7 +151,6 @@ export default function Parametros() {
   }
 
   function valorOrdenavel(r: typeof regras[number], coluna: ColunaOrdenavel): string {
-    if (coluna === "descricao") return (r.descricao || r.categoriaNome).toLowerCase();
     return r[coluna].toLowerCase();
   }
 
@@ -209,14 +205,6 @@ export default function Parametros() {
                 </DialogHeader>
                 <div className="space-y-3">
                   <div>
-                    <Label className="text-xs">Descrição (opcional)</Label>
-                    <Input
-                      placeholder="Ex.: Escritório de advocacia Herdade Martini — usa o nome da categoria se vazio"
-                      value={regraForm.descricao}
-                      onChange={(e) => setRegraForm({ ...regraForm, descricao: e.target.value })}
-                    />
-                  </div>
-                  <div>
                     <Label className="text-xs">Padrão de texto</Label>
                     <Input
                       placeholder='Ex.: "MDS SERVICOS TERCEIRIZADOS"'
@@ -225,15 +213,14 @@ export default function Parametros() {
                     />
                   </div>
                   <div>
-                    <Label className="text-xs">Categoria DRE</Label>
-                    <Select value={regraForm.dreCategoriaId} onValueChange={(v) => setRegraForm({ ...regraForm, dreCategoriaId: v })}>
-                      <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                      <SelectContent>
-                        {categorias.map((c) => (
-                          <SelectItem key={c.id} value={String(c.id)}>{c.nome}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label className="text-xs">Descrição (a categoria vem por herança)</Label>
+                    <DescricaoCombobox
+                      descricoes={descricoes}
+                      categorias={categorias}
+                      value={regraForm.dreDescricaoId ? Number(regraForm.dreDescricaoId) : null}
+                      placeholder="Selecione ou crie..."
+                      onChange={(id) => setRegraForm({ ...regraForm, dreDescricaoId: id ? String(id) : "" })}
+                    />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -264,7 +251,7 @@ export default function Parametros() {
                 <DialogFooter>
                   <Button
                     onClick={salvarRegra}
-                    disabled={!regraForm.padrao.trim() || !regraForm.dreCategoriaId || criarRegraMutation.isPending || atualizarRegraMutation.isPending}
+                    disabled={!regraForm.padrao.trim() || !regraForm.dreDescricaoId || criarRegraMutation.isPending || atualizarRegraMutation.isPending}
                   >
                     {(criarRegraMutation.isPending || atualizarRegraMutation.isPending) ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                     {regraEditandoId ? "Salvar" : "Criar"}
@@ -284,9 +271,9 @@ export default function Parametros() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/30">
-                    <TableHead className="text-xs">
-                      <button className="flex items-center gap-1 hover:text-foreground" onClick={() => alternarOrdenacao("descricao")}>
-                        Descrição <IconeOrdenacao coluna="descricao" />
+                    <TableHead className="text-xs min-w-[220px]">
+                      <button className="flex items-center gap-1 hover:text-foreground" onClick={() => alternarOrdenacao("descricaoNome")}>
+                        Descrição <IconeOrdenacao coluna="descricaoNome" />
                       </button>
                     </TableHead>
                     <TableHead className="text-xs">
@@ -311,19 +298,7 @@ export default function Parametros() {
                       className={`text-sm cursor-pointer hover:bg-muted/40 ${r.ativa === "false" ? "opacity-50" : ""}`}
                       onClick={() => abrirEditarRegra(r)}
                     >
-                      <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
-                        <Input
-                          key={r.id}
-                          defaultValue={r.descricao ?? r.categoriaNome}
-                          className="h-7 text-xs border-transparent hover:border-input focus-visible:border-input bg-transparent"
-                          onBlur={(e) => {
-                            const novoValor = e.target.value.trim();
-                            if (novoValor && novoValor !== (r.descricao ?? r.categoriaNome)) {
-                              atualizarDescricaoMutation.mutate({ id: r.id, descricao: novoValor });
-                            }
-                          }}
-                        />
-                      </TableCell>
+                      <TableCell className="text-sm min-w-[220px] whitespace-normal">{r.descricaoNome}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{r.categoriaNome}</TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">{r.padrao}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">

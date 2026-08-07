@@ -1,8 +1,8 @@
-import { eq, desc, and, gte, lte, isNull, like, ne } from "drizzle-orm";
+import { eq, desc, and, gte, lte, isNull, like, ne, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreRegras, adquirenteVendas, comandaDiaria, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda } from "../drizzle/schema";
 import { ENV } from './_core/env';
-import { DRE_CATEGORIAS_SEED, DRE_REGRAS_SEED, sugerirCategoriaNome, extrairPadraoContraparte, ehTransferenciaEntreContas, EXCLUIDO_NOME, type RegraMatch } from "./dreCategorizacao";
+import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, extrairPadraoContraparte, ehTransferenciaEntreContas, EXCLUIDO_NOME, type RegraMatch } from "./dreCategorizacao";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -432,6 +432,21 @@ export async function upsertInterExtratos(
  * — necessário porque o Interpag repete o mesmo idTransacaoExterno em
  * cada parcela de uma venda parcelada (só o campo parcela muda).
  */
+/**
+ * Classifica o tipo de uma venda de adquirente (payment_type_id do
+ * Mercado Pago — em inglês — ou texto livre do CSV Interpag/Granito —
+ * em português) numa das 3 Descrições de receita "de máquina". Pix
+ * direto no banco (não pela maquininha) é tratado à parte, via regra de
+ * texto "Pix recebido" em inter_extratos.
+ */
+function nomeDescricaoAdquirente(tipo: string | null | undefined): string | null {
+  const t = (tipo || "").toLowerCase();
+  if (t.includes("pix")) return "Receita de Pix";
+  if (t.includes("debit")) return "Receita C. Débito";
+  if (t.includes("credit")) return "Receita C. Crédito";
+  return null;
+}
+
 export async function upsertAdquirenteVendas(
   unidadeId: number,
   vendas: InsertAdquirenteVenda[],
@@ -440,8 +455,23 @@ export async function upsertAdquirenteVendas(
   if (!db) return 0;
   if (vendas.length === 0) return 0;
 
+  // Resolve os ids das Descrições de receita uma vez (não numa query
+  // por linha) — mesmo espírito de listRegrasParaMatch/listCnpjsDeContas.
+  const nomesNecessarios = Array.from(new Set(
+    vendas.map((v) => nomeDescricaoAdquirente(v.tipo)).filter((n): n is string => n !== null),
+  ));
+  const idPorNomeDescricao = new Map<string, number>();
+  for (const nome of nomesNecessarios) {
+    const id = await resolverDescricaoIdPorNome(nome);
+    if (id) idPorNomeDescricao.set(nome, id);
+  }
+
   let inseridos = 0;
   for (const v of vendas) {
+    const nomeDescricao = nomeDescricaoAdquirente(v.tipo);
+    const dreDescricaoId = nomeDescricao ? idPorNomeDescricao.get(nomeDescricao) : undefined;
+    const linha = { ...v, dreDescricaoId };
+
     if (v.idTransacaoExterno) {
       const existente = await db
         .select({ id: adquirenteVendas.id })
@@ -456,11 +486,11 @@ export async function upsertAdquirenteVendas(
         )
         .limit(1);
       if (existente.length > 0) {
-        await db.update(adquirenteVendas).set(v).where(eq(adquirenteVendas.id, existente[0].id));
+        await db.update(adquirenteVendas).set(linha).where(eq(adquirenteVendas.id, existente[0].id));
         continue;
       }
     }
-    await db.insert(adquirenteVendas).values({ ...v, unidadeId });
+    await db.insert(adquirenteVendas).values({ ...linha, unidadeId });
     inseridos++;
   }
   return inseridos;
@@ -558,20 +588,6 @@ export async function listComandaDiaria(unidadeId: number, dataInicio: string, d
   ));
 }
 
-/**
- * Classifica o campo `tipo` de uma venda de adquirente (payment_type_id
- * do Mercado Pago — em inglês — ou texto livre do CSV Interpag/Granito
- * — em português) num dos baldes da conciliação. Qualquer outra coisa
- * (boleto, taxa avulsa) fica de fora da comparação.
- */
-function classificarFormaPagamentoAdquirente(tipo: string | null): "debito" | "credito" | "pix" | null {
-  const t = (tipo || "").toLowerCase();
-  if (t.includes("pix")) return "pix";
-  if (t.includes("debit")) return "debito";
-  if (t.includes("credit")) return "credito";
-  return null;
-}
-
 export interface ResumoContasBancariasDia {
   data: string;
   dinheiro: number;
@@ -588,17 +604,28 @@ export interface ItemContaBancaria {
   valor: number;
 }
 
+const NOME_DESCRICAO_POR_FORMA: Record<ItemContaBancaria["forma"], string> = {
+  dinheiro: "Receita em Espécie",
+  debito: "Receita C. Débito",
+  credito: "Receita C. Crédito",
+  pix: "Receita de Pix",
+};
+
 /**
  * Lado "Contas bancárias" da conciliação, item a item — sempre calculado
- * ao vivo a partir do que já está sincronizado (sem tabela própria):
- * Dinheiro = entradas do Caixa Físico; Débito/Crédito/Pix (de máquina) =
- * adquirente_vendas classificado por tipo; Pix (direto no banco) =
- * inter_extratos com "pix" no histórico (mesmo padrão da regra DRE "Pix
- * recebido"). Agrupado pelo dia da venda (dataHora/dataEntrada), não pela
- * data de liquidação — o objetivo é comparar "o que a recepção lançou
- * hoje" com "o que realmente aconteceu hoje", não quando o dinheiro caiu
- * na conta. Serve tanto pro resumo (agregado) quanto pro tooltip de
- * auditoria (lançamento a lançamento).
+ * ao vivo a partir do que já está categorizado (sem tabela própria):
+ * filtra adquirente_vendas e inter_extratos pelas 4 Descrições de
+ * "Receitas de Vendas" (dreDescricaoId), em vez de adivinhar por texto/
+ * tipo como antes. É isso que corrige o bug de contaminação (liquidação
+ * do Mercado Pago sendo contada como Pix): essas linhas agora são
+ * categorizadas como "Excluído do DRE" (ver
+ * categorizarTransacaoAutomaticamente), então nem aparecem aqui. Caixa
+ * Físico entra pelo mesmo caminho (categorizado como "Receita em
+ * Espécie"), sem precisar de caso especial. Agrupado pelo dia da venda
+ * (dataHora/dataEntrada), não pela data de liquidação — o objetivo é
+ * comparar "o que a recepção lançou hoje" com "o que realmente
+ * aconteceu hoje". Serve tanto pro resumo (agregado) quanto pro tooltip
+ * de auditoria (lançamento a lançamento).
  */
 export async function detalheContasBancariasPorDia(
   unidadeId: number,
@@ -609,19 +636,28 @@ export async function detalheContasBancariasPorDia(
   const db = await getDb();
   if (!db) return itens;
 
+  const formaPorDescricaoId = new Map<number, ItemContaBancaria["forma"]>();
+  for (const [forma, nome] of Object.entries(NOME_DESCRICAO_POR_FORMA) as [ItemContaBancaria["forma"], string][]) {
+    const id = await resolverDescricaoIdPorNome(nome);
+    if (id) formaPorDescricaoId.set(id, forma);
+  }
+  const idsReceita = Array.from(formaPorDescricaoId.keys());
+  if (idsReceita.length === 0) return itens;
+
   const vendas = await db.select().from(adquirenteVendas).where(and(
     eq(adquirenteVendas.unidadeId, unidadeId),
     gte(adquirenteVendas.dataHora, `${dataInicio} 00:00:00`),
     lte(adquirenteVendas.dataHora, `${dataFim} 23:59:59`),
+    inArray(adquirenteVendas.dreDescricaoId, idsReceita),
   ));
   for (const v of vendas) {
-    const balde = classificarFormaPagamentoAdquirente(v.tipo);
-    if (!balde) continue;
+    const forma = v.dreDescricaoId ? formaPorDescricaoId.get(v.dreDescricaoId) : undefined;
+    if (!forma) continue;
     const [data, hora] = v.dataHora.split(" ");
     const adquirenteLabel = v.adquirente === "mercadopago" ? "Mercado Pago" : "Granito";
     itens.push({
       data,
-      forma: balde,
+      forma,
       horario: (hora || "").slice(0, 5),
       descricao: `${adquirenteLabel} · ${v.bandeira || v.tipo || "-"}${v.parcela ? ` (${v.parcela})` : ""}`,
       valor: Number(v.valorBruto ?? 0),
@@ -633,23 +669,18 @@ export async function detalheContasBancariasPorDia(
     eq(interExtratos.tipoOperacao, "C"),
     gte(interExtratos.dataEntrada, dataInicio),
     lte(interExtratos.dataEntrada, dataFim),
+    inArray(interExtratos.dreDescricaoId, idsReceita),
   ));
   for (const e of extratos) {
-    const valor = Number(e.valor);
-    if (e.origem === "caixa_fisico") {
-      itens.push({ data: e.dataEntrada, forma: "dinheiro", horario: "", descricao: e.titulo || "Caixa Físico", valor });
-      continue;
-    }
-    const texto = `${e.titulo || ""} ${e.descricao || ""} ${e.tipoTransacao || ""}`.toLowerCase();
-    if (texto.includes("pix")) {
-      itens.push({
-        data: e.dataEntrada,
-        forma: "pix",
-        horario: "",
-        descricao: `${e.titulo || e.tipoTransacao || "Pix recebido"}${e.nomeOrigem ? ` — ${e.nomeOrigem}` : ""}`,
-        valor,
-      });
-    }
+    const forma = e.dreDescricaoId ? formaPorDescricaoId.get(e.dreDescricaoId) : undefined;
+    if (!forma) continue;
+    itens.push({
+      data: e.dataEntrada,
+      forma,
+      horario: "",
+      descricao: `${e.titulo || e.tipoTransacao || "Recebimento"}${e.nomeOrigem ? ` — ${e.nomeOrigem}` : ""}`,
+      valor: Number(e.valor),
+    });
   }
 
   return itens;
@@ -886,16 +917,31 @@ export async function ensureDreSeed() {
 
   await db.insert(dreCategorias).values(DRE_CATEGORIAS_SEED);
 
-  const todas = await db.select().from(dreCategorias);
-  const idPorNome = new Map(todas.map((c) => [c.nome, c.id]));
+  const categoriasInseridas = await db.select().from(dreCategorias);
+  const categoriaIdPorNome = new Map(categoriasInseridas.map((c) => [c.nome, c.id]));
+
+  const descricoesParaInserir = DRE_DESCRICOES_SEED
+    .map((d) => {
+      const dreCategoriaId = categoriaIdPorNome.get(d.categoriaNome);
+      if (!dreCategoriaId) return null;
+      return { nome: d.nome, dreCategoriaId };
+    })
+    .filter((d): d is NonNullable<typeof d> => d !== null);
+
+  if (descricoesParaInserir.length > 0) {
+    await db.insert(dreDescricoes).values(descricoesParaInserir);
+  }
+
+  const descricoesInseridas = await db.select().from(dreDescricoes);
+  const descricaoIdPorNome = new Map(descricoesInseridas.map((d) => [d.nome, d.id]));
 
   const regrasParaInserir = DRE_REGRAS_SEED
     .map((r) => {
-      const dreCategoriaId = idPorNome.get(r.categoriaNome);
-      if (!dreCategoriaId) return null;
+      const dreDescricaoId = descricaoIdPorNome.get(r.descricaoNome);
+      if (!dreDescricaoId) return null;
       return {
         padrao: r.padrao,
-        dreCategoriaId,
+        dreDescricaoId,
         origem: "seed" as const,
         valorMin: r.valorMin?.toFixed(2),
         valorMax: r.valorMax?.toFixed(2),
@@ -931,18 +977,57 @@ export async function criarDreCategoria(nome: string, secao: string) {
   return result[0]?.id;
 }
 
+export async function listDreDescricoes() {
+  await ensureDreSeed();
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: dreDescricoes.id,
+    nome: dreDescricoes.nome,
+    dreCategoriaId: dreDescricoes.dreCategoriaId,
+    categoriaNome: dreCategorias.nome,
+  })
+    .from(dreDescricoes)
+    .innerJoin(dreCategorias, eq(dreDescricoes.dreCategoriaId, dreCategorias.id))
+    .orderBy(dreCategorias.nome, dreDescricoes.nome);
+}
+
+export async function listDreDescricoesPorCategoria(dreCategoriaId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(dreDescricoes).where(eq(dreDescricoes.dreCategoriaId, dreCategoriaId)).orderBy(dreDescricoes.nome);
+}
+
+/**
+ * Descrição nova dentro de uma categoria existente — usada tanto pela
+ * tela de Parâmetros quanto pelo modal "criar nova descrição" ao
+ * categorizar um lançamento em Extratos.
+ */
+export async function criarDreDescricao(nome: string, dreCategoriaId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.insert(dreDescricoes).values({ nome, dreCategoriaId }).$returningId();
+  return result[0]?.id;
+}
+
+async function resolverDescricaoIdPorNome(nome: string): Promise<number | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const linha = await db.select({ id: dreDescricoes.id }).from(dreDescricoes).where(eq(dreDescricoes.nome, nome)).limit(1);
+  return linha[0]?.id ?? null;
+}
+
 export interface DadosDreRegra {
-  descricao?: string;
   padrao: string;
-  dreCategoriaId: number;
+  dreDescricaoId: number;
   valorMin?: string;
   valorMax?: string;
   alertaSeRepetirNoMes?: boolean;
 }
 
 /**
- * Todas as regras (inclusive inativas) com o nome da categoria já
- * resolvido — pra tela de gerenciamento em Parâmetros.
+ * Todas as regras (inclusive inativas) com o nome da descrição e da
+ * categoria já resolvidos — pra tela de gerenciamento em Parâmetros.
  */
 export async function listDreRegrasCompleto() {
   await ensureDreSeed();
@@ -950,9 +1035,10 @@ export async function listDreRegrasCompleto() {
   if (!db) return [];
   return db.select({
     id: dreRegras.id,
-    descricao: dreRegras.descricao,
     padrao: dreRegras.padrao,
-    dreCategoriaId: dreRegras.dreCategoriaId,
+    dreDescricaoId: dreRegras.dreDescricaoId,
+    descricaoNome: dreDescricoes.nome,
+    dreCategoriaId: dreDescricoes.dreCategoriaId,
     categoriaNome: dreCategorias.nome,
     valorMin: dreRegras.valorMin,
     valorMax: dreRegras.valorMax,
@@ -961,29 +1047,23 @@ export async function listDreRegrasCompleto() {
     ativa: dreRegras.ativa,
   })
     .from(dreRegras)
-    .innerJoin(dreCategorias, eq(dreRegras.dreCategoriaId, dreCategorias.id))
-    .orderBy(dreCategorias.nome, dreRegras.padrao);
+    .innerJoin(dreDescricoes, eq(dreRegras.dreDescricaoId, dreDescricoes.id))
+    .innerJoin(dreCategorias, eq(dreDescricoes.dreCategoriaId, dreCategorias.id))
+    .orderBy(dreDescricoes.nome, dreRegras.padrao);
 }
 
 export async function criarDreRegra(dados: DadosDreRegra) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.insert(dreRegras).values({
-    descricao: dados.descricao,
     padrao: dados.padrao,
-    dreCategoriaId: dados.dreCategoriaId,
+    dreDescricaoId: dados.dreDescricaoId,
     valorMin: dados.valorMin,
     valorMax: dados.valorMax,
     alertaSeRepetirNoMes: dados.alertaSeRepetirNoMes ? "true" : "false",
     origem: "manual",
   }).$returningId();
   return result[0]?.id;
-}
-
-export async function atualizarDescricaoDreRegra(id: number, descricao: string) {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(dreRegras).set({ descricao: descricao || null }).where(eq(dreRegras.id, id));
 }
 
 export async function atualizarDreRegra(id: number, dados: Partial<DadosDreRegra>) {
@@ -1003,24 +1083,24 @@ export async function ativarDesativarDreRegra(id: number, ativa: boolean) {
 }
 
 /**
- * Regras ativas com o id da categoria já resolvido — buscar uma vez e
+ * Regras ativas com o id da descrição já resolvido — buscar uma vez e
  * reusar num loop de importação em lote, em vez de uma query por
  * transação.
  */
-export async function listRegrasParaMatch(): Promise<(RegraMatch & { dreCategoriaId: number; alertaSeRepetirNoMes: boolean })[]> {
+export async function listRegrasParaMatch(): Promise<(RegraMatch & { dreDescricaoId: number; alertaSeRepetirNoMes: boolean })[]> {
   await ensureDreSeed();
   const db = await getDb();
   if (!db) return [];
   const linhas = await db.select({
     padrao: dreRegras.padrao,
-    categoriaNome: dreCategorias.nome,
-    dreCategoriaId: dreRegras.dreCategoriaId,
+    descricaoNome: dreDescricoes.nome,
+    dreDescricaoId: dreRegras.dreDescricaoId,
     valorMin: dreRegras.valorMin,
     valorMax: dreRegras.valorMax,
     alertaSeRepetirNoMes: dreRegras.alertaSeRepetirNoMes,
   })
     .from(dreRegras)
-    .innerJoin(dreCategorias, eq(dreRegras.dreCategoriaId, dreCategorias.id))
+    .innerJoin(dreDescricoes, eq(dreRegras.dreDescricaoId, dreDescricoes.id))
     .where(eq(dreRegras.ativa, "true"));
 
   return linhas.map((r) => ({
@@ -1040,35 +1120,61 @@ export interface DadosParaCategorizar {
   valor: number; // sempre positivo
   cpfCnpjOrigem?: string | null;
   cpfCnpjDestino?: string | null;
+  // origem/tipoOperacao habilitam os 2 casos determinísticos abaixo
+  // (Caixa Físico e liquidação Mercado Pago) — sem eles, cai direto na
+  // regra de texto/valor de sempre.
+  origem?: string | null;
+  tipoOperacao?: "D" | "C" | null;
 }
 
 /**
  * Ponto único de categorização automática — usado no import (sync,
  * CSV, PDF, OFX) e no reprocessamento de pendentes. Ordem de
- * prioridade: (1) CNPJ batendo com conta própria = transferência,
- * sempre excluída do DRE, sem exceção; (2) regra de texto/valor.
+ * prioridade:
+ * 1) CNPJ batendo com conta própria = transferência, sempre excluída
+ *    do DRE, sem exceção;
+ * 2) origem "mercadopago" (liquidação da adquirente) = Excluído do DRE
+ *    — esse dinheiro já foi contado como receita via adquirente_vendas
+ *    (ver classificarDescricaoAdquirente); contar de novo aqui
+ *    duplicaria e foi a causa real do Pix inflado na Comanda Recepção;
+ * 3) origem "caixa_fisico" e crédito = "Receita em Espécie" direto, sem
+ *    precisar de regra de texto — toda entrada do Caixa Físico é
+ *    dinheiro em espécie por definição;
+ * 4) regra de texto/valor (como sempre foi).
  * Se a regra tiver alertaSeRepetirNoMes e já existir outra transação
- * da mesma categoria na mesma conta no mesmo mês, marca um aviso (não
+ * da mesma descrição na mesma conta no mesmo mês, marca um aviso (não
  * bloqueia, só avisa).
  */
 export async function categorizarTransacaoAutomaticamente(
   dados: DadosParaCategorizar,
-  regras: (RegraMatch & { dreCategoriaId: number; alertaSeRepetirNoMes: boolean })[],
+  regras: (RegraMatch & { dreDescricaoId: number; alertaSeRepetirNoMes: boolean })[],
   cnpjsContas: string[],
   transacaoIdParaExcluirDoAlerta?: number,
-): Promise<{ dreCategoriaId: number | null; categorizacaoStatus: "sugerida" | "pendente"; alerta: string | null }> {
+): Promise<{ dreDescricaoId: number | null; categorizacaoStatus: "sugerida" | "pendente"; alerta: string | null }> {
   if (ehTransferenciaEntreContas(dados.cpfCnpjOrigem, dados.cpfCnpjDestino, cnpjsContas)) {
-    const excluidoId = regras.find((r) => r.categoriaNome === EXCLUIDO_NOME)?.dreCategoriaId;
-    if (excluidoId) return { dreCategoriaId: excluidoId, categorizacaoStatus: "sugerida", alerta: null };
+    const excluidoId = regras.find((r) => r.descricaoNome === EXCLUIDO_NOME)?.dreDescricaoId
+      ?? await resolverDescricaoIdPorNome(EXCLUIDO_NOME);
+    if (excluidoId) return { dreDescricaoId: excluidoId, categorizacaoStatus: "sugerida", alerta: null };
+  }
+
+  if (dados.origem === "mercadopago") {
+    const excluidoId = regras.find((r) => r.descricaoNome === EXCLUIDO_NOME)?.dreDescricaoId
+      ?? await resolverDescricaoIdPorNome(EXCLUIDO_NOME);
+    if (excluidoId) return { dreDescricaoId: excluidoId, categorizacaoStatus: "sugerida", alerta: null };
+  }
+
+  if (dados.origem === "caixa_fisico" && dados.tipoOperacao === "C") {
+    const especieId = await resolverDescricaoIdPorNome("Receita em Espécie");
+    if (especieId) return { dreDescricaoId: especieId, categorizacaoStatus: "sugerida", alerta: null };
   }
 
   const texto = `${dados.tipoTransacao ?? ""} ${dados.titulo ?? ""} ${dados.descricao ?? ""}`;
-  const categoriaNome = sugerirCategoriaNome(texto, dados.valor, regras);
-  if (!categoriaNome) return { dreCategoriaId: null, categorizacaoStatus: "pendente", alerta: null };
+  const descricaoNome = sugerirDescricaoNome(texto, dados.valor, regras);
+  if (!descricaoNome) return { dreDescricaoId: null, categorizacaoStatus: "pendente", alerta: null };
 
-  const regra = regras.find((r) => r.categoriaNome === categoriaNome && texto.toLowerCase().includes(r.padrao.toLowerCase()));
-  const dreCategoriaId = regra?.dreCategoriaId;
-  if (!dreCategoriaId) return { dreCategoriaId: null, categorizacaoStatus: "pendente", alerta: null };
+  const regra = regras.find((r) => r.descricaoNome === descricaoNome && texto.toLowerCase().includes(r.padrao.toLowerCase()));
+  const dreDescricaoId = regra?.dreDescricaoId;
+  if (!dreDescricaoId) return { dreDescricaoId: null, categorizacaoStatus: "pendente", alerta: null };
 
   let alerta: string | null = null;
   if (regra?.alertaSeRepetirNoMes) {
@@ -1077,30 +1183,18 @@ export async function categorizarTransacaoAutomaticamente(
       const mesPrefixo = dados.dataEntrada.slice(0, 7); // AAAA-MM
       const condicoes = [
         eq(interExtratos.contaId, dados.contaId),
-        eq(interExtratos.dreCategoriaId, dreCategoriaId),
+        eq(interExtratos.dreDescricaoId, dreDescricaoId),
         like(interExtratos.dataEntrada, `${mesPrefixo}%`),
       ];
       if (transacaoIdParaExcluirDoAlerta) condicoes.push(ne(interExtratos.id, transacaoIdParaExcluirDoAlerta));
       const outras = await db.select({ id: interExtratos.id }).from(interExtratos).where(and(...condicoes)).limit(1);
       if (outras.length > 0) {
-        alerta = `Já existe outro lançamento de "${categoriaNome}" nesta conta em ${mesPrefixo} — confira se não é duplicidade.`;
+        alerta = `Já existe outro lançamento de "${descricaoNome}" nesta conta em ${mesPrefixo} — confira se não é duplicidade.`;
       }
     }
   }
 
-  return { dreCategoriaId, categorizacaoStatus: "sugerida", alerta };
-}
-
-/**
- * Sugere uma categoria pro texto combinado (histórico + descrição) de
- * uma transação avulsa. Retorna null (Pendente) se nenhuma regra bater.
- * Pra lote, use listRegrasParaMatch() + categorizarTransacaoAutomaticamente() direto.
- */
-export async function sugerirCategoriaId(textoTransacao: string, valor: number): Promise<number | null> {
-  const regras = await listRegrasParaMatch();
-  const nomeSugerido = sugerirCategoriaNome(textoTransacao, valor, regras);
-  if (!nomeSugerido) return null;
-  return regras.find((r) => r.categoriaNome === nomeSugerido)?.dreCategoriaId ?? null;
+  return { dreDescricaoId, categorizacaoStatus: "sugerida", alerta };
 }
 
 /**
@@ -1136,10 +1230,12 @@ export async function reprocessarPendentes(unidadeId: number): Promise<number> {
       valor: parseFloat(t.valor),
       cpfCnpjOrigem: t.cpfCnpjOrigem,
       cpfCnpjDestino: t.cpfCnpjDestino,
+      origem: t.origem,
+      tipoOperacao: t.tipoOperacao,
     }, regras, cnpjsContas, t.id);
-    if (!resultado.dreCategoriaId) continue;
+    if (!resultado.dreDescricaoId) continue;
     await db.update(interExtratos).set({
-      dreCategoriaId: resultado.dreCategoriaId,
+      dreDescricaoId: resultado.dreDescricaoId,
       categorizacaoStatus: resultado.categorizacaoStatus,
       alerta: resultado.alerta,
     }).where(eq(interExtratos.id, t.id));
@@ -1149,27 +1245,28 @@ export async function reprocessarPendentes(unidadeId: number): Promise<number> {
 }
 
 /**
- * Decisão humana: usuário escolhe (ou corrige) a categoria de uma
- * transação pelo seletor. Marca como "confirmada" direto (não precisa
- * de segundo clique) e, se a categoria não for nula, tenta "aprender"
- * uma regra nova a partir da contraparte dessa transação — pra próxima
- * vez que aparecer um pagamento parecido, o sistema já sugerir sozinho.
+ * Decisão humana: usuário escolhe (ou corrige) a descrição de uma
+ * transação pelo seletor (a categoria vem por herança da descrição).
+ * Marca como "confirmada" direto (não precisa de segundo clique) e, se
+ * a descrição não for nula, tenta "aprender" uma regra nova a partir da
+ * contraparte dessa transação — pra próxima vez que aparecer um
+ * pagamento parecido, o sistema já sugerir sozinho.
  *
  * Regra aprendida é aplicada de imediato nas outras transações
  * "pendente" da unidade (via reprocessarPendentes), viram "sugerida" —
  * o usuário confirma cada uma com 1 clique, não fica automático demais.
  */
-export async function categorizarManual(transacaoId: number, dreCategoriaId: number | null): Promise<{ regraAprendida: boolean }> {
+export async function categorizarManual(transacaoId: number, dreDescricaoId: number | null): Promise<{ regraAprendida: boolean }> {
   const db = await getDb();
   if (!db) return { regraAprendida: false };
 
-  if (dreCategoriaId === null) {
-    await db.update(interExtratos).set({ dreCategoriaId: null, categorizacaoStatus: "pendente" }).where(eq(interExtratos.id, transacaoId));
+  if (dreDescricaoId === null) {
+    await db.update(interExtratos).set({ dreDescricaoId: null, categorizacaoStatus: "pendente" }).where(eq(interExtratos.id, transacaoId));
     return { regraAprendida: false };
   }
 
   const [transacao] = await db.select().from(interExtratos).where(eq(interExtratos.id, transacaoId)).limit(1);
-  await db.update(interExtratos).set({ dreCategoriaId, categorizacaoStatus: "confirmada" }).where(eq(interExtratos.id, transacaoId));
+  await db.update(interExtratos).set({ dreDescricaoId, categorizacaoStatus: "confirmada" }).where(eq(interExtratos.id, transacaoId));
   if (!transacao) return { regraAprendida: false };
 
   const textoContraparte = transacao.titulo || transacao.descricao || "";
@@ -1181,7 +1278,7 @@ export async function categorizarManual(transacaoId: number, dreCategoriaId: num
     .limit(1);
   if (jaExiste.length > 0) return { regraAprendida: false };
 
-  await db.insert(dreRegras).values({ padrao, dreCategoriaId, origem: "aprendida" });
+  await db.insert(dreRegras).values({ padrao, dreDescricaoId, origem: "aprendida" });
   await reprocessarPendentes(transacao.unidadeId);
   return { regraAprendida: true };
 }

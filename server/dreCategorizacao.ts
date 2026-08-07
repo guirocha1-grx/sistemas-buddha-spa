@@ -7,11 +7,6 @@
  * aberto pra retomar — NÃO têm regra automática aqui de propósito,
  * porque adivinhar errado nisso distorce o DRE:
  *
- * - Receitas de Vendas: vai vir do Belle (fonte de verdade), não do
- *   extrato bancário. Os créditos da adquirente de cartão no banco só
- *   servem, no futuro, pra calcular "Taxa de Adquirência e
- *   Antecipações" por diferença contra o que o Belle registrou. Por
- *   enquanto esses créditos ficam sem regra (caem em "Pendente").
  * - Pronampe (empréstimo Sicredi): não decidido se separa juros de
  *   amortização ou lança tudo em "Juros + Multas".
  * - "Boleto Shopping" (Aluguel + Condomínio + IPTU, maior valor do
@@ -30,6 +25,13 @@
  *
  * Todas essas categorias já existem no plano de contas abaixo (pra dar
  * pra categorizar manualmente), só não têm regra de match automático.
+ *
+ * "Receitas de Vendas" foi decidida em 2026-08-07 (áudio): composta por
+ * 4 Descrições (Receita de Pix/Espécie/C. Débito/C. Crédito), atribuídas
+ * de forma determinística a partir de adquirente_vendas (débito/crédito/
+ * pix de máquina) e inter_extratos (Pix direto no banco, Caixa Físico) —
+ * ver categorizarTransacaoAutomaticamente e classificarDescricaoAdquirente
+ * em server/db.ts. Não vem mais do Belle.
  */
 
 export type DreSecao =
@@ -114,9 +116,42 @@ export const DRE_CATEGORIAS_SEED: { nome: string; secao: DreSecao; ordem: number
   { nome: EXCLUIDO_NOME, secao: "excluido", ordem: 1 },
 ];
 
+/**
+ * Descrições semeadas — o nível intermediário entre Categoria e
+ * lançamento (ver server/db.ts: ensureDreSeed). Toda Descrição usada em
+ * DRE_REGRAS_SEED abaixo precisa estar listada aqui, com a Categoria a
+ * que pertence. Quando a Descrição tem o mesmo nome da Categoria (ex.:
+ * "Sistemas / Softwares"), é porque essa Categoria ainda não foi
+ * quebrada em Descrições mais específicas — fica um bucket genérico até
+ * o usuário refinar em Parâmetros.
+ *
+ * As 4 de "Receitas de Vendas" foram confirmadas pelo usuário em
+ * 2026-08-07 (áudio) e são atribuídas de forma determinística (não por
+ * regra de texto) — ver categorizarTransacaoAutomaticamente e
+ * classificarDescricaoAdquirente em server/db.ts.
+ */
+export const DRE_DESCRICOES_SEED: { nome: string; categoriaNome: string }[] = [
+  { nome: "Sistemas / Softwares", categoriaNome: "Sistemas / Softwares" },
+  { nome: "Yamada Contabilidade", categoriaNome: "Consultoria / Assessoria / Contabilidade / Advocacia" },
+  { nome: "Herdade, Martini Advogados", categoriaNome: "Consultoria / Assessoria / Contabilidade / Advocacia" },
+  { nome: "Benefícios (Vale transporte, Plano de saude, Vale Alimentação e Seguro de Vida)", categoriaNome: "Benefícios (Vale transporte, Plano de saude, Vale Alimentação e Seguro de Vida)" },
+  { nome: "Contribuição Sindical", categoriaNome: "Contribuição Sindical" },
+  { nome: "Juros + Multas", categoriaNome: "Juros + Multas" },
+  { nome: EXCLUIDO_NOME, categoriaNome: EXCLUIDO_NOME },
+  { nome: "Parcerias Comerciais", categoriaNome: "Parcerias Comerciais" },
+  { nome: "Totalpass", categoriaNome: "Parcerias Comerciais" },
+  { nome: "Wellhub", categoriaNome: "Parcerias Comerciais" },
+  { nome: "Limpeza", categoriaNome: "Limpeza" },
+  { nome: "Lavanderia", categoriaNome: "Lavanderia" },
+  { nome: "Receita de Pix", categoriaNome: "Receitas de Vendas" },
+  { nome: "Receita em Espécie", categoriaNome: "Receitas de Vendas" },
+  { nome: "Receita C. Débito", categoriaNome: "Receitas de Vendas" },
+  { nome: "Receita C. Crédito", categoriaNome: "Receitas de Vendas" },
+];
+
 export interface DreRegraSeed {
   padrao: string;
-  categoriaNome: string;
+  descricaoNome: string;
   valorMin?: number;
   valorMax?: number;
   alertaSeRepetirNoMes?: boolean;
@@ -125,41 +160,43 @@ export interface DreRegraSeed {
 /**
  * Regras conservadoras — só as que têm padrão de texto confirmado e
  * confiável. Confiança > cobertura: prefiro deixar "Pendente" (revisão
- * manual) a arriscar categorizar errado um valor grande.
+ * manual) a arriscar categorizar errado um valor grande. Toda
+ * `descricaoNome` aqui precisa existir em DRE_DESCRICOES_SEED acima.
  */
 export const DRE_REGRAS_SEED: DreRegraSeed[] = [
-  { padrao: "Eleva", categoriaNome: "Sistemas / Softwares" },
-  { padrao: "Belle", categoriaNome: "Sistemas / Softwares" },
-  { padrao: "Mywork", categoriaNome: "Sistemas / Softwares" },
-  { padrao: "YAMADA CONTABILIDADE", categoriaNome: "Consultoria / Assessoria / Contabilidade / Advocacia" },
-  { padrao: "HERDADE, MARTINI", categoriaNome: "Consultoria / Assessoria / Contabilidade / Advocacia" },
-  { padrao: "Caju", categoriaNome: "Benefícios (Vale transporte, Plano de saude, Vale Alimentação e Seguro de Vida)" },
-  { padrao: "Sindicato", categoriaNome: "Contribuição Sindical" },
+  { padrao: "Eleva", descricaoNome: "Sistemas / Softwares" },
+  { padrao: "Belle", descricaoNome: "Sistemas / Softwares" },
+  { padrao: "Mywork", descricaoNome: "Sistemas / Softwares" },
+  { padrao: "YAMADA CONTABILIDADE", descricaoNome: "Yamada Contabilidade" },
+  { padrao: "HERDADE, MARTINI", descricaoNome: "Herdade, Martini Advogados" },
+  { padrao: "Caju", descricaoNome: "Benefícios (Vale transporte, Plano de saude, Vale Alimentação e Seguro de Vida)" },
+  { padrao: "Sindicato", descricaoNome: "Contribuição Sindical" },
   // "Vanessa" é nome próprio genérico — funciona hoje (único Pix conhecido
   // com esse nome), mas reavaliar se aparecer outro "Vanessa" não
   // relacionado ao empréstimo.
-  { padrao: "Vanessa", categoriaNome: "Juros + Multas" },
-  { padrao: "Transferência", categoriaNome: EXCLUIDO_NOME },
+  { padrao: "Vanessa", descricaoNome: "Juros + Multas" },
+  { padrao: "Transferência", descricaoNome: EXCLUIDO_NOME },
 
-  // Confirmadas pelo usuário em 2026-08-05:
-  // "Pix recebido no Inter é sempre receita" — a expressão "Pix recebido"
-  // só aparece nesse formato no vocabulário do Inter (sync/PDF), então
-  // essa regra já fica naturalmente restrita a esses dois canais.
-  { padrao: "Pix recebido", categoriaNome: "Receitas de Vendas" },
-  { padrao: "voucher", categoriaNome: "Parcerias Comerciais" },
-  { padrao: "convênio", categoriaNome: "Parcerias Comerciais" },
-  { padrao: "Totalpass", categoriaNome: "Parcerias Comerciais" },
-  { padrao: "Wellhub", categoriaNome: "Parcerias Comerciais" },
+  // Confirmada pelo usuário em 2026-08-05: "Pix recebido no Inter é
+  // sempre receita" — a expressão só aparece nesse formato no
+  // vocabulário do Inter (sync/PDF), fica naturalmente restrita a esse
+  // canal (Pix via adquirente é tratado à parte, ver
+  // classificarDescricaoAdquirente).
+  { padrao: "Pix recebido", descricaoNome: "Receita de Pix" },
+  { padrao: "voucher", descricaoNome: "Parcerias Comerciais" },
+  { padrao: "convênio", descricaoNome: "Parcerias Comerciais" },
+  { padrao: "Totalpass", descricaoNome: "Totalpass" },
+  { padrao: "Wellhub", descricaoNome: "Wellhub" },
   // MDS Serviços Terceirizados: até R$1.600 é limpeza, acima é lavanderia
   // — mesma contraparte, categoria decidida pelo valor. Alerta se repetir
   // no mês (normalmente só tem 1 de cada por mês).
-  { padrao: "MDS SERVICOS TERCEIRIZADOS", categoriaNome: "Limpeza", valorMax: 1600, alertaSeRepetirNoMes: true },
-  { padrao: "MDS SERVICOS TERCEIRIZADOS", categoriaNome: "Lavanderia", valorMin: 1600.01, alertaSeRepetirNoMes: true },
+  { padrao: "MDS SERVICOS TERCEIRIZADOS", descricaoNome: "Limpeza", valorMax: 1600, alertaSeRepetirNoMes: true },
+  { padrao: "MDS SERVICOS TERCEIRIZADOS", descricaoNome: "Lavanderia", valorMin: 1600.01, alertaSeRepetirNoMes: true },
 ];
 
 export interface RegraMatch {
   padrao: string;
-  categoriaNome: string;
+  descricaoNome: string;
   valorMin: number | null;
   valorMax: number | null;
 }
@@ -170,7 +207,7 @@ export interface RegraMatch {
  * tiver faixa) cai dentro do intervalo. Sem match = null (Pendente,
  * revisão manual).
  */
-export function sugerirCategoriaNome(
+export function sugerirDescricaoNome(
   textoTransacao: string,
   valor: number,
   regras: RegraMatch[],
@@ -180,7 +217,7 @@ export function sugerirCategoriaNome(
     if (!texto.includes(regra.padrao.toLowerCase())) continue;
     if (regra.valorMin !== null && valor < regra.valorMin) continue;
     if (regra.valorMax !== null && valor > regra.valorMax) continue;
-    return regra.categoriaNome;
+    return regra.descricaoNome;
   }
   return null;
 }

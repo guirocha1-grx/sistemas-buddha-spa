@@ -31,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { DescricaoCombobox } from "@/components/DescricaoCombobox";
 import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Landmark, Check, Pencil, Search, TriangleAlert, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
 
@@ -151,62 +152,6 @@ function fileParaBase64(file: File): Promise<string> {
 
 const CONTA_FORM_VAZIO = { nome: "", agencia: "", numeroConta: "", cnpj: "", saldoInicial: "", saldoInicialEm: "" };
 
-// ===== Combobox de Categoria DRE (com busca por nome) =====
-function CategoriaDreCombobox({
-  categorias,
-  value,
-  status,
-  onChange,
-}: {
-  categorias: { id: number; nome: string }[];
-  value: number | null;
-  status: "pendente" | "sugerida" | "confirmada";
-  onChange: (id: number | null) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const atual = categorias.find((c) => c.id === value);
-  const corClasse =
-    status === "confirmada"
-      ? "border-green-400 text-green-700 hover:text-green-700"
-      : status === "sugerida"
-        ? "border-blue-400 text-blue-700 hover:text-blue-700"
-        : "border-amber-400 text-amber-700 hover:text-amber-700";
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className={`h-7 text-xs justify-between font-normal w-full px-2 ${corClasse}`}
-        >
-          <span className="truncate">{atual ? atual.nome : "Pendente"}</span>
-          <ChevronsUpDown className="h-3 w-3 opacity-50 shrink-0 ml-1" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-64 p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Buscar categoria..." className="text-sm h-8" />
-          <CommandList>
-            <CommandEmpty>Nenhuma categoria encontrada.</CommandEmpty>
-            <CommandGroup>
-              <CommandItem value="Pendente" onSelect={() => { onChange(null); setOpen(false); }}>
-                Pendente
-              </CommandItem>
-              {categorias.map((c) => (
-                <CommandItem key={c.id} value={c.nome} onSelect={() => { onChange(c.id); setOpen(false); }}>
-                  {c.nome}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 export default function Extratos() {
   const { unidadeSelecionada } = useUnidade();
   const unidadeId = unidadeSelecionada?.id;
@@ -306,6 +251,8 @@ export default function Extratos() {
 
   const categoriasQuery = trpc.dreCategorias.list.useQuery();
   const categorias = categoriasQuery.data ?? [];
+  const descricoesQuery = trpc.dreDescricoes.list.useQuery();
+  const descricoes = descricoesQuery.data ?? [];
 
   const saldoNaDataQuery = trpc.contas.saldoNaData.useQuery(
     { contaId: contaIdSelecionada!, data: dataInicioExtrato },
@@ -1024,13 +971,14 @@ export default function Extratos() {
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-1.5">
-                                  <CategoriaDreCombobox
+                                  <DescricaoCombobox
+                                    descricoes={descricoes}
                                     categorias={categorias}
-                                    value={t.dreCategoriaId}
+                                    value={t.dreDescricaoId}
                                     status={t.categorizacaoStatus}
                                     onChange={(id) => categorizarMutation.mutate({
                                       transacaoId: t.id,
-                                      dreCategoriaId: id,
+                                      dreDescricaoId: id,
                                     })}
                                   />
                                   {t.categorizacaoStatus === "sugerida" && (

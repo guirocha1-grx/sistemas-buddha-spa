@@ -741,18 +741,19 @@ Diretrizes:
     }),
 
     /**
-     * Define/corrige manualmente a categoria de DRE de uma transação —
-     * o "Descrição (manual)" da planilha antiga. dreCategoriaId null
-     * volta a transação pra "Pendente". Marca como "confirmada" e tenta
-     * aprender uma regra nova a partir da contraparte, aplicando de
-     * imediato em outras transações pendentes da mesma unidade (que
-     * viram "sugerida", aguardando 1 clique de confirmação).
+     * Define/corrige manualmente a Descrição de uma transação (a
+     * categoria vem por herança) — o "Descrição (manual)" da planilha
+     * antiga. dreDescricaoId null volta a transação pra "Pendente".
+     * Marca como "confirmada" e tenta aprender uma regra nova a partir
+     * da contraparte, aplicando de imediato em outras transações
+     * pendentes da mesma unidade (que viram "sugerida", aguardando 1
+     * clique de confirmação).
      */
     categorizar: protectedProcedure.input(z.object({
       transacaoId: z.number(),
-      dreCategoriaId: z.number().nullable(),
+      dreDescricaoId: z.number().nullable(),
     })).mutation(async ({ input }) => {
-      const { regraAprendida } = await db.categorizarManual(input.transacaoId, input.dreCategoriaId);
+      const { regraAprendida } = await db.categorizarManual(input.transacaoId, input.dreDescricaoId);
       return { success: true, regraAprendida };
     }),
 
@@ -824,7 +825,7 @@ Diretrizes:
       const regrasDre = await db.listRegrasParaMatch();
       const cnpjsContasDre = await db.listCnpjsDeContas();
       const categorizar = async (t: InterTransacaoCompleta) => {
-        if (!contaInter?.id) return { dreCategoriaId: undefined, categorizacaoStatus: "pendente" as const, alerta: null };
+        if (!contaInter?.id) return { dreDescricaoId: undefined, categorizacaoStatus: "pendente" as const, alerta: null };
         const contraparte = extrairContraparte(t);
         const resultado = await db.categorizarTransacaoAutomaticamente({
           contaId: contaInter.id,
@@ -835,8 +836,10 @@ Diretrizes:
           valor: parseFloat(t.valor),
           cpfCnpjOrigem: contraparte.cpfCnpjOrigem,
           cpfCnpjDestino: contraparte.cpfCnpjDestino,
+          origem: "inter",
+          tipoOperacao: (t.tipoOperacao === "D" || t.tipoOperacao === "C") ? t.tipoOperacao : "D",
         }, regrasDre, cnpjsContasDre);
-        return { dreCategoriaId: resultado.dreCategoriaId ?? undefined, categorizacaoStatus: resultado.categorizacaoStatus, alerta: resultado.alerta };
+        return { dreDescricaoId: resultado.dreDescricaoId ?? undefined, categorizacaoStatus: resultado.categorizacaoStatus, alerta: resultado.alerta };
       };
 
       let totalInseridos = 0;
@@ -1008,6 +1011,8 @@ Diretrizes:
           dataEntrada: linha.data,
           titulo: linha.descricao,
           valor: linha.valor,
+          origem: "csv",
+          tipoOperacao: linha.tipo,
         }, regras, cnpjsContas);
         return {
           unidadeId: conta.unidadeId,
@@ -1018,7 +1023,7 @@ Diretrizes:
           valor: linha.valor.toFixed(2),
           titulo: linha.descricao,
           origem: "csv" as const,
-          dreCategoriaId: resultado.dreCategoriaId,
+          dreDescricaoId: resultado.dreDescricaoId,
           categorizacaoStatus: resultado.categorizacaoStatus,
           alerta: resultado.alerta,
         };
@@ -1071,6 +1076,8 @@ Diretrizes:
           dataEntrada: linha.data,
           titulo: linha.descricao,
           valor: linha.valor,
+          origem: "pdf",
+          tipoOperacao: linha.tipo,
         }, regras, cnpjsContas);
         return {
           unidadeId: conta.unidadeId,
@@ -1081,7 +1088,7 @@ Diretrizes:
           valor: linha.valor.toFixed(2),
           titulo: linha.descricao,
           origem: "pdf" as const,
-          dreCategoriaId: resultado.dreCategoriaId,
+          dreDescricaoId: resultado.dreDescricaoId,
           categorizacaoStatus: resultado.categorizacaoStatus,
           alerta: resultado.alerta,
         };
@@ -1125,6 +1132,8 @@ Diretrizes:
           tipoTransacao: linha.trnType,
           titulo: linha.descricao,
           valor: linha.valor,
+          origem: "ofx",
+          tipoOperacao: linha.tipo,
         }, regras, cnpjsContas);
         return {
           unidadeId: conta.unidadeId,
@@ -1136,7 +1145,7 @@ Diretrizes:
           valor: linha.valor.toFixed(2),
           titulo: linha.descricao,
           origem: "ofx" as const,
-          dreCategoriaId: resultado.dreCategoriaId,
+          dreDescricaoId: resultado.dreDescricaoId,
           categorizacaoStatus: resultado.categorizacaoStatus,
           alerta: resultado.alerta,
         };
@@ -1248,8 +1257,10 @@ Diretrizes:
               titulo: t.descricao,
               descricao: t.historico ?? "",
               valor: parseFloat(t.valor),
+              origem: "sicredi",
+              tipoOperacao: t.tipoOperacao,
             }, regrasDre, cnpjsContasDre)
-            : { dreCategoriaId: undefined, categorizacaoStatus: "pendente" as const };
+            : { dreDescricaoId: undefined, categorizacaoStatus: "pendente" as const };
           return {
             unidadeId: input.unidadeId,
             contaId: contaSicredi?.id,
@@ -1261,7 +1272,7 @@ Diretrizes:
             titulo: t.descricao,
             descricao: t.historico,
             origem: "sicredi" as const,
-            dreCategoriaId: resultado.dreCategoriaId ?? undefined,
+            dreDescricaoId: resultado.dreDescricaoId ?? undefined,
             categorizacaoStatus: resultado.categorizacaoStatus,
           };
         }));
@@ -1653,6 +1664,27 @@ Diretrizes:
     }),
   }),
 
+  // ===== Descrições (nível intermediário entre Categoria e lançamento) =====
+  dreDescricoes: router({
+    list: protectedProcedure.query(async () => {
+      return db.listDreDescricoes();
+    }),
+
+    listPorCategoria: protectedProcedure.input(z.object({
+      dreCategoriaId: z.number(),
+    })).query(async ({ input }) => {
+      return db.listDreDescricoesPorCategoria(input.dreCategoriaId);
+    }),
+
+    criar: protectedProcedure.input(z.object({
+      nome: z.string().min(1),
+      dreCategoriaId: z.number(),
+    })).mutation(async ({ input }) => {
+      const id = await db.criarDreDescricao(input.nome, input.dreCategoriaId);
+      return { success: true, id };
+    }),
+  }),
+
   // ===== Regras de categorização automática (tela Parâmetros) =====
   dreRegras: router({
     list: protectedProcedure.query(async () => {
@@ -1660,9 +1692,8 @@ Diretrizes:
     }),
 
     criar: adminProcedure.input(z.object({
-      descricao: z.string().optional(),
       padrao: z.string().min(1),
-      dreCategoriaId: z.number(),
+      dreDescricaoId: z.number(),
       valorMin: z.number().optional(),
       valorMax: z.number().optional(),
       alertaSeRepetirNoMes: z.boolean().optional(),
@@ -1677,9 +1708,8 @@ Diretrizes:
 
     atualizar: adminProcedure.input(z.object({
       id: z.number(),
-      descricao: z.string().optional(),
       padrao: z.string().min(1).optional(),
-      dreCategoriaId: z.number().optional(),
+      dreDescricaoId: z.number().optional(),
       valorMin: z.number().nullable().optional(),
       valorMax: z.number().nullable().optional(),
       alertaSeRepetirNoMes: z.boolean().optional(),
@@ -1690,17 +1720,6 @@ Diretrizes:
         valorMin: valorMin === null ? undefined : valorMin?.toFixed(2),
         valorMax: valorMax === null ? undefined : valorMax?.toFixed(2),
       });
-      return { success: true };
-    }),
-
-    /**
-     * Só a descrição — edição rápida inline na tabela, sem abrir modal.
-     */
-    atualizarDescricao: adminProcedure.input(z.object({
-      id: z.number(),
-      descricao: z.string(),
-    })).mutation(async ({ input }) => {
-      await db.atualizarDescricaoDreRegra(input.id, input.descricao);
       return { success: true };
     }),
 
