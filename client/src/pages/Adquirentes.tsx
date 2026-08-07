@@ -136,12 +136,18 @@ function fmtDataAdq(iso: string | null | undefined): string {
   return y ? `${d}/${m}/${y}` : iso;
 }
 
+function formaBadgeClasse(pendente: boolean): string {
+  return pendente
+    ? "border-amber-300 text-amber-700 bg-amber-50"
+    : "border-emerald-300 text-emerald-700 bg-emerald-50";
+}
+
 export default function Adquirentes() {
   const { unidadeSelecionada } = useUnidade();
   const unidadeId = unidadeSelecionada?.id;
   const periodoInicial = calcularPeriodo("mes_vigente");
 
-  const [abaAtiva, setAbaAtiva] = useState<"mercadopago" | "interpag">("mercadopago");
+  const [abaAtiva, setAbaAtiva] = useState<"consolidado" | "mercadopago" | "interpag">("consolidado");
   const [dataInicio, setDataInicio] = useState(periodoInicial.inicio);
   const [dataFim, setDataFim] = useState(periodoInicial.fim);
   const [periodoAtivo, setPeriodoAtivo] = useState<PeriodoRapido>("mes_vigente");
@@ -163,9 +169,17 @@ export default function Adquirentes() {
   );
 
   const vendasQuery = trpc.adquirentes.vendas.useQuery(
-    { unidadeId: unidadeId!, dataInicio, dataFim, adquirente: abaAtiva },
+    { unidadeId: unidadeId!, dataInicio, dataFim, adquirente: abaAtiva === "consolidado" ? undefined : abaAtiva },
     { enabled: !!unidadeId },
   );
+
+  const descricoesQuery = trpc.dreDescricoes.list.useQuery();
+  const descricoes = descricoesQuery.data ?? [];
+
+  function formaLabel(dreDescricaoId: number | null): string {
+    if (!dreDescricaoId) return "— Pendente";
+    return descricoes.find((d) => d.id === dreDescricaoId)?.nome ?? "— Pendente";
+  }
 
   const sincronizarMpMutation = trpc.adquirentes.sincronizarMercadoPago.useMutation({
     onSuccess: (data) => {
@@ -201,6 +215,15 @@ export default function Adquirentes() {
   const totalBruto = vendas.reduce((s, v) => s + parseFloat(v.valorBruto ?? "0"), 0);
   const totalTaxa = vendas.reduce((s, v) => s + parseFloat(v.valorTaxa ?? "0"), 0);
   const totalLiquido = vendas.reduce((s, v) => s + parseFloat(v.valorLiquido ?? "0"), 0);
+
+  // Bruto por forma classificada — dá pra bater direto contra os baldes
+  // Débito/Crédito/Pix que a Comanda Recepção usa, sem sair da tela.
+  const totalPorForma = new Map<string, number>();
+  for (const v of vendas) {
+    const label = formaLabel(v.dreDescricaoId);
+    totalPorForma.set(label, (totalPorForma.get(label) ?? 0) + numAdq(v.valorBruto));
+  }
+  const formasOrdenadas = Array.from(totalPorForma.entries()).sort((a, b) => (a[0] === "— Pendente" ? 1 : b[0] === "— Pendente" ? -1 : 0));
 
   return (
     <div className="space-y-6">
@@ -252,16 +275,31 @@ export default function Adquirentes() {
             </Card>
           </div>
 
+          {abaAtiva === "consolidado" && vendas.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {formasOrdenadas.map(([label, valor]) => (
+                <Badge key={label} variant="outline" className={`text-xs font-normal ${formaBadgeClasse(label === "— Pendente")}`}>
+                  {label}: {fmtCurrencyAdq(valor)}
+                </Badge>
+              ))}
+            </div>
+          )}
+
           <Card className="border-border/50 shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
                 <CreditCard className="h-4 w-4" /> Vendas
               </CardTitle>
-              <CardDescription>Uma linha por venda (ou por parcela) — não é o crédito agregado que cai na conta</CardDescription>
+              <CardDescription>
+                {abaAtiva === "consolidado"
+                  ? "Mercado Pago + Interpag juntos, com a forma de pagamento já classificada — mesma leitura que a Comanda Recepção usa."
+                  : "Uma linha por venda (ou por parcela) — não é o crédito agregado que cai na conta"}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Tabs value={abaAtiva} onValueChange={(v) => setAbaAtiva(v as "mercadopago" | "interpag")}>
+              <Tabs value={abaAtiva} onValueChange={(v) => setAbaAtiva(v as "consolidado" | "mercadopago" | "interpag")}>
                 <TabsList className="h-9">
+                  <TabsTrigger value="consolidado" className="text-sm">Consolidado</TabsTrigger>
                   <TabsTrigger value="mercadopago" className="text-sm">Mercado Pago</TabsTrigger>
                   <TabsTrigger value="interpag" className="text-sm">Interpag</TabsTrigger>
                 </TabsList>
@@ -363,7 +401,9 @@ export default function Adquirentes() {
                     <TableHeader>
                       <TableRow className="bg-muted/30">
                         <TableHead className="text-xs w-32">Data/Hora</TableHead>
-                        <TableHead className="text-xs w-56">Tipo</TableHead>
+                        {abaAtiva === "consolidado" && <TableHead className="text-xs w-28">Adquirente</TableHead>}
+                        <TableHead className="text-xs w-44">Tipo</TableHead>
+                        <TableHead className="text-xs w-36">Forma</TableHead>
                         <TableHead className="text-xs w-24">Status</TableHead>
                         <TableHead className="text-xs w-14">Parc.</TableHead>
                         <TableHead className="text-xs w-24">Bandeira</TableHead>
@@ -388,7 +428,15 @@ export default function Adquirentes() {
                         return (
                           <TableRow key={v.id} className="text-sm">
                             <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDataHoraAdq(v.dataHora)}</TableCell>
-                            <TableCell className="text-xs max-w-56 truncate" title={v.tipo ?? undefined}>{v.tipo ?? "—"}</TableCell>
+                            {abaAtiva === "consolidado" && (
+                              <TableCell className="text-xs whitespace-nowrap">{v.adquirente === "mercadopago" ? "Mercado Pago" : "Interpag"}</TableCell>
+                            )}
+                            <TableCell className="text-xs max-w-44 truncate" title={v.tipo ?? undefined}>{v.tipo ?? "—"}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={`text-xs font-normal whitespace-nowrap ${formaBadgeClasse(!v.dreDescricaoId)}`}>
+                                {formaLabel(v.dreDescricaoId)}
+                              </Badge>
+                            </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="text-xs font-normal whitespace-nowrap">{v.status ?? "—"}</Badge>
                             </TableCell>
