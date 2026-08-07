@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
@@ -220,6 +221,8 @@ export default function Extratos() {
   const [contaEditandoId, setContaEditandoId] = useState<number | null>(null);
   const [contaForm, setContaForm] = useState(CONTA_FORM_VAZIO);
   const [soPendentes, setSoPendentes] = useState(false);
+  const [ocultarDiasSemMovimento, setOcultarDiasSemMovimento] = useState(true);
+  const [confirmarSyncTodas, setConfirmarSyncTodas] = useState(false);
   const [grupoOperacao, setGrupoOperacao] = useState<string>("todos");
   const [buscaTexto, setBuscaTexto] = useState("");
   const [buscaValor, setBuscaValor] = useState("");
@@ -462,6 +465,8 @@ export default function Extratos() {
   // Todos os filtros exceto o tipo (C/D) — usado pra contar as abas
   // "Entradas/Saídas" já refletindo os outros filtros ativos.
   const transacoesAntesDoTipo = transacoesExtrato.filter((t) => {
+    // Ocultar dias sem movimento (Caixa Físico: valor 0 e ocorrência "Vendas do dia")
+    if (ocultarDiasSemMovimento && t.origem === "caixa_fisico" && parseFloat(t.valor ?? "0") === 0) return false;
     if (soPendentes && t.categorizacaoStatus === "confirmada") return false;
     if (grupoOperacao !== "todos" && agruparOperacao(t.tipoTransacao, t.titulo) !== grupoOperacao) return false;
     if (buscaTexto.trim()) {
@@ -762,25 +767,43 @@ export default function Extratos() {
                 </Button>
 
                 {!contaAtual && (
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      if (!unidadeId) return;
-                      if (statusInterQuery.data?.configurado) {
-                        sincronizarInterMutation.mutate({ unidadeId, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato });
-                      }
-                      if (statusMpQuery.data?.mercadoPagoConfigurado) {
-                        sincronizarMpMutation.mutate({ unidadeId, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato });
-                      }
-                      sincronizarCaixaFisicoMutation.mutate({ unidadeId });
-                    }}
-                    disabled={sincronizarInterMutation.isPending || sincronizarMpMutation.isPending || sincronizarCaixaFisicoMutation.isPending}
-                  >
-                    {(sincronizarInterMutation.isPending || sincronizarMpMutation.isPending || sincronizarCaixaFisicoMutation.isPending)
-                      ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                      : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
-                    Sincronizar todas
-                  </Button>
+                  <AlertDialog open={confirmarSyncTodas} onOpenChange={setConfirmarSyncTodas}>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        disabled={sincronizarInterMutation.isPending || sincronizarMpMutation.isPending || sincronizarCaixaFisicoMutation.isPending}
+                      >
+                        {(sincronizarInterMutation.isPending || sincronizarMpMutation.isPending || sincronizarCaixaFisicoMutation.isPending)
+                          ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                          : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+                        Sincronizar todas
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Confirmar sincronização de todas as contas</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Isso vai sincronizar todas as contas configuradas (Banco Inter, Mercado Pago e Caixa Físico) para a unidade selecionada no período atual. A sincronização do Mercado Pago pode demorar até 2 minutos. Deseja continuar?
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => {
+                          if (!unidadeId) return;
+                          if (statusInterQuery.data?.configurado) {
+                            sincronizarInterMutation.mutate({ unidadeId, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato });
+                          }
+                          if (statusMpQuery.data?.mercadoPagoConfigurado) {
+                            sincronizarMpMutation.mutate({ unidadeId, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato });
+                          }
+                          sincronizarCaixaFisicoMutation.mutate({ unidadeId });
+                          setConfirmarSyncTodas(false);
+                        }}>
+                          Sincronizar todas
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 )}
 
                 {contaAtual?.tipo === "inter_oauth" && statusInterQuery.data?.configurado && (
@@ -886,6 +909,12 @@ export default function Extratos() {
                   <Checkbox checked={soPendentes} onCheckedChange={(v) => setSoPendentes(!!v)} />
                   Só falta tratar (pendente/sugerida)
                 </label>
+                {contaAtual?.nome === "Caixa Físico" && (
+                  <label className="flex items-center gap-2 h-8 text-sm cursor-pointer">
+                    <Checkbox checked={ocultarDiasSemMovimento} onCheckedChange={(v) => setOcultarDiasSemMovimento(!!v)} />
+                    Ocultar dias sem movimento
+                  </label>
+                )}
               </div>
 
               {(transacoesExtrato.some((t) => t.categorizacaoStatus === "pendente") || transacoesExtrato.some((t) => t.categorizacaoStatus === "sugerida")) && (
