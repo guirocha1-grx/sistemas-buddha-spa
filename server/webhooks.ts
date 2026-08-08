@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { writeFileSync } from "fs";
 import * as db from "./db";
 import { getConfig } from "./db";
 import { transcribeAudio } from "./_core/voiceTranscription";
@@ -34,6 +35,12 @@ function registerDeployWebhook(app: Express) {
     };
     // Log do webhook para o Manus detectar via devserver.log
     console.log(`[DEPLOY_WEBHOOK] commit=${commit || "unknown"} message=${message || ""} migrations=${JSON.stringify(migrations || [])}`);
+    // Gravar marcador para o auto-deploy cron detectar
+    try {
+      writeFileSync("/tmp/deploy-webhook-pending", JSON.stringify({ commit, message, migrations: migrations || [], timestamp: new Date().toISOString() }));
+    } catch (e) {
+      console.error("[DEPLOY_WEBHOOK] Erro ao gravar marcador:", e);
+    }
     res.status(200).json({
       success: true,
       received: {
