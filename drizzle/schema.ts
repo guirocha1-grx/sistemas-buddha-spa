@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, json, decimal, datetime, index, bigint } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, json, decimal, datetime, index, bigint, boolean } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -157,6 +157,31 @@ export const syncLogs = mysqlTable("syncLogs", {
 
 export type SyncLog = typeof syncLogs.$inferSelect;
 export type InsertSyncLog = typeof syncLogs.$inferInsert;
+
+/**
+ * Log de auditoria — toda mutation autenticada (protectedProcedure/
+ * adminProcedure), gravada por um middleware genérico em
+ * server/_core/trpc.ts, sem precisar instrumentar cada procedure. Trazido
+ * do mobai-crm (2026-08-08) e adaptado: sem `clienteId`/`origem` ia —
+ * este app não tem tabela local de clientes nem mutations de IA.
+ */
+export const auditLog = mysqlTable("audit_log", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId"),
+  userNome: varchar("userNome", { length: 100 }),
+  userRole: varchar("userRole", { length: 20 }),
+  procedure: varchar("procedure", { length: 150 }).notNull(),
+  inputResumo: text("inputResumo"),
+  sucesso: boolean("sucesso").notNull().default(true),
+  erroMsg: text("erroMsg"),
+  duracaoMs: int("duracaoMs"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  userCreatedIdx: index("audit_log_user_created_idx").on(table.userId, table.createdAt),
+}));
+
+export type AuditLogEntry = typeof auditLog.$inferSelect;
+export type InsertAuditLogEntry = typeof auditLog.$inferInsert;
 
 /**
  * Conversas do Copilot de atendimento.

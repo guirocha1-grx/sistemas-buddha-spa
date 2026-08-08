@@ -2014,6 +2014,23 @@ Diretrizes:
       return { success: true };
     }),
   }),
+
+  // ===== Log de auditoria (trazido do mobai-crm) =====
+  auditLog: router({
+    list: adminProcedure.input(z.object({
+      userId: z.number().optional(),
+      procedureContains: z.string().optional(),
+      apenasErros: z.boolean().default(false),
+      cursorId: z.number().optional(),
+      limit: z.number().min(1).max(200).default(50),
+    })).query(async ({ input }) => {
+      return db.listAuditLog(input);
+    }),
+
+    usuarios: adminProcedure.query(async () => {
+      return db.listUsuariosParaFiltro();
+    }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

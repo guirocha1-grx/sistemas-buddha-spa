@@ -25,7 +25,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -51,6 +51,7 @@ const menuItems = [
   { icon: Image, label: "Lâminas", path: "/laminas" },
   { icon: UserPlus, label: "Leads", path: "/leads" },
   { icon: Settings, label: "Configurações", path: "/configuracoes" },
+  { icon: ScrollText, label: "Log de Auditoria", path: "/auditoria", adminOnly: true },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -208,7 +209,7 @@ function DashboardLayoutContent({
 
           <SidebarContent className="gap-0">
             <SidebarMenu className="px-2 py-1">
-              {menuItems.map(item => {
+              {menuItems.filter(item => !item.adminOnly || user?.role === "admin").map(item => {
                 const isActive = location === item.path;
 
                 if (!item.children) {

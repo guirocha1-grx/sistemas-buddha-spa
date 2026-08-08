@@ -19,6 +19,7 @@ import Copilot from "./pages/Copilot";
 import Laminas from "./pages/Laminas";
 import Leads from "./pages/Leads";
 import Configuracoes from "@/pages/Configuracoes";
+import AuditLog from "@/pages/AuditLog";
 
 function Router() {
   return (
@@ -38,6 +39,7 @@ function Router() {
         <Route path="/laminas" component={Laminas} />
         <Route path="/leads" component={Leads} />
         <Route path="/configuracoes" component={Configuracoes} />
+        <Route path="/auditoria" component={AuditLog} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

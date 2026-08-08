@@ -1,6 +1,6 @@
-import { eq, desc, and, gte, lte, isNull, like, ne, inArray } from "drizzle-orm";
+import { eq, desc, and, gte, lte, isNull, like, ne, inArray, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, auditLog, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, extrairPadraoContraparte, ehTransferenciaEntreContas, CHAVE_EXCLUIDO, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, type RegraMatch } from "./dreCategorizacao";
 
@@ -1480,4 +1480,49 @@ export async function getOrCreateContaCaixaFisico(unidadeId: number) {
   if (!novaId) return undefined;
   const novaConta = await db.select().from(contas).where(eq(contas.id, novaId)).limit(1);
   return novaConta[0];
+}
+
+// ===== Log de Auditoria (trazido do mobai-crm, 2026-08-08) =====
+
+export interface FiltrosAuditLog {
+  userId?: number;
+  procedureContains?: string;
+  apenasErros?: boolean;
+  cursorId?: number;
+  limit: number;
+}
+
+/**
+ * Toda mutation autenticada, gravada pelo auditMiddleware em
+ * server/_core/trpc.ts — paginação por cursor (id decrescente), mesmo
+ * padrão do mobai-crm.
+ */
+export async function listAuditLog(filtros: FiltrosAuditLog) {
+  const db = await getDb();
+  if (!db) return { items: [], nextCursor: null };
+
+  const condicoes = [];
+  if (filtros.userId != null) condicoes.push(eq(auditLog.userId, filtros.userId));
+  if (filtros.procedureContains) condicoes.push(like(auditLog.procedure, `%${filtros.procedureContains}%`));
+  if (filtros.apenasErros) condicoes.push(eq(auditLog.sucesso, false));
+  if (filtros.cursorId != null) condicoes.push(lt(auditLog.id, filtros.cursorId));
+
+  const rows = await db
+    .select()
+    .from(auditLog)
+    .where(condicoes.length > 0 ? and(...condicoes) : undefined)
+    .orderBy(desc(auditLog.id))
+    .limit(filtros.limit);
+
+  return {
+    items: rows,
+    nextCursor: rows.length === filtros.limit ? rows[rows.length - 1].id : null,
+  };
+}
+
+/** Lista enxuta de usuários pro filtro "Usuário" da tela de auditoria. */
+export async function listUsuariosParaFiltro() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: users.id, name: users.name, email: users.email }).from(users).orderBy(users.name);
 }
