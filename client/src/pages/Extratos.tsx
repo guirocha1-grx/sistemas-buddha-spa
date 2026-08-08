@@ -3,7 +3,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -33,7 +33,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DescricaoCombobox } from "@/components/DescricaoCombobox";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Landmark, Check, Pencil, Search, TriangleAlert, ChevronsUpDown, StickyNote } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Check, Pencil, Search, TriangleAlert, ChevronsUpDown, StickyNote } from "lucide-react";
 import { toast } from "sonner";
 
 // ===== Períodos rápidos =====
@@ -513,7 +513,7 @@ export default function Extratos() {
             Contas
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Todas as movimentações num único lugar — bancos, adquirente, caixa físico
+            Todas as contas em único lugar — bancos, caixa físico e cartões (em breve)
           </p>
         </div>
         <UnidadeSelector />
@@ -592,12 +592,6 @@ export default function Extratos() {
           </div>
 
           <Card className="border-border/50 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-                <Landmark className="h-4 w-4" /> Extrato
-              </CardTitle>
-              <CardDescription>Transações de todas as contas, somadas por padrão</CardDescription>
-            </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
                 <Tabs value={contaSelecionadaId} onValueChange={setContaSelecionadaId}>
