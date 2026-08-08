@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
@@ -7,7 +7,99 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Users, Loader2, Phone, Mail, MapPin, Calendar, Tag } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, Users, Loader2, Phone, Mail, MapPin, Calendar, Tag, Upload, UserCheck } from "lucide-react";
+import { toast } from "sonner";
+
+function fileParaBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.split(",")[1] ?? "");
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function ImportarClientesCard() {
+  const utils = trpc.useUtils();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [unidadeImport, setUnidadeImport] = useState<"rbs" | "ssu">("ssu");
+
+  const resumoQuery = trpc.clientes.resumoImportados.useQuery();
+
+  const importarMutation = trpc.clientes.importarXlsx.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Planilha importada: ${data.inseridos} novo(s), ${data.atualizados} atualizado(s) de ${data.totalLinhas} linha(s).`);
+      utils.clientes.resumoImportados.invalidate();
+      utils.clientes.listImportados.invalidate();
+    },
+    onError: (err) => toast.error(`Erro ao importar planilha: ${err.message}`),
+  });
+
+  async function handleImportar(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const xlsxBase64 = await fileParaBase64(file);
+      importarMutation.mutate({ unidade: unidadeImport, xlsxBase64 });
+    } catch (err: any) {
+      toast.error(err.message ?? "Falha ao ler o arquivo");
+    } finally {
+      e.target.value = "";
+    }
+  }
+
+  const resumo = resumoQuery.data;
+
+  return (
+    <Card className="border-border/50 shadow-sm">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+          <UserCheck className="h-4 w-4" /> Base local de clientes
+        </CardTitle>
+        <CardDescription>
+          Importada da planilha "[Buddha] Clientes" exportada do Belle (acesso via API negado — precisa de autorização do franqueador).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">{resumo?.total ?? 0} no total</Badge>
+          <Badge variant="outline" className="border-emerald-300 text-emerald-700">{resumo?.ssu ?? 0} só Santa Úrsula</Badge>
+          <Badge variant="outline" className="border-blue-300 text-blue-700">{resumo?.rbs ?? 0} só Ribeirão</Badge>
+          <Badge variant="outline" className="border-amber-300 text-amber-700">{resumo?.ambas ?? 0} nas duas unidades</Badge>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={unidadeImport} onValueChange={(v) => setUnidadeImport(v as "rbs" | "ssu")}>
+            <SelectTrigger className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ssu">Shopping Santa Úrsula</SelectItem>
+              <SelectItem value="rbs">Ribeirão Shopping</SelectItem>
+            </SelectContent>
+          </Select>
+          <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportar} />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={importarMutation.isPending}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {importarMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+            Importar planilha (.xlsx)
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Selecione a unidade dona da planilha antes de importar — clientes que já existem (mesmo ID da planilha) são atualizados,
+          e passam a valer pra ambas as unidades se já constavam na outra.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function Clientes() {
   const { unidadeSelecionada } = useUnidade();
@@ -58,6 +150,8 @@ export default function Clientes() {
         </div>
         <UnidadeSelector />
       </div>
+
+      <ImportarClientesCard />
 
       {/* Search bar */}
       <div className="flex gap-2">

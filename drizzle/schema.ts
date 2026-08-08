@@ -162,8 +162,9 @@ export type InsertSyncLog = typeof syncLogs.$inferInsert;
  * Log de auditoria — toda mutation autenticada (protectedProcedure/
  * adminProcedure), gravada por um middleware genérico em
  * server/_core/trpc.ts, sem precisar instrumentar cada procedure. Trazido
- * do mobai-crm (2026-08-08) e adaptado: sem `clienteId`/`origem` ia —
- * este app não tem tabela local de clientes nem mutations de IA.
+ * do mobai-crm (2026-08-08) e adaptado: sem `clienteId`/`origem` ia — não
+ * cruza com a tabela `clientes` (mesmo ela existindo) nem distingue
+ * mutation de IA, já que este app não tem esse tipo de ação.
  */
 export const auditLog = mysqlTable("audit_log", {
   id: int("id").autoincrement().primaryKey(),
@@ -182,6 +183,51 @@ export const auditLog = mysqlTable("audit_log", {
 
 export type AuditLogEntry = typeof auditLog.$inferSelect;
 export type InsertAuditLogEntry = typeof auditLog.$inferInsert;
+
+/**
+ * Base local de clientes — passou a existir porque o acesso via API do
+ * Belle foi negado (franqueador precisa autorizar, 2026-08-08). Alimentada
+ * por importação manual da planilha "[Buddha] Clientes" que cada unidade
+ * já exporta do Belle (ver server/clientesXlsxParser.ts). `belleId` é o
+ * "ID" da planilha — estável, único, usado pra casar reimportações
+ * (upsert) sem duplicar. `clienteSsu`/`clienteRbs`: um cliente pode
+ * atender nas duas unidades, então cada import (de uma unidade por vez)
+ * liga a flag correspondente sem desligar a outra que já estivesse true.
+ * CPF não é unique — a própria planilha já tem CPFs duplicados
+ * (recadastros no Belle), preservados aqui de propósito.
+ */
+export const clientes = mysqlTable("clientes", {
+  id: int("id").autoincrement().primaryKey(),
+  belleId: bigint("belleId", { mode: "number" }).notNull().unique(),
+  nome: varchar("nome", { length: 200 }).notNull(),
+  rg: varchar("rg", { length: 30 }),
+  cpf: varchar("cpf", { length: 20 }),
+  dataNascimento: varchar("dataNascimento", { length: 10 }), // AAAA-MM-DD
+  sexo: mysqlEnum("sexo", ["Feminino", "Masculino", "Outros"]),
+  endereco: varchar("endereco", { length: 300 }),
+  bairro: varchar("bairro", { length: 120 }),
+  cidade: varchar("cidade", { length: 120 }),
+  uf: varchar("uf", { length: 2 }),
+  telefone: varchar("telefone", { length: 30 }),
+  celular: varchar("celular", { length: 30 }),
+  celular2: varchar("celular2", { length: 30 }),
+  email: varchar("email", { length: 200 }),
+  dataCadastro: varchar("dataCadastro", { length: 10 }), // AAAA-MM-DD
+  primeiroAtendimento: varchar("primeiroAtendimento", { length: 10 }), // AAAA-MM-DD
+  ultimoAtendimento: varchar("ultimoAtendimento", { length: 10 }), // AAAA-MM-DD
+  qtdAtendimentosFinalizados: int("qtdAtendimentosFinalizados").default(0).notNull(),
+  qtdServicosFinalizados: int("qtdServicosFinalizados").default(0).notNull(),
+  clienteSsu: boolean("clienteSsu").default(false).notNull(),
+  clienteRbs: boolean("clienteRbs").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  cpfIdx: index("clientes_cpf_idx").on(table.cpf),
+  nomeIdx: index("clientes_nome_idx").on(table.nome),
+}));
+
+export type Cliente = typeof clientes.$inferSelect;
+export type InsertCliente = typeof clientes.$inferInsert;
 
 /**
  * Conversas do Copilot de atendimento.

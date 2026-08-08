@@ -12,6 +12,7 @@ import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
 import { sicrediApi, getSicrediAccessToken, isSicrediTokenValid } from "./sicrediApi";
 import { parseExtratoInterPdf } from "./interExtratoPdfParser";
+import { parseClientesXlsx } from "./clientesXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
@@ -153,6 +154,36 @@ export const appRouter = router({
       if (!vendas?.vendas) return [];
       // Filtrar vendas do cliente específico
       return vendas.vendas.filter((v: any) => v.cliente === input.codCliente || v.codCliente === input.codCliente);
+    }),
+
+    /**
+     * Base local de clientes, importada da planilha "[Buddha] Clientes"
+     * que cada unidade exporta do Belle — passou a existir porque o
+     * acesso via API foi negado (franqueador precisa autorizar). Uma
+     * unidade por vez; upsert por ID da planilha (belleId), ligando a
+     * flag clienteSsu/clienteRbs correspondente sem apagar a outra.
+     */
+    importarXlsx: adminProcedure.input(z.object({
+      unidade: z.enum(["rbs", "ssu"]),
+      xlsxBase64: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      const buffer = Buffer.from(input.xlsxBase64, "base64");
+      const linhas = parseClientesXlsx(buffer);
+      if (linhas.length === 0) {
+        throw new Error("Nenhum cliente encontrado na planilha.");
+      }
+      const resultado = await db.upsertClientesImportados(input.unidade, linhas);
+      return { success: true, totalLinhas: linhas.length, ...resultado };
+    }),
+
+    resumoImportados: protectedProcedure.query(async () => {
+      return db.resumoClientesLocal();
+    }),
+
+    listImportados: protectedProcedure.input(z.object({
+      busca: z.string().optional(),
+    })).query(async ({ input }) => {
+      return db.listClientesLocal(input.busca);
     }),
   }),
 

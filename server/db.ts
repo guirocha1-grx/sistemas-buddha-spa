@@ -1,6 +1,7 @@
-import { eq, desc, and, gte, lte, isNull, like, ne, inArray, lt } from "drizzle-orm";
+import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, auditLog, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, auditLog, clientes, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente } from "../drizzle/schema";
+import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import { ENV } from './_core/env';
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, extrairPadraoContraparte, ehTransferenciaEntreContas, CHAVE_EXCLUIDO, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, type RegraMatch } from "./dreCategorizacao";
 
@@ -1525,4 +1526,102 @@ export async function listUsuariosParaFiltro() {
   const db = await getDb();
   if (!db) return [];
   return db.select({ id: users.id, name: users.name, email: users.email }).from(users).orderBy(users.name);
+}
+
+// ===== Clientes (base local, importada de planilha — Belle API negado) =====
+
+/**
+ * Upsert por belleId (a única chave estável entre reimportações). Uma
+ * consulta prévia busca os belleId já existentes de uma vez (em vez de
+ * um SELECT por linha) — com 5000+ linhas isso corta pela metade o
+ * número de idas ao banco. `clienteSsu`/`clienteRbs`: liga só a flag da
+ * unidade sendo importada agora, sem nunca desligar a outra — é assim
+ * que um cliente das duas unidades acaba com as duas true, vindas de
+ * imports em momentos diferentes.
+ */
+export async function upsertClientesImportados(
+  unidadeSlug: "rbs" | "ssu",
+  linhas: LinhaClienteImportada[],
+): Promise<{ inseridos: number; atualizados: number }> {
+  const db = await getDb();
+  if (!db) return { inseridos: 0, atualizados: 0 };
+  if (linhas.length === 0) return { inseridos: 0, atualizados: 0 };
+
+  const belleIds = linhas.map((l) => l.belleId);
+  const existentes = await db.select({ belleId: clientes.belleId }).from(clientes).where(inArray(clientes.belleId, belleIds));
+  const existentesSet = new Set(existentes.map((e) => e.belleId));
+
+  const flagUnidade = unidadeSlug === "ssu" ? { clienteSsu: true as const } : { clienteRbs: true as const };
+
+  let inseridos = 0;
+  let atualizados = 0;
+  for (const l of linhas) {
+    const dadosBase = {
+      nome: l.nome,
+      rg: l.rg,
+      cpf: l.cpf,
+      dataNascimento: l.dataNascimento,
+      sexo: l.sexo,
+      endereco: l.endereco,
+      bairro: l.bairro,
+      cidade: l.cidade,
+      uf: l.uf,
+      telefone: l.telefone,
+      celular: l.celular,
+      celular2: l.celular2,
+      email: l.email,
+      dataCadastro: l.dataCadastro,
+      primeiroAtendimento: l.primeiroAtendimento,
+      ultimoAtendimento: l.ultimoAtendimento,
+      qtdAtendimentosFinalizados: l.qtdAtendimentosFinalizados,
+      qtdServicosFinalizados: l.qtdServicosFinalizados,
+    };
+
+    if (existentesSet.has(l.belleId)) {
+      await db.update(clientes).set({ ...dadosBase, ...flagUnidade }).where(eq(clientes.belleId, l.belleId));
+      atualizados++;
+    } else {
+      const insertValues: InsertCliente = {
+        belleId: l.belleId,
+        ...dadosBase,
+        clienteSsu: unidadeSlug === "ssu",
+        clienteRbs: unidadeSlug === "rbs",
+      };
+      await db.insert(clientes).values(insertValues);
+      inseridos++;
+    }
+  }
+
+  return { inseridos, atualizados };
+}
+
+export async function resumoClientesLocal() {
+  const db = await getDb();
+  if (!db) return { total: 0, ssu: 0, rbs: 0, ambas: 0 };
+  const todos = await db.select({ clienteSsu: clientes.clienteSsu, clienteRbs: clientes.clienteRbs }).from(clientes);
+  let ssu = 0;
+  let rbs = 0;
+  let ambas = 0;
+  for (const c of todos) {
+    if (c.clienteSsu && c.clienteRbs) ambas++;
+    else if (c.clienteSsu) ssu++;
+    else if (c.clienteRbs) rbs++;
+  }
+  return { total: todos.length, ssu, rbs, ambas };
+}
+
+export async function listClientesLocal(busca?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const condicoes = [];
+  if (busca) {
+    const termo = `%${busca}%`;
+    condicoes.push(or(like(clientes.nome, termo), like(clientes.cpf, termo), like(clientes.celular, termo), like(clientes.email, termo)));
+  }
+  return db
+    .select()
+    .from(clientes)
+    .where(condicoes.length > 0 ? and(...condicoes) : undefined)
+    .orderBy(clientes.nome)
+    .limit(200);
 }
