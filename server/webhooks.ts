@@ -10,6 +10,40 @@ import { transcribeAudio } from "./_core/voiceTranscription";
 export function registerWhatsappWebhookRoutes(app: Express) {
   registerZapiWebhook(app);
   registerBuddhaMktWebhook(app);
+  registerDeployWebhook(app);
+}
+
+/**
+ * Webhook de deploy — o Claude (ou qualquer ferramenta externa)
+ * chama POST /api/deploy com um token simples para avisar que
+ * terminou uma mudança no GitHub. O Manus monitora esse endpoint
+ * e faz pull + migração + publish automaticamente.
+ */
+function registerDeployWebhook(app: Express) {
+  app.post("/api/deploy", async (req: Request, res: Response) => {
+    const token = req.headers["x-deploy-token"] as string | undefined;
+    const expectedToken = process.env.DEPLOY_WEBHOOK_TOKEN;
+    if (!expectedToken || token !== expectedToken) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const { commit, message, migrations } = req.body as {
+      commit?: string;
+      message?: string;
+      migrations?: string[];
+    };
+    // Log do webhook para o Manus detectar via devserver.log
+    console.log(`[DEPLOY_WEBHOOK] commit=${commit || "unknown"} message=${message || ""} migrations=${JSON.stringify(migrations || [])}`);
+    res.status(200).json({
+      success: true,
+      received: {
+        commit: commit || null,
+        message: message || null,
+        migrations: migrations || [],
+      },
+      timestamp: new Date().toISOString(),
+    });
+  });
 }
 
 // Z-API pode reentregar o mesmo evento (retry de rede). Dedup simples em
