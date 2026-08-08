@@ -185,18 +185,24 @@ export type AuditLogEntry = typeof auditLog.$inferSelect;
 export type InsertAuditLogEntry = typeof auditLog.$inferInsert;
 
 /**
- * Base local de clientes — passou a existir porque o acesso via API do
- * Belle foi negado (franqueador precisa autorizar, 2026-08-08). Alimentada
+ * Base local de clientes do Belle — passou a existir porque o acesso via
+ * API foi negado (franqueador precisa autorizar, 2026-08-08). Alimentada
  * por importação manual da planilha "[Buddha] Clientes" que cada unidade
- * já exporta do Belle (ver server/clientesXlsxParser.ts). `belleId` é o
- * "ID" da planilha — estável, único, usado pra casar reimportações
- * (upsert) sem duplicar. `clienteSsu`/`clienteRbs`: um cliente pode
- * atender nas duas unidades, então cada import (de uma unidade por vez)
- * liga a flag correspondente sem desligar a outra que já estivesse true.
- * CPF não é unique — a própria planilha já tem CPFs duplicados
- * (recadastros no Belle), preservados aqui de propósito.
+ * já exporta de lá (ver server/clientesXlsxParser.ts). `belleId` é o "ID"
+ * da planilha — estável, único, usado pra casar reimportações (upsert)
+ * sem duplicar. `clienteSsu`/`clienteRbs`: um cliente pode atender nas
+ * duas unidades, então cada import (de uma unidade por vez) liga a flag
+ * correspondente sem desligar a outra que já estivesse true. CPF não é
+ * unique — a própria planilha já tem CPFs duplicados (recadastros no
+ * Belle), preservados aqui de propósito.
+ *
+ * Nome da tabela (`clientes_belle`, não `clientes`): já existia uma
+ * tabela `clientes` neste banco com estrutura totalmente diferente,
+ * herdada do mobai-crm (colunas tipo/nomeFantasia/leadScore/etc., sexo
+ * como enum M/F/O) — descoberto só depois de uma tentativa de migração
+ * ter colidido com ela. Nome próprio evita misturar as duas bases.
  */
-export const clientes = mysqlTable("clientes", {
+export const clientesBelle = mysqlTable("clientes_belle", {
   id: int("id").autoincrement().primaryKey(),
   belleId: bigint("belleId", { mode: "number" }).notNull().unique(),
   nome: varchar("nome", { length: 200 }).notNull(),
@@ -222,12 +228,12 @@ export const clientes = mysqlTable("clientes", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
-  cpfIdx: index("clientes_cpf_idx").on(table.cpf),
-  nomeIdx: index("clientes_nome_idx").on(table.nome),
+  cpfIdx: index("clientes_belle_cpf_idx").on(table.cpf),
+  nomeIdx: index("clientes_belle_nome_idx").on(table.nome),
 }));
 
-export type Cliente = typeof clientes.$inferSelect;
-export type InsertCliente = typeof clientes.$inferInsert;
+export type ClienteBelle = typeof clientesBelle.$inferSelect;
+export type InsertClienteBelle = typeof clientesBelle.$inferInsert;
 
 /**
  * Conversas do Copilot de atendimento.
