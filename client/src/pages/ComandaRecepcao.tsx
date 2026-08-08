@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { Loader2, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, RefreshCw, UploadCloud, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
 type FormaServer = "dinheiro" | "debito" | "credito" | "pix";
@@ -118,6 +118,20 @@ export default function ComandaRecepcao() {
     }
   }
 
+  const sincronizarContasBancariasMutation = trpc.comandaRecepcao.sincronizarContasBancariasParaDrive.useMutation({
+    onError: (err) => toast.error(`Erro ao enviar pro Drive: ${err.message}`),
+  });
+
+  async function handleSincronizarContasBancarias() {
+    if (!unidadeId) return;
+    try {
+      const r = await sincronizarContasBancariasMutation.mutateAsync({ unidadeId, dataInicio, dataFim });
+      toast.success(`Enviado pro Drive: ${r.totalDias} dia(s).`);
+    } catch {
+      // erro já reportado via onError da mutation
+    }
+  }
+
   function mudarSemana(deltaDias: number) {
     const d = new Date(inicioSemana);
     d.setDate(d.getDate() + deltaDias);
@@ -209,17 +223,24 @@ export default function ComandaRecepcao() {
     campo,
     destacarDiferenca,
     auditavel,
+    acao,
   }: {
     titulo: string;
     campo: "comanda" | "contasBancarias" | "diferenca";
     destacarDiferenca?: boolean;
     auditavel?: boolean;
+    acao?: ReactNode;
   }) {
     const totaisSecao = totais(campo);
     return (
       <>
         <tr className="bg-muted/60">
-          <td className="sticky left-0 bg-muted/60 px-3 py-2 text-xs font-semibold whitespace-nowrap">{titulo}</td>
+          <td className="sticky left-0 bg-muted/60 px-3 py-2 text-xs font-semibold whitespace-nowrap">
+            <div className="flex items-center gap-2">
+              <span>{titulo}</span>
+              {acao}
+            </div>
+          </td>
           {dias.map((dia) => (
             <td key={dia.data} />
           ))}
@@ -295,37 +316,23 @@ export default function ComandaRecepcao() {
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => mudarSemana(-7)}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <span className="text-sm font-medium px-2 whitespace-nowrap">
-                {fmtDiaCurto(dataInicio)} – {fmtDiaCurto(dataFim)}
-              </span>
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => mudarSemana(7)}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => setInicioSemana(toIso(segundaFeiraDa(new Date())))}
-              >
-                Semana atual
-              </Button>
-            </div>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => mudarSemana(-7)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm font-medium px-2 whitespace-nowrap">
+              {fmtDiaCurto(dataInicio)} – {fmtDiaCurto(dataFim)}
+            </span>
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => mudarSemana(7)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
             <Button
+              variant="ghost"
               size="sm"
-              disabled={sincronizarMutation.isPending}
-              onClick={handleSincronizar}
+              className="h-8 text-xs"
+              onClick={() => setInicioSemana(toIso(segundaFeiraDa(new Date())))}
             >
-              {sincronizarMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4 mr-2" />
-              )}
-              Sincronizar Comanda
+              Semana atual
             </Button>
           </div>
 
@@ -354,8 +361,49 @@ export default function ComandaRecepcao() {
                     </tr>
                   </thead>
                   <tbody>
-                    <Secao titulo="Comanda (Recepção)" campo="comanda" />
-                    <Secao titulo="Contas bancárias" campo="contasBancarias" auditavel />
+                    <Secao
+                      titulo="Comanda (Recepção)"
+                      campo="comanda"
+                      acao={
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-2 text-xs font-normal"
+                          disabled={sincronizarMutation.isPending}
+                          onClick={handleSincronizar}
+                          title="Sincronizar comanda com dados Drive"
+                        >
+                          {sincronizarMutation.isPending ? (
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3 w-3 mr-1" />
+                          )}
+                          Sincronizar
+                        </Button>
+                      }
+                    />
+                    <Secao
+                      titulo="Contas bancárias"
+                      campo="contasBancarias"
+                      auditavel
+                      acao={
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-2 text-xs font-normal"
+                          disabled={sincronizarContasBancariasMutation.isPending}
+                          onClick={handleSincronizarContasBancarias}
+                          title="Enviar Débito, Crédito e Pix pra planilha Drive (linhas 10-12)"
+                        >
+                          {sincronizarContasBancariasMutation.isPending ? (
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          ) : (
+                            <UploadCloud className="h-3 w-3 mr-1" />
+                          )}
+                          Sincronizar com Drive
+                        </Button>
+                      }
+                    />
                     <Secao titulo="Diferença" campo="diferenca" destacarDiferenca />
                   </tbody>
                 </table>

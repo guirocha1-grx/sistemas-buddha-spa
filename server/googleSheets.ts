@@ -33,7 +33,10 @@ function getAuth() {
   return new google.auth.JWT({
     email: ENV.googleSheetsClientEmail,
     key: ENV.googleSheetsPrivateKey.replace(/\\n/g, "\n"),
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+    // Escopo de escrita (não só .readonly) — necessário desde que
+    // escreverContasBancariasSheet passou a gravar de volta na planilha
+    // "Consolidado comanda" (2026-08-08).
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
 }
 
@@ -307,4 +310,95 @@ export async function lerComandaConsolidadoSheet(
     });
   }
   return linhas;
+}
+
+export interface LinhaContasBancariasParaSheet {
+  data: string; // AAAA-MM-DD
+  cartaoDebito: number;
+  cartaoCredito: number;
+  pix: number;
+}
+
+// Linhas fixas (número da linha da planilha, 1-indexado, igual aparece
+// na UI do Google Sheets) onde o bloco "Contas bancárias" — o que
+// realmente entrou, calculado por este sistema — é escrito de volta.
+// Confirmado pelo usuário em 2026-08-08. Dinheiro não tem linha aqui:
+// sua fonte já É o Caixa Físico, escrever de volta seria circular.
+const LINHA_DEBITO_BANCO = 10;
+const LINHA_CREDITO_BANCO = 11;
+const LINHA_PIX_BANCO = 12;
+
+function colunaParaLetra(indiceZeroBased: number): string {
+  let n = indiceZeroBased + 1;
+  let letra = "";
+  while (n > 0) {
+    const resto = (n - 1) % 26;
+    letra = String.fromCharCode(65 + resto) + letra;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letra;
+}
+
+/**
+ * Escreve de volta na planilha "Consolidado comanda" o que este sistema
+ * calcula como "Contas bancárias" (ver server/db.ts:
+ * detalheContasBancariasPorDia) — linhas 10/11/12, mesma aba mensal e
+ * mesmas colunas de data já usadas pela leitura da seção "Comanda
+ * (Recepção)" acima. Datas fora do cabeçalho da aba são ignoradas
+ * silenciosamente (não lança erro — só significa que aquele dia ainda
+ * não tem coluna na planilha, ex.: mês seguinte).
+ */
+export async function escreverContasBancariasSheet(
+  spreadsheetId: string,
+  unidadeSlug: "rbs" | "ssu",
+  ano: number,
+  mes: number,
+  linhas: LinhaContasBancariasParaSheet[],
+): Promise<number> {
+  const auth = getAuth();
+  if (!auth) throw new Error("Credenciais do Google Sheets não configuradas");
+
+  const sheets = google.sheets({ version: "v4", auth });
+  const aba = nomeAbaComanda(unidadeSlug, ano, mes);
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${aba}'!A1:AH20`,
+  });
+  const rows = res.data.values || [];
+  if (rows.length === 0) throw new Error(`Aba "${aba}" está vazia`);
+
+  const linhaHeader = rows.findIndex((r) => r.some((c) => /^\d{2}\/\d{2}\/\d{4}$/.test((c || "").toString().trim())));
+  if (linhaHeader < 0) throw new Error(`Não achei o cabeçalho de datas na aba "${aba}"`);
+  const header = rows[linhaHeader];
+
+  const colPorData = new Map<string, number>();
+  for (let col = 0; col < header.length; col++) {
+    const dataRaw = (header[col] || "").toString().trim();
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dataRaw)) continue;
+    const data = parseData(dataRaw);
+    if (data) colPorData.set(data, col);
+  }
+
+  const data: { range: string; values: number[][] }[] = [];
+  let colunasEscritas = 0;
+  for (const linha of linhas) {
+    const col = colPorData.get(linha.data);
+    if (col === undefined) continue;
+    const colunaLetra = colunaParaLetra(col);
+    data.push(
+      { range: `'${aba}'!${colunaLetra}${LINHA_DEBITO_BANCO}`, values: [[linha.cartaoDebito]] },
+      { range: `'${aba}'!${colunaLetra}${LINHA_CREDITO_BANCO}`, values: [[linha.cartaoCredito]] },
+      { range: `'${aba}'!${colunaLetra}${LINHA_PIX_BANCO}`, values: [[linha.pix]] },
+    );
+    colunasEscritas++;
+  }
+  if (data.length === 0) return 0;
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: { valueInputOption: "USER_ENTERED", data },
+  });
+
+  return colunasEscritas;
 }

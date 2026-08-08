@@ -15,7 +15,7 @@ import { parseExtratoInterPdf } from "./interExtratoPdfParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
-import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA } from "./googleSheets";
+import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet } from "./googleSheets";
 
 export const appRouter = router({
   system: systemRouter,
@@ -1590,6 +1590,62 @@ Diretrizes:
         await db.createSyncLog({
           unidadeId: input.unidadeId,
           tipo: "comanda_recepcao",
+          status: "erro",
+          registrosProcessados: 0,
+          detalhes: error.message,
+        });
+        throw error;
+      }
+    }),
+
+    /**
+     * Caminho inverso do `sincronizar` acima: escreve de volta na
+     * planilha "Consolidado comanda" o que este sistema calcula como
+     * "Contas bancárias" (débito/crédito/pix, já deduplicado) — linhas
+     * 10/11/12, ver escreverContasBancariasSheet. Agrupa por mês porque
+     * cada mês é uma aba diferente na planilha; o período pode cair em
+     * mais de uma aba se a semana visível cruzar virada de mês.
+     */
+    sincronizarContasBancariasParaDrive: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) throw new Error("Unidade não encontrada");
+
+      const isRbs = unidade.slug.includes("ribeirao") || unidade.slug.includes("rbs");
+      const slug = isRbs ? "rbs" as const : "ssu" as const;
+      const spreadsheetId = SPREADSHEET_IDS_COMANDA[slug];
+
+      try {
+        const resumo = await db.resumoContasBancariasPorDia(input.unidadeId, input.dataInicio, input.dataFim);
+        const porMes = new Map<string, LinhaContasBancariasParaSheet[]>();
+        for (const [data, valores] of Array.from(resumo)) {
+          const chave = data.slice(0, 7); // "AAAA-MM"
+          const lista = porMes.get(chave) ?? [];
+          lista.push({ data, cartaoDebito: valores.cartaoDebito, cartaoCredito: valores.cartaoCredito, pix: valores.pix });
+          porMes.set(chave, lista);
+        }
+
+        let totalDias = 0;
+        for (const [chave, linhas] of Array.from(porMes)) {
+          const [ano, mes] = chave.split("-").map(Number);
+          totalDias += await escreverContasBancariasSheet(spreadsheetId, slug, ano, mes, linhas);
+        }
+
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "comanda_contas_bancarias",
+          status: "sucesso",
+          registrosProcessados: totalDias,
+          detalhes: `Período ${input.dataInicio} a ${input.dataFim}. Dias escritos: ${totalDias}.`,
+        });
+        return { success: true, totalDias };
+      } catch (error: any) {
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "comanda_contas_bancarias",
           status: "erro",
           registrosProcessados: 0,
           detalhes: error.message,
