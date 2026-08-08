@@ -3,80 +3,88 @@ import { execSync } from "child_process";
 import { readFileSync, existsSync } from "fs";
 import path from "path";
 import { sdk } from "./_core/sdk";
+import { drizzle } from "drizzle-orm/mysql2";
+import { mysqlTable, int, varchar, text, timestamp, boolean } from "drizzle-orm/mysql-core";
+import { eq, and, desc } from "drizzle-orm";
 
-/**
- * Auto-deploy via Heartbeat cron.
- *
- * A cada 3 minutos o platform POSTs to /api/scheduled/auto-deploy.
- * O handler verifica se o webhook POST /api/deploy foi chamado desde a
- * última execução (marcador em /tmp/deploy-webhook-pending).
- * Se foi, faz git pull + aplica migrações SQL pendentes + publica.
- * Se não foi, retorna skipped — custo quase zero.
- */
+const deployPending = mysqlTable("deploy_pending", {
+  id: int("id").autoincrement().primaryKey(),
+  commit: varchar("commit", { length: 64 }),
+  message: text("message"),
+  migrations: text("migrations"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  processed: boolean("processed").default(false).notNull(),
+});
 
-const PENDING_FILE = "/tmp/deploy-webhook-pending";
 const PROJECT_DIR = "/home/ubuntu/sistemas-buddha-spa";
 const DRIZZLE_DIR = path.join(PROJECT_DIR, "drizzle");
+
+async function getDb() {
+  if (!process.env.DATABASE_URL) return null;
+  try { return drizzle(process.env.DATABASE_URL); } catch { return null; }
+}
 
 export function registerAutoDeployRoute(app: Express) {
   app.post("/api/scheduled/auto-deploy", async (req: Request, res: Response) => {
     try {
-      // Autenticar como cron
       const user = await sdk.authenticateRequest(req);
       if (!user.isCron || !user.taskUid) {
         return res.status(403).json({ error: "cron-only" });
       }
 
-      // Verificar se há webhook pendente
-      if (!existsSync(PENDING_FILE)) {
+      const database = await getDb();
+      if (!database) {
+        return res.json({ ok: true, skipped: "no-database" });
+      }
+
+      // Buscar marcador não processado mais recente
+      const pending = await database.select().from(deployPending)
+        .where(eq(deployPending.processed, false))
+        .orderBy(desc(deployPending.id))
+        .limit(1);
+
+      if (pending.length === 0) {
         return res.json({ ok: true, skipped: "no-pending-webhook" });
       }
 
-      // Ler e limpar o marcador
-      const webhookData = JSON.parse(readFileSync(PENDING_FILE, "utf-8"));
-      execSync(`rm -f ${PENDING_FILE}`);
+      const webhookData = pending[0];
+      const commit = webhookData.commit || undefined;
+      const message = webhookData.message || undefined;
+      let migrations: string[] = [];
+      try { migrations = JSON.parse(webhookData.migrations || "[]"); } catch {}
 
-      const { commit, message, migrations } = webhookData as {
-        commit?: string;
-        message?: string;
-        migrations?: string[];
-      };
+      // Marcar como processado ANTES de executar (evita reprocessamento)
+      await database.update(deployPending)
+        .set({ processed: true })
+        .where(eq(deployPending.id, webhookData.id));
 
       console.log(`[AUTO_DEPLOY] Iniciando deploy: commit=${commit || "unknown"} message=${message || ""}`);
 
       // 1. Git pull
-      execSync(`cd ${PROJECT_DIR} && git remote add github https://github.com/guirocha1-grx/sistemas-buddha-spa.git 2>/dev/null; git fetch github && git stash && git merge github/main -X theirs -m "Auto-deploy: ${commit || "unknown"}"`, {
-        timeout: 30000,
-        stdio: "pipe",
-      });
+      execSync(
+        `cd ${PROJECT_DIR} && git remote add github https://github.com/guirocha1-grx/sistemas-buddha-spa.git 2>/dev/null; git fetch github && git stash && git merge github/main -X theirs -m "Auto-deploy: ${commit || "unknown"}"`,
+        { timeout: 30000, stdio: "pipe" }
+      );
 
       // 2. Aplicar migrações SQL pendentes
       const appliedMigrations: string[] = [];
-      if (migrations && migrations.length > 0) {
+      if (migrations.length > 0) {
         for (const migrationFile of migrations) {
           const fullPath = path.join(DRIZZLE_DIR, migrationFile);
           if (existsSync(fullPath)) {
-            try {
-              const sql = readFileSync(fullPath, "utf-8");
-              // Executar via db query
-              console.log(`[AUTO_DEPLOY] Aplicando migração: ${migrationFile}`);
-              appliedMigrations.push(migrationFile);
-            } catch (err) {
-              console.error(`[AUTO_DEPLOY] Erro ao aplicar migração ${migrationFile}:`, err);
-            }
+            console.log(`[AUTO_DEPLOY] Migração encontrada: ${migrationFile}`);
+            appliedMigrations.push(migrationFile);
           }
         }
       }
 
-      // 3. Reinstalar dependências se package.json mudou
+      // 3. Reinstalar dependências
       try {
         execSync(`cd ${PROJECT_DIR} && pnpm install --frozen-lockfile 2>&1 || true`, {
           timeout: 60000,
           stdio: "pipe",
         });
-      } catch {
-        // Non-fatal
-      }
+      } catch {}
 
       console.log(`[AUTO_DEPLOY] Deploy concluído: commit=${commit || "unknown"} migrations=${appliedMigrations.length}`);
 

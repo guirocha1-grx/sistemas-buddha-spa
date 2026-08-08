@@ -1,8 +1,25 @@
 import type { Express, Request, Response } from "express";
-import { writeFileSync } from "fs";
 import * as db from "./db";
 import { getConfig } from "./db";
 import { transcribeAudio } from "./_core/voiceTranscription";
+import { drizzle } from "drizzle-orm/mysql2";
+import { mysqlTable, int, varchar, text, timestamp, boolean } from "drizzle-orm/mysql-core";
+import { eq } from "drizzle-orm";
+
+// Tabela deploy_pending para comunicação entre webhook (sandbox) e cron (produção)
+const deployPending = mysqlTable("deploy_pending", {
+  id: int("id").autoincrement().primaryKey(),
+  commit: varchar("commit", { length: 64 }),
+  message: text("message"),
+  migrations: text("migrations"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  processed: boolean("processed").default(false).notNull(),
+});
+
+async function getDb() {
+  if (!process.env.DATABASE_URL) return null;
+  try { return drizzle(process.env.DATABASE_URL); } catch { return null; }
+}
 
 /**
  * Webhooks de mensageria (WhatsApp). Rotas Express puras — Z-API e a
@@ -35,11 +52,21 @@ function registerDeployWebhook(app: Express) {
     };
     // Log do webhook para o Manus detectar via devserver.log
     console.log(`[DEPLOY_WEBHOOK] commit=${commit || "unknown"} message=${message || ""} migrations=${JSON.stringify(migrations || [])}`);
-    // Gravar marcador para o auto-deploy cron detectar
+    // Gravar no banco para o auto-deploy cron detectar (funciona entre sandbox e produção)
     try {
-      writeFileSync("/tmp/deploy-webhook-pending", JSON.stringify({ commit, message, migrations: migrations || [], timestamp: new Date().toISOString() }));
+      const database = await getDb();
+      if (database) {
+        await database.insert(deployPending).values({
+          commit: commit || null,
+          message: message || null,
+          migrations: JSON.stringify(migrations || []),
+        });
+        console.log(`[DEPLOY_WEBHOOK] Marcador gravado no banco: commit=${commit || "unknown"}`);
+      } else {
+        console.error("[DEPLOY_WEBHOOK] Banco não disponível");
+      }
     } catch (e) {
-      console.error("[DEPLOY_WEBHOOK] Erro ao gravar marcador:", e);
+      console.error("[DEPLOY_WEBHOOK] Erro ao gravar marcador no banco:", e);
     }
     res.status(200).json({
       success: true,
