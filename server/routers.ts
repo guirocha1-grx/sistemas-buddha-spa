@@ -17,6 +17,27 @@ import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRe
 import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet } from "./googleSheets";
 
+function fmtDateIso(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * "Recebimentos" do Dashboard: soma de Contas bancárias (Dinheiro +
+ * Débito + Crédito + Pix, já deduplicado — ver db.ts:
+ * resumoContasBancariasPorDia) no período. Substitui o antigo
+ * `recebimentos` do Belle (2026-08-08) — o dado do Belle dependia de
+ * token configurado por unidade e ficava zerado sem ele; este é
+ * calculado por este sistema e já bate com a Comanda Recepção.
+ */
+async function totalContasBancariasNoPeriodo(unidadeId: number, dataInicio: string, dataFim: string): Promise<number> {
+  const resumo = await db.resumoContasBancariasPorDia(unidadeId, dataInicio, dataFim);
+  let total = 0;
+  for (const valores of Array.from(resumo.values())) {
+    total += valores.dinheiro + valores.cartaoDebito + valores.cartaoCredito + valores.pix;
+  }
+  return total;
+}
+
 export const appRouter = router({
   system: systemRouter,
 
@@ -253,22 +274,19 @@ export const appRouter = router({
       const dataInicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
       const fmtDate = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 
-      const [vendas, recebimentos, agendamentos] = await Promise.all([
+      const [vendas, recebimentosMes, agendamentos] = await Promise.all([
         belleApi.relatorioVendas(unidade.belleToken, unidade.codEstab, {
           data_inicio: fmtDate(dataInicio),
           data_fim: fmtDate(hoje),
         }).catch(() => null),
-        belleApi.listarRecebimentos(unidade.belleToken, unidade.codEstab, {
-          data_inicio: fmtDate(dataInicio),
-          data_fim: fmtDate(hoje),
-        }).catch(() => null),
+        totalContasBancariasNoPeriodo(input.unidadeId, fmtDateIso(dataInicio), fmtDateIso(hoje)).catch(() => 0),
         belleApi.listarAgendamentos(unidade.belleToken, unidade.codEstab).catch(() => null),
       ]);
 
       return {
         faturamentoMes: vendas?.valorTotal ?? 0,
         totalVendasMes: vendas?.totalVendas ?? 0,
-        recebimentosMes: recebimentos?.reduce((sum, r) => sum + r.valor, 0) ?? 0,
+        recebimentosMes,
         agendamentosHoje: agendamentos?.filter(a => {
           const today = fmtDate(hoje);
           return a.data === today;
@@ -283,9 +301,15 @@ export const appRouter = router({
       const hoje = new Date();
       const dataInicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
       const fmtDate = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+      const dataInicioIso = fmtDateIso(dataInicio);
+      const dataFimIso = fmtDateIso(hoje);
 
       const resultados = await Promise.all(
         unidades.map(async (unidade) => {
+          // Recebimentos não depende mais de token Belle — calculado
+          // direto das Contas bancárias, então roda pra toda unidade.
+          const recebimentosMes = await totalContasBancariasNoPeriodo(unidade.id, dataInicioIso, dataFimIso).catch(() => 0);
+
           if (!unidade.belleToken) {
             return {
               unidadeId: unidade.id,
@@ -293,19 +317,15 @@ export const appRouter = router({
               corTema: unidade.corTema,
               faturamentoMes: 0,
               totalVendasMes: 0,
-              recebimentosMes: 0,
+              recebimentosMes,
               agendamentosHoje: 0,
               totalAgendamentos: 0,
               semToken: true,
             };
           }
           try {
-            const [vendas, recebimentos, agendamentos] = await Promise.all([
+            const [vendas, agendamentos] = await Promise.all([
               belleApi.relatorioVendas(unidade.belleToken, unidade.codEstab, {
-                data_inicio: fmtDate(dataInicio),
-                data_fim: fmtDate(hoje),
-              }).catch(() => null),
-              belleApi.listarRecebimentos(unidade.belleToken, unidade.codEstab, {
                 data_inicio: fmtDate(dataInicio),
                 data_fim: fmtDate(hoje),
               }).catch(() => null),
@@ -318,7 +338,7 @@ export const appRouter = router({
               corTema: unidade.corTema,
               faturamentoMes: vendas?.valorTotal ?? 0,
               totalVendasMes: vendas?.totalVendas ?? 0,
-              recebimentosMes: recebimentos?.reduce((sum: number, r: any) => sum + (r.valor || 0), 0) ?? 0,
+              recebimentosMes,
               agendamentosHoje: agendamentos?.filter((a: any) => a.data === fmtDate(hoje)).length ?? 0,
               totalAgendamentos: agendamentos?.length ?? 0,
               semToken: false,
@@ -330,7 +350,7 @@ export const appRouter = router({
               corTema: unidade.corTema,
               faturamentoMes: 0,
               totalVendasMes: 0,
-              recebimentosMes: 0,
+              recebimentosMes,
               agendamentosHoje: 0,
               totalAgendamentos: 0,
               semToken: false,
