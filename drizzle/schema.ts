@@ -196,13 +196,11 @@ export type InsertAuditLogEntry = typeof auditLog.$inferInsert;
  * unique — a própria planilha já tem CPFs duplicados (recadastros no
  * Belle), preservados aqui de propósito.
  *
- * Nome da tabela (`clientes_belle`, não `clientes`): já existia uma
- * tabela `clientes` neste banco com estrutura totalmente diferente,
- * herdada do mobai-crm (colunas tipo/nomeFantasia/leadScore/etc., sexo
- * como enum M/F/O) — descoberto só depois de uma tentativa de migração
- * ter colidido com ela. Nome próprio evita misturar as duas bases.
+ * mobai-crm mora num banco separado (confirmado 2026-08-08) — a suspeita
+ * anterior de colisão de nome de tabela era equivocada; o `clientes_belle`
+ * temporário foi revertido de volta pra `clientes`.
  */
-export const clientesBelle = mysqlTable("clientes_belle", {
+export const clientes = mysqlTable("clientes", {
   id: int("id").autoincrement().primaryKey(),
   belleId: bigint("belleId", { mode: "number" }).notNull().unique(),
   nome: varchar("nome", { length: 200 }).notNull(),
@@ -228,12 +226,12 @@ export const clientesBelle = mysqlTable("clientes_belle", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
-  cpfIdx: index("clientes_belle_cpf_idx").on(table.cpf),
-  nomeIdx: index("clientes_belle_nome_idx").on(table.nome),
+  cpfIdx: index("clientes_cpf_idx").on(table.cpf),
+  nomeIdx: index("clientes_nome_idx").on(table.nome),
 }));
 
-export type ClienteBelle = typeof clientesBelle.$inferSelect;
-export type InsertClienteBelle = typeof clientesBelle.$inferInsert;
+export type Cliente = typeof clientes.$inferSelect;
+export type InsertCliente = typeof clientes.$inferInsert;
 
 /**
  * Conversas do Copilot de atendimento.
