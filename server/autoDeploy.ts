@@ -1,3 +1,4 @@
+// Auto-deploy v3: cria tabela deploy_pending automaticamente se não existir
 import type { Express, Request, Response } from "express";
 import { execSync } from "child_process";
 import { readFileSync, existsSync } from "fs";
@@ -5,7 +6,7 @@ import path from "path";
 import { sdk } from "./_core/sdk";
 import { drizzle } from "drizzle-orm/mysql2";
 import { mysqlTable, int, varchar, text, timestamp, boolean } from "drizzle-orm/mysql-core";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
 const deployPending = mysqlTable("deploy_pending", {
   id: int("id").autoincrement().primaryKey(),
@@ -35,6 +36,22 @@ export function registerAutoDeployRoute(app: Express) {
       const database = await getDb();
       if (!database) {
         return res.json({ ok: true, skipped: "no-database" });
+      }
+
+      // Garantir que a tabela deploy_pending existe (cria em produção se não existir)
+      try {
+        await database.execute(
+          `CREATE TABLE IF NOT EXISTS \`deploy_pending\` (
+            \`id\` int AUTO_INCREMENT PRIMARY KEY,
+            \`commit\` varchar(64),
+            \`message\` text,
+            \`migrations\` text,
+            \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            \`processed\` boolean DEFAULT false NOT NULL
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
+        );
+      } catch (e) {
+        console.error("[AUTO_DEPLOY] Erro ao criar tabela:", e);
       }
 
       // Buscar marcador não processado mais recente
