@@ -456,10 +456,22 @@ function chaveDescricaoAdquirente(tipo: string | null | undefined): string | nul
 
 export async function upsertAdquirenteVendas(
   unidadeId: number,
-  vendas: InsertAdquirenteVenda[],
+  vendasBrutas: InsertAdquirenteVenda[],
 ): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
+
+  // Pix via maquininha da Interpag/Granito não entra aqui — o depósito
+  // já chega certinho (valor cheio, sem desconto de taxa) no extrato
+  // bancário, então contar ele de novo pelo lado do adquirente só
+  // duplicaria a mesma entrada de Pix. Diferente do Mercado Pago, cujo
+  // Pix precisa vir daqui porque a liquidação dele no banco é excluída
+  // do DRE (já contada via adquirente_vendas) — sem discriminar "Pix
+  // maquina" vs "Pix direto na conta", não há motivo pra ter os dois
+  // casos hoje.
+  const vendas = vendasBrutas.filter(
+    (v) => !(v.adquirente === "interpag" && chaveDescricaoAdquirente(v.tipo) === CHAVE_RECEITA_PIX),
+  );
   if (vendas.length === 0) return 0;
 
   // Resolve os ids das Descrições de receita uma vez (não numa query

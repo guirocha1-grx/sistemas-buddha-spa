@@ -130,6 +130,13 @@ export const CHAVE_RECEITA_PIX = "receita_pix";
 export const CHAVE_RECEITA_ESPECIE = "receita_especie";
 export const CHAVE_RECEITA_CARTAO_DEBITO = "receita_c_debito";
 export const CHAVE_RECEITA_CARTAO_CREDITO = "receita_c_credito";
+// "Líq." = o depósito no extrato bancário (Sicredi/Inter), valor líquido
+// já descontada a taxa da adquirente — separado das duas acima (valor
+// bruto da venda na maquininha, via adquirente_vendas), pra não misturar
+// as duas coisas com o mesmo nome (2026-08-07: mesmo Descrição sendo
+// usada pelos dois lados causava dupla contagem na Comanda Recepção).
+export const CHAVE_RECEITA_LIQ_CARTAO_DEBITO = "receita_liq_c_debito";
+export const CHAVE_RECEITA_LIQ_CARTAO_CREDITO = "receita_liq_c_credito";
 
 /**
  * Descrições semeadas — o nível intermediário entre Categoria e
@@ -163,6 +170,8 @@ export const DRE_DESCRICOES_SEED: { nome: string; categoriaNome: string; chave?:
   { nome: "Receita em Espécie", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_ESPECIE },
   { nome: "Receita Cartão de Débito", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_CARTAO_DEBITO },
   { nome: "Receita Cartão de Crédito", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_CARTAO_CREDITO },
+  { nome: "Receita Líq. Cartão de Débito", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_LIQ_CARTAO_DEBITO },
+  { nome: "Receita Líq. Cartão de Crédito", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_LIQ_CARTAO_CREDITO },
 ];
 
 export interface DreRegraSeed {
