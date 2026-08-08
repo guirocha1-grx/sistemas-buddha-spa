@@ -628,7 +628,11 @@ const CHAVE_DESCRICAO_POR_FORMA: Record<ItemContaBancaria["forma"], string> = {
  * categorizadas como "Excluído do DRE" (ver
  * categorizarTransacaoAutomaticamente), então nem aparecem aqui. Caixa
  * Físico entra pelo mesmo caminho (categorizado como "Receita em
- * Espécie"), sem precisar de caso especial. Agrupado pelo dia da venda
+ * Espécie"), sem precisar de caso especial. Débito/Crédito vêm só de
+ * adquirente_vendas (valor bruto da venda, fonte confiável — bate com o
+ * resumo de Adquirentes); o depósito correspondente no extrato bancário
+ * não entra aqui, senão duplicaria a mesma venda (valor líquido, já sem
+ * taxa, chegando pelo outro caminho). Agrupado pelo dia da venda
  * (dataHora/dataEntrada), não pela data de liquidação — o objetivo é
  * comparar "o que a recepção lançou hoje" com "o que realmente
  * aconteceu hoje". Serve tanto pro resumo (agregado) quanto pro tooltip
@@ -671,12 +675,23 @@ export async function detalheContasBancariasPorDia(
     });
   }
 
-  const extratos = await db.select().from(interExtratos).where(and(
+  // Débito/Crédito entram só pela venda da maquininha (acima) — o valor
+  // bruto de lá já é a fonte confiável (bate com o resumo de Adquirentes).
+  // O depósito correspondente no extrato bancário (líquido, já descontada
+  // taxa) é o mesmo dinheiro chegando por outro caminho: somar os dois
+  // duplicaria a venda. Dinheiro/Pix não têm linha em adquirente_vendas
+  // (Caixa Físico e Pix direto na conta), então continuam vindo só do
+  // extrato.
+  const idsReceitaExtrato = Array.from(formaPorDescricaoId.entries())
+    .filter(([, forma]) => forma === "dinheiro" || forma === "pix")
+    .map(([id]) => id);
+
+  const extratos = idsReceitaExtrato.length === 0 ? [] : await db.select().from(interExtratos).where(and(
     eq(interExtratos.unidadeId, unidadeId),
     eq(interExtratos.tipoOperacao, "C"),
     gte(interExtratos.dataEntrada, dataInicio),
     lte(interExtratos.dataEntrada, dataFim),
-    inArray(interExtratos.dreDescricaoId, idsReceita),
+    inArray(interExtratos.dreDescricaoId, idsReceitaExtrato),
   ));
   for (const e of extratos) {
     const forma = e.dreDescricaoId ? formaPorDescricaoId.get(e.dreDescricaoId) : undefined;
