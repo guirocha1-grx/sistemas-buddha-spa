@@ -1,6 +1,6 @@
 import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, auditLog, clientesBelle, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertClienteBelle } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, auditLog, clientes, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import { ENV } from './_core/env';
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, extrairPadraoContraparte, ehTransferenciaEntreContas, CHAVE_EXCLUIDO, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, type RegraMatch } from "./dreCategorizacao";
@@ -1548,7 +1548,7 @@ export async function upsertClientesImportados(
   if (linhas.length === 0) return { inseridos: 0, atualizados: 0 };
 
   const belleIds = linhas.map((l) => l.belleId);
-  const existentes = await db.select({ belleId: clientesBelle.belleId }).from(clientesBelle).where(inArray(clientesBelle.belleId, belleIds));
+  const existentes = await db.select({ belleId: clientes.belleId }).from(clientes).where(inArray(clientes.belleId, belleIds));
   const existentesSet = new Set(existentes.map((e) => e.belleId));
 
   const flagUnidade = unidadeSlug === "ssu" ? { clienteSsu: true as const } : { clienteRbs: true as const };
@@ -1578,16 +1578,16 @@ export async function upsertClientesImportados(
     };
 
     if (existentesSet.has(l.belleId)) {
-      await db.update(clientesBelle).set({ ...dadosBase, ...flagUnidade }).where(eq(clientesBelle.belleId, l.belleId));
+      await db.update(clientes).set({ ...dadosBase, ...flagUnidade }).where(eq(clientes.belleId, l.belleId));
       atualizados++;
     } else {
-      const insertValues: InsertClienteBelle = {
+      const insertValues: InsertCliente = {
         belleId: l.belleId,
         ...dadosBase,
         clienteSsu: unidadeSlug === "ssu",
         clienteRbs: unidadeSlug === "rbs",
       };
-      await db.insert(clientesBelle).values(insertValues);
+      await db.insert(clientes).values(insertValues);
       inseridos++;
     }
   }
@@ -1598,7 +1598,7 @@ export async function upsertClientesImportados(
 export async function resumoClientesLocal() {
   const db = await getDb();
   if (!db) return { total: 0, ssu: 0, rbs: 0, ambas: 0 };
-  const todos = await db.select({ clienteSsu: clientesBelle.clienteSsu, clienteRbs: clientesBelle.clienteRbs }).from(clientesBelle);
+  const todos = await db.select({ clienteSsu: clientes.clienteSsu, clienteRbs: clientes.clienteRbs }).from(clientes);
   let ssu = 0;
   let rbs = 0;
   let ambas = 0;
@@ -1616,12 +1616,12 @@ export async function listClientesLocal(busca?: string) {
   const condicoes = [];
   if (busca) {
     const termo = `%${busca}%`;
-    condicoes.push(or(like(clientesBelle.nome, termo), like(clientesBelle.cpf, termo), like(clientesBelle.celular, termo), like(clientesBelle.email, termo)));
+    condicoes.push(or(like(clientes.nome, termo), like(clientes.cpf, termo), like(clientes.celular, termo), like(clientes.email, termo)));
   }
   return db
     .select()
-    .from(clientesBelle)
+    .from(clientes)
     .where(condicoes.length > 0 ? and(...condicoes) : undefined)
-    .orderBy(clientesBelle.nome)
+    .orderBy(clientes.nome)
     .limit(200);
 }
