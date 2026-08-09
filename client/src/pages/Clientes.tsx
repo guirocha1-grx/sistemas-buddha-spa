@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Users, Loader2, Phone, Mail, MapPin, Calendar, Tag, Upload, UserCheck } from "lucide-react";
+import { Search, Users, Loader2, Phone, Mail, MapPin, Calendar, Upload, UserCheck, IdCard } from "lucide-react";
 import { toast } from "sonner";
 
 function fileParaBase64(file: File): Promise<string> {
@@ -101,41 +101,26 @@ function ImportarClientesCard() {
   );
 }
 
+function fmtDataBr(iso: string | null): string {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
 export default function Clientes() {
   const { unidadeSelecionada } = useUnidade();
   const [searchType, setSearchType] = useState<"list" | "search">("list");
   const [searchValue, setSearchValue] = useState("");
-  const [page, setPage] = useState(0);
   const [selectedCliente, setSelectedCliente] = useState<any>(null);
 
-  const { data: clientes, isLoading } = trpc.clientes.list.useQuery(
-    { unidadeId: unidadeSelecionada?.id ?? 0, pagina: page },
-    { enabled: !!unidadeSelecionada && searchType === "list" }
+  const clientesQuery = trpc.clientes.listImportados.useQuery(
+    { busca: searchType === "search" && searchValue.trim() ? searchValue.trim() : undefined },
+    { enabled: !!unidadeSelecionada },
   );
 
-  const { data: clienteBuscado, isLoading: searching } = trpc.clientes.buscar.useQuery(
-    {
-      unidadeId: unidadeSelecionada?.id ?? 0,
-      cpf: searchType === "search" && searchValue.match(/^\d/) ? searchValue.replace(/\D/g, "") : undefined,
-      email: searchType === "search" && searchValue.includes("@") ? searchValue : undefined,
-      celular: searchType === "search" && !searchValue.includes("@") && !searchValue.match(/^\d{11,}/) ? searchValue : undefined,
-    },
-    { enabled: !!unidadeSelecionada && searchType === "search" && searchValue.length > 3 }
-  );
-
-  const { data: planos } = trpc.clientes.planos.useQuery(
-    { unidadeId: unidadeSelecionada?.id ?? 0, codCliente: selectedCliente?.codigo ?? 0 },
-    { enabled: !!selectedCliente?.codigo }
-  );
-
-  const { data: historico } = trpc.clientes.historico.useQuery(
-    { unidadeId: unidadeSelecionada?.id ?? 0, codCliente: selectedCliente?.codigo ?? 0 },
-    { enabled: !!selectedCliente?.codigo }
-  );
-
-  const displayClientes = searchType === "search" && clienteBuscado ? [clienteBuscado] : clientes || [];
-
-  const fmtCurrency = (val: number) => val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const isRbs = unidadeSelecionada?.slug?.includes("ribeirao") || unidadeSelecionada?.slug?.includes("rbs");
+  const displayClientes = (clientesQuery.data ?? []).filter((c) => (isRbs ? c.clienteRbs : c.clienteSsu));
+  const isLoading = clientesQuery.isLoading;
 
   return (
     <div className="space-y-6">
@@ -145,7 +130,7 @@ export default function Clientes() {
             Clientes
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Base de clientes sincronizada com o Belle Software
+            Base local, importada da planilha do Belle (acesso via API negado)
           </p>
         </div>
         <UnidadeSelector />
@@ -175,7 +160,7 @@ export default function Clientes() {
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="CPF, email ou celular..."
+              placeholder="Nome, CPF, email ou celular..."
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
               className="pl-10"
@@ -185,7 +170,7 @@ export default function Clientes() {
       </div>
 
       {/* Results */}
-      {isLoading || searching ? (
+      {isLoading ? (
         <div className="flex justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -203,8 +188,8 @@ export default function Clientes() {
       ) : (
         <>
           <div className="grid gap-3">
-            {displayClientes.map((cliente: any) => (
-              <Dialog key={cliente.codigo}>
+            {displayClientes.map((cliente) => (
+              <Dialog key={cliente.id}>
                 <DialogTrigger asChild>
                   <Card
                     className="border-border/50 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
@@ -215,16 +200,9 @@ export default function Clientes() {
                         <div className="space-y-1 flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="font-medium truncate">{cliente.nome}</span>
-                            {cliente.temperatura && (
-                              <Badge
-                                variant="outline"
-                                className={
-                                  cliente.temperatura === "Quente" ? "border-orange-300 text-orange-700" :
-                                  cliente.temperatura === "Morno" ? "border-yellow-300 text-yellow-700" :
-                                  "border-blue-300 text-blue-700"
-                                }
-                              >
-                                {cliente.temperatura}
+                            {cliente.clienteSsu && cliente.clienteRbs && (
+                              <Badge variant="outline" className="border-amber-300 text-amber-700 text-xs">
+                                nas duas unidades
                               </Badge>
                             )}
                           </div>
@@ -241,29 +219,13 @@ export default function Clientes() {
                             )}
                             {cliente.cidade && (
                               <span className="flex items-center gap-1">
-                                <MapPin className="h-3 w-3" /> {cliente.cidade}/{cliente.UF}
+                                <MapPin className="h-3 w-3" /> {cliente.cidade}{cliente.uf ? `/${cliente.uf}` : ""}
                               </span>
                             )}
                           </div>
                         </div>
-                        <div className="flex flex-col items-end gap-1 shrink-0">
-                          {cliente.rating > 0 && (
-                            <div className="flex gap-0.5">
-                              {Array.from({ length: 5 }).map((_, i) => (
-                                <span
-                                  key={i}
-                                  className={i < cliente.rating ? "text-amber-500" : "text-muted-foreground/30"}
-                                >
-                                  ★
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {cliente.tags?.map((tag: any) => (
-                            <Badge key={tag.id} variant="secondary" className="text-xs">
-                              {tag.nome}
-                            </Badge>
-                          ))}
+                        <div className="text-xs text-muted-foreground shrink-0 text-right">
+                          {cliente.qtdAtendimentosFinalizados} atendimento{cliente.qtdAtendimentosFinalizados === 1 ? "" : "s"}
                         </div>
                       </div>
                     </CardContent>
@@ -277,96 +239,82 @@ export default function Clientes() {
                   </DialogHeader>
                   {selectedCliente && (
                     <div className="space-y-4">
-                      {/* Dados pessoais */}
                       <div className="grid grid-cols-2 gap-3 text-sm">
                         <div>
                           <span className="text-muted-foreground">CPF:</span>
                           <p className="font-medium">{selectedCliente.cpf || "—"}</p>
                         </div>
                         <div>
+                          <span className="text-muted-foreground">RG:</span>
+                          <p className="font-medium">{selectedCliente.rg || "—"}</p>
+                        </div>
+                        <div>
                           <span className="text-muted-foreground">Nascimento:</span>
-                          <p className="font-medium">{selectedCliente.dtNascimento || "—"}</p>
+                          <p className="font-medium">{fmtDataBr(selectedCliente.dataNascimento)}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Sexo:</span>
+                          <p className="font-medium">{selectedCliente.sexo || "—"}</p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Celular:</span>
                           <p className="font-medium">{selectedCliente.celular || "—"}</p>
                         </div>
                         <div>
+                          <span className="text-muted-foreground">Celular 2:</span>
+                          <p className="font-medium">{selectedCliente.celular2 || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Telefone:</span>
+                          <p className="font-medium">{selectedCliente.telefone || "—"}</p>
+                        </div>
+                        <div>
                           <span className="text-muted-foreground">Email:</span>
                           <p className="font-medium">{selectedCliente.email || "—"}</p>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-muted-foreground">Endereço:</span>
+                          <p className="font-medium">
+                            {[selectedCliente.endereco, selectedCliente.bairro, selectedCliente.cidade, selectedCliente.uf]
+                              .filter(Boolean).join(", ") || "—"}
+                          </p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Cadastro:</span>
                           <p className="font-medium flex items-center gap-1">
-                            <Calendar className="h-3 w-3" /> {selectedCliente.dtCadastro || "—"}
+                            <Calendar className="h-3 w-3" /> {fmtDataBr(selectedCliente.dataCadastro)}
                           </p>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">Profissão:</span>
-                          <p className="font-medium">{selectedCliente.profissao || "—"}</p>
+                          <span className="text-muted-foreground">ID Belle:</span>
+                          <p className="font-medium flex items-center gap-1">
+                            <IdCard className="h-3 w-3" /> {selectedCliente.belleId}
+                          </p>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">Cidade:</span>
-                          <p className="font-medium">{selectedCliente.cidade || "—"}/{selectedCliente.UF || ""}</p>
+                          <span className="text-muted-foreground">Primeiro atendimento:</span>
+                          <p className="font-medium">{fmtDataBr(selectedCliente.primeiroAtendimento)}</p>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">Pontos:</span>
-                          <p className="font-medium">{selectedCliente.pontos ?? "—"}</p>
+                          <span className="text-muted-foreground">Último atendimento:</span>
+                          <p className="font-medium">{fmtDataBr(selectedCliente.ultimoAtendimento)}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Atendimentos finalizados:</span>
+                          <p className="font-medium">{selectedCliente.qtdAtendimentosFinalizados}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Serviços finalizados:</span>
+                          <p className="font-medium">{selectedCliente.qtdServicosFinalizados}</p>
                         </div>
                       </div>
 
-                      {/* Tags */}
-                      {selectedCliente.tags?.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {selectedCliente.tags.map((tag: any) => (
-                            <Badge key={tag.id} variant="secondary" className="flex items-center gap-1">
-                              <Tag className="h-3 w-3" /> {tag.nome}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Histórico de Compras */}
-                      <div>
-                        <h3 className="text-sm font-semibold mb-2">Histórico de Compras</h3>
-                        {historico && historico.length > 0 ? (
-                          <div className="space-y-1 max-h-40 overflow-y-auto">
-                            {historico.map((v: any, i: number) => (
-                              <div key={i} className="flex justify-between text-xs border-b border-border/30 pb-1">
-                                <div>
-                                  <span className="text-muted-foreground">{v.data}</span>
-                                  <span className="ml-2">{v.servico}</span>
-                                </div>
-                                <span className="font-medium">{fmtCurrency(v.valor)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">Sem histórico de compras.</p>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedCliente.clienteSsu && (
+                          <Badge variant="outline" className="border-emerald-300 text-emerald-700">Shopping Santa Úrsula</Badge>
                         )}
-                      </div>
-
-                      {/* Planos */}
-                      <div>
-                        <h3 className="text-sm font-semibold mb-2">Planos Ativos</h3>
-                        {planos && planos.length > 0 ? (
-                          <div className="space-y-2">
-                            {planos.map((plano: any) => (
-                              <div key={plano.codPlano} className="rounded-lg border border-border/50 p-3">
-                                <div className="font-medium text-sm">{plano.nome}</div>
-                                <div className="mt-2 space-y-1">
-                                  {plano.servicos?.map((s: any) => (
-                                    <div key={s.codServico} className="flex justify-between text-xs">
-                                      <span className="text-muted-foreground">{s.nome}</span>
-                                      <span className="font-medium">{s.saldoRestante} sessões</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">Nenhum plano ativo.</p>
+                        {selectedCliente.clienteRbs && (
+                          <Badge variant="outline" className="border-blue-300 text-blue-700">Ribeirão Shopping</Badge>
                         )}
                       </div>
                     </div>
@@ -376,17 +324,10 @@ export default function Clientes() {
             ))}
           </div>
 
-          {/* Pagination */}
-          {searchType === "list" && (clientes?.length ?? 0) === 100 && (
-            <div className="flex justify-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>
-                Anterior
-              </Button>
-              <span className="text-sm text-muted-foreground py-1">Página {page + 1}</span>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)}>
-                Próxima
-              </Button>
-            </div>
+          {displayClientes.length >= 200 && (
+            <p className="text-xs text-muted-foreground text-center">
+              Mostrando os 200 primeiros resultados — use a busca pra refinar.
+            </p>
           )}
         </>
       )}
