@@ -1,20 +1,32 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { Loader2, RefreshCw, UploadCloud, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, RefreshCw, UploadCloud, ChevronLeft, ChevronRight, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 type FormaServer = "dinheiro" | "debito" | "credito" | "pix";
-interface ItemContaBancaria {
+interface ItemDetalhe {
   data: string;
   forma: FormaServer;
-  horario: string;
+  horario?: string;
   descricao: string;
   valor: number;
+}
+
+function fileParaBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.split(",")[1] ?? "");
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 function fmtCurrencyCom(value: number): string {
@@ -80,11 +92,19 @@ export default function ComandaRecepcao() {
     { enabled: !!unidadeId },
   );
 
+  // Item a item da "Comanda virtual" — alimenta o hover de auditoria da
+  // linha "Comanda (Recepção)", mesmo padrão do detalheQuery acima pro
+  // lado de Contas bancárias.
+  const itensComandaQuery = trpc.comandaRecepcao.itensDetalhe.useQuery(
+    { unidadeId: unidadeId!, dataInicio, dataFim },
+    { enabled: !!unidadeId },
+  );
+
   // Agrupa os lançamentos individuais por "data|forma" pra alimentar o
   // hover de auditoria nas células de Contas bancárias.
   const itensPorCelula = useMemo(() => {
-    const mapa = new Map<string, ItemContaBancaria[]>();
-    for (const item of (detalheQuery.data ?? []) as ItemContaBancaria[]) {
+    const mapa = new Map<string, ItemDetalhe[]>();
+    for (const item of (detalheQuery.data ?? []) as ItemDetalhe[]) {
       const chave = `${item.data}|${item.forma}`;
       const lista = mapa.get(chave) ?? [];
       lista.push(item);
@@ -93,13 +113,29 @@ export default function ComandaRecepcao() {
     return mapa;
   }, [detalheQuery.data]);
 
+  const itensComandaPorCelula = useMemo(() => {
+    const mapa = new Map<string, ItemDetalhe[]>();
+    for (const item of (itensComandaQuery.data ?? []) as ItemDetalhe[]) {
+      const chave = `${item.data}|${item.forma}`;
+      const lista = mapa.get(chave) ?? [];
+      lista.push(item);
+      mapa.set(chave, lista);
+    }
+    return mapa;
+  }, [itensComandaQuery.data]);
+
   const sincronizarMutation = trpc.comandaRecepcao.sincronizar.useMutation({
     onError: (err) => toast.error(`Erro na sincronização: ${err.message}`),
   });
 
+  const sincronizarItensMutation = trpc.comandaRecepcao.sincronizarItens.useMutation({
+    onError: (err) => toast.error(`Erro ao sincronizar item a item: ${err.message}`),
+  });
+
   async function handleSincronizar() {
     if (!unidadeId) return;
-    // Sincroniza o(s) mês(es) que a semana visível cobre (pode virar o mês).
+    // Sincroniza o(s) mês(es) que a semana visível cobre (pode virar o mês) —
+    // a Consolidado comanda tem uma aba por mês.
     const inicio = new Date(dataInicio);
     const fim = new Date(dataFim);
     const meses = new Set<string>();
@@ -111,10 +147,36 @@ export default function ComandaRecepcao() {
         const [ano, mes] = chave.split("-").map(Number);
         await sincronizarMutation.mutateAsync({ unidadeId, ano, mes });
       }
+      // Comanda virtual tem uma aba POR DIA — sincroniza só o período
+      // exato visível (não o mês inteiro), pra não ficar caro à toa.
+      await sincronizarItensMutation.mutateAsync({ unidadeId, dataInicio, dataFim });
       toast.success("Comanda sincronizada.");
       utils.comandaRecepcao.resumo.invalidate();
+      utils.comandaRecepcao.itensDetalhe.invalidate();
     } catch {
       // erro já reportado via onError da mutation
+    }
+  }
+
+  const importarHistoricoRef = useRef<HTMLInputElement>(null);
+  const importarHistoricoMutation = trpc.comandaRecepcao.importarHistoricoItensXlsx.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Histórico importado: ${data.inseridos} novo(s), ${data.atualizados} atualizado(s), ${data.totalDias} dia(s).`);
+      utils.comandaRecepcao.itensDetalhe.invalidate();
+    },
+    onError: (err) => toast.error(`Erro ao importar histórico: ${err.message}`),
+  });
+
+  async function handleImportarHistorico(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !unidadeId) return;
+    try {
+      const xlsxBase64 = await fileParaBase64(file);
+      importarHistoricoMutation.mutate({ unidadeId, xlsxBase64 });
+    } catch (err: any) {
+      toast.error(err.message ?? "Falha ao ler o arquivo");
+    } finally {
+      e.target.value = "";
     }
   }
 
@@ -156,11 +218,15 @@ export default function ComandaRecepcao() {
     );
   }
 
-  function itensDoDia(data: string, formas: FormaServer[]): ItemContaBancaria[] {
+  function itensDoDia(data: string, formas: FormaServer[]): ItemDetalhe[] {
     return formas.flatMap((f) => itensPorCelula.get(`${data}|${f}`) ?? []);
   }
 
-  function ConteudoAuditoria({ itens, valor }: { itens: ItemContaBancaria[]; valor: number }) {
+  function itensDoDiaComanda(data: string, formas: FormaServer[]): ItemDetalhe[] {
+    return formas.flatMap((f) => itensComandaPorCelula.get(`${data}|${f}`) ?? []);
+  }
+
+  function ConteudoAuditoria({ itens, valor }: { itens: ItemDetalhe[]; valor: number }) {
     return (
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs font-semibold">
@@ -195,7 +261,7 @@ export default function ComandaRecepcao() {
   }: {
     valor: number;
     diferente?: boolean;
-    itens?: ItemContaBancaria[];
+    itens?: ItemDetalhe[];
     auditavel?: boolean;
     negrito?: boolean;
   }) {
@@ -224,12 +290,16 @@ export default function ComandaRecepcao() {
     destacarDiferenca,
     auditavel,
     acao,
+    buscarItens,
+    formasSemAuditoria = [],
   }: {
     titulo: string;
     campo: "comanda" | "contasBancarias" | "diferenca";
     destacarDiferenca?: boolean;
     auditavel?: boolean;
     acao?: ReactNode;
+    buscarItens?: (data: string, formas: FormaServer[]) => ItemDetalhe[];
+    formasSemAuditoria?: FormaServer[];
   }) {
     const totaisSecao = totais(campo);
     return (
@@ -254,14 +324,14 @@ export default function ComandaRecepcao() {
             {dias.map((dia) => {
               const valor = dia[campo][forma.chave];
               const diferente = destacarDiferenca && Math.abs(dia.diferenca[forma.chave]) > 0.005;
-              const podeAuditar = auditavel && forma.chave !== "dinheiro";
+              const podeAuditar = auditavel && !formasSemAuditoria.includes(forma.formaServer);
               return (
                 <CelulaValor
                   key={dia.data}
                   valor={valor}
                   diferente={diferente}
                   auditavel={podeAuditar}
-                  itens={podeAuditar ? itensDoDia(dia.data, [forma.formaServer]) : undefined}
+                  itens={podeAuditar ? buscarItens?.(dia.data, [forma.formaServer]) ?? [] : undefined}
                 />
               );
             })}
@@ -284,7 +354,7 @@ export default function ComandaRecepcao() {
                 diferente={diferente}
                 negrito
                 auditavel={auditavel}
-                itens={auditavel ? itensDoDia(dia.data, ["dinheiro", "debito", "credito", "pix"]) : undefined}
+                itens={auditavel ? buscarItens?.(dia.data, ["dinheiro", "debito", "credito", "pix"]) ?? [] : undefined}
               />
             );
           })}
@@ -364,28 +434,55 @@ export default function ComandaRecepcao() {
                     <Secao
                       titulo="Comanda (Recepção)"
                       campo="comanda"
+                      auditavel
+                      buscarItens={itensDoDiaComanda}
                       acao={
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-6 px-2 text-xs font-normal"
-                          disabled={sincronizarMutation.isPending}
-                          onClick={handleSincronizar}
-                          title="Sincronizar comanda com dados Drive"
-                        >
-                          {sincronizarMutation.isPending ? (
-                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                          ) : (
-                            <RefreshCw className="h-3 w-3 mr-1" />
-                          )}
-                          Sincronizar
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-xs font-normal"
+                            disabled={sincronizarMutation.isPending || sincronizarItensMutation.isPending}
+                            onClick={handleSincronizar}
+                            title="Sincronizar comanda com dados Drive"
+                          >
+                            {sincronizarMutation.isPending || sincronizarItensMutation.isPending ? (
+                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3 w-3 mr-1" />
+                            )}
+                            Sincronizar
+                          </Button>
+                          <input
+                            ref={importarHistoricoRef}
+                            type="file"
+                            accept=".xlsx"
+                            className="hidden"
+                            onChange={handleImportarHistorico}
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0"
+                            disabled={importarHistoricoMutation.isPending}
+                            onClick={() => importarHistoricoRef.current?.click()}
+                            title="Importar histórico da Comanda virtual (.xlsx) — uso único, pra carga inicial"
+                          >
+                            {importarHistoricoMutation.isPending ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Upload className="h-3 w-3" />
+                            )}
+                          </Button>
+                        </div>
                       }
                     />
                     <Secao
                       titulo="Contas bancárias"
                       campo="contasBancarias"
                       auditavel
+                      buscarItens={itensDoDia}
+                      formasSemAuditoria={["dinheiro"]}
                       acao={
                         <Button
                           size="sm"
@@ -413,8 +510,9 @@ export default function ComandaRecepcao() {
           <p className="text-xs text-muted-foreground">
             Diferença positiva = recepção lançou a mais na comanda; negativa = lançou a menos.
             Células destacadas em vermelho indicam uma diferença a investigar. Passe o mouse
-            sobre os valores sublinhados de "Contas bancárias" (exceto Dinheiro) pra ver os
-            lançamentos individuais que compõem a soma.
+            sobre os valores sublinhados pra ver os lançamentos individuais que compõem a
+            soma — em "Comanda (Recepção)", vem da Comanda virtual (item a item); em "Contas
+            bancárias" (exceto Dinheiro), vem do que já está sincronizado nas contas.
           </p>
         </>
       )}
