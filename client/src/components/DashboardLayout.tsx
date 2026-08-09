@@ -50,6 +50,7 @@ const menuItems = [
   { icon: Sparkles, label: "Copilot", path: "/copilot" },
   { icon: Image, label: "Lâminas", path: "/laminas" },
   { icon: UserPlus, label: "Leads", path: "/leads" },
+  { icon: MessageCircle, label: "Config. Inbox", path: "/config-inbox" },
   { icon: Settings, label: "Configurações", path: "/configuracoes" },
   { icon: ScrollText, label: "Log de Auditoria", path: "/auditoria", adminOnly: true },
 ];

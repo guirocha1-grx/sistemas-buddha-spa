@@ -19,6 +19,7 @@ import Copilot from "./pages/Copilot";
 import Laminas from "./pages/Laminas";
 import Leads from "./pages/Leads";
 import Configuracoes from "@/pages/Configuracoes";
+import ConfigInbox from "@/pages/ConfigInbox";
 import AuditLog from "@/pages/AuditLog";
 
 function Router() {
@@ -38,6 +39,7 @@ function Router() {
         <Route path="/copilot" component={Copilot} />
         <Route path="/laminas" component={Laminas} />
         <Route path="/leads" component={Leads} />
+        <Route path="/config-inbox" component={ConfigInbox} />
         <Route path="/configuracoes" component={Configuracoes} />
         <Route path="/auditoria" component={AuditLog} />
         <Route path="/404" component={NotFound} />
