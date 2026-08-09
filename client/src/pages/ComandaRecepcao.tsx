@@ -57,6 +57,13 @@ function fmtDiaSemana(iso: string): string {
   return DIAS_SEMANA_ABREV[new Date(y, m - 1, d).getDay()];
 }
 
+const MESES_NOME = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+function fmtMesLabel(mesReferencia: string): string {
+  const [ano, mes] = mesReferencia.split("-").map(Number);
+  return `${MESES_NOME[mes - 1]}/${ano}`;
+}
+
 const FORMAS = [
   { chave: "dinheiro" as const, label: "Dinheiro", formaServer: "dinheiro" as const },
   { chave: "cartaoDebito" as const, label: "Cartão de débito", formaServer: "debito" as const },
@@ -75,12 +82,28 @@ export default function ComandaRecepcao() {
   const unidadeId = unidadeSelecionada?.id;
   const utils = trpc.useUtils();
 
+  const [modoVisualizacao, setModoVisualizacao] = useState<"semana" | "mes">("semana");
   const [inicioSemana, setInicioSemana] = useState(() => toIso(segundaFeiraDa(new Date())));
+  const [mesReferencia, setMesReferencia] = useState(() => {
+    const hoje = new Date();
+    return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`; // "AAAA-MM"
+  });
 
-  const dataInicio = inicioSemana;
-  const fimDate = new Date(inicioSemana);
-  fimDate.setDate(fimDate.getDate() + 6);
-  const dataFim = toIso(fimDate);
+  const [anoRef, mesRef] = mesReferencia.split("-").map(Number);
+  const dataInicioMes = toIso(new Date(anoRef, mesRef - 1, 1));
+  const dataFimMes = toIso(new Date(anoRef, mesRef, 0));
+
+  const fimSemanaDate = new Date(inicioSemana);
+  fimSemanaDate.setDate(fimSemanaDate.getDate() + 6);
+  const dataFimSemana = toIso(fimSemanaDate);
+
+  const dataInicio = modoVisualizacao === "semana" ? inicioSemana : dataInicioMes;
+  const dataFim = modoVisualizacao === "semana" ? dataFimSemana : dataFimMes;
+
+  function mudarMes(deltaMeses: number) {
+    const d = new Date(anoRef, mesRef - 1 + deltaMeses, 1);
+    setMesReferencia(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
 
   const resumoQuery = trpc.comandaRecepcao.resumo.useQuery(
     { unidadeId: unidadeId!, dataInicio, dataFim },
@@ -386,23 +409,58 @@ export default function ComandaRecepcao() {
         </div>
       ) : (
         <>
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => mudarSemana(-7)}>
+          <div className="flex items-center gap-1 flex-wrap">
+            <div className="flex items-center gap-1 rounded-lg border border-border p-1 mr-1">
+              <Button
+                variant={modoVisualizacao === "semana" ? "default" : "ghost"}
+                size="sm"
+                className="h-7 text-xs px-2.5"
+                onClick={() => setModoVisualizacao("semana")}
+              >
+                Semana
+              </Button>
+              <Button
+                variant={modoVisualizacao === "mes" ? "default" : "ghost"}
+                size="sm"
+                className="h-7 text-xs px-2.5"
+                onClick={() => setModoVisualizacao("mes")}
+              >
+                Mês
+              </Button>
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => (modoVisualizacao === "semana" ? mudarSemana(-7) : mudarMes(-1))}
+            >
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <span className="text-sm font-medium px-2 whitespace-nowrap">
-              {fmtDiaCurto(dataInicio)} – {fmtDiaCurto(dataFim)}
+              {modoVisualizacao === "semana" ? `${fmtDiaCurto(dataInicio)} – ${fmtDiaCurto(dataFim)}` : fmtMesLabel(mesReferencia)}
             </span>
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => mudarSemana(7)}>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => (modoVisualizacao === "semana" ? mudarSemana(7) : mudarMes(1))}
+            >
               <ChevronRight className="h-4 w-4" />
             </Button>
             <Button
               variant="ghost"
               size="sm"
               className="h-8 text-xs"
-              onClick={() => setInicioSemana(toIso(segundaFeiraDa(new Date())))}
+              onClick={() => {
+                if (modoVisualizacao === "semana") {
+                  setInicioSemana(toIso(segundaFeiraDa(new Date())));
+                } else {
+                  const hoje = new Date();
+                  setMesReferencia(`${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`);
+                }
+              }}
             >
-              Semana atual
+              {modoVisualizacao === "semana" ? "Semana atual" : "Mês atual"}
             </Button>
           </div>
 
