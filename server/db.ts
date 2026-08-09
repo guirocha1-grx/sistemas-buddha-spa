@@ -1625,12 +1625,21 @@ export async function listClientesLocal() {
 
 // ===== Comanda virtual (item a item — auditoria da Comanda Recepção) =====
 
+const LOTE_INSERT_COMANDA_ITENS = 500;
+
 /**
  * Upsert por unidadeId+data+idLinha (idLinha = "ID" sequencial da
  * própria planilha, dentro de cada dia). Uma consulta prévia busca as
  * chaves já existentes de uma vez (mesmo espírito de
  * upsertClientesImportados) — evita um SELECT por linha numa carga
  * histórica com milhares delas.
+ *
+ * Inserção em lote (não um INSERT por linha): numa carga histórica
+ * (a esmagadora maioria é linha nova, nunca vista) um INSERT por linha
+ * é lento o bastante pra estourar o timeout da requisição em
+ * planilhas grandes — confirmado na prática (RBS, ~6 mil linhas,
+ * timeout; SSU, ~3 mil, passou raspando). Update continua um a um —
+ * bem mais raro (só acontece reimportando um dia já existente).
  */
 export async function upsertComandaItens(
   unidadeId: number,
@@ -1646,8 +1655,9 @@ export async function upsertComandaItens(
     .where(eq(comandaItens.unidadeId, unidadeId));
   const existentesMap = new Map(existentes.map((e) => [`${e.data}|${e.idLinha}`, e.id]));
 
-  let inseridos = 0;
-  let atualizados = 0;
+  const paraInserir: InsertComandaItem[] = [];
+  const paraAtualizar: { id: number; dados: Partial<InsertComandaItem> }[] = [];
+
   for (const l of linhas) {
     const dadosBase = {
       cliente: l.cliente,
@@ -1673,16 +1683,22 @@ export async function upsertComandaItens(
     const chave = `${l.data}|${l.idLinha}`;
     const existenteId = existentesMap.get(chave);
     if (existenteId) {
-      await db.update(comandaItens).set(dadosBase).where(eq(comandaItens.id, existenteId));
-      atualizados++;
+      paraAtualizar.push({ id: existenteId, dados: dadosBase });
     } else {
-      const insertValues: InsertComandaItem = { unidadeId, data: l.data, idLinha: l.idLinha, ...dadosBase };
-      await db.insert(comandaItens).values(insertValues);
-      inseridos++;
+      paraInserir.push({ unidadeId, data: l.data, idLinha: l.idLinha, ...dadosBase });
     }
   }
 
-  return { inseridos, atualizados };
+  for (let i = 0; i < paraInserir.length; i += LOTE_INSERT_COMANDA_ITENS) {
+    const lote = paraInserir.slice(i, i + LOTE_INSERT_COMANDA_ITENS);
+    await db.insert(comandaItens).values(lote);
+  }
+
+  for (const { id, dados } of paraAtualizar) {
+    await db.update(comandaItens).set(dados).where(eq(comandaItens.id, id));
+  }
+
+  return { inseridos: paraInserir.length, atualizados: paraAtualizar.length };
 }
 
 export interface ItemComandaRecepcao {
