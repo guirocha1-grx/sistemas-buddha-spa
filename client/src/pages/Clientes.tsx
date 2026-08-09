@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Users, Loader2, Phone, Mail, MapPin, Calendar, Upload, UserCheck, IdCard } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Search, Users, Loader2, Phone, Mail, Calendar, Upload, UserCheck, IdCard, ArrowUp, ArrowDown, ArrowUpDown, X } from "lucide-react";
 import { toast } from "sonner";
 
 function fileParaBase64(file: File): Promise<string> {
@@ -107,19 +108,81 @@ function fmtDataBr(iso: string | null): string {
   return `${d}/${m}/${y}`;
 }
 
+type OrderCol = "nome" | "celular" | "cpf" | "dataNascimento" | "qtdAtendimentosFinalizados" | "ultimoAtendimento";
+const PAGE_SIZE = 50;
+
+function SortTh({ col, label, orderBy, orderDir, onSort, className }: {
+  col: OrderCol; label: string; orderBy: OrderCol; orderDir: "asc" | "desc";
+  onSort: (col: OrderCol) => void; className?: string;
+}) {
+  const active = orderBy === col;
+  return (
+    <TableHead
+      className={`cursor-pointer select-none hover:text-foreground transition-colors whitespace-nowrap ${className ?? ""}`}
+      onClick={() => onSort(col)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active
+          ? (orderDir === "asc" ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />)
+          : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+      </span>
+    </TableHead>
+  );
+}
+
 export default function Clientes() {
   const { unidadeSelecionada } = useUnidade();
-  const [searchType, setSearchType] = useState<"list" | "search">("list");
   const [searchValue, setSearchValue] = useState("");
   const [selectedCliente, setSelectedCliente] = useState<any>(null);
+  const [orderBy, setOrderBy] = useState<OrderCol>("nome");
+  const [orderDir, setOrderDir] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(1);
 
-  const clientesQuery = trpc.clientes.listImportados.useQuery(
-    { busca: searchType === "search" && searchValue.trim() ? searchValue.trim() : undefined },
-    { enabled: !!unidadeSelecionada },
-  );
+  const clientesQuery = trpc.clientes.listImportados.useQuery(undefined, { enabled: !!unidadeSelecionada });
+
+  function toggleSort(col: OrderCol) {
+    if (orderBy === col) setOrderDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setOrderBy(col); setOrderDir("asc"); }
+    setPage(1);
+  }
 
   const isRbs = unidadeSelecionada?.slug?.includes("ribeirao") || unidadeSelecionada?.slug?.includes("rbs");
-  const displayClientes = (clientesQuery.data ?? []).filter((c) => (isRbs ? c.clienteRbs : c.clienteSsu));
+  const termoBusca = searchValue.trim().toLowerCase();
+
+  const clientesFiltrados = useMemo(() => {
+    let lista = (clientesQuery.data ?? []).filter((c) => (isRbs ? c.clienteRbs : c.clienteSsu));
+
+    if (termoBusca) {
+      lista = lista.filter((c) => {
+        const nascimentoBr = fmtDataBr(c.dataNascimento).toLowerCase();
+        return (
+          c.nome.toLowerCase().includes(termoBusca) ||
+          (c.cpf ?? "").toLowerCase().includes(termoBusca) ||
+          (c.celular ?? "").toLowerCase().includes(termoBusca) ||
+          nascimentoBr.includes(termoBusca)
+        );
+      });
+    }
+
+    return [...lista].sort((a, b) => {
+      let cmp = 0;
+      switch (orderBy) {
+        case "nome": cmp = a.nome.localeCompare(b.nome, "pt-BR"); break;
+        case "celular": cmp = (a.celular ?? "").localeCompare(b.celular ?? ""); break;
+        case "cpf": cmp = (a.cpf ?? "").localeCompare(b.cpf ?? ""); break;
+        case "dataNascimento": cmp = (a.dataNascimento ?? "").localeCompare(b.dataNascimento ?? ""); break;
+        case "qtdAtendimentosFinalizados": cmp = a.qtdAtendimentosFinalizados - b.qtdAtendimentosFinalizados; break;
+        case "ultimoAtendimento": cmp = (a.ultimoAtendimento ?? "").localeCompare(b.ultimoAtendimento ?? ""); break;
+      }
+      return orderDir === "asc" ? cmp : -cmp;
+    });
+  }, [clientesQuery.data, isRbs, termoBusca, orderBy, orderDir]);
+
+  useEffect(() => { setPage(1); }, [termoBusca, unidadeSelecionada?.id]);
+
+  const totalPages = Math.max(1, Math.ceil(clientesFiltrados.length / PAGE_SIZE));
+  const clientesPagina = clientesFiltrados.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const isLoading = clientesQuery.isLoading;
 
   return (
@@ -139,33 +202,22 @@ export default function Clientes() {
       <ImportarClientesCard />
 
       {/* Search bar */}
-      <div className="flex gap-2">
-        <div className="flex gap-1 rounded-lg border border-border p-1">
-          <Button
-            variant={searchType === "list" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => { setSearchType("list"); setSearchValue(""); }}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Nome, celular, CPF ou nascimento..."
+          value={searchValue}
+          onChange={(e) => setSearchValue(e.target.value)}
+          className="pl-10 pr-8"
+        />
+        {searchValue && (
+          <button
+            type="button"
+            onClick={() => setSearchValue("")}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
           >
-            Listar
-          </Button>
-          <Button
-            variant={searchType === "search" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setSearchType("search")}
-          >
-            Buscar
-          </Button>
-        </div>
-        {searchType === "search" && (
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Nome, CPF, email ou celular..."
-              value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
-              className="pl-10"
-            />
-          </div>
+            <X className="h-3.5 w-3.5" />
+          </button>
         )}
       </div>
 
@@ -174,7 +226,7 @@ export default function Clientes() {
         <div className="flex justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-      ) : displayClientes.length === 0 ? (
+      ) : clientesFiltrados.length === 0 ? (
         <Card>
           <CardContent className="pt-6">
             <div className="flex flex-col items-center gap-3 text-center">
@@ -187,51 +239,55 @@ export default function Clientes() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-3">
-            {displayClientes.map((cliente) => (
-              <Dialog key={cliente.id}>
-                <DialogTrigger asChild>
-                  <Card
-                    className="border-border/50 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                    onClick={() => setSelectedCliente(cliente)}
-                  >
-                    <CardContent className="pt-4 pb-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-1 flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium truncate">{cliente.nome}</span>
-                            {cliente.clienteSsu && cliente.clienteRbs && (
-                              <Badge variant="outline" className="border-amber-300 text-amber-700 text-xs">
-                                nas duas unidades
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-                            {cliente.celular && (
-                              <span className="flex items-center gap-1">
-                                <Phone className="h-3 w-3" /> {cliente.celular}
-                              </span>
-                            )}
-                            {cliente.email && (
-                              <span className="flex items-center gap-1">
-                                <Mail className="h-3 w-3" /> {cliente.email}
-                              </span>
-                            )}
-                            {cliente.cidade && (
-                              <span className="flex items-center gap-1">
-                                <MapPin className="h-3 w-3" /> {cliente.cidade}{cliente.uf ? `/${cliente.uf}` : ""}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-xs text-muted-foreground shrink-0 text-right">
-                          {cliente.qtdAtendimentosFinalizados} atendimento{cliente.qtdAtendimentosFinalizados === 1 ? "" : "s"}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </DialogTrigger>
-                <DialogContent className="max-w-2lg max-h-[80vh] overflow-y-auto">
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <SortTh col="nome" label="Cliente" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
+                    <SortTh col="celular" label="Contato" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
+                    <SortTh col="cpf" label="CPF" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
+                    <SortTh col="dataNascimento" label="Nascimento" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
+                    <SortTh col="qtdAtendimentosFinalizados" label="Visitas" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} className="text-right" />
+                    <SortTh col="ultimoAtendimento" label="Última visita" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {clientesPagina.map((cliente) => (
+                    <Dialog key={cliente.id}>
+                      <DialogTrigger asChild>
+                        <TableRow className="cursor-pointer" onClick={() => setSelectedCliente(cliente)}>
+                          <TableCell className="py-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-medium">{cliente.nome}</span>
+                              {cliente.clienteSsu && cliente.clienteRbs && (
+                                <Badge variant="outline" className="border-amber-300 text-amber-700 text-[10px] px-1 py-0">
+                                  2 unidades
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-2">
+                            <div className="space-y-0.5">
+                              {cliente.celular && (
+                                <p className="text-xs text-muted-foreground flex items-center gap-1 whitespace-nowrap">
+                                  <Phone className="h-3 w-3" /> {cliente.celular}
+                                </p>
+                              )}
+                              {cliente.email && (
+                                <p className="text-xs text-muted-foreground flex items-center gap-1 whitespace-nowrap">
+                                  <Mail className="h-3 w-3" /> {cliente.email}
+                                </p>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-2 text-xs whitespace-nowrap">{cliente.cpf || "—"}</TableCell>
+                          <TableCell className="py-2 text-xs whitespace-nowrap">{fmtDataBr(cliente.dataNascimento)}</TableCell>
+                          <TableCell className="py-2 text-xs text-right tabular-nums">{cliente.qtdAtendimentosFinalizados}</TableCell>
+                          <TableCell className="py-2 text-xs whitespace-nowrap">{fmtDataBr(cliente.ultimoAtendimento)}</TableCell>
+                        </TableRow>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-2lg max-h-[80vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle style={{ fontFamily: "'Cormorant Garamond', serif" }}>
                       {selectedCliente?.nome}
@@ -319,16 +375,25 @@ export default function Clientes() {
                       </div>
                     </div>
                   )}
-                </DialogContent>
-              </Dialog>
-            ))}
-          </div>
+                      </DialogContent>
+                    </Dialog>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
 
-          {displayClientes.length >= 200 && (
-            <p className="text-xs text-muted-foreground text-center">
-              Mostrando os 200 primeiros resultados — use a busca pra refinar.
-            </p>
-          )}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/10">
+                <p className="text-xs text-muted-foreground">
+                  Página {page} de {totalPages} — {clientesFiltrados.length} cliente{clientesFiltrados.length === 1 ? "" : "s"}
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>Anterior</Button>
+                  <Button size="sm" variant="outline" disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>Próxima</Button>
+                </div>
+              </div>
+            )}
+          </Card>
         </>
       )}
     </div>

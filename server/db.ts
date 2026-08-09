@@ -1,4 +1,4 @@
-import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt } from "drizzle-orm";
+import { eq, desc, and, gte, lte, isNull, like, ne, inArray, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, auditLog, clientes, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
@@ -1610,18 +1610,14 @@ export async function resumoClientesLocal() {
   return { total: todos.length, ssu, rbs, ambas };
 }
 
-export async function listClientesLocal(busca?: string) {
+/**
+ * Base inteira, sem filtro — busca e ordenação ficam por conta do
+ * client (ver Clientes.tsx), evitando ida ao servidor a cada tecla
+ * digitada. Limite alto (não removido) só como rede de segurança
+ * contra crescimento descontrolado, não como paginação de verdade.
+ */
+export async function listClientesLocal() {
   const db = await getDb();
   if (!db) return [];
-  const condicoes = [];
-  if (busca) {
-    const termo = `%${busca}%`;
-    condicoes.push(or(like(clientes.nome, termo), like(clientes.cpf, termo), like(clientes.celular, termo), like(clientes.email, termo)));
-  }
-  return db
-    .select()
-    .from(clientes)
-    .where(condicoes.length > 0 ? and(...condicoes) : undefined)
-    .orderBy(clientes.nome)
-    .limit(200);
+  return db.select().from(clientes).orderBy(clientes.nome).limit(20000);
 }

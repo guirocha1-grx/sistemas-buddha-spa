@@ -180,10 +180,10 @@ export const appRouter = router({
       return db.resumoClientesLocal();
     }),
 
-    listImportados: protectedProcedure.input(z.object({
-      busca: z.string().optional(),
-    })).query(async ({ input }) => {
-      return db.listClientesLocal(input.busca);
+    // Sem filtro/paginação server-side — busca e ordenação ficam no
+    // client (Clientes.tsx), a base cabe inteira numa resposta.
+    listImportados: protectedProcedure.query(async () => {
+      return db.listClientesLocal();
     }),
   }),
 
