@@ -54,11 +54,6 @@ function somaForma(itens: ItemConciliacao[], forma: FormaPagamentoConciliacao): 
   return itens.filter((i) => i.forma === forma).reduce((s, i) => s + i.valor, 0);
 }
 
-function fmtLinhaItem(item: ItemConciliacao): string {
-  const horario = item.horario ? `${item.horario} · ` : "";
-  return `- ${horario}${LABEL_FORMA[item.forma]} ${fmtMoeda(item.valor)} — ${item.descricao}`;
-}
-
 // Descarta lançamentos de valor zero (ex.: linha "Vendas do dia" do
 // Caixa Físico num dia sem dinheiro) — não representam nada real e só
 // geram ação fantasma ("incluir recebimento de R$ 0,00").
@@ -109,15 +104,13 @@ function agruparParcelas(itens: ItemConciliacao[]): ItemConciliacao[] {
 }
 
 /**
- * Pareia Comanda x Contas por valor. Retorna as ações corretivas junto
- * com o que sobrou sem parear de cada lado (`pendentesComanda`/
- * `pendentesContas`) — é exatamente isso que o chamador mostra nas
- * seções "Comanda:"/"Contas:" do texto final, em vez do dia inteiro.
+ * Pareia Comanda x Contas por valor e retorna as ações corretivas. Todo
+ * item que sobra sem par (não bateu por valor+forma, por valor com
+ * forma diferente, nem por valor aproximado) vira uma linha própria em
+ * "Conferir recebimento"/"Incluir na comanda" — não precisa de uma
+ * listagem separada, essas mensagens já carregam valor/forma/descrição.
  */
-function parear(
-  comanda: ItemConciliacao[],
-  contas: ItemConciliacao[],
-): { acoes: string[]; pendentesComanda: ItemConciliacao[]; pendentesContas: ItemConciliacao[] } {
+function parear(comanda: ItemConciliacao[], contas: ItemConciliacao[]): { acoes: string[] } {
   const restanteComanda = [...comanda];
   const restanteContas = [...contas];
   const acoes: string[] = [];
@@ -176,17 +169,19 @@ function parear(
     );
   }
 
-  return { acoes, pendentesComanda: restanteComanda, pendentesContas: restanteContas };
+  return { acoes };
 }
 
 /**
  * Retorna o bloco de texto formatado (ver cabeçalho do arquivo) ou
  * `null` quando não há diferença nenhuma nesse dia (nem no total, nem
  * em nenhuma forma isolada) — o chamador usa `null` pra decidir não
- * mostrar hover / limpar a célula da planilha. As seções "Comanda:"/
- * "Contas:" listam só o que não foi pareado (não o dia inteiro) — o
- * "Total:" continua sendo o total do dia inteiro, pra dar a dimensão
- * da diferença mesmo com a lista enxuta.
+ * mostrar hover / limpar a célula da planilha. "Comanda"/"Contas" aqui
+ * são só os totais do dia (pra dar a dimensão da diferença) — o
+ * detalhamento fica todo em "Ações corretivas", que já descreve
+ * valor/forma/descrição de cada divergência; repetir isso numa lista
+ * separada seria redundante (e ficava vazia sempre que a diferença
+ * inteira já se explicava por troca de forma ou taxa arredondada).
  */
 export function gerarTextoConciliacao(
   dataIso: string,
@@ -203,20 +198,14 @@ export function gerarTextoConciliacao(
     TODAS_FORMAS.some((f) => Math.abs(somaForma(comanda, f) - somaForma(contas, f)) > 0.005);
   if (!temDiferenca) return null;
 
-  const { acoes, pendentesComanda, pendentesContas } = parear(comanda, agruparParcelas(contas));
+  const { acoes } = parear(comanda, agruparParcelas(contas));
 
   const [, mes, dia] = dataIso.split("-");
   const linhas: string[] = [];
   linhas.push(`Conciliação dia ${dia}/${mes}:`);
-  linhas.push("Comanda:");
-  if (pendentesComanda.length === 0) linhas.push("(tudo pareado com as contas)");
-  else pendentesComanda.forEach((i) => linhas.push(fmtLinhaItem(i)));
-  linhas.push(`Total: ${fmtMoeda(totalComanda)}`);
-  linhas.push("");
-  linhas.push("Contas:");
-  if (pendentesContas.length === 0) linhas.push("(tudo pareado com a comanda)");
-  else pendentesContas.forEach((i) => linhas.push(fmtLinhaItem(i)));
-  linhas.push(`Total: ${fmtMoeda(totalContas)}`);
+  linhas.push(`Comanda: ${fmtMoeda(totalComanda)}`);
+  linhas.push(`Contas: ${fmtMoeda(totalContas)}`);
+  linhas.push(`Diferença: ${fmtMoeda(totalComanda - totalContas)}`);
   linhas.push("");
   linhas.push("Ações corretivas:");
   for (const acao of acoes) linhas.push(`- ${acao}`);
