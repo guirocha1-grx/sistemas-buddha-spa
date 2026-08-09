@@ -13,10 +13,11 @@ import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairCont
 import { sicrediApi, getSicrediAccessToken, isSicrediTokenValid } from "./sicrediApi";
 import { parseExtratoInterPdf } from "./interExtratoPdfParser";
 import { parseClientesXlsx } from "./clientesXlsxParser";
+import { parseComandaVirtualXlsx } from "./comandaVirtualXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
-import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet } from "./googleSheets";
+import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet } from "./googleSheets";
 
 function fmtDateIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1647,6 +1648,91 @@ Diretrizes:
         });
         throw error;
       }
+    }),
+
+    /**
+     * Sincroniza a "Comanda virtual" (item a item, uma aba por dia) pro
+     * período exato pedido — não pelo mês inteiro como `sincronizar`
+     * acima (a Consolidado comanda tem uma aba por mês; a Comanda
+     * virtual tem uma aba POR DIA, então sincronizar o mês inteiro toda
+     * vez seria caro à toa quando só a semana visível importa). Alimenta
+     * só o drill-down (hover) da linha "Comanda (Recepção)" — não muda
+     * o número agregado, que continua vindo de comanda_diaria.
+     */
+    sincronizarItens: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) throw new Error("Unidade não encontrada");
+
+      const isRbs = unidade.slug.includes("ribeirao") || unidade.slug.includes("rbs");
+      const slug = isRbs ? "rbs" as const : "ssu" as const;
+      const spreadsheetId = SPREADSHEET_IDS_COMANDA_VIRTUAL[slug];
+
+      try {
+        const dias: string[] = [];
+        for (const d = new Date(`${input.dataInicio}T00:00:00`); fmtDateIso(d) <= input.dataFim; d.setDate(d.getDate() + 1)) {
+          dias.push(fmtDateIso(d));
+        }
+
+        let totalItens = 0;
+        let diasComDados = 0;
+        for (const dia of dias) {
+          const linhas = await lerComandaVirtualDiaSheet(spreadsheetId, dia);
+          if (linhas.length === 0) continue;
+          diasComDados++;
+          const r = await db.upsertComandaItens(input.unidadeId, linhas);
+          totalItens += r.inseridos + r.atualizados;
+        }
+
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "comanda_itens",
+          status: "sucesso",
+          registrosProcessados: totalItens,
+          detalhes: `Período ${input.dataInicio} a ${input.dataFim}. Dias com dados: ${diasComDados}/${dias.length}.`,
+        });
+        return { success: true, totalItens, diasComDados };
+      } catch (error: any) {
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "comanda_itens",
+          status: "erro",
+          registrosProcessados: 0,
+          detalhes: error.message,
+        });
+        throw error;
+      }
+    }),
+
+    /**
+     * Carga histórica da "Comanda virtual" a partir do arquivo baixado
+     * do Drive (todas as abas "DDMMYYYY" de uma vez) — evita centenas
+     * de chamadas à API do Sheets pra trazer o passado inteiro. O dia a
+     * dia continua pelo `sincronizarItens` acima.
+     */
+    importarHistoricoItensXlsx: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      xlsxBase64: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      const buffer = Buffer.from(input.xlsxBase64, "base64");
+      const linhas = parseComandaVirtualXlsx(buffer);
+      if (linhas.length === 0) {
+        throw new Error("Nenhum lançamento encontrado na planilha (nenhuma aba no formato \"DDMMYYYY\" com dados).");
+      }
+      const resultado = await db.upsertComandaItens(input.unidadeId, linhas);
+      const dias = new Set(linhas.map((l) => l.data));
+      return { success: true, totalLinhas: linhas.length, totalDias: dias.size, ...resultado };
+    }),
+
+    itensDetalhe: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).query(async ({ input }) => {
+      return db.listComandaItensDetalhe(input.unidadeId, input.dataInicio, input.dataFim);
     }),
 
     /**

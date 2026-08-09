@@ -466,6 +466,55 @@ export type ComandaDiaria = typeof comandaDiaria.$inferSelect;
 export type InsertComandaDiaria = typeof comandaDiaria.$inferInsert;
 
 /**
+ * Item a item da "Comanda virtual" — planilha que a recepção preenche
+ * em tempo real, uma aba por dia (nome "DDMMYYYY"), um lançamento por
+ * linha (cliente, terapia, terapeuta, forma de pagamento). Alimenta só
+ * o drill-down (hover) da linha "Comanda (Recepção)" na tela de Comanda
+ * Recepção (2026-08-09) — o número agregado ali continua vindo de
+ * comanda_diaria, sem mudança; esta tabela é uma camada de auditoria
+ * por cima, não substitui nada.
+ *
+ * Duas portas de entrada, mesma tabela: import de xlsx (carga
+ * histórica, uma vez — server/comandaVirtualXlsxParser.ts) e
+ * sincronização via Google Sheets (dia a dia — server/googleSheets.ts).
+ * idLinha é o "ID" sequencial que já existe na própria planilha, dentro
+ * de cada dia — junto com unidadeId+data é a chave natural de upsert
+ * (checada em código, mesmo padrão de adquirente_vendas/clientes — sem
+ * unique constraint composto no banco).
+ */
+export const comandaItens = mysqlTable("comanda_itens", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  data: varchar("data", { length: 10 }).notNull(), // AAAA-MM-DD
+  idLinha: int("idLinha").notNull(), // "ID" da planilha, sequencial dentro do dia
+  cliente: varchar("cliente", { length: 200 }),
+  aberturaResponsavel: varchar("aberturaResponsavel", { length: 100 }),
+  visitasAnteriores: varchar("visitasAnteriores", { length: 60 }),
+  canalCaptacao: varchar("canalCaptacao", { length: 100 }),
+  terapiaProduto: varchar("terapiaProduto", { length: 150 }),
+  terapeuta: varchar("terapeuta", { length: 100 }),
+  subtotal: decimal("subtotal", { precision: 12, scale: 2 }),
+  desconto: decimal("desconto", { precision: 12, scale: 2 }),
+  motivoDesconto: varchar("motivoDesconto", { length: 100 }),
+  total: decimal("total", { precision: 12, scale: 2 }),
+  dinheiro: decimal("dinheiro", { precision: 12, scale: 2 }),
+  pix: decimal("pix", { precision: 12, scale: 2 }),
+  cartaoDebito: decimal("cartaoDebito", { precision: 12, scale: 2 }),
+  cartaoCredito: decimal("cartaoCredito", { precision: 12, scale: 2 }),
+  totalPagtos: decimal("totalPagtos", { precision: 12, scale: 2 }),
+  observacao: varchar("observacao", { length: 300 }),
+  fechamentoResponsavel: varchar("fechamentoResponsavel", { length: 100 }),
+  campoGerente: text("campoGerente"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeDataIdx: index("comanda_itens_unidade_data_idx").on(table.unidadeId, table.data),
+}));
+
+export type ComandaItem = typeof comandaItens.$inferSelect;
+export type InsertComandaItem = typeof comandaItens.$inferInsert;
+
+/**
  * Plano de contas do DRE (estrutura definida em 2026-08-04, revisão
  * pendente pra Receitas/Pronampe/alguns itens sem exemplo real ainda —
  * ver comentário em server/dreCategorizacao.ts). "excluido" é uma seção

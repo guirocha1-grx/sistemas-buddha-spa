@@ -1,7 +1,8 @@
 import { eq, desc, and, gte, lte, isNull, like, ne, inArray, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, auditLog, clientes, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
+import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, extrairPadraoContraparte, ehTransferenciaEntreContas, CHAVE_EXCLUIDO, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, type RegraMatch } from "./dreCategorizacao";
 
@@ -1620,4 +1621,111 @@ export async function listClientesLocal() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(clientes).orderBy(clientes.nome).limit(20000);
+}
+
+// ===== Comanda virtual (item a item — auditoria da Comanda Recepção) =====
+
+/**
+ * Upsert por unidadeId+data+idLinha (idLinha = "ID" sequencial da
+ * própria planilha, dentro de cada dia). Uma consulta prévia busca as
+ * chaves já existentes de uma vez (mesmo espírito de
+ * upsertClientesImportados) — evita um SELECT por linha numa carga
+ * histórica com milhares delas.
+ */
+export async function upsertComandaItens(
+  unidadeId: number,
+  linhas: LinhaComandaItemImportada[],
+): Promise<{ inseridos: number; atualizados: number }> {
+  const db = await getDb();
+  if (!db) return { inseridos: 0, atualizados: 0 };
+  if (linhas.length === 0) return { inseridos: 0, atualizados: 0 };
+
+  const existentes = await db
+    .select({ id: comandaItens.id, data: comandaItens.data, idLinha: comandaItens.idLinha })
+    .from(comandaItens)
+    .where(eq(comandaItens.unidadeId, unidadeId));
+  const existentesMap = new Map(existentes.map((e) => [`${e.data}|${e.idLinha}`, e.id]));
+
+  let inseridos = 0;
+  let atualizados = 0;
+  for (const l of linhas) {
+    const dadosBase = {
+      cliente: l.cliente,
+      aberturaResponsavel: l.aberturaResponsavel,
+      visitasAnteriores: l.visitasAnteriores,
+      canalCaptacao: l.canalCaptacao,
+      terapiaProduto: l.terapiaProduto,
+      terapeuta: l.terapeuta,
+      subtotal: l.subtotal?.toFixed(2) ?? null,
+      desconto: l.desconto?.toFixed(2) ?? null,
+      motivoDesconto: l.motivoDesconto,
+      total: l.total?.toFixed(2) ?? null,
+      dinheiro: l.dinheiro?.toFixed(2) ?? null,
+      pix: l.pix?.toFixed(2) ?? null,
+      cartaoDebito: l.cartaoDebito?.toFixed(2) ?? null,
+      cartaoCredito: l.cartaoCredito?.toFixed(2) ?? null,
+      totalPagtos: l.totalPagtos?.toFixed(2) ?? null,
+      observacao: l.observacao,
+      fechamentoResponsavel: l.fechamentoResponsavel,
+      campoGerente: l.campoGerente,
+    };
+
+    const chave = `${l.data}|${l.idLinha}`;
+    const existenteId = existentesMap.get(chave);
+    if (existenteId) {
+      await db.update(comandaItens).set(dadosBase).where(eq(comandaItens.id, existenteId));
+      atualizados++;
+    } else {
+      const insertValues: InsertComandaItem = { unidadeId, data: l.data, idLinha: l.idLinha, ...dadosBase };
+      await db.insert(comandaItens).values(insertValues);
+      inseridos++;
+    }
+  }
+
+  return { inseridos, atualizados };
+}
+
+export interface ItemComandaRecepcao {
+  data: string;
+  forma: "dinheiro" | "debito" | "credito" | "pix";
+  descricao: string;
+  valor: number;
+}
+
+/**
+ * Item a item da Comanda (Recepção) num período, já partido por forma
+ * de pagamento — uma linha da planilha pode ter o pagamento dividido
+ * entre formas (ex.: parte dinheiro, parte débito), então cada
+ * lançamento vira até 4 entradas aqui, uma por forma efetivamente
+ * preenchida. Mesmo formato de ItemContaBancaria no client, pra
+ * reaproveitar o mesmo componente de hover.
+ */
+export async function listComandaItensDetalhe(
+  unidadeId: number,
+  dataInicio: string,
+  dataFim: string,
+): Promise<ItemComandaRecepcao[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(comandaItens).where(and(
+    eq(comandaItens.unidadeId, unidadeId),
+    gte(comandaItens.data, dataInicio),
+    lte(comandaItens.data, dataFim),
+  ));
+
+  const itens: ItemComandaRecepcao[] = [];
+  for (const r of rows) {
+    const descricao = `${r.cliente ?? "—"} · ${r.terapiaProduto ?? "-"}`;
+    const partes: [ItemComandaRecepcao["forma"], string | null][] = [
+      ["dinheiro", r.dinheiro],
+      ["pix", r.pix],
+      ["debito", r.cartaoDebito],
+      ["credito", r.cartaoCredito],
+    ];
+    for (const [forma, valorStr] of partes) {
+      const valor = Number(valorStr ?? 0);
+      if (valor > 0) itens.push({ data: r.data, forma, descricao, valor });
+    }
+  }
+  return itens;
 }

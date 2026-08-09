@@ -18,6 +18,7 @@
 
 import { google } from "googleapis";
 import { ENV } from "./_core/env";
+import { parseLinhasComandaItem, type LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 
 export interface LinhaCaixaFisico {
   data: string; // AAAA-MM-DD
@@ -401,4 +402,53 @@ export async function escreverContasBancariasSheet(
   });
 
   return colunasEscritas;
+}
+
+// ===== Comanda virtual (controle diário item a item da recepção) =====
+
+// IDs das planilhas "Comanda virtual" (RBS/SSU) — item a item, uma aba
+// por dia (nome "DDMMYYYY"). Compartilhada com a mesma service account
+// já usada pras outras planilhas (2026-08-09).
+export const SPREADSHEET_IDS_COMANDA_VIRTUAL = {
+  rbs: "1e8VJX_Gam46fcISw5oSrS9-r9yzKcodyWS--KcA9Bz4",
+  ssu: "1pdKiK3h5CRZfrT2fjVi3w-_Sd1BBgfhgjCvFUBk7FUs",
+};
+
+function nomeAbaComandaVirtual(dataIso: string): string {
+  const [y, m, d] = dataIso.split("-");
+  return `${d}${m}${y}`;
+}
+
+/**
+ * Lê um único dia da "Comanda virtual" (aba "DDMMYYYY") — item a item,
+ * mesmo formato de linha do parser de xlsx (server/
+ * comandaVirtualXlsxParser.ts — reaproveitado aqui, não duplicado).
+ * Usado pro dia a dia; a carga histórica usa o parser de xlsx direto
+ * (evita centenas de chamadas à API pra trazer o passado todo de uma
+ * vez). Retorna [] se a aba daquele dia não existir ainda (dia futuro,
+ * ou antes do início do controle) — não é erro, é esperado.
+ */
+export async function lerComandaVirtualDiaSheet(
+  spreadsheetId: string,
+  dataIso: string,
+): Promise<LinhaComandaItemImportada[]> {
+  const auth = getAuth();
+  if (!auth) throw new Error("Credenciais do Google Sheets não configuradas");
+
+  const sheets = google.sheets({ version: "v4", auth });
+  const aba = nomeAbaComandaVirtual(dataIso);
+
+  let rows: unknown[][];
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${aba}'!A1:AD300`,
+    });
+    rows = (res.data.values || []) as unknown[][];
+  } catch {
+    return []; // aba não existe pra esse dia — normal (dia futuro/sem controle ainda)
+  }
+  if (rows.length === 0) return [];
+
+  return parseLinhasComandaItem(rows, dataIso);
 }
