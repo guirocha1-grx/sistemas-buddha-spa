@@ -18,6 +18,7 @@ import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet } from "./googleSheets";
+import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
 
 function fmtDateIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1756,12 +1757,50 @@ Diretrizes:
       const spreadsheetId = SPREADSHEET_IDS_COMANDA[slug];
 
       try {
-        const resumo = await db.resumoContasBancariasPorDia(input.unidadeId, input.dataInicio, input.dataFim);
+        const [resumo, itensComanda, itensContas] = await Promise.all([
+          db.resumoContasBancariasPorDia(input.unidadeId, input.dataInicio, input.dataFim),
+          db.listComandaItensDetalhe(input.unidadeId, input.dataInicio, input.dataFim),
+          db.detalheContasBancariasPorDia(input.unidadeId, input.dataInicio, input.dataFim),
+        ]);
+
+        // Agrupa item a item por dia dos dois lados — mesma matéria-prima
+        // do hover no client, usada aqui pra montar o texto de
+        // conciliação (server/shared/conciliacao.ts) que vai pra linha 20.
+        const comandaPorDia = new Map<string, ItemConciliacao[]>();
+        for (const it of itensComanda) {
+          const lista = comandaPorDia.get(it.data) ?? [];
+          lista.push({ forma: it.forma, descricao: it.descricao, valor: it.valor });
+          comandaPorDia.set(it.data, lista);
+        }
+        const contasPorDia = new Map<string, ItemConciliacao[]>();
+        for (const it of itensContas) {
+          const lista = contasPorDia.get(it.data) ?? [];
+          lista.push({ forma: it.forma, descricao: it.descricao, valor: it.valor, horario: it.horario || undefined });
+          contasPorDia.set(it.data, lista);
+        }
+
+        // União dos dias com algum lançamento de qualquer lado — não só
+        // os dias que já tinham "Contas bancárias" (resumo), senão um
+        // dia só-Comanda (nada caiu na conta) nunca ganharia a linha 20.
+        const dias = new Set<string>([
+          ...Array.from(resumo.keys()),
+          ...Array.from(comandaPorDia.keys()),
+          ...Array.from(contasPorDia.keys()),
+        ]);
+
         const porMes = new Map<string, LinhaContasBancariasParaSheet[]>();
-        for (const [data, valores] of Array.from(resumo)) {
+        for (const data of Array.from(dias)) {
           const chave = data.slice(0, 7); // "AAAA-MM"
+          const valores = resumo.get(data);
+          const textoConciliacao = gerarTextoConciliacao(data, comandaPorDia.get(data) ?? [], contasPorDia.get(data) ?? []);
           const lista = porMes.get(chave) ?? [];
-          lista.push({ data, cartaoDebito: valores.cartaoDebito, cartaoCredito: valores.cartaoCredito, pix: valores.pix });
+          lista.push({
+            data,
+            cartaoDebito: valores?.cartaoDebito ?? 0,
+            cartaoCredito: valores?.cartaoCredito ?? 0,
+            pix: valores?.pix ?? 0,
+            textoConciliacao,
+          });
           porMes.set(chave, lista);
         }
 

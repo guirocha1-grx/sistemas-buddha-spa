@@ -318,6 +318,10 @@ export interface LinhaContasBancariasParaSheet {
   cartaoDebito: number;
   cartaoCredito: number;
   pix: number;
+  // Texto de conciliação (server/shared/conciliacao.ts) pro dia, ou null
+  // quando não há diferença — nesse caso a célula é limpa (string vazia)
+  // em vez de mantida com um texto antigo já resolvido.
+  textoConciliacao: string | null;
 }
 
 // Linhas fixas (número da linha da planilha, 1-indexado, igual aparece
@@ -328,6 +332,12 @@ export interface LinhaContasBancariasParaSheet {
 const LINHA_DEBITO_BANCO = 10;
 const LINHA_CREDITO_BANCO = 11;
 const LINHA_PIX_BANCO = 12;
+
+// Linha reservada pra conciliação automática (Comanda x Contas), uma
+// célula por dia com problema — confirmado pelo usuário em 2026-08-09.
+// Some sozinha (célula limpa) quando a recepção corrige e a diferença
+// zera, porque essa função roda de novo a cada "Sincronizar com Drive".
+const LINHA_CONCILIACAO = 20;
 
 function colunaParaLetra(indiceZeroBased: number): string {
   let n = indiceZeroBased + 1;
@@ -381,7 +391,7 @@ export async function escreverContasBancariasSheet(
     if (data) colPorData.set(data, col);
   }
 
-  const data: { range: string; values: number[][] }[] = [];
+  const data: { range: string; values: (string | number)[][] }[] = [];
   let colunasEscritas = 0;
   for (const linha of linhas) {
     const col = colPorData.get(linha.data);
@@ -391,6 +401,7 @@ export async function escreverContasBancariasSheet(
       { range: `'${aba}'!${colunaLetra}${LINHA_DEBITO_BANCO}`, values: [[linha.cartaoDebito]] },
       { range: `'${aba}'!${colunaLetra}${LINHA_CREDITO_BANCO}`, values: [[linha.cartaoCredito]] },
       { range: `'${aba}'!${colunaLetra}${LINHA_PIX_BANCO}`, values: [[linha.pix]] },
+      { range: `'${aba}'!${colunaLetra}${LINHA_CONCILIACAO}`, values: [[linha.textoConciliacao ?? ""]] },
     );
     colunasEscritas++;
   }

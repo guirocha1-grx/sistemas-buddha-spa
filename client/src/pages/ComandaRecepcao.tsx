@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Loader2, RefreshCw, UploadCloud, ChevronLeft, ChevronRight, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { gerarTextoConciliacao } from "@shared/conciliacao";
 
 type FormaServer = "dinheiro" | "debito" | "credito" | "pix";
 interface ItemDetalhe {
@@ -70,6 +71,8 @@ const FORMAS = [
   { chave: "cartaoCredito" as const, label: "Cartão de crédito", formaServer: "credito" as const },
   { chave: "pix" as const, label: "Pix", formaServer: "pix" as const },
 ];
+
+const TODAS_FORMAS_SERVER: FormaServer[] = ["dinheiro", "debito", "credito", "pix"];
 
 type ValoresForma = { dinheiro: number; cartaoDebito: number; cartaoCredito: number; pix: number };
 
@@ -226,6 +229,20 @@ export default function ComandaRecepcao() {
   const dias = resumoQuery.data ?? [];
   const carregando = resumoQuery.isLoading;
 
+  // Texto de conciliação por dia (server/shared/conciliacao.ts) — mesma
+  // lógica usada pelo server pra escrever a linha 20 da planilha, aqui
+  // calculada ao vivo com os itens já carregados (nenhuma chamada extra)
+  // pra alimentar o hover das células vermelhas em "Diferença".
+  const conciliacaoPorDia = useMemo(() => {
+    const mapa = new Map<string, string | null>();
+    for (const dia of dias) {
+      const comandaItens = TODAS_FORMAS_SERVER.flatMap((f) => itensComandaPorCelula.get(`${dia.data}|${f}`) ?? []);
+      const contasItens = TODAS_FORMAS_SERVER.flatMap((f) => itensPorCelula.get(`${dia.data}|${f}`) ?? []);
+      mapa.set(dia.data, gerarTextoConciliacao(dia.data, comandaItens, contasItens));
+    }
+    return mapa;
+  }, [dias, itensComandaPorCelula, itensPorCelula]);
+
   function totais(campo: "comanda" | "contasBancarias" | "diferenca") {
     return dias.reduce<ValoresForma>(
       (acc, dia) => {
@@ -281,26 +298,33 @@ export default function ComandaRecepcao() {
     itens,
     auditavel,
     negrito,
+    textoConciliacao,
   }: {
     valor: number;
     diferente?: boolean;
     itens?: ItemDetalhe[];
     auditavel?: boolean;
     negrito?: boolean;
+    textoConciliacao?: string | null;
   }) {
+    const comHover = auditavel || !!textoConciliacao;
     const conteudo = (
-      <span className={`tabular-nums ${auditavel ? "underline decoration-dotted decoration-muted-foreground/50 cursor-help" : ""}`}>
+      <span className={`tabular-nums ${comHover ? "underline decoration-dotted decoration-muted-foreground/50 cursor-help" : ""}`}>
         {fmtCurrencyCom(valor)}
       </span>
     );
     const classe = `px-3 py-1.5 text-xs text-right whitespace-nowrap ${negrito ? "font-semibold" : ""} ${diferente ? "bg-red-100 text-red-700 font-medium" : ""}`;
-    if (!auditavel) return <td className={classe}>{conteudo}</td>;
+    if (!comHover) return <td className={classe}>{conteudo}</td>;
     return (
       <td className={classe}>
         <HoverCard openDelay={150}>
           <HoverCardTrigger asChild>{conteudo}</HoverCardTrigger>
-          <HoverCardContent className="w-72">
-            <ConteudoAuditoria itens={itens ?? []} valor={valor} />
+          <HoverCardContent className={textoConciliacao ? "w-96" : "w-72"}>
+            {textoConciliacao ? (
+              <div className="text-xs whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">{textoConciliacao}</div>
+            ) : (
+              <ConteudoAuditoria itens={itens ?? []} valor={valor} />
+            )}
           </HoverCardContent>
         </HoverCard>
       </td>
@@ -315,6 +339,7 @@ export default function ComandaRecepcao() {
     acao,
     buscarItens,
     formasSemAuditoria = [],
+    buscarTextoConciliacao,
   }: {
     titulo: string;
     campo: "comanda" | "contasBancarias" | "diferenca";
@@ -323,6 +348,7 @@ export default function ComandaRecepcao() {
     acao?: ReactNode;
     buscarItens?: (data: string, formas: FormaServer[]) => ItemDetalhe[];
     formasSemAuditoria?: FormaServer[];
+    buscarTextoConciliacao?: (data: string) => string | null | undefined;
   }) {
     const totaisSecao = totais(campo);
     return (
@@ -355,6 +381,7 @@ export default function ComandaRecepcao() {
                   diferente={diferente}
                   auditavel={podeAuditar}
                   itens={podeAuditar ? buscarItens?.(dia.data, [forma.formaServer]) ?? [] : undefined}
+                  textoConciliacao={diferente ? buscarTextoConciliacao?.(dia.data) : undefined}
                 />
               );
             })}
@@ -378,6 +405,7 @@ export default function ComandaRecepcao() {
                 negrito
                 auditavel={auditavel}
                 itens={auditavel ? buscarItens?.(dia.data, ["dinheiro", "debito", "credito", "pix"]) ?? [] : undefined}
+                textoConciliacao={diferente ? buscarTextoConciliacao?.(dia.data) : undefined}
               />
             );
           })}
@@ -548,7 +576,7 @@ export default function ComandaRecepcao() {
                           className="h-6 px-2 text-xs font-normal"
                           disabled={sincronizarContasBancariasMutation.isPending}
                           onClick={handleSincronizarContasBancarias}
-                          title="Enviar Débito, Crédito e Pix pra planilha Drive (linhas 10-12)"
+                          title="Enviar Débito, Crédito e Pix pra planilha Drive (linhas 10-12) + conciliação dos dias com diferença (linha 20)"
                         >
                           {sincronizarContasBancariasMutation.isPending ? (
                             <Loader2 className="h-3 w-3 mr-1 animate-spin" />
@@ -559,7 +587,12 @@ export default function ComandaRecepcao() {
                         </Button>
                       }
                     />
-                    <Secao titulo="Diferença" campo="diferenca" destacarDiferenca />
+                    <Secao
+                      titulo="Diferença"
+                      campo="diferenca"
+                      destacarDiferenca
+                      buscarTextoConciliacao={(data) => conciliacaoPorDia.get(data)}
+                    />
                   </tbody>
                 </table>
               )}
@@ -570,7 +603,11 @@ export default function ComandaRecepcao() {
             Células destacadas em vermelho indicam uma diferença a investigar. Passe o mouse
             sobre os valores sublinhados pra ver os lançamentos individuais que compõem a
             soma — em "Comanda (Recepção)", vem da Comanda virtual (item a item); em "Contas
-            bancárias" (exceto Dinheiro), vem do que já está sincronizado nas contas.
+            bancárias" (exceto Dinheiro), vem do que já está sincronizado nas contas. Na linha
+            "Diferença", passe o mouse pra ver a conciliação completa do dia (Comanda x Contas
+            + ações corretivas sugeridas) — o mesmo texto é gravado na linha 20 da planilha
+            "Consolidado comanda" ao clicar em "Sincronizar com Drive", e some de lá sozinho
+            quando a diferença é corrigida.
           </p>
         </>
       )}
