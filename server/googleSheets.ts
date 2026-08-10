@@ -456,8 +456,20 @@ export async function lerComandaVirtualDiaSheet(
       range: `'${aba}'!A1:AD300`,
     });
     rows = (res.data.values || []) as unknown[][];
-  } catch {
-    return []; // aba não existe pra esse dia — normal (dia futuro/sem controle ainda)
+  } catch (error: any) {
+    // "Unable to parse range" (400) é a aba realmente não existir pra
+    // esse dia (futuro, ou antes do início do controle) — normal,
+    // engole em silêncio. QUALQUER outro erro (429 rate limit, 5xx,
+    // timeout de rede) não pode virar "[]" silenciosamente: antes disso
+    // acontecia, e um rate limit no meio de uma sincronização de mês
+    // inteiro (30 chamadas em sequência) fazia um dia real sumir sem
+    // deixar rastro nenhum de erro. Deixa propagar pro chamador tratar.
+    const status = error?.code ?? error?.response?.status;
+    const mensagem = String(error?.message ?? error?.response?.data?.error?.message ?? "");
+    if (status === 400 && /unable to parse range/i.test(mensagem)) {
+      return [];
+    }
+    throw error;
   }
   if (rows.length === 0) return [];
 

@@ -1731,9 +1731,17 @@ Diretrizes:
           // Um dia falhando (rate limit do Google Sheets, timeout) não pode
           // derrubar o resto do período — sem isso, um erro transitório no
           // meio do mês cancelava a sincronização de todos os dias
-          // seguintes, sem aviso claro do que ficou de fora.
+          // seguintes, sem aviso claro do que ficou de fora. Uma
+          // segunda tentativa (com uma pausa curta) resolve a maioria
+          // dos casos de rate limit sem precisar de retry manual.
           try {
-            const linhas = await lerComandaVirtualDiaSheet(spreadsheetId, dia);
+            let linhas;
+            try {
+              linhas = await lerComandaVirtualDiaSheet(spreadsheetId, dia);
+            } catch {
+              await new Promise((resolve) => setTimeout(resolve, 1500));
+              linhas = await lerComandaVirtualDiaSheet(spreadsheetId, dia);
+            }
             if (linhas.length === 0) continue;
             diasComDados++;
             const r = await db.upsertComandaItens(input.unidadeId, linhas);

@@ -38,6 +38,12 @@ function toIso(date: Date): string {
   return date.toISOString().split("T")[0];
 }
 
+function subtrairDias(dataIso: string, dias: number): string {
+  const d = new Date(`${dataIso}T00:00:00`);
+  d.setDate(d.getDate() - dias);
+  return toIso(d);
+}
+
 function segundaFeiraDa(date: Date): Date {
   const d = new Date(date);
   const diaSemana = d.getDay(); // 0 = domingo
@@ -168,27 +174,47 @@ export default function ComandaRecepcao() {
     for (const d = new Date(inicio); d <= fim; d.setDate(d.getDate() + 1)) {
       meses.add(`${d.getFullYear()}-${d.getMonth() + 1}`);
     }
+
+    // Comanda virtual tem uma aba POR DIA (uma chamada à API do Sheets
+    // cada) — sincronizar o mês inteiro (até 31 chamadas em sequência)
+    // aumentava a chance de esbarrar em rate limit. 12 dias cobre bem
+    // mais que o suficiente pro uso real (conciliação é sempre dos
+    // dias recentes) sem esse custo.
+    const hojeIso = toIso(new Date());
+    const itensFimIdeal = dataFim < hojeIso ? dataFim : hojeIso;
+    const itensInicioIdeal = subtrairDias(itensFimIdeal, 11);
+    const itensInicio = itensInicioIdeal > dataInicio ? itensInicioIdeal : dataInicio;
+
+    let houveErro = false;
+
     try {
       for (const chave of Array.from(meses)) {
         const [ano, mes] = chave.split("-").map(Number);
         await sincronizarMutation.mutateAsync({ unidadeId, ano, mes });
       }
-      // Comanda virtual tem uma aba POR DIA — sincroniza só o período
-      // exato visível (não o mês inteiro), pra não ficar caro à toa.
-      await sincronizarItensMutation.mutateAsync({ unidadeId, dataInicio, dataFim });
-      utils.comandaRecepcao.resumo.invalidate();
-      utils.comandaRecepcao.itensDetalhe.invalidate();
-
-      // Recalcula "Contas bancárias" e a conciliação (linha 20 da
-      // planilha) na sequência — um clique só. Sem isso, a célula de
-      // conciliação de um dia já corrigido só sumia se a pessoa
-      // lembrasse de clicar em "Sincronizar com Drive" também.
-      await sincronizarContasBancariasMutation.mutateAsync({ unidadeId, dataInicio, dataFim });
-
-      toast.success("Comanda sincronizada.");
     } catch {
-      // erro já reportado via onError de cada mutation
+      houveErro = true;
     }
+
+    try {
+      await sincronizarItensMutation.mutateAsync({ unidadeId, dataInicio: itensInicio, dataFim: itensFimIdeal });
+    } catch {
+      houveErro = true;
+    }
+
+    utils.comandaRecepcao.resumo.invalidate();
+    utils.comandaRecepcao.itensDetalhe.invalidate();
+
+    // Roda sempre, mesmo se algo acima falhou parcialmente — a
+    // conciliação (linha 20 da planilha) não pode ficar travada numa
+    // versão antiga só porque um dia isolado do item-a-item deu erro.
+    try {
+      await sincronizarContasBancariasMutation.mutateAsync({ unidadeId, dataInicio, dataFim });
+    } catch {
+      houveErro = true;
+    }
+
+    if (!houveErro) toast.success("Comanda sincronizada.");
   }
 
   const importarHistoricoRef = useRef<HTMLInputElement>(null);
