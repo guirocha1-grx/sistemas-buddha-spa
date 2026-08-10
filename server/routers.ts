@@ -638,6 +638,35 @@ Diretrizes:
         if (conversa) await db.marcarInboxConversaLida(input.id);
         return conversa;
       }),
+
+      atualizarNome: protectedProcedure.input(z.object({
+        id: z.number(),
+        nome: z.string().min(1),
+      })).mutation(async ({ input }) => {
+        await db.atualizarNomeContatoInbox(input.id, input.nome);
+        return { success: true };
+      }),
+
+      alterarStatus: protectedProcedure.input(z.object({
+        id: z.number(),
+        status: z.enum(["aberta", "encerrada"]),
+      })).mutation(async ({ input }) => {
+        await db.alterarStatusInboxConversa(input.id, input.status);
+        return { success: true };
+      }),
+
+      definirEtiquetas: protectedProcedure.input(z.object({
+        id: z.number(),
+        etiquetas: z.array(z.string()),
+      })).mutation(async ({ input }) => {
+        await db.definirEtiquetasInbox(input.id, input.etiquetas);
+        return { success: true };
+      }),
+
+      excluir: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+        await db.excluirInboxConversa(input.id);
+        return { success: true };
+      }),
     }),
 
     mensagens: router({

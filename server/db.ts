@@ -344,6 +344,31 @@ export async function marcarInboxConversaLida(id: number) {
   await db.update(inboxConversas).set({ naoLidas: 0 }).where(eq(inboxConversas.id, id));
 }
 
+export async function atualizarNomeContatoInbox(id: number, nome: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inboxConversas).set({ nomeContato: nome }).where(eq(inboxConversas.id, id));
+}
+
+export async function alterarStatusInboxConversa(id: number, status: "aberta" | "encerrada") {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inboxConversas).set({ status }).where(eq(inboxConversas.id, id));
+}
+
+export async function excluirInboxConversa(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(inboxMensagens).where(eq(inboxMensagens.conversaId, id));
+  await db.delete(inboxConversas).where(eq(inboxConversas.id, id));
+}
+
+export async function definirEtiquetasInbox(id: number, etiquetas: string[]) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inboxConversas).set({ etiquetas: JSON.stringify(etiquetas) }).where(eq(inboxConversas.id, id));
+}
+
 /**
  * Busca a conversa por (telefone, canal) — se não achar, cria. Usada pelo
  * webhook de entrada e ao iniciar uma conversa manualmente.

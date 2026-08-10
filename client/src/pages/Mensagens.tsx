@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card } from "@/components/ui/card";
@@ -8,8 +9,16 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Search, Send, Paperclip, Loader2, MessageCircle } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
+  Pencil, Check, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge,
+} from "lucide-react";
 import { toast } from "sonner";
 
 function canalLabel(canal: string) {
@@ -22,12 +31,36 @@ function canalBadgeClass(canal: string) {
     : "border-emerald-300 text-emerald-700 bg-emerald-50";
 }
 
+function statusDotClass(status: string) {
+  if (status === "encerrada") return "bg-gray-400";
+  if (status === "aguardando") return "bg-amber-400";
+  if (status === "respondida") return "bg-blue-400";
+  return "bg-green-500"; // aberta
+}
+
+function statusLabel(status: string) {
+  if (status === "encerrada") return "Encerrada";
+  if (status === "aguardando") return "Aguardando";
+  if (status === "respondida") return "Respondida";
+  return "Aberta";
+}
+
 function parseMetadados(metadados: string | null): { url?: string; legenda?: string; fileName?: string } {
   if (!metadados) return {};
   try {
     return JSON.parse(metadados);
   } catch {
     return {};
+  }
+}
+
+function parseEtiquetas(etiquetas: string | null): string[] {
+  if (!etiquetas) return [];
+  try {
+    const v = JSON.parse(etiquetas);
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
   }
 }
 
@@ -45,14 +78,27 @@ function fileToBase64(file: File): Promise<string> {
 
 export default function Mensagens() {
   const { unidadeSelecionada } = useUnidade();
+  const { user } = useAuth();
   const [busca, setBusca] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState<"todos" | "aberta" | "encerrada">("todos");
   const [conversaSelecionadaId, setConversaSelecionadaId] = useState<number | null>(null);
   const [texto, setTexto] = useState("");
+  const [somAtivo, setSomAtivo] = useState(() => localStorage.getItem("buddha_inbox_som") !== "false");
+  const [buscaMensagemAtiva, setBuscaMensagemAtiva] = useState(false);
+  const [buscaMensagem, setBuscaMensagem] = useState("");
+  const [editandoNome, setEditandoNome] = useState(false);
+  const [nomeEditavel, setNomeEditavel] = useState("");
+  const [novaEtiqueta, setNovaEtiqueta] = useState("");
+  const [modalKillSwitch, setModalKillSwitch] = useState(false);
+  const [modalExcluir, setModalExcluir] = useState(false);
+  const [modalUnificar, setModalUnificar] = useState(false);
+  const [unificarBusca, setUnificarBusca] = useState("");
+  const [unificarDestinoId, setUnificarDestinoId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
 
-  const { data: conversas, isLoading: carregandoConversas } = trpc.inbox.conversas.list.useQuery(
+  const { data: conversas, isLoading: carregandoConversas, refetch: refetchConversas } = trpc.inbox.conversas.list.useQuery(
     { unidadeId: unidadeSelecionada?.id },
     { enabled: !!unidadeSelecionada, refetchInterval: 15000 },
   );
@@ -66,6 +112,15 @@ export default function Mensagens() {
     { conversaId: conversaSelecionadaId ?? 0 },
     { enabled: !!conversaSelecionadaId, refetchInterval: 8000 },
   );
+
+  const { data: mensageriaStatus } = trpc.mensageria.status.useQuery();
+  const setMensageriaStatus = trpc.mensageria.setStatus.useMutation({
+    onSuccess: () => {
+      utils.mensageria.status.invalidate();
+      setModalKillSwitch(false);
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   const enviarMutation = trpc.inbox.mensagens.enviar.useMutation({
     onSuccess: () => {
@@ -84,15 +139,81 @@ export default function Mensagens() {
     onError: (error) => toast.error(error.message),
   });
 
+  const atualizarNomeMutation = trpc.inbox.conversas.atualizarNome.useMutation({
+    onSuccess: () => {
+      setEditandoNome(false);
+      utils.inbox.conversas.get.invalidate({ id: conversaSelecionadaId ?? 0 });
+      utils.inbox.conversas.list.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const alterarStatusMutation = trpc.inbox.conversas.alterarStatus.useMutation({
+    onSuccess: () => {
+      utils.inbox.conversas.get.invalidate({ id: conversaSelecionadaId ?? 0 });
+      utils.inbox.conversas.list.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const definirEtiquetasMutation = trpc.inbox.conversas.definirEtiquetas.useMutation({
+    onSuccess: () => {
+      utils.inbox.conversas.get.invalidate({ id: conversaSelecionadaId ?? 0 });
+      utils.inbox.conversas.list.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const excluirMutation = trpc.inbox.conversas.excluir.useMutation({
+    onSuccess: () => {
+      setModalExcluir(false);
+      setConversaSelecionadaId(null);
+      utils.inbox.conversas.list.invalidate();
+      toast.success("Conversa apagada.");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const unificarMutation = trpc.inbox.unificarConversas.useMutation({
+    onSuccess: () => {
+      setModalUnificar(false);
+      setConversaSelecionadaId(unificarDestinoId);
+      utils.inbox.conversas.list.invalidate();
+      toast.success("Conversas unificadas.");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [mensagens]);
 
+  useEffect(() => {
+    setEditandoNome(false);
+    setBuscaMensagemAtiva(false);
+    setBuscaMensagem("");
+  }, [conversaSelecionadaId]);
+
+  function toggleSom() {
+    const novo = !somAtivo;
+    setSomAtivo(novo);
+    localStorage.setItem("buddha_inbox_som", novo ? "true" : "false");
+  }
+
   const conversasFiltradas = (conversas ?? []).filter((c) => {
+    if (filtroStatus !== "todos" && c.status !== filtroStatus) return false;
     if (!busca) return true;
     const alvo = `${c.nomeContato ?? ""} ${c.telefone}`.toLowerCase();
     return alvo.includes(busca.toLowerCase());
   });
+
+  const mensagensFiltradas = useMemo(() => {
+    if (!buscaMensagem.trim()) return mensagens ?? [];
+    const termo = buscaMensagem.toLowerCase();
+    return (mensagens ?? []).filter((m) => (m.conteudo ?? "").toLowerCase().includes(termo));
+  }, [mensagens, buscaMensagem]);
+
+  const etiquetasAtuais = parseEtiquetas(conversaSelecionada?.etiquetas ?? null);
 
   function handleEnviar() {
     if (!texto.trim() || !conversaSelecionadaId) return;
@@ -114,6 +235,33 @@ export default function Mensagens() {
     e.target.value = "";
   }
 
+  function abrirEdicaoNome() {
+    setNomeEditavel(conversaSelecionada?.nomeContato || "");
+    setEditandoNome(true);
+  }
+
+  function salvarNome() {
+    if (!nomeEditavel.trim() || !conversaSelecionadaId) return;
+    atualizarNomeMutation.mutate({ id: conversaSelecionadaId, nome: nomeEditavel.trim() });
+  }
+
+  function adicionarEtiqueta() {
+    if (!novaEtiqueta.trim() || !conversaSelecionadaId) return;
+    if (etiquetasAtuais.includes(novaEtiqueta.trim())) {
+      setNovaEtiqueta("");
+      return;
+    }
+    definirEtiquetasMutation.mutate({ id: conversaSelecionadaId, etiquetas: [...etiquetasAtuais, novaEtiqueta.trim()] });
+    setNovaEtiqueta("");
+  }
+
+  function removerEtiqueta(etq: string) {
+    if (!conversaSelecionadaId) return;
+    definirEtiquetasMutation.mutate({ id: conversaSelecionadaId, etiquetas: etiquetasAtuais.filter((e) => e !== etq) });
+  }
+
+  const mensageriaAtiva = mensageriaStatus?.ativa ?? true;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -128,24 +276,82 @@ export default function Mensagens() {
         <UnidadeSelector />
       </div>
 
-      <Card className="grid grid-cols-[320px_1fr] h-[calc(100vh-220px)] overflow-hidden p-0">
-        {/* Lista de conversas */}
+      {!mensageriaAtiva && (
+        <div className="bg-destructive text-destructive-foreground text-xs px-3 py-1.5 rounded-md flex items-center justify-center gap-2">
+          <Ban size={12} className="flex-shrink-0" />
+          <span>Envio de mensagens pausado{user?.role === "admin" ? "" : " pelo administrador"}</span>
+          {user?.role === "admin" && (
+            <button onClick={() => setModalKillSwitch(true)} className="underline font-semibold flex-shrink-0">
+              Reativar
+            </button>
+          )}
+        </div>
+      )}
+
+      <Card className="grid grid-cols-[280px_1fr_260px] h-[calc(100vh-220px)] overflow-hidden p-0">
+        {/* Coluna 1: Lista de conversas */}
         <div className="border-r flex flex-col min-h-0">
-          <div className="p-3 border-b">
+          <div className="p-3 border-b space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-sm">Inbox WhatsApp</h2>
+              <div className="flex items-center gap-0.5">
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetchConversas()} title="Atualizar">
+                  <RefreshCw size={13} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={toggleSom}
+                  title={somAtivo ? "Som de notificação ativado (em breve)" : "Som de notificação desativado (em breve)"}
+                >
+                  {somAtivo ? <Volume2 size={13} className="text-primary" /> : <VolumeX size={13} className="text-muted-foreground" />}
+                </Button>
+                {user?.role === "admin" && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`h-7 w-7 ${!mensageriaAtiva ? "text-destructive" : "text-muted-foreground"}`}
+                    onClick={() => setModalKillSwitch(true)}
+                    title={mensageriaAtiva ? "Pausar envio de mensagens (kill switch)" : "Mensageria pausada — clique pra reativar"}
+                  >
+                    <Ban size={13} />
+                  </Button>
+                )}
+              </div>
+            </div>
+
             <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 placeholder="Buscar conversa..."
-                className="pl-8 h-9"
+                className="pl-8 h-8 text-xs"
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
               />
             </div>
+
+            <div className="flex gap-1">
+              {(["todos", "aberta", "encerrada"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFiltroStatus(f)}
+                  className={`flex-1 text-[10px] py-1 rounded font-medium transition-colors ${
+                    filtroStatus === f ? "bg-primary text-primary-foreground" : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {f === "todos" ? "Todos" : f === "aberta" ? "Aberto" : "Fechado"}
+                </button>
+              ))}
+            </div>
           </div>
+
           <ScrollArea className="flex-1">
             {carregandoConversas && (
-              <div className="p-4 text-sm text-muted-foreground flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
+              <div className="p-3 space-y-2">
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-14 w-full rounded-lg" />
+                ))}
               </div>
             )}
             {!carregandoConversas && conversasFiltradas.length === 0 && (
@@ -161,9 +367,13 @@ export default function Mensagens() {
                   conversaSelecionadaId === c.id ? "bg-muted" : ""
                 }`}
               >
-                <Avatar className="h-9 w-9 shrink-0">
-                  <AvatarFallback>{(c.nomeContato ?? c.telefone).slice(0, 2).toUpperCase()}</AvatarFallback>
-                </Avatar>
+                <div className="relative shrink-0">
+                  <Avatar className="h-9 w-9">
+                    {c.fotoUrl && <AvatarImage src={c.fotoUrl} alt={c.nomeContato ?? c.telefone} className="object-cover" />}
+                    <AvatarFallback>{(c.nomeContato ?? c.telefone).slice(0, 2).toUpperCase()}</AvatarFallback>
+                  </Avatar>
+                  <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-background ${statusDotClass(c.status)}`} />
+                </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-1">
                     <span className="font-medium text-sm truncate">{c.nomeContato || c.telefone}</span>
@@ -172,7 +382,7 @@ export default function Mensagens() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground truncate mt-0.5">{c.ultimaMensagemTexto || "—"}</p>
-                  <div className="flex gap-1 mt-1">
+                  <div className="flex gap-1 mt-1 flex-wrap">
                     <Badge variant="outline" className={`text-[10px] py-0 ${canalBadgeClass(c.canal)}`}>
                       {canalLabel(c.canal)}
                     </Badge>
@@ -188,8 +398,8 @@ export default function Mensagens() {
           </ScrollArea>
         </div>
 
-        {/* Thread */}
-        <div className="flex flex-col min-h-0">
+        {/* Coluna 2: Thread */}
+        <div className="flex flex-col min-h-0 border-r">
           {!conversaSelecionadaId && (
             <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-2">
               <MessageCircle className="h-10 w-10 opacity-30" />
@@ -199,17 +409,60 @@ export default function Mensagens() {
 
           {conversaSelecionadaId && (
             <>
-              <div className="p-3 border-b flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-sm">{conversaSelecionada?.nomeContato || conversaSelecionada?.telefone}</p>
+              <div className="p-3 border-b flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-medium text-sm truncate">{conversaSelecionada?.nomeContato || conversaSelecionada?.telefone}</p>
                   <p className="text-xs text-muted-foreground">{conversaSelecionada?.telefone}</p>
                 </div>
-                {conversaSelecionada && (
-                  <Badge variant="outline" className={canalBadgeClass(conversaSelecionada.canal)}>
-                    {canalLabel(conversaSelecionada.canal)}
-                  </Badge>
-                )}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {conversaSelecionada && (
+                    <Badge variant="outline" className={canalBadgeClass(conversaSelecionada.canal)}>
+                      {canalLabel(conversaSelecionada.canal)}
+                    </Badge>
+                  )}
+                  <Button
+                    variant={buscaMensagemAtiva ? "secondary" : "ghost"}
+                    size="icon"
+                    className="h-7 w-7"
+                    title="Buscar nas mensagens"
+                    onClick={() => { setBuscaMensagemAtiva((v) => !v); setBuscaMensagem(""); }}
+                  >
+                    <Search size={13} />
+                  </Button>
+                  {user?.role === "admin" && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive hover:text-destructive"
+                      title="Apagar conversa"
+                      onClick={() => setModalExcluir(true)}
+                    >
+                      <Trash2 size={13} />
+                    </Button>
+                  )}
+                </div>
               </div>
+
+              {buscaMensagemAtiva && (
+                <div className="px-3 py-2 border-b bg-muted/20 flex items-center gap-2">
+                  <Search size={12} className="text-muted-foreground flex-shrink-0" />
+                  <input
+                    autoFocus
+                    className="flex-1 text-xs bg-transparent focus:outline-none placeholder:text-muted-foreground"
+                    placeholder="Buscar nas mensagens..."
+                    value={buscaMensagem}
+                    onChange={(e) => setBuscaMensagem(e.target.value)}
+                  />
+                  {buscaMensagem && (
+                    <span className="text-[10px] text-muted-foreground flex-shrink-0">
+                      {mensagensFiltradas.length} resultado{mensagensFiltradas.length !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                  <button className="text-muted-foreground hover:text-foreground" onClick={() => { setBuscaMensagemAtiva(false); setBuscaMensagem(""); }}>
+                    <X size={12} />
+                  </button>
+                </div>
+              )}
 
               <ScrollArea className="flex-1 p-4">
                 {carregandoMensagens && (
@@ -218,7 +471,7 @@ export default function Mensagens() {
                   </div>
                 )}
                 <div className="space-y-3">
-                  {(mensagens ?? []).map((m) => {
+                  {mensagensFiltradas.map((m) => {
                     const meta = parseMetadados(m.metadados);
                     return (
                     <div key={m.id} className={`flex ${m.direcao === "enviada" ? "justify-end" : "justify-start"}`}>
@@ -301,7 +554,277 @@ export default function Mensagens() {
             </>
           )}
         </div>
+
+        {/* Coluna 3: Painel do contato */}
+        <div className="flex flex-col min-h-0 bg-muted/20">
+          {!conversaSelecionadaId ? (
+            <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground p-4 text-center">
+              Selecione uma conversa para ver os detalhes
+            </div>
+          ) : (
+            <ScrollArea className="flex-1">
+              <div className="p-4 space-y-4">
+                <div className="text-center">
+                  <Avatar className="h-14 w-14 mx-auto mb-2">
+                    {conversaSelecionada?.fotoUrl && (
+                      <AvatarImage src={conversaSelecionada.fotoUrl} alt={conversaSelecionada.nomeContato ?? ""} className="object-cover" />
+                    )}
+                    <AvatarFallback className="text-lg bg-primary/10 text-primary">
+                      {(conversaSelecionada?.nomeContato ?? conversaSelecionada?.telefone ?? "?").charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+
+                  {editandoNome ? (
+                    <div className="flex items-center gap-1 mt-1 px-1">
+                      <Input
+                        autoFocus
+                        value={nomeEditavel}
+                        onChange={(e) => setNomeEditavel(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") salvarNome();
+                          if (e.key === "Escape") setEditandoNome(false);
+                        }}
+                        className="h-6 text-xs text-center"
+                        placeholder="Nome do contato"
+                      />
+                      <button className="flex-shrink-0 p-1 rounded bg-primary/10 hover:bg-primary/20 transition-colors" onClick={salvarNome} title="Salvar nome">
+                        <Check size={11} className="text-primary" />
+                      </button>
+                      <button className="flex-shrink-0 p-1 rounded hover:bg-muted transition-colors" onClick={() => setEditandoNome(false)} title="Cancelar">
+                        <X size={11} className="text-muted-foreground" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-1 mt-0.5 group">
+                      <p className="font-semibold text-sm">{conversaSelecionada?.nomeContato || "Contato não identificado"}</p>
+                      <button className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted" onClick={abrirEdicaoNome} title="Editar nome">
+                        <Pencil size={10} className="text-muted-foreground" />
+                      </button>
+                    </div>
+                  )}
+
+                  {conversaSelecionada?.isLidPendente === "true" ? (
+                    <div className="flex items-center justify-center gap-1 mt-0.5">
+                      <AlertTriangle size={11} className="text-orange-500" />
+                      <p className="text-xs text-orange-500 font-medium">Número não confirmado</p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">{conversaSelecionada?.telefone}</p>
+                  )}
+                  {conversaSelecionada?.isLidPendente === "true" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2 h-6 text-xs gap-1 w-full border-orange-300 text-orange-600 hover:bg-orange-50"
+                      onClick={() => { setModalUnificar(true); setUnificarBusca(""); setUnificarDestinoId(null); }}
+                    >
+                      <Merge size={10} />
+                      Vincular a conversa existente
+                    </Button>
+                  )}
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Status</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${statusDotClass(conversaSelecionada?.status || "")}`} />
+                      <span className="text-xs">{statusLabel(conversaSelecionada?.status || "")}</span>
+                    </div>
+                    {conversaSelecionada && (
+                      <Button
+                        size="sm"
+                        variant={conversaSelecionada.status === "encerrada" ? "outline" : "default"}
+                        className="h-6 text-[10px] px-2 gap-1"
+                        onClick={() => alterarStatusMutation.mutate({
+                          id: conversaSelecionadaId,
+                          status: conversaSelecionada.status === "encerrada" ? "aberta" : "encerrada",
+                        })}
+                        disabled={alterarStatusMutation.isPending}
+                      >
+                        <CheckCircle2 size={10} />
+                        {conversaSelecionada.status === "encerrada" ? "Reabrir" : "Concluir"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Etiquetas</p>
+                  <div className="flex flex-wrap gap-1">
+                    {etiquetasAtuais.length === 0 && (
+                      <p className="text-[10px] text-muted-foreground/60 italic">Nenhuma etiqueta ainda.</p>
+                    )}
+                    {etiquetasAtuais.map((etq) => (
+                      <Badge key={etq} variant="outline" className="text-[10px] gap-1 pr-1">
+                        <TagIcon size={9} />
+                        {etq}
+                        <button onClick={() => removerEtiqueta(etq)} className="hover:text-destructive">
+                          <X size={9} />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                  <div className="flex gap-1">
+                    <Input
+                      value={novaEtiqueta}
+                      onChange={(e) => setNovaEtiqueta(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") adicionarEtiqueta(); }}
+                      placeholder="Nova etiqueta"
+                      className="h-6 text-[11px]"
+                    />
+                    <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={adicionarEtiqueta} disabled={!novaEtiqueta.trim()}>
+                      +
+                    </Button>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="rounded-lg border border-primary/20 bg-primary/5 overflow-hidden">
+                  <div className="flex items-center gap-1.5 px-3 py-2">
+                    <Sparkles size={11} className="text-primary" />
+                    <span className="text-[10px] font-semibold text-primary">Análise IA</span>
+                  </div>
+                  <div className="px-3 pb-2.5">
+                    {conversaSelecionada?.resumoConversa ? (
+                      <p className="text-[11px] text-muted-foreground whitespace-pre-wrap">{conversaSelecionada.resumoConversa}</p>
+                    ) : (
+                      <p className="text-[10px] text-muted-foreground/60 italic">Sem análise ainda — recurso em breve.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </ScrollArea>
+          )}
+        </div>
       </Card>
+
+      {/* Kill switch */}
+      <Dialog open={modalKillSwitch} onOpenChange={setModalKillSwitch}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ban size={16} className={mensageriaAtiva ? "text-destructive" : "text-emerald-600"} />
+              {mensageriaAtiva ? "Pausar envio de mensagens?" : "Reativar envio de mensagens?"}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {mensageriaAtiva
+              ? "Nenhuma mensagem de WhatsApp sairá do CRM (manual ou automática) até você reativar. Use em caso de bug ou envio indevido em massa."
+              : "O envio de mensagens volta a funcionar normalmente para todos os usuários."}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalKillSwitch(false)} disabled={setMensageriaStatus.isPending}>
+              Cancelar
+            </Button>
+            <Button
+              variant={mensageriaAtiva ? "destructive" : "default"}
+              onClick={() => setMensageriaStatus.mutate({ ativa: !mensageriaAtiva })}
+              disabled={setMensageriaStatus.isPending}
+            >
+              {setMensageriaStatus.isPending ? "Salvando..." : mensageriaAtiva ? "Pausar mensageria" : "Reativar mensageria"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Excluir conversa */}
+      <Dialog open={modalExcluir} onOpenChange={setModalExcluir}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 size={16} />
+              Apagar conversa
+            </DialogTitle>
+            <DialogDescription>
+              Confirma a exclusão de todas as mensagens da conversa com{" "}
+              <span className="font-semibold text-foreground">{conversaSelecionada?.nomeContato || conversaSelecionada?.telefone}</span>?
+              <br />
+              <span className="text-destructive text-xs">Esta ação não pode ser desfeita.</span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setModalExcluir(false)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={excluirMutation.isPending}
+              onClick={() => conversaSelecionadaId && excluirMutation.mutate({ id: conversaSelecionadaId })}
+            >
+              {excluirMutation.isPending ? "Apagando..." : "Apagar tudo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unificar conversa @lid */}
+      <Dialog open={modalUnificar} onOpenChange={setModalUnificar}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Merge size={16} className="text-orange-500" />
+              Vincular a conversa existente
+            </DialogTitle>
+            <DialogDescription>
+              Busque a conversa real deste cliente e mova as mensagens para ela. A conversa temporária será removida.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                className="w-full pl-8 pr-3 py-2 text-sm rounded-md border bg-muted/40 focus:outline-none focus:ring-1 focus:ring-ring"
+                placeholder="Buscar por nome ou telefone..."
+                value={unificarBusca}
+                onChange={(e) => setUnificarBusca(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="max-h-64 overflow-y-auto space-y-1">
+              {(conversas ?? [])
+                .filter((c) => c.id !== conversaSelecionadaId && c.isLidPendente !== "true" && (
+                  unificarBusca === "" ||
+                  (c.nomeContato ?? "").toLowerCase().includes(unificarBusca.toLowerCase()) ||
+                  c.telefone.includes(unificarBusca)
+                ))
+                .slice(0, 20)
+                .map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => setUnificarDestinoId(c.id)}
+                    className={`w-full text-left px-3 py-2 rounded-md border text-sm transition-colors ${
+                      unificarDestinoId === c.id ? "border-primary bg-primary/10 text-primary" : "border-transparent hover:bg-muted/60"
+                    }`}
+                  >
+                    <div className="font-medium text-xs">{c.nomeContato || c.telefone}</div>
+                    <div className="text-[10px] text-muted-foreground">{c.telefone} · {c.ultimaMensagemTexto?.slice(0, 40)}</div>
+                  </button>
+                ))}
+              {(conversas ?? []).filter((c) => c.id !== conversaSelecionadaId && c.isLidPendente !== "true").length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-4">Nenhuma conversa encontrada.</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setModalUnificar(false)}>Cancelar</Button>
+            <Button
+              size="sm"
+              disabled={!unificarDestinoId || unificarMutation.isPending}
+              onClick={() => {
+                if (unificarDestinoId && conversaSelecionadaId) {
+                  unificarMutation.mutate({ idOrigemLid: conversaSelecionadaId, idDestinoReal: unificarDestinoId });
+                }
+              }}
+            >
+              {unificarMutation.isPending ? "Unificando..." : "Unificar conversas"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
