@@ -589,48 +589,6 @@ Diretrizes:
         return db.listInboxConversas(input);
       }),
 
-      qrCode: protectedProcedure.input(z.object({
-        unidadeId: z.number(),
-      })).query(async ({ input }) => {
-        const unidade = await db.getUnidadeById(input.unidadeId);
-        if (!unidade?.zapiInstanceId || !unidade?.zapiToken || !unidade?.zapiClientToken) {
-          return { qrcode: null, error: "Z-API não configurado para esta unidade" };
-        }
-        try {
-          const qrcode = await zapiApi.getQrCodeImage(
-            unidade.zapiInstanceId,
-            unidade.zapiToken,
-            unidade.zapiClientToken,
-          );
-          return { qrcode, error: null };
-        } catch (e: any) {
-          return { qrcode: null, error: e?.message || "Erro ao buscar QR code" };
-        }
-      }),
-
-      status: protectedProcedure.input(z.object({
-        unidadeId: z.number(),
-      })).query(async ({ input }) => {
-        const unidade = await db.getUnidadeById(input.unidadeId);
-        if (!unidade?.zapiInstanceId || !unidade?.zapiToken || !unidade?.zapiClientToken) {
-          return { connected: false, status: "not_configured", phone: null };
-        }
-        try {
-          const data = await zapiApi.getStatus(
-            unidade.zapiInstanceId,
-            unidade.zapiToken,
-            unidade.zapiClientToken,
-          );
-          return {
-            connected: data?.connected ?? false,
-            status: data?.status ?? "unknown",
-            phone: data?.phone ?? null,
-          };
-        } catch {
-          return { connected: false, status: "error", phone: null };
-        }
-      }),
-
       get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
         const conversa = await db.getInboxConversaById(input.id);
         if (conversa) await db.marcarInboxConversaLida(input.id);

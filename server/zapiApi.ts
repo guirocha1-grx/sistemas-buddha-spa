@@ -143,34 +143,4 @@ export const zapiApi = {
     const url = data?.value || data?.profilePictureUrl || null;
     return typeof url === "string" && url.startsWith("http") ? url : null;
   },
-
-  /**
-   * Busca o QR code como imagem base64 pronta para exibir em <img>.
-   * O usuário escaneia com o WhatsApp do celular para conectar a instância.
-   */
-  async getQrCodeImage(
-    instanceId: string,
-    token: string,
-    clientToken: string,
-  ): Promise<string | null> {
-    const data = await zapiGet<any>(instanceId, token, clientToken, "/qr-code-image");
-    const value = data?.value || data?.qrcode || data?.base64;
-    if (!value) return null;
-    if (typeof value === "string" && value.startsWith("data:image")) return value;
-    if (typeof value === "string" && value.startsWith("/9j/")) return `data:image/jpeg;base64,${value}`;
-    if (typeof value === "string" && value.startsWith("iVBOR")) return `data:image/png;base64,${value}`;
-    return typeof value === "string" ? value : null;
-  },
-
-  /**
-   * Verifica o status da conexão da instância.
-   * Retorna connected: true se o WhatsApp já foi conectado.
-   */
-  async getStatus(
-    instanceId: string,
-    token: string,
-    clientToken: string,
-  ): Promise<{ connected?: boolean; status?: string; phone?: string } | null> {
-    return zapiGet<any>(instanceId, token, clientToken, "/status");
-  },
 };

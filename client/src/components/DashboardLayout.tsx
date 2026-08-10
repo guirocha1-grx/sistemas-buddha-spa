@@ -23,7 +23,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { startLogin } from "@/const";
+import { startLogin, startGoogleLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
@@ -50,7 +50,6 @@ const menuItems = [
   { icon: Sparkles, label: "Copilot", path: "/copilot" },
   { icon: Image, label: "Lâminas", path: "/laminas" },
   { icon: UserPlus, label: "Leads", path: "/leads" },
-  { icon: MessageCircle, label: "Config. Inbox", path: "/config-inbox" },
   { icon: Settings, label: "Configurações", path: "/configuracoes" },
   { icon: ScrollText, label: "Log de Auditoria", path: "/auditoria", adminOnly: true },
 ];
@@ -92,11 +91,19 @@ export default function DashboardLayout({
             </p>
           </div>
           <Button
-            onClick={() => startLogin()}
+            onClick={() => startGoogleLogin()}
             size="lg"
             className="w-full shadow-lg hover:shadow-xl transition-all"
           >
-            Sign in
+            Entrar com Google
+          </Button>
+          <Button
+            onClick={() => startLogin()}
+            size="sm"
+            variant="ghost"
+            className="text-muted-foreground"
+          >
+            Entrar pelo Manus (antigo)
           </Button>
         </div>
       </div>
