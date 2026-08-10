@@ -92,6 +92,24 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+/**
+ * Acha o role já atribuído a esse e-mail em qualquer login anterior —
+ * usado pelo login direto com Google (server/_core/oauth.ts) pra herdar
+ * admin de quem já era admin pelo portal do Manus. Os dois métodos de
+ * login geram um `openId` diferente pra mesma pessoa (um vem do Manus,
+ * outro é "google:<sub>"), então a promoção automática por
+ * ENV.ownerOpenId (ver upsertUser acima) não bate pro login novo —
+ * sem isso, a mesma pessoa vira "user" comum ao entrar pelo Google.
+ */
+export async function getRoleByEmail(email: string): Promise<"user" | "admin" | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select({ role: users.role }).from(users)
+    .where(and(eq(users.email, email), eq(users.role, "admin")))
+    .limit(1);
+  return rows[0]?.role ?? null;
+}
+
 // ===== Unidades =====
 
 export async function getUnidades() {

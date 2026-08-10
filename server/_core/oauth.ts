@@ -184,12 +184,19 @@ export function registerOAuthRoutes(app: Express) {
       // Manus acima (namespace diferente, mesmo `users.openId` único).
       const openId = `google:${googleUser.sub}`;
 
+      // A promoção automática a admin por ENV.ownerOpenId (upsertUser)
+      // só bate pro openId do portal do Manus — esse aqui é outro. Sem
+      // isso, a mesma pessoa que já era admin pelo Manus nasceria como
+      // "user" comum ao entrar pela primeira vez pelo Google.
+      const roleHerdado = googleUser.email ? await db.getRoleByEmail(googleUser.email) : null;
+
       await db.upsertUser({
         openId,
         name: googleUser.name || null,
         email: googleUser.email ?? null,
         loginMethod: "google",
         lastSignedIn: new Date(),
+        ...(roleHerdado ? { role: roleHerdado } : {}),
       });
 
       const sessionToken = await sdk.createSessionToken(openId, {
