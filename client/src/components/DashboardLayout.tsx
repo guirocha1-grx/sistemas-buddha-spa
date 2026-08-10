@@ -25,11 +25,13 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { startLogin, startGoogleLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText } from "lucide-react";
+import { trpc } from "@/lib/trpc";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText, Repeat } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
+import { AtendenteGate, useAtendenteAtual } from "./AtendenteGate";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -144,6 +146,11 @@ function DashboardLayoutContent({
   const activeMenuItem = menuItems.find(item => item.path === location)
     ?? menuItems.find(item => item.children?.some(c => c.path === location));
   const isMobile = useIsMobile();
+  const { atendente, loading: atendenteLoading } = useAtendenteAtual();
+  const utils = trpc.useUtils();
+  const trocarAtendenteMutation = trpc.atendentes.sair.useMutation({
+    onSuccess: () => utils.atendentes.atual.invalidate(),
+  });
 
   useEffect(() => {
     if (isCollapsed) {
@@ -277,6 +284,17 @@ function DashboardLayoutContent({
           </SidebarContent>
 
           <SidebarFooter className="p-3">
+            {atendente && !isCollapsed && (
+              <button
+                onClick={() => trocarAtendenteMutation.mutate()}
+                disabled={trocarAtendenteMutation.isPending}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-1 mb-1.5"
+                title="Trocar atendente"
+              >
+                <Repeat className="h-3 w-3" />
+                Atendendo: <span className="font-medium text-foreground">{atendente.nome}</span>
+              </button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -296,6 +314,15 @@ function DashboardLayoutContent({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
+                {atendente && (
+                  <DropdownMenuItem
+                    onClick={() => trocarAtendenteMutation.mutate()}
+                    className="cursor-pointer"
+                  >
+                    <Repeat className="mr-2 h-4 w-4" />
+                    <span>Trocar atendente</span>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={logout}
                   className="cursor-pointer text-destructive focus:text-destructive"
@@ -332,7 +359,9 @@ function DashboardLayoutContent({
             </div>
           </div>
         )}
-        <main className="flex-1 p-4">{children}</main>
+        <main className="flex-1 p-4">
+          {!atendenteLoading && !atendente ? <AtendenteGate /> : children}
+        </main>
       </SidebarInset>
     </>
   );

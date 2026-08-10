@@ -57,11 +57,14 @@ const auditMiddleware = t.middleware(async (opts) => {
       }
 
       const user = (ctx as TrpcContext).user;
+      const atendente = (ctx as TrpcContext).atendente;
 
       await db.insert(auditLog).values({
         userId: user?.id ?? null,
         userNome: user?.name ?? null,
         userRole: user?.role ?? null,
+        atendenteId: atendente?.id ?? null,
+        atendenteNome: atendente?.nome ?? null,
         procedure: path,
         inputResumo,
         sucesso: result.ok,

@@ -27,17 +27,20 @@ export default function AuditLog() {
   const [procedureContains, setProcedureContains] = useState("");
   const [apenasErros, setApenasErros] = useState(false);
   const [filtroUsuarioId, setFiltroUsuarioId] = useState<"todos" | string>("todos");
+  const [filtroAtendenteId, setFiltroAtendenteId] = useState<"todos" | string>("todos");
   const [cursorHistory, setCursorHistory] = useState<number[]>([]);
 
   const cursorId = cursorHistory[cursorHistory.length - 1];
 
   const usuariosQuery = trpc.auditLog.usuarios.useQuery(undefined, { enabled: user?.role === "admin" });
+  const atendentesQuery = trpc.auditLog.atendentes.useQuery(undefined, { enabled: user?.role === "admin" });
 
   const { data, isLoading, isFetching, error } = trpc.auditLog.list.useQuery(
     {
       procedureContains: procedureContains.trim() || undefined,
       apenasErros,
       userId: filtroUsuarioId === "todos" ? undefined : Number(filtroUsuarioId),
+      atendenteId: filtroAtendenteId === "todos" ? undefined : Number(filtroAtendenteId),
       cursorId,
       limit: 50,
     },
@@ -58,10 +61,11 @@ export default function AuditLog() {
     setProcedureContains("");
     setApenasErros(false);
     setFiltroUsuarioId("todos");
+    setFiltroAtendenteId("todos");
     setCursorHistory([]);
   }
 
-  const temFiltro = procedureContains || apenasErros || filtroUsuarioId !== "todos";
+  const temFiltro = procedureContains || apenasErros || filtroUsuarioId !== "todos" || filtroAtendenteId !== "todos";
 
   return (
     <div className="space-y-6">
@@ -98,6 +102,20 @@ export default function AuditLog() {
             </SelectContent>
           </Select>
         </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Atendente</label>
+          <Select value={filtroAtendenteId} onValueChange={(v) => { setFiltroAtendenteId(v); setCursorHistory([]); }}>
+            <SelectTrigger className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos</SelectItem>
+              {(atendentesQuery.data ?? []).map((a) => (
+                <SelectItem key={a.id} value={String(a.id)}>{a.nome}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <label className="flex items-center gap-2 pb-2 cursor-pointer">
           <Checkbox
             checked={apenasErros}
@@ -117,6 +135,7 @@ export default function AuditLog() {
               <TableRow>
                 <TableHead>Quando</TableHead>
                 <TableHead>Usuário</TableHead>
+                <TableHead>Atendente</TableHead>
                 <TableHead>Ação</TableHead>
                 <TableHead className="text-right">Duração</TableHead>
                 <TableHead className="text-center">Status</TableHead>
@@ -125,19 +144,19 @@ export default function AuditLog() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                     <Loader2 className="h-4 w-4 animate-spin inline mr-2" /> Carregando...
                   </TableCell>
                 </TableRow>
               ) : error ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-left text-red-600 py-8 px-4 whitespace-pre-wrap break-words text-xs font-mono">
+                  <TableCell colSpan={6} className="text-left text-red-600 py-8 px-4 whitespace-pre-wrap break-words text-xs font-mono">
                     Erro ao carregar: {error.message}
                   </TableCell>
                 </TableRow>
               ) : itens.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                     Nenhum registro encontrado.
                   </TableCell>
                 </TableRow>
@@ -148,6 +167,9 @@ export default function AuditLog() {
                     <TableCell className="text-sm">
                       {item.userNome ?? <span className="text-muted-foreground italic">sistema</span>}
                       {item.userRole && <span className="text-xs text-muted-foreground ml-1">({item.userRole})</span>}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {item.atendenteNome ?? <span className="text-muted-foreground">—</span>}
                     </TableCell>
                     <TableCell className="text-sm font-mono">{item.procedure}</TableCell>
                     <TableCell className="text-right text-xs text-muted-foreground tabular-nums">

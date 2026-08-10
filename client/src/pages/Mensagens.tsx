@@ -259,6 +259,9 @@ export default function Mensagens() {
                         )}
                         <p className="text-[10px] opacity-60 mt-1">
                           {new Date(m.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                          {m.direcao === "enviada" && m.enviadaPorAtendenteNome && (
+                            <> · {m.enviadaPorAtendenteNome}</>
+                          )}
                         </p>
                       </div>
                     </div>

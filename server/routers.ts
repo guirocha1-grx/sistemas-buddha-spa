@@ -1,9 +1,11 @@
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, ATENDENTE_COOKIE_NAME, ATENDENTE_SESSION_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router, protectedProcedure, adminProcedure } from "./_core/trpc";
 import { z } from "zod";
+import { parse as parseCookieHeader } from "cookie";
 import * as db from "./db";
+import { hashPin, verifyPin } from "./atendenteAuth";
 import { belleApi } from "./belleApi";
 import { zapiApi } from "./zapiApi";
 import { buddhaMktApi } from "./buddhaMktApi";
@@ -681,6 +683,7 @@ Diretrizes:
           tipo: "texto",
           conteudo: input.texto,
           enviadaPorUserId: ctx.user.id,
+          enviadaPorAtendenteId: ctx.atendente?.id ?? null,
         });
         await db.upsertInboxConversa({
           unidadeId: conversa.unidadeId,
@@ -744,6 +747,7 @@ Diretrizes:
           conteudo: input.legenda ?? "",
           metadados: JSON.stringify({ url, legenda: input.legenda, fileName: input.fileName }),
           enviadaPorUserId: ctx.user.id,
+          enviadaPorAtendenteId: ctx.atendente?.id ?? null,
         });
 
         return { success: true, url };
@@ -2197,6 +2201,72 @@ Diretrizes:
     }),
   }),
 
+  // ===== Atendentes (identidade por PIN — ver server/atendenteAuth.ts) =====
+  atendentes: router({
+    list: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      return db.listAtendentesAtivos(input.unidadeId);
+    }),
+
+    listAdmin: adminProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      return db.listAtendentesAdmin(input.unidadeId);
+    }),
+
+    criar: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      nome: z.string().min(1),
+      pin: z.string().regex(/^\d{4}$/, "PIN precisa ter 4 dígitos"),
+    })).mutation(async ({ input }) => {
+      const pinHash = hashPin(input.pin);
+      const id = await db.criarAtendente(input.unidadeId, input.nome, pinHash);
+      return { success: true, id };
+    }),
+
+    atualizar: adminProcedure.input(z.object({
+      id: z.number(),
+      nome: z.string().min(1).optional(),
+      pin: z.string().regex(/^\d{4}$/, "PIN precisa ter 4 dígitos").optional(),
+      ativo: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      const dados: { nome?: string; pinHash?: string; ativo?: boolean } = {};
+      if (input.nome !== undefined) dados.nome = input.nome;
+      if (input.pin !== undefined) dados.pinHash = hashPin(input.pin);
+      if (input.ativo !== undefined) dados.ativo = input.ativo;
+      await db.atualizarAtendente(input.id, dados);
+      return { success: true };
+    }),
+
+    // Não é adminProcedure — qualquer um logado pode dizer "sou fulano
+    // com esse PIN". A conta Google/Manus (protectedProcedure) já
+    // barrou quem não devia nem chegar no computador da recepção; PIN
+    // errado só retorna erro genérico, sem dizer se o ID existe.
+    entrar: protectedProcedure.input(z.object({
+      atendenteId: z.number(),
+      pin: z.string().min(1),
+    })).mutation(async ({ input, ctx }) => {
+      const atendente = await db.getAtendenteComHash(input.atendenteId);
+      if (!atendente || !atendente.ativo || !verifyPin(input.pin, atendente.pinHash)) {
+        throw new Error("PIN inválido");
+      }
+      const expiraEm = new Date(Date.now() + ATENDENTE_SESSION_MS);
+      const token = await db.criarSessaoAtendente(atendente.id, expiraEm);
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.cookie(ATENDENTE_COOKIE_NAME, token, { ...cookieOptions, maxAge: ATENDENTE_SESSION_MS });
+      return { success: true, nome: atendente.nome };
+    }),
+
+    sair: protectedProcedure.mutation(async ({ ctx }) => {
+      const token = parseCookieHeader(ctx.req.headers.cookie ?? "")[ATENDENTE_COOKIE_NAME];
+      if (token) await db.encerrarSessaoAtendente(token);
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.clearCookie(ATENDENTE_COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      return { success: true } as const;
+    }),
+
+    atual: protectedProcedure.query(async ({ ctx }) => {
+      return ctx.atendente;
+    }),
+  }),
+
   // ===== Configurações globais (chave-valor) =====
   configuracoes: router({
     get: adminProcedure.input(z.object({ chave: z.string() })).query(async ({ input }) => {
@@ -2217,6 +2287,7 @@ Diretrizes:
   auditLog: router({
     list: adminProcedure.input(z.object({
       userId: z.number().optional(),
+      atendenteId: z.number().optional(),
       procedureContains: z.string().optional(),
       apenasErros: z.boolean().default(false),
       cursorId: z.number().optional(),
@@ -2227,6 +2298,10 @@ Diretrizes:
 
     usuarios: adminProcedure.query(async () => {
       return db.listUsuariosParaFiltro();
+    }),
+
+    atendentes: adminProcedure.query(async () => {
+      return db.listAtendentesParaFiltro();
     }),
   }),
 });

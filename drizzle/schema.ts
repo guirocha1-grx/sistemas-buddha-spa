@@ -171,6 +171,12 @@ export const auditLog = mysqlTable("audit_log", {
   userId: int("userId"),
   userNome: varchar("userNome", { length: 100 }),
   userRole: varchar("userRole", { length: 20 }),
+  // Quem realmente agiu, distinto de userId/userNome acima (a conta
+  // Google/Manus logada na máquina) — ver atendentes abaixo. Null pra
+  // toda mutation registrada antes dessa coluna existir, ou fora do
+  // gate (login ainda não passou pelo seletor de atendente).
+  atendenteId: int("atendenteId"),
+  atendenteNome: varchar("atendenteNome", { length: 100 }),
   procedure: varchar("procedure", { length: 150 }).notNull(),
   inputResumo: text("inputResumo"),
   sucesso: boolean("sucesso").notNull().default(true),
@@ -179,10 +185,53 @@ export const auditLog = mysqlTable("audit_log", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({
   userCreatedIdx: index("audit_log_user_created_idx").on(table.userId, table.createdAt),
+  atendenteCreatedIdx: index("audit_log_atendente_created_idx").on(table.atendenteId, table.createdAt),
 }));
 
 export type AuditLogEntry = typeof auditLog.$inferSelect;
 export type InsertAuditLogEntry = typeof auditLog.$inferInsert;
+
+/**
+ * Atendente = pessoa física da recepção, distinta da conta Google/Manus
+ * usada pra logar no computador compartilhado (2026-08-10). Um PIN de
+ * 4 dígitos identifica quem está atendendo, sem precisar de conta
+ * Google individual — ver server/atendenteAuth.ts (hash do PIN) e
+ * atendenteSessoes abaixo (sessão própria, cookie separado do login).
+ * Escopado por unidade porque a equipe de recepção é uma por unidade.
+ */
+export const atendentes = mysqlTable("atendentes", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  nome: varchar("nome", { length: 100 }).notNull(),
+  pinHash: varchar("pinHash", { length: 255 }).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeIdx: index("atendentes_unidade_idx").on(table.unidadeId),
+}));
+
+export type Atendente = typeof atendentes.$inferSelect;
+export type InsertAtendente = typeof atendentes.$inferInsert;
+
+/**
+ * Sessão do atendente após validar o PIN — token opaco (não é o JWT do
+ * login, cookie separado), com expiração curta (um turno). DB-backed
+ * em vez de assinado: permite invalidar na hora (ex: trocar de
+ * atendente) sem precisar de blocklist de token.
+ */
+export const atendenteSessoes = mysqlTable("atendente_sessoes", {
+  id: int("id").autoincrement().primaryKey(),
+  token: varchar("token", { length: 64 }).notNull().unique(),
+  atendenteId: int("atendenteId").notNull(),
+  expiraEm: timestamp("expiraEm").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  tokenIdx: index("atendente_sessoes_token_idx").on(table.token),
+}));
+
+export type AtendenteSessao = typeof atendenteSessoes.$inferSelect;
+export type InsertAtendenteSessao = typeof atendenteSessoes.$inferInsert;
 
 /**
  * Base local de clientes do Belle — passou a existir porque o acesso via
@@ -300,6 +349,10 @@ export const inboxMensagens = mysqlTable("inbox_mensagens", {
   metadados: text("metadados"),
   transcricao: text("transcricao"),
   enviadaPorUserId: int("enviadaPorUserId"),
+  // Quem realmente digitou/enviou, distinto de enviadaPorUserId (a
+  // conta Google/Manus compartilhada da recepção) — ver atendentes
+  // abaixo. Alimenta o "enviada por" mostrado em cada balão no Inbox.
+  enviadaPorAtendenteId: int("enviadaPorAtendenteId"),
   lida: mysqlEnum("lida", ["true", "false"]).default("false").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({

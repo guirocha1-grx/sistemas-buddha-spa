@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megaphone, Landmark, CreditCard } from "lucide-react";
+import { AtendentesSection } from "@/components/AtendentesSection";
 
 interface InterForm {
   interClientId?: string;
@@ -485,6 +486,8 @@ export default function Configuracoes() {
                   {sicrediSaved === unidade.id ? "Salvo!" : "Salvar Sicredi"}
                 </Button>
               </div>
+
+              <AtendentesSection unidadeId={unidade.id} />
             </CardContent>
           </Card>
         ))}

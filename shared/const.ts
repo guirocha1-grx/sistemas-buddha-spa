@@ -4,6 +4,13 @@ export const AXIOS_TIMEOUT_MS = 30_000;
 export const UNAUTHED_ERR_MSG = 'Please login (10001)';
 export const NOT_ADMIN_ERR_MSG = 'You do not have required permission (10002)';
 
+// Sessão do atendente (identidade por PIN, ver drizzle/schema.ts
+// atendentes/atendenteSessoes) — separada da sessão de login acima:
+// o login (Google/Manus) autentica a máquina/conta compartilhada, essa
+// aqui identifica QUEM da recepção está atendendo agora. Dura um turno.
+export const ATENDENTE_COOKIE_NAME = "atendente_session_id";
+export const ATENDENTE_SESSION_MS = 1000 * 60 * 60 * 12; // 12h
+
 // One-time nonce cookie that binds an OAuth login to the browser that started
 // it. The `__Host-` prefix forces the cookie host-only (Secure, Path=/, no
 // Domain), so a sibling *.manus.space site cannot plant a matching value in a

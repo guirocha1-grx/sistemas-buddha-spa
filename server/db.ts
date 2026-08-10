@@ -1,6 +1,7 @@
+import crypto from "node:crypto";
 import { eq, desc, and, gte, lte, isNull, like, ne, inArray, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
@@ -353,10 +354,30 @@ export async function unificarInboxConversas(idLid: number, idReal: number) {
   await db.delete(inboxConversas).where(eq(inboxConversas.id, idLid));
 }
 
+/**
+ * Join com atendentes só pra resolver o nome de quem realmente enviou
+ * (enviadaPorAtendenteId) — enviadaPorUserId continua sendo a conta
+ * Google/Manus compartilhada, não é isso que a UI mostra no balão.
+ */
 export async function listInboxMensagens(conversaId: number, limit: number = 50) {
   const db = await getDb();
   if (!db) return [];
-  const mensagens = await db.select().from(inboxMensagens)
+  const mensagens = await db.select({
+    id: inboxMensagens.id,
+    conversaId: inboxMensagens.conversaId,
+    direcao: inboxMensagens.direcao,
+    tipo: inboxMensagens.tipo,
+    conteudo: inboxMensagens.conteudo,
+    metadados: inboxMensagens.metadados,
+    transcricao: inboxMensagens.transcricao,
+    enviadaPorUserId: inboxMensagens.enviadaPorUserId,
+    enviadaPorAtendenteId: inboxMensagens.enviadaPorAtendenteId,
+    enviadaPorAtendenteNome: atendentes.nome,
+    lida: inboxMensagens.lida,
+    createdAt: inboxMensagens.createdAt,
+  })
+    .from(inboxMensagens)
+    .leftJoin(atendentes, eq(inboxMensagens.enviadaPorAtendenteId, atendentes.id))
     .where(eq(inboxMensagens.conversaId, conversaId))
     .orderBy(desc(inboxMensagens.createdAt))
     .limit(limit);
@@ -1506,6 +1527,7 @@ export async function getOrCreateContaCaixaFisico(unidadeId: number) {
 
 export interface FiltrosAuditLog {
   userId?: number;
+  atendenteId?: number;
   procedureContains?: string;
   apenasErros?: boolean;
   cursorId?: number;
@@ -1523,6 +1545,7 @@ export async function listAuditLog(filtros: FiltrosAuditLog) {
 
   const condicoes = [];
   if (filtros.userId != null) condicoes.push(eq(auditLog.userId, filtros.userId));
+  if (filtros.atendenteId != null) condicoes.push(eq(auditLog.atendenteId, filtros.atendenteId));
   if (filtros.procedureContains) condicoes.push(like(auditLog.procedure, `%${filtros.procedureContains}%`));
   if (filtros.apenasErros) condicoes.push(eq(auditLog.sucesso, false));
   if (filtros.cursorId != null) condicoes.push(lt(auditLog.id, filtros.cursorId));
@@ -1545,6 +1568,105 @@ export async function listUsuariosParaFiltro() {
   const db = await getDb();
   if (!db) return [];
   return db.select({ id: users.id, name: users.name, email: users.email }).from(users).orderBy(users.name);
+}
+
+/** Lista enxuta de atendentes (todas as unidades) pro filtro "Atendente" da tela de auditoria. */
+export async function listAtendentesParaFiltro() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: atendentes.id, nome: atendentes.nome }).from(atendentes).orderBy(atendentes.nome);
+}
+
+// ===== Atendentes (identidade por PIN — ver server/atendenteAuth.ts) =====
+
+/** Pro seletor "Quem está atendendo?" — nunca inclui o hash do PIN. */
+export async function listAtendentesAtivos(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: atendentes.id, nome: atendentes.nome }).from(atendentes)
+    .where(and(eq(atendentes.unidadeId, unidadeId), eq(atendentes.ativo, true)))
+    .orderBy(atendentes.nome);
+}
+
+/** Pra tela de administração — inclui inativos, sem o hash do PIN. */
+export async function listAtendentesAdmin(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: atendentes.id, nome: atendentes.nome, ativo: atendentes.ativo, createdAt: atendentes.createdAt })
+    .from(atendentes)
+    .where(eq(atendentes.unidadeId, unidadeId))
+    .orderBy(atendentes.nome);
+}
+
+export async function getAtendenteComHash(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(atendentes).where(eq(atendentes.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function criarAtendente(unidadeId: number, nome: string, pinHash: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.insert(atendentes).values({ unidadeId, nome, pinHash }).$returningId();
+  return result[0]?.id;
+}
+
+export async function atualizarAtendente(id: number, dados: { nome?: string; pinHash?: string; ativo?: boolean }) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(atendentes).set(dados).where(eq(atendentes.id, id));
+}
+
+/**
+ * Cria a sessão pós-PIN e devolve o token (o chamador grava no
+ * cookie). Também limpa sessões expiradas desse atendente pra tabela
+ * não crescer sem limite — não precisa de cron dedicado pra isso.
+ */
+export async function criarSessaoAtendente(atendenteId: number, expiraEm: Date): Promise<string> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível");
+
+  await db.delete(atendenteSessoes).where(and(
+    eq(atendenteSessoes.atendenteId, atendenteId),
+    lt(atendenteSessoes.expiraEm, new Date()),
+  ));
+
+  const token = crypto.randomBytes(32).toString("hex");
+  await db.insert(atendenteSessoes).values({ token, atendenteId, expiraEm });
+  return token;
+}
+
+/**
+ * Resolve o atendente ativo a partir do cookie de sessão — usado pelo
+ * createContext em toda requisição. `null` tanto pra token inexistente/
+ * expirado quanto pra atendente desativado depois que a sessão começou.
+ */
+export async function getAtendenteAtualPorToken(token: string): Promise<{ id: number; nome: string; unidadeId: number } | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const rows = await db.select({
+    id: atendentes.id,
+    nome: atendentes.nome,
+    unidadeId: atendentes.unidadeId,
+    ativo: atendentes.ativo,
+    expiraEm: atendenteSessoes.expiraEm,
+  })
+    .from(atendenteSessoes)
+    .innerJoin(atendentes, eq(atendenteSessoes.atendenteId, atendentes.id))
+    .where(eq(atendenteSessoes.token, token))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row || !row.ativo || row.expiraEm < new Date()) return null;
+  return { id: row.id, nome: row.nome, unidadeId: row.unidadeId };
+}
+
+export async function encerrarSessaoAtendente(token: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(atendenteSessoes).where(eq(atendenteSessoes.token, token));
 }
 
 // ===== Clientes (base local, importada de planilha — Belle API negado) =====
