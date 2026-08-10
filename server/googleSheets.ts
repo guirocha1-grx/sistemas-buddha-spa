@@ -425,19 +425,28 @@ export const SPREADSHEET_IDS_COMANDA_VIRTUAL = {
   ssu: "1pdKiK3h5CRZfrT2fjVi3w-_Sd1BBgfhgjCvFUBk7FUs",
 };
 
-function nomeAbaComandaVirtual(dataIso: string): string {
+/**
+ * A convenção de nome de aba não é garantidamente a mesma nas duas
+ * planilhas — confirmado em produção (2026-08-10) que a RBS usa
+ * "DD/MM/AAAA" (com barras), não "DDMMYYYY" como a função original
+ * assumia; a SSU nunca foi confirmada da mesma forma, então pode estar
+ * num formato ou no outro. Em vez de apostar num só (e arriscar quebrar
+ * uma das duas unidades silenciosamente de novo), tenta os dois.
+ */
+function nomesAbaComandaVirtual(dataIso: string): string[] {
   const [y, m, d] = dataIso.split("-");
-  return `${d}/${m}/${y}`;
+  return [`${d}/${m}/${y}`, `${d}${m}${y}`];
 }
 
 /**
- * Lê um único dia da "Comanda virtual" (aba "DDMMYYYY") — item a item,
- * mesmo formato de linha do parser de xlsx (server/
+ * Lê um único dia da "Comanda virtual" (uma aba por dia) — item a
+ * item, mesmo formato de linha do parser de xlsx (server/
  * comandaVirtualXlsxParser.ts — reaproveitado aqui, não duplicado).
  * Usado pro dia a dia; a carga histórica usa o parser de xlsx direto
  * (evita centenas de chamadas à API pra trazer o passado todo de uma
- * vez). Retorna [] se a aba daquele dia não existir ainda (dia futuro,
- * ou antes do início do controle) — não é erro, é esperado.
+ * vez). Retorna [] se nenhum dos formatos de nome de aba existir pra
+ * esse dia (futuro, ou antes do início do controle) — não é erro, é
+ * esperado.
  */
 export async function lerComandaVirtualDiaSheet(
   spreadsheetId: string,
@@ -447,31 +456,35 @@ export async function lerComandaVirtualDiaSheet(
   if (!auth) throw new Error("Credenciais do Google Sheets não configuradas");
 
   const sheets = google.sheets({ version: "v4", auth });
-  const aba = nomeAbaComandaVirtual(dataIso);
 
-  let rows: unknown[][];
-  try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `'${aba}'!A1:AD300`,
-    });
-    rows = (res.data.values || []) as unknown[][];
-  } catch (error: any) {
-    // "Unable to parse range" (400) é a aba realmente não existir pra
-    // esse dia (futuro, ou antes do início do controle) — normal,
-    // engole em silêncio. QUALQUER outro erro (429 rate limit, 5xx,
-    // timeout de rede) não pode virar "[]" silenciosamente: antes disso
-    // acontecia, e um rate limit no meio de uma sincronização de mês
-    // inteiro (30 chamadas em sequência) fazia um dia real sumir sem
-    // deixar rastro nenhum de erro. Deixa propagar pro chamador tratar.
-    const status = error?.code ?? error?.response?.status;
-    const mensagem = String(error?.message ?? error?.response?.data?.error?.message ?? "");
-    if (status === 400 && /unable to parse range/i.test(mensagem)) {
-      return [];
+  for (const aba of nomesAbaComandaVirtual(dataIso)) {
+    let rows: unknown[][] | null;
+    try {
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `'${aba}'!A1:AD300`,
+      });
+      rows = (res.data.values || []) as unknown[][];
+    } catch (error: any) {
+      // "Unable to parse range" (400) é esse formato de nome não bater
+      // com nenhuma aba — tenta o próximo formato. QUALQUER outro erro
+      // (429 rate limit, 5xx, timeout de rede) não pode virar "[]"
+      // silenciosamente: antes disso acontecia, e um rate limit no
+      // meio de uma sincronização de mês inteiro (30 chamadas em
+      // sequência) fazia um dia real sumir sem deixar rastro nenhum de
+      // erro. Deixa propagar pro chamador tratar.
+      const status = error?.code ?? error?.response?.status;
+      const mensagem = String(error?.message ?? error?.response?.data?.error?.message ?? "");
+      if (status === 400 && /unable to parse range/i.test(mensagem)) {
+        rows = null;
+      } else {
+        throw error;
+      }
     }
-    throw error;
+    if (rows === null) continue;
+    if (rows.length === 0) return [];
+    return parseLinhasComandaItem(rows, dataIso);
   }
-  if (rows.length === 0) return [];
 
-  return parseLinhasComandaItem(rows, dataIso);
+  return []; // nenhum formato de nome achou aba — dia sem controle ainda (normal)
 }
