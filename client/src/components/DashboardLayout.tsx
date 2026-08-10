@@ -23,7 +23,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { startLogin, startGoogleLogin } from "@/const";
+import { startGoogleLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
 import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText, Repeat, Users2 } from "lucide-react";
@@ -64,6 +64,17 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
   { icon: ScrollText, label: "Log de Auditoria", path: "/auditoria", adminOnly: true },
 ];
 
+function GoogleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.47c-.28 1.5-1.13 2.78-2.4 3.63v3.02h3.89c2.27-2.09 3.58-5.17 3.58-8.84z" />
+      <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.9l-3.89-3.02c-1.08.72-2.46 1.15-4.06 1.15-3.12 0-5.77-2.11-6.71-4.94H1.27v3.1C3.25 21.3 7.31 24 12 24z" />
+      <path fill="#FBBC05" d="M5.29 14.29a7.2 7.2 0 0 1 0-4.58v-3.1H1.27a12 12 0 0 0 0 10.78l4.02-3.1z" />
+      <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.6 4.59 1.79l3.44-3.44C17.95 1.19 15.24 0 12 0 7.31 0 3.25 2.7 1.27 6.61l4.02 3.1C6.23 6.88 8.88 4.77 12 4.77z" />
+    </svg>
+  );
+}
+
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
 const MIN_WIDTH = 200;
@@ -90,31 +101,40 @@ export default function DashboardLayout({
 
   if (!user) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
-          <div className="flex flex-col items-center gap-6">
-            <h1 className="text-2xl font-semibold tracking-tight text-center">
-              Sign in to continue
-            </h1>
-            <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Access to this dashboard requires authentication. Continue to launch the login flow.
+      <div
+        className="flex items-center justify-center min-h-screen p-4"
+        style={{
+          background: "radial-gradient(circle at 50% 15%, oklch(0.32 0.11 29), oklch(0.14 0.04 29) 75%)",
+        }}
+      >
+        <div className="flex flex-col items-center gap-10 w-full max-w-sm">
+          <div className="flex flex-col items-center gap-3">
+            <img src="/logo.png" alt="Buddha Spa" className="h-28 w-auto drop-shadow-lg" />
+            <p className="text-sm text-white/60 text-center tracking-wide">
+              Ribeirão Shopping · Shopping Santa Úrsula
             </p>
           </div>
-          <Button
-            onClick={() => startGoogleLogin()}
-            size="lg"
-            className="w-full shadow-lg hover:shadow-xl transition-all"
-          >
-            Entrar com Google
-          </Button>
-          <Button
-            onClick={() => startLogin()}
-            size="sm"
-            variant="ghost"
-            className="text-muted-foreground"
-          >
-            Entrar pelo Manus (antigo)
-          </Button>
+
+          <div className="w-full bg-card rounded-2xl shadow-2xl p-6 flex flex-col items-center gap-4">
+            <div className="text-center">
+              <h1
+                className="text-xl text-foreground"
+                style={{ fontFamily: "'Cormorant Garamond', serif" }}
+              >
+                Painel de gestão
+              </h1>
+              <p className="text-xs text-muted-foreground mt-1">
+                Acesso restrito à equipe Buddha Spa.
+              </p>
+            </div>
+            <button
+              onClick={() => startGoogleLogin()}
+              className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 text-gray-700 rounded-lg py-3 px-4 text-sm font-medium shadow-sm hover:shadow-md hover:bg-gray-50 transition-all"
+            >
+              <GoogleIcon className="h-5 w-5" />
+              Continuar com Google
+            </button>
+          </div>
         </div>
       </div>
     );

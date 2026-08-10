@@ -2280,6 +2280,14 @@ Diretrizes:
       return db.listUsuariosComPermissoes();
     }),
 
+    convidar: adminProcedure.input(z.object({
+      email: z.string().email(),
+      nome: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const id = await db.criarConvite(input.email, input.nome?.trim() || null);
+      return { success: true, id };
+    }),
+
     alterarRole: adminProcedure.input(z.object({
       userId: z.number(),
       role: z.enum(["user", "admin"]),

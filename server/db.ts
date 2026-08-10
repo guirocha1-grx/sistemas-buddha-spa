@@ -81,6 +81,59 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
 }
 
+// Prefixo de openId pra conta convidada por e-mail (2026-08-10) — ainda
+// não logou de verdade, então não tem um openId real do Google/Manus
+// ainda. `openId` continua único (constraint da coluna), então usa um
+// UUID aleatório com esse prefixo em vez de um valor fixo.
+const PREFIXO_OPENID_CONVITE = "pending:";
+
+/**
+ * Cria uma conta "convidada" — sem a pessoa ter logado ainda. Existe
+ * pra deixar admin configurar permissões ANTES do primeiro acesso
+ * (pedido do usuário, 2026-08-10). Vira uma conta "de verdade" sozinha
+ * assim que essa pessoa loga pelo Google com esse e-mail — ver
+ * reivindicarOuCriarUsuarioGoogle abaixo, que casa pelo e-mail e
+ * atualiza o openId da MESMA linha (preserva id e permissões já
+ * configuradas, não cria linha duplicada).
+ */
+export async function criarConvite(email: string, name: string | null): Promise<number | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const existente = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+  if (existente[0]) throw new Error("Já existe uma conta com esse e-mail");
+
+  const openId = `${PREFIXO_OPENID_CONVITE}${crypto.randomUUID()}`;
+  const result = await db.insert(users).values({ openId, email, name, role: "user" }).$returningId();
+  return result[0]?.id;
+}
+
+/**
+ * Chamado pelo callback do login Google (server/_core/oauth.ts) ANTES
+ * do upsert de sempre. Se existe uma conta convidada (openId com
+ * prefixo "pending:") com esse e-mail, reivindica ela — atualiza o
+ * openId pra o real do Google na MESMA linha, preservando id/role/
+ * permissões já configuradas — e retorna `true`. `false` significa
+ * "sem convite pendente, segue o fluxo normal (upsertUser)".
+ */
+export async function reivindicarConvitePorEmail(email: string, openIdReal: string, name: string | null): Promise<boolean> {
+  const db = await getDb();
+  if (!db || !email) return false;
+
+  const pendente = await db.select({ id: users.id }).from(users)
+    .where(and(eq(users.email, email), like(users.openId, `${PREFIXO_OPENID_CONVITE}%`)))
+    .limit(1);
+  if (!pendente[0]) return false;
+
+  await db.update(users).set({
+    openId: openIdReal,
+    name: name || null,
+    loginMethod: "google",
+    lastSignedIn: new Date(),
+  }).where(eq(users.id, pendente[0].id));
+  return true;
+}
+
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) {
@@ -1585,19 +1638,22 @@ export interface UsuarioComPermissoes {
   email: string | null;
   role: "user" | "admin";
   permissoesCustomizadas: boolean;
+  pendente: boolean;
 }
 
 /** Pra tela de administração de usuários. */
 export async function listUsuariosComPermissoes(): Promise<UsuarioComPermissoes[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select({
+  const rows = await db.select({
     id: users.id,
     name: users.name,
     email: users.email,
     role: users.role,
     permissoesCustomizadas: users.permissoesCustomizadas,
+    openId: users.openId,
   }).from(users).orderBy(users.name);
+  return rows.map(({ openId, ...resto }) => ({ ...resto, pendente: openId.startsWith(PREFIXO_OPENID_CONVITE) }));
 }
 
 /**

@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -18,7 +19,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Pencil, Copy, ShieldCheck, ShieldOff } from "lucide-react";
+import { Loader2, Pencil, Copy, ShieldCheck, ShieldOff, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Usuarios() {
@@ -30,6 +31,9 @@ export default function Usuarios() {
   const [restringir, setRestringir] = useState(false);
   const [selecionados, setSelecionados] = useState<Set<ModuloChave>>(new Set());
   const [clonarDe, setClonarDe] = useState<string>("");
+  const [convidarAberto, setConvidarAberto] = useState(false);
+  const [novoEmail, setNovoEmail] = useState("");
+  const [novoNome, setNovoNome] = useState("");
 
   const permissoesQuery = trpc.permissoes.obter.useQuery(
     { userId: editandoId! },
@@ -65,6 +69,17 @@ export default function Usuarios() {
     onSuccess: (_data, vars) => {
       toast.success(vars.role === "admin" ? "Promovido a admin." : "Rebaixado a user.");
       utils.permissoes.listUsuarios.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const convidarMutation = trpc.permissoes.convidar.useMutation({
+    onSuccess: () => {
+      toast.success("Convite criado — a conta já pode ser configurada, e vira ativa no primeiro login com esse e-mail.");
+      utils.permissoes.listUsuarios.invalidate();
+      setConvidarAberto(false);
+      setNovoEmail("");
+      setNovoNome("");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -115,15 +130,19 @@ export default function Usuarios() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-          Usuários
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Controle de acesso por módulo — por padrão toda conta vê tudo; restrinja individualmente quando precisar.
-          Não existe cadastro manual: a conta aparece aqui sozinha assim que a pessoa faz login (Google) pela
-          primeira vez.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+            Usuários
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Controle de acesso por módulo — por padrão toda conta vê tudo; restrinja individualmente quando
+            precisar. Convide por e-mail pra já deixar as permissões prontas antes do primeiro login.
+          </p>
+        </div>
+        <Button size="sm" onClick={() => setConvidarAberto(true)}>
+          <UserPlus className="h-4 w-4 mr-2" /> Convidar por e-mail
+        </Button>
       </div>
 
       <Card className="overflow-hidden">
@@ -154,7 +173,14 @@ export default function Usuarios() {
               ) : (
                 (usuarios ?? []).map((u) => (
                   <TableRow key={u.id}>
-                    <TableCell className="text-sm">{u.name || "—"}</TableCell>
+                    <TableCell className="text-sm">
+                      {u.name || "—"}
+                      {u.pendente && (
+                        <Badge variant="outline" className="ml-2 border-sky-400 text-sky-700 text-[10px]">
+                          Convite pendente
+                        </Badge>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{u.email || "—"}</TableCell>
                     <TableCell className="text-sm">{u.role}</TableCell>
                     <TableCell>
@@ -267,6 +293,47 @@ export default function Usuarios() {
             <Button onClick={handleSalvar} disabled={salvando || permissoesQuery.isLoading}>
               {salvando && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={convidarAberto} onOpenChange={setConvidarAberto}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Convidar por e-mail</DialogTitle>
+            <DialogDescription>
+              Cria a conta e as permissões de antemão. Vira ativa sozinha quando essa pessoa
+              fizer login pela primeira vez com esse e-mail no Google.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">E-mail (Google)</Label>
+              <Input
+                type="email"
+                placeholder="nome@gmail.com"
+                value={novoEmail}
+                onChange={(e) => setNovoEmail(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Nome (opcional)</Label>
+              <Input
+                placeholder="Como aparece no sistema"
+                value={novoNome}
+                onChange={(e) => setNovoNome(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConvidarAberto(false)}>Cancelar</Button>
+            <Button
+              onClick={() => convidarMutation.mutate({ email: novoEmail.trim(), nome: novoNome })}
+              disabled={!novoEmail.trim() || convidarMutation.isPending}
+            >
+              {convidarMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Criar convite
             </Button>
           </DialogFooter>
         </DialogContent>

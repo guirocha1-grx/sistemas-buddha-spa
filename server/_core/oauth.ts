@@ -184,20 +184,29 @@ export function registerOAuthRoutes(app: Express) {
       // Manus acima (namespace diferente, mesmo `users.openId` único).
       const openId = `google:${googleUser.sub}`;
 
-      // A promoção automática a admin por ENV.ownerOpenId (upsertUser)
-      // só bate pro openId do portal do Manus — esse aqui é outro. Sem
-      // isso, a mesma pessoa que já era admin pelo Manus nasceria como
-      // "user" comum ao entrar pela primeira vez pelo Google.
-      const roleHerdado = googleUser.email ? await db.getRoleByEmail(googleUser.email) : null;
+      // Se um admin já convidou esse e-mail (Usuários → Convidar),
+      // reivindica a conta existente em vez de criar uma nova —
+      // preserva id/role/permissões já configuradas de antemão.
+      const reivindicou = googleUser.email
+        ? await db.reivindicarConvitePorEmail(googleUser.email, openId, googleUser.name)
+        : false;
 
-      await db.upsertUser({
-        openId,
-        name: googleUser.name || null,
-        email: googleUser.email ?? null,
-        loginMethod: "google",
-        lastSignedIn: new Date(),
-        ...(roleHerdado ? { role: roleHerdado } : {}),
-      });
+      if (!reivindicou) {
+        // A promoção automática a admin por ENV.ownerOpenId (upsertUser)
+        // só bate pro openId do portal do Manus — esse aqui é outro. Sem
+        // isso, a mesma pessoa que já era admin pelo Manus nasceria como
+        // "user" comum ao entrar pela primeira vez pelo Google.
+        const roleHerdado = googleUser.email ? await db.getRoleByEmail(googleUser.email) : null;
+
+        await db.upsertUser({
+          openId,
+          name: googleUser.name || null,
+          email: googleUser.email ?? null,
+          loginMethod: "google",
+          lastSignedIn: new Date(),
+          ...(roleHerdado ? { role: roleHerdado } : {}),
+        });
+      }
 
       const sessionToken = await sdk.createSessionToken(openId, {
         name: googleUser.name || "",
