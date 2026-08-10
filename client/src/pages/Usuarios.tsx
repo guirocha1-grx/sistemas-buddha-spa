@@ -18,7 +18,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Pencil, Copy } from "lucide-react";
+import { Loader2, Pencil, Copy, ShieldCheck, ShieldOff } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Usuarios() {
@@ -57,6 +57,14 @@ export default function Usuarios() {
       toast.success("Restrição removida — acesso total.");
       utils.permissoes.listUsuarios.invalidate();
       setEditandoId(null);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const alterarRoleMutation = trpc.permissoes.alterarRole.useMutation({
+    onSuccess: (_data, vars) => {
+      toast.success(vars.role === "admin" ? "Promovido a admin." : "Rebaixado a user.");
+      utils.permissoes.listUsuarios.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -113,6 +121,8 @@ export default function Usuarios() {
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
           Controle de acesso por módulo — por padrão toda conta vê tudo; restrinja individualmente quando precisar.
+          Não existe cadastro manual: a conta aparece aqui sozinha assim que a pessoa faz login (Google) pela
+          primeira vez.
         </p>
       </div>
 
@@ -156,7 +166,21 @@ export default function Usuarios() {
                         <Badge variant="outline" className="border-emerald-400 text-emerald-700">Total</Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right space-x-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8"
+                        onClick={() => alterarRoleMutation.mutate({ userId: u.id, role: u.role === "admin" ? "user" : "admin" })}
+                        disabled={u.id === user?.id || alterarRoleMutation.isPending}
+                        title={u.id === user?.id ? "Não é possível alterar o próprio perfil por aqui" : u.role === "admin" ? "Rebaixar a user" : "Promover a admin"}
+                      >
+                        {u.role === "admin" ? (
+                          <><ShieldOff className="h-3.5 w-3.5 mr-1.5" /> Rebaixar</>
+                        ) : (
+                          <><ShieldCheck className="h-3.5 w-3.5 mr-1.5" /> Promover</>
+                        )}
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"

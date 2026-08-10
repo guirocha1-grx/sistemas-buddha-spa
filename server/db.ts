@@ -1600,6 +1600,26 @@ export async function listUsuariosComPermissoes(): Promise<UsuarioComPermissoes[
   }).from(users).orderBy(users.name);
 }
 
+/**
+ * Promove/rebaixa entre user/admin. Recusa rebaixar o último admin
+ * restante — sem isso seria possível zerar o acesso admin da conta
+ * inteira sem querer, sem ninguém pra reverter pela própria UI.
+ */
+export async function alterarRoleUsuario(userId: number, role: "user" | "admin") {
+  const db = await getDb();
+  if (!db) return;
+
+  if (role === "user") {
+    const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, "admin"));
+    const restantes = admins.filter((a) => a.id !== userId);
+    if (restantes.length === 0) {
+      throw new Error("Não é possível rebaixar o último administrador");
+    }
+  }
+
+  await db.update(users).set({ role }).where(eq(users.id, userId));
+}
+
 export interface PermissoesUsuario {
   restrito: boolean;
   modulos: string[];

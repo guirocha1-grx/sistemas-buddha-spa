@@ -2280,6 +2280,14 @@ Diretrizes:
       return db.listUsuariosComPermissoes();
     }),
 
+    alterarRole: adminProcedure.input(z.object({
+      userId: z.number(),
+      role: z.enum(["user", "admin"]),
+    })).mutation(async ({ input }) => {
+      await db.alterarRoleUsuario(input.userId, input.role);
+      return { success: true };
+    }),
+
     obter: adminProcedure.input(z.object({ userId: z.number() })).query(async ({ input }) => {
       return db.getPermissoesUsuario(input.userId);
     }),
