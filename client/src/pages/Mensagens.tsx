@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
-  Pencil, Check, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge,
+  Pencil, Check, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -288,9 +288,9 @@ export default function Mensagens() {
         </div>
       )}
 
-      <Card className="grid grid-cols-[280px_1fr_260px] h-[calc(100vh-220px)] overflow-hidden p-0">
-        {/* Coluna 1: Lista de conversas */}
-        <div className="border-r flex flex-col min-h-0">
+      <Card className="flex h-[calc(100vh-220px)] overflow-hidden p-0">
+        {/* Coluna 1: Lista de conversas — tela cheia no mobile quando nenhuma conversa está aberta */}
+        <div className={`${conversaSelecionadaId ? "hidden" : "flex"} md:flex w-full md:w-[280px] flex-shrink-0 border-r flex-col min-h-0`}>
           <div className="p-3 border-b space-y-2">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-sm">Inbox WhatsApp</h2>
@@ -398,8 +398,8 @@ export default function Mensagens() {
           </ScrollArea>
         </div>
 
-        {/* Coluna 2: Thread */}
-        <div className="flex flex-col min-h-0 border-r">
+        {/* Coluna 2: Thread — tela cheia no mobile só quando uma conversa está aberta */}
+        <div className={`${conversaSelecionadaId ? "flex" : "hidden"} md:flex flex-1 flex-col min-w-0 min-h-0 border-r`}>
           {!conversaSelecionadaId && (
             <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-2">
               <MessageCircle className="h-10 w-10 opacity-30" />
@@ -409,8 +409,16 @@ export default function Mensagens() {
 
           {conversaSelecionadaId && (
             <>
-              <div className="p-3 border-b flex items-center justify-between gap-2">
-                <div className="min-w-0">
+              <div className="p-3 border-b flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConversaSelecionadaId(null)}
+                  className="md:hidden -ml-1 p-1.5 rounded-md hover:bg-muted text-muted-foreground flex-shrink-0"
+                  title="Voltar"
+                >
+                  <ArrowLeft size={18} />
+                </button>
+                <div className="min-w-0 flex-1">
                   <p className="font-medium text-sm truncate">{conversaSelecionada?.nomeContato || conversaSelecionada?.telefone}</p>
                   <p className="text-xs text-muted-foreground">{conversaSelecionada?.telefone}</p>
                 </div>
@@ -555,8 +563,8 @@ export default function Mensagens() {
           )}
         </div>
 
-        {/* Coluna 3: Painel do contato */}
-        <div className="flex flex-col min-h-0 bg-muted/20">
+        {/* Coluna 3: Painel do contato — escondido no mobile, só desktop */}
+        <div className="hidden md:flex w-[260px] flex-shrink-0 flex-col min-h-0 bg-muted/20">
           {!conversaSelecionadaId ? (
             <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground p-4 text-center">
               Selecione uma conversa para ver os detalhes
