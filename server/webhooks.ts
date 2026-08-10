@@ -233,7 +233,10 @@ function registerZapiWebhook(app: Express) {
       res.status(200).json({ success: true });
     } catch (error: any) {
       console.error("[Webhook Z-API] Falha ao processar:", error);
-      res.status(500).json({ error: error.message ?? String(error) });
+      res.status(500).json({
+        error: error.message ?? String(error),
+        causa: error.cause?.message ?? error.cause ?? null,
+      });
     }
   });
 }
