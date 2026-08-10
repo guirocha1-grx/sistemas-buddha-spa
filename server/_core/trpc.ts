@@ -60,19 +60,54 @@ const ROUTER_MODULO: Record<string, string> = {
 };
 
 /**
+ * Um nível abaixo de ROUTER_MODULO — mapeia pra sub-seção (ver
+ * shared/subsecoes.ts) quando o router serve uma tela específica
+ * dentro de um módulo com mais de uma. Só faz sentido hoje pros
+ * routers do Financeiro; router não listado aqui nunca é restringido
+ * por sub-seção (mesmo se o módulo dele tiver sub-seções).
+ */
+const ROUTER_SUBSECAO: Record<string, string> = {
+  financeiro: "financeiro:visao-geral",
+  contas: "financeiro:contas",
+  inter: "financeiro:contas",
+  sicredi: "financeiro:contas",
+  comandaRecepcao: "financeiro:comanda-recepcao",
+  adquirentes: "financeiro:adquirentes",
+  dreCategorias: "financeiro:parametros",
+  dreDescricoes: "financeiro:parametros",
+  dreRegras: "financeiro:parametros",
+};
+
+/**
  * Barra o acesso quando a conta tem permissoesCustomizadas=true (ver
  * users/permissoesModulo no schema) e o módulo dessa procedure não
  * está entre os liberados. `ctx.permissoesModulos === null` (conta sem
  * restrição, ou admin) libera tudo — resolvido uma vez em
- * createContext, não bate no banco aqui.
+ * createContext, não bate no banco aqui. Depois do módulo, checa a
+ * sub-seção (um nível abaixo, ver ROUTER_SUBSECAO acima): só barra se
+ * essa conta tiver QUALQUER sub-seção daquele módulo especificamente
+ * liberada e a desta procedure não estiver entre elas — sem nenhuma
+ * sub-seção configurada pro módulo, libera todas (mesmo
+ * comportamento "não configurado = livre" do nível de módulo).
  */
 const moduloMiddleware = t.middleware(async (opts) => {
   const { ctx, path, next } = opts;
   const permissoes = (ctx as TrpcContext).permissoesModulos;
   if (permissoes) {
-    const modulo = ROUTER_MODULO[path.split(".")[0]];
+    const router = path.split(".")[0];
+    const modulo = ROUTER_MODULO[router];
     if (modulo && !permissoes.has(modulo)) {
       throw new TRPCError({ code: "FORBIDDEN", message: `Sem acesso ao módulo "${modulo}"` });
+    }
+
+    const subsecao = ROUTER_SUBSECAO[router];
+    if (subsecao) {
+      const subsecoes = (ctx as TrpcContext).permissoesSubsecoes;
+      const moduloDaSubsecao = subsecao.split(":")[0];
+      const restritoNestaSubsecao = Array.from(subsecoes).some((s) => s.startsWith(`${moduloDaSubsecao}:`));
+      if (restritoNestaSubsecao && !subsecoes.has(subsecao)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: `Sem acesso a esta seção de "${moduloDaSubsecao}"` });
+      }
     }
   }
   return next();

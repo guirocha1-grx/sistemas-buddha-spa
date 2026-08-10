@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { MODULOS, type ModuloChave } from "@shared/modulos";
+import { SUBSECOES } from "@shared/subsecoes";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +31,7 @@ export default function Usuarios() {
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [restringir, setRestringir] = useState(false);
   const [selecionados, setSelecionados] = useState<Set<ModuloChave>>(new Set());
+  const [selecionadosSub, setSelecionadosSub] = useState<Set<string>>(new Set());
   const [clonarDe, setClonarDe] = useState<string>("");
   const [convidarAberto, setConvidarAberto] = useState(false);
   const [novoEmail, setNovoEmail] = useState("");
@@ -44,6 +46,7 @@ export default function Usuarios() {
     if (permissoesQuery.data) {
       setRestringir(permissoesQuery.data.restrito);
       setSelecionados(new Set(permissoesQuery.data.modulos as ModuloChave[]));
+      setSelecionadosSub(new Set(permissoesQuery.data.subsecoes ?? []));
     }
   }, [permissoesQuery.data]);
 
@@ -102,6 +105,22 @@ export default function Usuarios() {
   function toggleModulo(chave: ModuloChave) {
     setSelecionados((prev) => {
       const novo = new Set(prev);
+      if (novo.has(chave)) {
+        novo.delete(chave);
+        // Desmarcar o módulo limpa as sub-seções dele — não faz
+        // sentido guardar restrição de sub-seção pra um módulo que a
+        // conta nem vai mais ver.
+        setSelecionadosSub((prevSub) => new Set(Array.from(prevSub).filter((s) => !s.startsWith(`${chave}:`))));
+      } else {
+        novo.add(chave);
+      }
+      return novo;
+    });
+  }
+
+  function toggleSubsecao(chave: string) {
+    setSelecionadosSub((prev) => {
+      const novo = new Set(prev);
       if (novo.has(chave)) novo.delete(chave);
       else novo.add(chave);
       return novo;
@@ -115,12 +134,13 @@ export default function Usuarios() {
     const dados = await utils.permissoes.obter.fetch({ userId: sourceId });
     setRestringir(dados.restrito);
     setSelecionados(new Set(dados.modulos as ModuloChave[]));
+    setSelecionadosSub(new Set(dados.subsecoes ?? []));
   }
 
   function handleSalvar() {
     if (!editandoId) return;
     if (restringir) {
-      salvarMutation.mutate({ userId: editandoId, modulos: Array.from(selecionados) });
+      salvarMutation.mutate({ userId: editandoId, modulos: Array.from(selecionados), subsecoes: Array.from(selecionadosSub) });
     } else {
       removerRestricaoMutation.mutate({ userId: editandoId });
     }
@@ -283,6 +303,32 @@ export default function Usuarios() {
                       </label>
                     ))}
                   </div>
+
+                  {/* Sub-seções — só aparece pra módulos com mais de uma
+                      tela (hoje só Financeiro) e só quando o módulo em
+                      si está marcado acima. Nenhuma marcada = acesso a
+                      todas as sub-seções do módulo (padrão). */}
+                  {MODULOS.filter((m) => selecionados.has(m.chave) && SUBSECOES[m.chave]).map((m) => (
+                    <div key={m.chave} className="rounded-lg border px-3 py-2 space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Sub-seções de {m.label} — nenhuma marcada = acesso a todas
+                      </p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {SUBSECOES[m.chave].map((s) => (
+                          <label
+                            key={s.chave}
+                            className="flex items-center gap-2 text-xs rounded-md border px-2 py-1.5 cursor-pointer hover:bg-accent"
+                          >
+                            <Checkbox
+                              checked={selecionadosSub.has(s.chave)}
+                              onCheckedChange={() => toggleSubsecao(s.chave)}
+                            />
+                            {s.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </>
               )}
             </div>

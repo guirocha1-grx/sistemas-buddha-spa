@@ -2352,8 +2352,8 @@ Diretrizes:
     // Não é adminProcedure — todo mundo precisa saber os próprios
     // módulos liberados pra filtrar o menu lateral.
     minhas: protectedProcedure.query(({ ctx }) => {
-      if (!ctx.permissoesModulos) return { restrito: false, modulos: [] as string[] };
-      return { restrito: true, modulos: Array.from(ctx.permissoesModulos) };
+      if (!ctx.permissoesModulos) return { restrito: false, modulos: [] as string[], subsecoes: [] as string[] };
+      return { restrito: true, modulos: Array.from(ctx.permissoesModulos), subsecoes: Array.from(ctx.permissoesSubsecoes) };
     }),
 
     listUsuarios: adminProcedure.query(async () => {
@@ -2383,8 +2383,9 @@ Diretrizes:
     salvar: adminProcedure.input(z.object({
       userId: z.number(),
       modulos: z.array(z.string()),
+      subsecoes: z.array(z.string()).optional(),
     })).mutation(async ({ input }) => {
-      await db.salvarPermissoesUsuario(input.userId, input.modulos);
+      await db.salvarPermissoesUsuario(input.userId, input.modulos, input.subsecoes ?? []);
       return { success: true };
     }),
 

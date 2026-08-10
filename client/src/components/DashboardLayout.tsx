@@ -39,7 +39,7 @@ import type { ModuloChave } from "@shared/modulos";
 // pouso). "Config. Inbox" usa o mesmo módulo de "Mensagens": as duas
 // telas mexem com o mesmo backend (conexão/atendimento WhatsApp), não
 // faz sentido liberar uma sem a outra.
-const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; modulo?: ModuloChave; adminOnly?: boolean; children?: { label: string; path: string }[] }[] = [
+const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; modulo?: ModuloChave; adminOnly?: boolean; children?: { label: string; path: string; subsecao?: string }[] }[] = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Users, label: "Clientes", path: "/clientes", modulo: "clientes" },
   { icon: KanbanSquare, label: "Reativação", path: "/reativacao", modulo: "reativacao" },
@@ -48,11 +48,11 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
   {
     icon: DollarSign, label: "Financeiro", path: "/financeiro", modulo: "financeiro",
     children: [
-      { label: "Visão Geral", path: "/financeiro" },
-      { label: "Contas", path: "/financeiro/extratos" },
-      { label: "Comanda Recepção", path: "/financeiro/comanda-recepcao" },
-      { label: "Adquirentes", path: "/financeiro/adquirentes" },
-      { label: "Parâmetros", path: "/financeiro/parametros" },
+      { label: "Visão Geral", path: "/financeiro", subsecao: "financeiro:visao-geral" },
+      { label: "Contas", path: "/financeiro/extratos", subsecao: "financeiro:contas" },
+      { label: "Comanda Recepção", path: "/financeiro/comanda-recepcao", subsecao: "financeiro:comanda-recepcao" },
+      { label: "Adquirentes", path: "/financeiro/adquirentes", subsecao: "financeiro:adquirentes" },
+      { label: "Parâmetros", path: "/financeiro/parametros", subsecao: "financeiro:parametros" },
     ],
   },
   { icon: Sparkles, label: "Copilot", path: "/copilot", modulo: "copilot" },
@@ -278,7 +278,17 @@ function DashboardLayoutContent({
                   );
                 }
 
-                const isChildActive = item.children.some(c => c.path === location);
+                // Filtra sub-seções (um nível abaixo do módulo, ver
+                // shared/subsecoes.ts) — "nenhuma chave desse módulo
+                // configurada" libera todas, mesma regra do módulo.
+                const childrenVisiveis = item.children.filter(child => {
+                  if (!child.subsecao || user?.role === "admin" || !minhasPermissoes?.restrito) return true;
+                  const subsecoesDoModulo = minhasPermissoes.subsecoes.filter(s => s.startsWith(`${item.modulo}:`));
+                  if (subsecoesDoModulo.length === 0) return true;
+                  return subsecoesDoModulo.includes(child.subsecao);
+                });
+
+                const isChildActive = childrenVisiveis.some(c => c.path === location);
                 return (
                   <Collapsible key={item.path} defaultOpen={isChildActive} className="group/collapsible">
                     <SidebarMenuItem>
@@ -295,7 +305,7 @@ function DashboardLayoutContent({
                       </CollapsibleTrigger>
                       <CollapsibleContent>
                         <SidebarMenuSub>
-                          {item.children.map(child => (
+                          {childrenVisiveis.map(child => (
                             <SidebarMenuSubItem key={child.path}>
                               <SidebarMenuSubButton
                                 isActive={location === child.path}

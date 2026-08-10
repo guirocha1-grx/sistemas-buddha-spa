@@ -43,6 +43,24 @@ export const permissoesModulo = mysqlTable("permissoes_modulo", {
   userIdx: index("permissoes_modulo_user_idx").on(table.userId),
 }));
 
+/**
+ * Um nível abaixo de permissoesModulo — restringe uma conta a
+ * sub-seções específicas dentro de um módulo que tem mais de uma tela
+ * (hoje só Financeiro, ver shared/subsecoes.ts). Presença de QUALQUER
+ * linha aqui pra um módulo já concedido em permissoesModulo restringe
+ * essa conta às sub-seções listadas; ausência de linhas pro módulo =
+ * acesso a todas as sub-seções dele (mesmo comportamento "não
+ * configurado = livre" de permissoesModulo, um nível abaixo).
+ */
+export const permissoesSubsecao = mysqlTable("permissoes_subsecao", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  subsecao: varchar("subsecao", { length: 60 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  userIdx: index("permissoes_subsecao_user_idx").on(table.userId),
+}));
+
 export type PermissaoModulo = typeof permissoesModulo.$inferSelect;
 export type InsertPermissaoModulo = typeof permissoesModulo.$inferInsert;
 

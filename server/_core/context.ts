@@ -18,6 +18,12 @@ export type TrpcContext = {
   // uma vez por requisição aqui, não a cada procedure, pra não bater no
   // banco de novo em cada chamada de um mesmo batch de requisição.
   permissoesModulos: Set<string> | null;
+  // Mesma ideia, um nível abaixo (ver shared/subsecoes.ts) — sempre um
+  // Set (nunca null), vazio por padrão. Pra cada módulo, "nenhuma
+  // chave `modulo:...` presente aqui" significa acesso a todas as
+  // sub-seções desse módulo; só restringe quando há pelo menos uma
+  // chave daquele módulo salva.
+  permissoesSubsecoes: Set<string>;
 };
 
 export async function createContext(
@@ -42,9 +48,13 @@ export async function createContext(
   }
 
   let permissoesModulos: Set<string> | null = null;
+  let permissoesSubsecoes: Set<string> = new Set();
   if (user && user.role !== "admin") {
     const permissoes = await db.getPermissoesUsuario(user.id);
-    if (permissoes.restrito) permissoesModulos = new Set(permissoes.modulos);
+    if (permissoes.restrito) {
+      permissoesModulos = new Set(permissoes.modulos);
+      permissoesSubsecoes = new Set(permissoes.subsecoes);
+    }
   }
 
   return {
@@ -53,5 +63,6 @@ export async function createContext(
     user,
     atendente,
     permissoesModulos,
+    permissoesSubsecoes,
   };
 }
