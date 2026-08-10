@@ -334,11 +334,41 @@ export type InsertCopilotConversa = typeof copilotConversas.$inferInsert;
  * as duas unidades — unidadeId fica null até ser resolvida via cliente
  * Belle).
  */
+/**
+ * Estrutura clonada da tabela homônima do mobai-crm (bancos são
+ * separados — DATABASE_URL própria — mas o schema foi copiado por
+ * pedido explícito de trazer o inbox de lá, ver
+ * /mobai-crm/drizzle/schema.ts). `canal`/`chatLid`/`isLidPendente` são
+ * as únicas colunas próprias do buddha-spa, adicionadas depois; o
+ * resto (fotoUrl, clienteId, etiquetas, resumo_conversa, ad_*, etc.)
+ * já veio pronto do clone e fica disponível pra uso futuro mesmo que
+ * o buddha-spa ainda não escreva nesses campos.
+ */
 export const inboxConversas = mysqlTable("inbox_conversas", {
   id: int("id").autoincrement().primaryKey(),
-  unidadeId: int("unidadeId"),
-  canal: mysqlEnum("canal", ["zapi", "buddha_mkt"]).notNull(),
   telefone: varchar("telefone", { length: 30 }).notNull(),
+  // Distingue uma linha do buddha-spa (sempre preenchida) de uma
+  // eventual linha nativa do mobai-crm/clone antigo sem canal.
+  canal: mysqlEnum("canal", ["zapi", "buddha_mkt"]).notNull(),
+  nomeContato: varchar("nomeContato", { length: 200 }),
+  fotoUrl: text("fotoUrl"),
+  clienteId: int("clienteId"),
+  unidadeId: int("unidadeId"),
+  status: mysqlEnum("status", ["aberta", "aguardando", "respondida", "encerrada"]).default("aberta").notNull(),
+  ultimaMensagemEm: timestamp("ultimaMensagemEm").defaultNow().notNull(),
+  ultimaMensagemTexto: text("ultimaMensagemTexto"),
+  naoLidas: int("naoLidas").default(0).notNull(),
+  etiquetas: text("etiquetas"),
+  resumoConversa: text("resumo_conversa"),
+  resumoAtualizadoEm: timestamp("resumo_atualizado_em"),
+  totalMensagensProcessadas: int("total_mensagens_processadas").default(0),
+  msgsSinceAnalise: int("msgs_since_analise").default(0).notNull(),
+  ctwaClid: varchar("ctwa_clid", { length: 500 }),
+  adSourceId: varchar("ad_source_id", { length: 100 }),
+  adSourceUrl: text("ad_source_url"),
+  adTitulo: varchar("ad_titulo", { length: 300 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   // Identificador estável de chat que a Z-API sempre envia, mesmo quando
   // o telefone real vem ofuscado como "@lid" (contato via anúncio
   // "clique para WhatsApp" — não dá pra converter @lid em telefone via
@@ -348,14 +378,6 @@ export const inboxConversas = mysqlTable("inbox_conversas", {
   // exibição, com isLidPendente marcando que o número real é desconhecido.
   chatLid: varchar("chatLid", { length: 64 }),
   isLidPendente: mysqlEnum("isLidPendente", ["true", "false"]).default("false").notNull(),
-  nomeContato: varchar("nomeContato", { length: 256 }),
-  clienteBelleCodigo: int("clienteBelleCodigo"),
-  status: mysqlEnum("status", ["aberta", "encerrada"]).default("aberta").notNull(),
-  naoLidas: int("naoLidas").default(0).notNull(),
-  ultimaMensagemEm: timestamp("ultimaMensagemEm"),
-  ultimaMensagemTexto: text("ultimaMensagemTexto"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
   telefoneCanalIdx: index("inbox_conversas_telefone_canal_idx").on(table.telefone, table.canal),
   unidadeIdx: index("inbox_conversas_unidade_idx").on(table.unidadeId),
@@ -366,23 +388,29 @@ export type InboxConversa = typeof inboxConversas.$inferSelect;
 export type InsertInboxConversa = typeof inboxConversas.$inferInsert;
 
 /**
- * Mensagens trocadas dentro de uma conversa do Inbox.
+ * Mensagens trocadas dentro de uma conversa do Inbox — mesma origem
+ * (clone do mobai-crm) da tabela acima; só enviadaPorAtendenteId é
+ * própria do buddha-spa (migração 2026-08-10-atendentes.sql).
  */
 export const inboxMensagens = mysqlTable("inbox_mensagens", {
   id: int("id").autoincrement().primaryKey(),
   conversaId: int("conversaId").notNull(),
   direcao: mysqlEnum("direcao", ["recebida", "enviada"]).notNull(),
-  tipo: mysqlEnum("tipo", ["texto", "imagem", "audio", "documento", "sistema"]).notNull(),
+  tipo: mysqlEnum("tipo", ["texto", "audio", "imagem", "documento", "sistema", "misto"]).default("texto").notNull(),
   conteudo: text("conteudo"),
   metadados: text("metadados"),
-  transcricao: text("transcricao"),
+  lida: boolean("lida").default(false).notNull(),
   enviadaPorUserId: int("enviadaPorUserId"),
+  enviadaPorIa: boolean("enviadaPorIa").default(false).notNull(),
+  sugestaoIa: text("sugestaoIa"),
+  replyToId: int("replyToId"),
+  replyToTexto: text("replyToTexto"),
+  transcricao: text("transcricao"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
   // Quem realmente digitou/enviou, distinto de enviadaPorUserId (a
   // conta Google/Manus compartilhada da recepção) — ver atendentes
   // abaixo. Alimenta o "enviada por" mostrado em cada balão no Inbox.
   enviadaPorAtendenteId: int("enviadaPorAtendenteId"),
-  lida: mysqlEnum("lida", ["true", "false"]).default("false").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({
   conversaCreatedIdx: index("inbox_mensagens_conversa_created_idx").on(table.conversaId, table.createdAt),
 }));
