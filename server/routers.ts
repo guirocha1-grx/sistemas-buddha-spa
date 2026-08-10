@@ -1867,7 +1867,9 @@ Diretrizes:
             cartaoDebito: valores?.cartaoDebito ?? 0,
             cartaoCredito: valores?.cartaoCredito ?? 0,
             pix: valores?.pix ?? 0,
-            textoConciliacao,
+            // null = conciliado (diferença zero) — escreve string vazia
+            // para limpar a mensagem antiga da linha 20 da planilha
+            textoConciliacao: textoConciliacao ?? "",
           });
           porMes.set(chave, lista);
         }

@@ -427,7 +427,7 @@ export const SPREADSHEET_IDS_COMANDA_VIRTUAL = {
 
 function nomeAbaComandaVirtual(dataIso: string): string {
   const [y, m, d] = dataIso.split("-");
-  return `${d}${m}${y}`;
+  return `${d}/${m}/${y}`;
 }
 
 /**
