@@ -20,7 +20,7 @@ import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet } from "./googleSheets";
-import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
+import { sendTelegramParaRecepcao } from "./telegramApi";
 
 function fmtDateIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -781,7 +781,6 @@ Diretrizes:
       configurado: !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID_GRUPO_RECEPCAO),
     })),
     enviarTeste: adminProcedure.mutation(async () => {
-      const { sendTelegramParaRecepcao } = await import("./telegramApi");
       await sendTelegramParaRecepcao("🤖 Teste de integração — Buddha Spa CRM conectado ao Telegram com sucesso.");
       return { success: true };
     }),
@@ -1837,51 +1836,20 @@ Diretrizes:
       const spreadsheetId = SPREADSHEET_IDS_COMANDA[slug];
 
       try {
-        const [resumo, itensComanda, itensContas] = await Promise.all([
-          db.resumoContasBancariasPorDia(input.unidadeId, input.dataInicio, input.dataFim),
-          db.listComandaItensDetalhe(input.unidadeId, input.dataInicio, input.dataFim),
-          db.detalheContasBancariasPorDia(input.unidadeId, input.dataInicio, input.dataFim),
-        ]);
-
-        // Agrupa item a item por dia dos dois lados — mesma matéria-prima
-        // do hover no client, usada aqui pra montar o texto de
-        // conciliação (server/shared/conciliacao.ts) que vai pra linha 20.
-        const comandaPorDia = new Map<string, ItemConciliacao[]>();
-        for (const it of itensComanda) {
-          const lista = comandaPorDia.get(it.data) ?? [];
-          lista.push({ forma: it.forma, descricao: it.descricao, valor: it.valor });
-          comandaPorDia.set(it.data, lista);
-        }
-        const contasPorDia = new Map<string, ItemConciliacao[]>();
-        for (const it of itensContas) {
-          const lista = contasPorDia.get(it.data) ?? [];
-          lista.push({ forma: it.forma, descricao: it.descricao, valor: it.valor, horario: it.horario || undefined });
-          contasPorDia.set(it.data, lista);
-        }
-
-        // União dos dias com algum lançamento de qualquer lado — não só
-        // os dias que já tinham "Contas bancárias" (resumo), senão um
-        // dia só-Comanda (nada caiu na conta) nunca ganharia a linha 20.
-        const dias = new Set<string>([
-          ...Array.from(resumo.keys()),
-          ...Array.from(comandaPorDia.keys()),
-          ...Array.from(contasPorDia.keys()),
-        ]);
+        const conciliacaoPorDia = await db.calcularConciliacaoPorDia(input.unidadeId, input.dataInicio, input.dataFim);
 
         const porMes = new Map<string, LinhaContasBancariasParaSheet[]>();
-        for (const data of Array.from(dias)) {
-          const chave = data.slice(0, 7); // "AAAA-MM"
-          const valores = resumo.get(data);
-          const textoConciliacao = gerarTextoConciliacao(data, comandaPorDia.get(data) ?? [], contasPorDia.get(data) ?? []);
+        for (const dia of conciliacaoPorDia) {
+          const chave = dia.data.slice(0, 7); // "AAAA-MM"
           const lista = porMes.get(chave) ?? [];
           lista.push({
-            data,
-            cartaoDebito: valores?.cartaoDebito ?? 0,
-            cartaoCredito: valores?.cartaoCredito ?? 0,
-            pix: valores?.pix ?? 0,
+            data: dia.data,
+            cartaoDebito: dia.cartaoDebito,
+            cartaoCredito: dia.cartaoCredito,
+            pix: dia.pix,
             // null = conciliado (diferença zero) — escreve string vazia
             // para limpar a mensagem antiga da linha 20 da planilha
-            textoConciliacao: textoConciliacao ?? "",
+            textoConciliacao: dia.texto ?? "",
           });
           porMes.set(chave, lista);
         }
@@ -1910,6 +1878,47 @@ Diretrizes:
         });
         throw error;
       }
+    }),
+
+    /**
+     * Um disparo por dia (por unidade) — dispara manualmente pelo botão
+     * "Enviar recepção" ao lado de "Sincronizar com Drive". Reaproveita
+     * o mesmo cálculo de conciliação que já vai pra linha 20 da
+     * planilha, só que manda pro grupo do Telegram em vez de escrever
+     * na planilha.
+     */
+    enviarRelatorioRecepcao: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).mutation(async ({ input }) => {
+      if (await db.jaEnviouRelatorioRecepcaoHoje(input.unidadeId)) {
+        throw new Error("Relatório de pendências já foi enviado hoje para o grupo da recepção.");
+      }
+
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) throw new Error("Unidade não encontrada");
+
+      const conciliacaoPorDia = await db.calcularConciliacaoPorDia(input.unidadeId, input.dataInicio, input.dataFim);
+      const pendencias = conciliacaoPorDia
+        .filter((dia) => dia.texto !== null)
+        .sort((a, b) => a.data.localeCompare(b.data));
+
+      if (pendencias.length === 0) {
+        await db.marcarRelatorioRecepcaoEnviadoHoje(input.unidadeId);
+        return { success: true, enviado: false, dias: 0 };
+      }
+
+      const texto = `📋 Pendências de conciliação — ${unidade.nome}\n\n${pendencias.map((dia) => dia.texto).join("\n\n")}`;
+      await sendTelegramParaRecepcao(texto);
+      await db.marcarRelatorioRecepcaoEnviadoHoje(input.unidadeId);
+      return { success: true, enviado: true, dias: pendencias.length };
+    }),
+
+    statusEnvioRecepcao: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+    })).query(async ({ input }) => {
+      return { jaEnviadoHoje: await db.jaEnviouRelatorioRecepcaoHoje(input.unidadeId) };
     }),
 
     detalhe: protectedProcedure.input(z.object({

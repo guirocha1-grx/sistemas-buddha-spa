@@ -5,6 +5,7 @@ import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotCo
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
+import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, extrairPadraoContraparte, ehTransferenciaEntreContas, CHAVE_EXCLUIDO, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, type RegraMatch } from "./dreCategorizacao";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -2027,4 +2028,84 @@ export async function listComandaItensDetalhe(
     }
   }
   return itens;
+}
+
+export interface ConciliacaoDia {
+  data: string;
+  cartaoDebito: number;
+  cartaoCredito: number;
+  pix: number;
+  // null = sem diferença nesse dia — ver shared/conciliacao.ts
+  texto: string | null;
+}
+
+/**
+ * Calcula a conciliação Comanda x Contas dia a dia num período —
+ * extraído de sincronizarContasBancariasParaDrive (server/routers.ts)
+ * pra ser reaproveitado também pelo relatório do Telegram
+ * (enviarRelatorioRecepcao), sem duplicar a lógica de pareamento em
+ * dois lugares.
+ */
+export async function calcularConciliacaoPorDia(
+  unidadeId: number,
+  dataInicio: string,
+  dataFim: string,
+): Promise<ConciliacaoDia[]> {
+  const [resumo, itensComanda, itensContas] = await Promise.all([
+    resumoContasBancariasPorDia(unidadeId, dataInicio, dataFim),
+    listComandaItensDetalhe(unidadeId, dataInicio, dataFim),
+    detalheContasBancariasPorDia(unidadeId, dataInicio, dataFim),
+  ]);
+
+  const comandaPorDia = new Map<string, ItemConciliacao[]>();
+  for (const it of itensComanda) {
+    const lista = comandaPorDia.get(it.data) ?? [];
+    lista.push({ forma: it.forma, descricao: it.descricao, valor: it.valor });
+    comandaPorDia.set(it.data, lista);
+  }
+  const contasPorDia = new Map<string, ItemConciliacao[]>();
+  for (const it of itensContas) {
+    const lista = contasPorDia.get(it.data) ?? [];
+    lista.push({ forma: it.forma, descricao: it.descricao, valor: it.valor, horario: it.horario || undefined });
+    contasPorDia.set(it.data, lista);
+  }
+
+  // União dos dias com algum lançamento de qualquer lado — não só os
+  // dias que já tinham "Contas bancárias" (resumo), senão um dia
+  // só-Comanda (nada caiu na conta) nunca entraria na conciliação.
+  const dias = new Set<string>([
+    ...Array.from(resumo.keys()),
+    ...Array.from(comandaPorDia.keys()),
+    ...Array.from(contasPorDia.keys()),
+  ]);
+
+  return Array.from(dias).map((data) => {
+    const valores = resumo.get(data);
+    const texto = gerarTextoConciliacao(data, comandaPorDia.get(data) ?? [], contasPorDia.get(data) ?? []);
+    return {
+      data,
+      cartaoDebito: valores?.cartaoDebito ?? 0,
+      cartaoCredito: valores?.cartaoCredito ?? 0,
+      pix: valores?.pix ?? 0,
+      texto,
+    };
+  });
+}
+
+// ===== Relatório diário de pendências pro Telegram (grupo recepção) =====
+
+function chaveEnvioRecepcao(unidadeId: number): string {
+  return `telegram_recepcao_ultimo_envio_${unidadeId}`;
+}
+
+/** "Um disparo por dia" — compara com a data de hoje guardada em configuracoes. */
+export async function jaEnviouRelatorioRecepcaoHoje(unidadeId: number): Promise<boolean> {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const config = await getConfig(chaveEnvioRecepcao(unidadeId));
+  return config?.valor === hoje;
+}
+
+export async function marcarRelatorioRecepcaoEnviadoHoje(unidadeId: number): Promise<void> {
+  const hoje = new Date().toISOString().slice(0, 10);
+  await setConfig(chaveEnvioRecepcao(unidadeId), hoje);
 }

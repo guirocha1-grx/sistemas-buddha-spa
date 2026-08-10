@@ -5,7 +5,7 @@ import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { Loader2, RefreshCw, UploadCloud, ChevronLeft, ChevronRight, Upload } from "lucide-react";
+import { Loader2, RefreshCw, UploadCloud, ChevronLeft, ChevronRight, Upload, Send } from "lucide-react";
 import { toast } from "sonner";
 import { gerarTextoConciliacao } from "@shared/conciliacao";
 
@@ -248,6 +248,25 @@ export default function ComandaRecepcao() {
     try {
       const r = await sincronizarContasBancariasMutation.mutateAsync({ unidadeId, dataInicio, dataFim });
       toast.success(`Enviado pro Drive: ${r.totalDias} dia(s).`);
+    } catch {
+      // erro já reportado via onError da mutation
+    }
+  }
+
+  const statusEnvioRecepcaoQuery = trpc.comandaRecepcao.statusEnvioRecepcao.useQuery(
+    { unidadeId: unidadeId ?? 0 },
+    { enabled: !!unidadeId },
+  );
+  const enviarRelatorioRecepcaoMutation = trpc.comandaRecepcao.enviarRelatorioRecepcao.useMutation({
+    onError: (err) => toast.error(`Erro ao enviar pra recepção: ${err.message}`),
+  });
+
+  async function handleEnviarRecepcao() {
+    if (!unidadeId) return;
+    try {
+      const r = await enviarRelatorioRecepcaoMutation.mutateAsync({ unidadeId, dataInicio, dataFim });
+      toast.success(r.enviado ? `Relatório enviado pro grupo da recepção: ${r.dias} dia(s) com pendência.` : "Sem pendências no período — nada a enviar.");
+      statusEnvioRecepcaoQuery.refetch();
     } catch {
       // erro já reportado via onError da mutation
     }
@@ -603,21 +622,38 @@ export default function ComandaRecepcao() {
                       buscarItens={itensDoDia}
                       formasSemAuditoria={["dinheiro"]}
                       acao={
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-6 px-2 text-xs font-normal"
-                          disabled={sincronizarContasBancariasMutation.isPending}
-                          onClick={handleSincronizarContasBancarias}
-                          title="Enviar Débito, Crédito e Pix pra planilha Drive (linhas 10-12) + conciliação dos dias com diferença (linha 20)"
-                        >
-                          {sincronizarContasBancariasMutation.isPending ? (
-                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                          ) : (
-                            <UploadCloud className="h-3 w-3 mr-1" />
-                          )}
-                          Sincronizar com Drive
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-xs font-normal"
+                            disabled={sincronizarContasBancariasMutation.isPending}
+                            onClick={handleSincronizarContasBancarias}
+                            title="Enviar Débito, Crédito e Pix pra planilha Drive (linhas 10-12) + conciliação dos dias com diferença (linha 20)"
+                          >
+                            {sincronizarContasBancariasMutation.isPending ? (
+                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            ) : (
+                              <UploadCloud className="h-3 w-3 mr-1" />
+                            )}
+                            Sincronizar com Drive
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-xs font-normal"
+                            disabled={enviarRelatorioRecepcaoMutation.isPending || !!statusEnvioRecepcaoQuery.data?.jaEnviadoHoje}
+                            onClick={handleEnviarRecepcao}
+                            title={statusEnvioRecepcaoQuery.data?.jaEnviadoHoje ? "Já enviado hoje pro grupo da recepção" : "Enviar o relatório de pendências do período pro grupo da recepção no Telegram"}
+                          >
+                            {enviarRelatorioRecepcaoMutation.isPending ? (
+                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            ) : (
+                              <Send className="h-3 w-3 mr-1" />
+                            )}
+                            {statusEnvioRecepcaoQuery.data?.jaEnviadoHoje ? "Enviado hoje" : "Enviar recepção"}
+                          </Button>
+                        </div>
                       }
                     />
                     <Secao

@@ -5,6 +5,7 @@ import { transcribeAudio } from "./_core/voiceTranscription";
 import { drizzle } from "drizzle-orm/mysql2";
 import { mysqlTable, int, varchar, text, timestamp, boolean } from "drizzle-orm/mysql-core";
 import { eq } from "drizzle-orm";
+import { sendTelegramParaRecepcao } from "./telegramApi";
 
 // Tabela deploy_pending para comunicação entre webhook (sandbox) e cron (produção)
 const deployPending = mysqlTable("deploy_pending", {
@@ -48,7 +49,6 @@ function registerTelegramTestRoute(app: Express) {
       return;
     }
     try {
-      const { sendTelegramParaRecepcao } = await import("./telegramApi");
       const texto = (req.body?.texto as string) || "🤖 Teste de integração — Buddha Spa CRM conectado ao Telegram com sucesso.";
       await sendTelegramParaRecepcao(texto);
       res.status(200).json({ success: true });
