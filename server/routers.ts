@@ -775,6 +775,18 @@ Diretrizes:
     }),
   }),
 
+  // ===== Telegram (avisos pro grupo da recepção via BotFather) =====
+  telegram: router({
+    status: adminProcedure.query(() => ({
+      configurado: !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID_GRUPO_RECEPCAO),
+    })),
+    enviarTeste: adminProcedure.mutation(async () => {
+      const { sendTelegramParaRecepcao } = await import("./telegramApi");
+      await sendTelegramParaRecepcao("🤖 Teste de integração — Buddha Spa CRM conectado ao Telegram com sucesso.");
+      return { success: true };
+    }),
+  }),
+
   // ===== Banco Inter =====
   inter: router({
     /**

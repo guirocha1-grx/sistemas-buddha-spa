@@ -11,4 +11,6 @@ export const ENV = {
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
   googleSheetsClientEmail: process.env.GOOGLE_SHEETS_CLIENT_EMAIL ?? "",
   googleSheetsPrivateKey: process.env.GOOGLE_SHEETS_PRIVATE_KEY ?? "",
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN ?? "",
+  telegramChatIdGrupoRecepcao: process.env.TELEGRAM_CHAT_ID_GRUPO_RECEPCAO ?? "",
 };

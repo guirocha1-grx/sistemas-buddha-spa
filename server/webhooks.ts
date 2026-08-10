@@ -29,6 +29,33 @@ export function registerWhatsappWebhookRoutes(app: Express) {
   registerZapiWebhook(app);
   registerBuddhaMktWebhook(app);
   registerDeployWebhook(app);
+  registerTelegramTestRoute(app);
+}
+
+/**
+ * Rota de teste pontual pro bot do Telegram (BotFather) — mesmo
+ * padrão/token do webhook de deploy acima, pra dar pra disparar um
+ * envio de teste via curl sem precisar de sessão logada. Fica aqui
+ * (infra reutilizável), não é descartável: qualquer teste futuro do
+ * bot pode usar a mesma rota.
+ */
+function registerTelegramTestRoute(app: Express) {
+  app.post("/api/telegram/teste", async (req: Request, res: Response) => {
+    const token = req.headers["x-deploy-token"] as string | undefined;
+    const expectedToken = process.env.DEPLOY_WEBHOOK_TOKEN;
+    if (!expectedToken || token !== expectedToken) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    try {
+      const { sendTelegramParaRecepcao } = await import("./telegramApi");
+      const texto = (req.body?.texto as string) || "🤖 Teste de integração — Buddha Spa CRM conectado ao Telegram com sucesso.";
+      await sendTelegramParaRecepcao(texto);
+      res.status(200).json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 }
 
 /**
