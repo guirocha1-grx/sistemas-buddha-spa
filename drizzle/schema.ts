@@ -10,6 +10,13 @@ export const users = mysqlTable("users", {
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  // Controle de acesso por módulo (2026-08-10, ver permissoesModulo
+  // abaixo) — false (padrão) mantém o comportamento de sempre: usuário
+  // "user" vê todos os módulos, só "admin" muda algo. true significa
+  // que essa conta está restrita EXATAMENTE aos módulos presentes em
+  // permissoesModulo (pode ser zero — bloqueado por completo, sem
+  // precisar excluir a conta). admin nunca é afetado por isso.
+  permissoesCustomizadas: boolean("permissoesCustomizadas").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -17,6 +24,27 @@ export const users = mysqlTable("users", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+
+/**
+ * Módulos liberados pra uma conta com permissoesCustomizadas=true (ver
+ * users acima). `modulo` é uma das chaves de shared/modulos.ts — não é
+ * FK porque a lista é um enum fechado definido em código, não uma
+ * tabela. Sem constraint de unicidade composta (userId+modulo): o
+ * server sempre reescreve o conjunto inteiro (delete+insert) ao salvar,
+ * então duplicata não é um risco real — mesmo padrão já usado noutras
+ * tabelas deste projeto (uniqueness verificada em código).
+ */
+export const permissoesModulo = mysqlTable("permissoes_modulo", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  modulo: varchar("modulo", { length: 40 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  userIdx: index("permissoes_modulo_user_idx").on(table.userId),
+}));
+
+export type PermissaoModulo = typeof permissoesModulo.$inferSelect;
+export type InsertPermissaoModulo = typeof permissoesModulo.$inferInsert;
 
 /**
  * Unidades do Buddha Spa — Shopping Santa Úrsula e Ribeirão Shopping.

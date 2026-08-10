@@ -2267,6 +2267,37 @@ Diretrizes:
     }),
   }),
 
+  // ===== Controle de acesso por módulo (ver shared/modulos.ts) =====
+  permissoes: router({
+    // Não é adminProcedure — todo mundo precisa saber os próprios
+    // módulos liberados pra filtrar o menu lateral.
+    minhas: protectedProcedure.query(({ ctx }) => {
+      if (!ctx.permissoesModulos) return { restrito: false, modulos: [] as string[] };
+      return { restrito: true, modulos: Array.from(ctx.permissoesModulos) };
+    }),
+
+    listUsuarios: adminProcedure.query(async () => {
+      return db.listUsuariosComPermissoes();
+    }),
+
+    obter: adminProcedure.input(z.object({ userId: z.number() })).query(async ({ input }) => {
+      return db.getPermissoesUsuario(input.userId);
+    }),
+
+    salvar: adminProcedure.input(z.object({
+      userId: z.number(),
+      modulos: z.array(z.string()),
+    })).mutation(async ({ input }) => {
+      await db.salvarPermissoesUsuario(input.userId, input.modulos);
+      return { success: true };
+    }),
+
+    removerRestricao: adminProcedure.input(z.object({ userId: z.number() })).mutation(async ({ input }) => {
+      await db.removerRestricaoUsuario(input.userId);
+      return { success: true };
+    }),
+  }),
+
   // ===== Configurações globais (chave-valor) =====
   configuracoes: router({
     get: adminProcedure.input(z.object({ chave: z.string() })).query(async ({ input }) => {

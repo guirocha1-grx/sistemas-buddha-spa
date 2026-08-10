@@ -21,6 +21,7 @@ import Leads from "./pages/Leads";
 import Configuracoes from "@/pages/Configuracoes";
 import ConfigInbox from "@/pages/ConfigInbox";
 import AuditLog from "@/pages/AuditLog";
+import Usuarios from "@/pages/Usuarios";
 
 function Router() {
   return (
@@ -41,6 +42,7 @@ function Router() {
         <Route path="/leads" component={Leads} />
         <Route path="/config-inbox" component={ConfigInbox} />
         <Route path="/configuracoes" component={Configuracoes} />
+        <Route path="/usuarios" component={Usuarios} />
         <Route path="/auditoria" component={AuditLog} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />

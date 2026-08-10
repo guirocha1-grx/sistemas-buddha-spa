@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { eq, desc, and, gte, lte, isNull, like, ne, inArray, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
@@ -1575,6 +1575,73 @@ export async function listAtendentesParaFiltro() {
   const db = await getDb();
   if (!db) return [];
   return db.select({ id: atendentes.id, nome: atendentes.nome }).from(atendentes).orderBy(atendentes.nome);
+}
+
+// ===== Controle de acesso por módulo (ver shared/modulos.ts) =====
+
+export interface UsuarioComPermissoes {
+  id: number;
+  name: string | null;
+  email: string | null;
+  role: "user" | "admin";
+  permissoesCustomizadas: boolean;
+}
+
+/** Pra tela de administração de usuários. */
+export async function listUsuariosComPermissoes(): Promise<UsuarioComPermissoes[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: users.id,
+    name: users.name,
+    email: users.email,
+    role: users.role,
+    permissoesCustomizadas: users.permissoesCustomizadas,
+  }).from(users).orderBy(users.name);
+}
+
+export interface PermissoesUsuario {
+  restrito: boolean;
+  modulos: string[];
+}
+
+/**
+ * `restrito: false` (conta sem permissoesCustomizadas) significa acesso
+ * total — é o que toda conta já tinha antes dessa feature existir, e
+ * continua sendo o padrão pra conta nova. `restrito: true` com
+ * `modulos: []` é um bloqueio completo e deliberado (ex.: afastar
+ * alguém sem excluir a conta), não "ainda não configurado".
+ */
+export async function getPermissoesUsuario(userId: number): Promise<PermissoesUsuario> {
+  const db = await getDb();
+  if (!db) return { restrito: false, modulos: [] };
+
+  const userRows = await db.select({ permissoesCustomizadas: users.permissoesCustomizadas })
+    .from(users).where(eq(users.id, userId)).limit(1);
+  if (!userRows[0]?.permissoesCustomizadas) return { restrito: false, modulos: [] };
+
+  const rows = await db.select({ modulo: permissoesModulo.modulo })
+    .from(permissoesModulo).where(eq(permissoesModulo.userId, userId));
+  return { restrito: true, modulos: rows.map((r) => r.modulo) };
+}
+
+/** Substitui o conjunto inteiro de módulos liberados pra essa conta (pode ser vazio — bloqueio total). */
+export async function salvarPermissoesUsuario(userId: number, modulos: string[]) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ permissoesCustomizadas: true }).where(eq(users.id, userId));
+  await db.delete(permissoesModulo).where(eq(permissoesModulo.userId, userId));
+  if (modulos.length > 0) {
+    await db.insert(permissoesModulo).values(modulos.map((modulo) => ({ userId, modulo })));
+  }
+}
+
+/** Volta pro padrão "acesso total" — limpa a restrição e os módulos salvos. */
+export async function removerRestricaoUsuario(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ permissoesCustomizadas: false }).where(eq(users.id, userId));
+  await db.delete(permissoesModulo).where(eq(permissoesModulo.userId, userId));
 }
 
 // ===== Atendentes (identidade por PIN — ver server/atendenteAuth.ts) =====

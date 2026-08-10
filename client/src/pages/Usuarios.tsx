@@ -1,0 +1,252 @@
+import { useEffect, useState } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
+import { MODULOS, type ModuloChave } from "@shared/modulos";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2, Pencil, Copy } from "lucide-react";
+import { toast } from "sonner";
+
+export default function Usuarios() {
+  const { user } = useAuth();
+  const utils = trpc.useUtils();
+  const { data: usuarios, isLoading } = trpc.permissoes.listUsuarios.useQuery(undefined, { enabled: user?.role === "admin" });
+
+  const [editandoId, setEditandoId] = useState<number | null>(null);
+  const [restringir, setRestringir] = useState(false);
+  const [selecionados, setSelecionados] = useState<Set<ModuloChave>>(new Set());
+  const [clonarDe, setClonarDe] = useState<string>("");
+
+  const permissoesQuery = trpc.permissoes.obter.useQuery(
+    { userId: editandoId! },
+    { enabled: editandoId != null },
+  );
+
+  useEffect(() => {
+    if (permissoesQuery.data) {
+      setRestringir(permissoesQuery.data.restrito);
+      setSelecionados(new Set(permissoesQuery.data.modulos as ModuloChave[]));
+    }
+  }, [permissoesQuery.data]);
+
+  const salvarMutation = trpc.permissoes.salvar.useMutation({
+    onSuccess: () => {
+      toast.success("Permissões salvas.");
+      utils.permissoes.listUsuarios.invalidate();
+      setEditandoId(null);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const removerRestricaoMutation = trpc.permissoes.removerRestricao.useMutation({
+    onSuccess: () => {
+      toast.success("Restrição removida — acesso total.");
+      utils.permissoes.listUsuarios.invalidate();
+      setEditandoId(null);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  if (user?.role !== "admin") {
+    return (
+      <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+        Acesso restrito a administradores.
+      </div>
+    );
+  }
+
+  const usuarioEditando = (usuarios ?? []).find((u) => u.id === editandoId);
+
+  function abrirEdicao(id: number) {
+    setEditandoId(id);
+    setClonarDe("");
+  }
+
+  function toggleModulo(chave: ModuloChave) {
+    setSelecionados((prev) => {
+      const novo = new Set(prev);
+      if (novo.has(chave)) novo.delete(chave);
+      else novo.add(chave);
+      return novo;
+    });
+  }
+
+  async function handleClonar(sourceIdStr: string) {
+    setClonarDe(sourceIdStr);
+    const sourceId = Number(sourceIdStr);
+    if (!sourceId) return;
+    const dados = await utils.permissoes.obter.fetch({ userId: sourceId });
+    setRestringir(dados.restrito);
+    setSelecionados(new Set(dados.modulos as ModuloChave[]));
+  }
+
+  function handleSalvar() {
+    if (!editandoId) return;
+    if (restringir) {
+      salvarMutation.mutate({ userId: editandoId, modulos: Array.from(selecionados) });
+    } else {
+      removerRestricaoMutation.mutate({ userId: editandoId });
+    }
+  }
+
+  const salvando = salvarMutation.isPending || removerRestricaoMutation.isPending;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+          Usuários
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Controle de acesso por módulo — por padrão toda conta vê tudo; restrinja individualmente quando precisar.
+        </p>
+      </div>
+
+      <Card className="overflow-hidden">
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Nome</TableHead>
+                <TableHead>E-mail</TableHead>
+                <TableHead>Perfil</TableHead>
+                <TableHead>Acesso</TableHead>
+                <TableHead className="text-right">Ação</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                    <Loader2 className="h-4 w-4 animate-spin inline mr-2" /> Carregando...
+                  </TableCell>
+                </TableRow>
+              ) : (usuarios ?? []).length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                    Nenhum usuário ainda.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                (usuarios ?? []).map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell className="text-sm">{u.name || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{u.email || "—"}</TableCell>
+                    <TableCell className="text-sm">{u.role}</TableCell>
+                    <TableCell>
+                      {u.role === "admin" ? (
+                        <Badge variant="outline" className="border-amber-400 text-amber-700">Total (admin)</Badge>
+                      ) : u.permissoesCustomizadas ? (
+                        <Badge variant="secondary">Restrito</Badge>
+                      ) : (
+                        <Badge variant="outline" className="border-emerald-400 text-emerald-700">Total</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8"
+                        onClick={() => abrirEdicao(u.id)}
+                        disabled={u.role === "admin"}
+                        title={u.role === "admin" ? "Admin sempre tem acesso total" : "Editar permissões"}
+                      >
+                        <Pencil className="h-3.5 w-3.5 mr-1.5" /> Editar
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Dialog open={editandoId != null} onOpenChange={(open) => !open && setEditandoId(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Permissões de {usuarioEditando?.name || usuarioEditando?.email}</DialogTitle>
+            <DialogDescription>
+              Escolha exatamente quais módulos essa conta pode acessar.
+            </DialogDescription>
+          </DialogHeader>
+
+          {permissoesQuery.isLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                <div>
+                  <Label className="text-sm">Restringir acesso</Label>
+                  <p className="text-xs text-muted-foreground">Desligado = acesso a todos os módulos.</p>
+                </div>
+                <Switch checked={restringir} onCheckedChange={setRestringir} />
+              </div>
+
+              {restringir && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Copy className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <Select value={clonarDe} onValueChange={handleClonar}>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Clonar permissões de outro usuário..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(usuarios ?? [])
+                          .filter((u) => u.id !== editandoId)
+                          .map((u) => (
+                            <SelectItem key={u.id} value={String(u.id)}>
+                              {u.name || u.email || `#${u.id}`}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    {MODULOS.map((m) => (
+                      <label
+                        key={m.chave}
+                        className="flex items-center gap-2 text-sm rounded-lg border px-3 py-2 cursor-pointer hover:bg-accent"
+                      >
+                        <Checkbox
+                          checked={selecionados.has(m.chave)}
+                          onCheckedChange={() => toggleModulo(m.chave)}
+                        />
+                        {m.label}
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditandoId(null)}>Cancelar</Button>
+            <Button onClick={handleSalvar} disabled={salvando || permissoesQuery.isLoading}>
+              {salvando && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

@@ -26,21 +26,27 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { startLogin, startGoogleLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText, Repeat } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText, Repeat, Users2 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { AtendenteGate, useAtendenteAtual } from "./AtendenteGate";
+import type { ModuloChave } from "@shared/modulos";
 
-const menuItems = [
+// `modulo` liga cada item ao controle de acesso (shared/modulos.ts) —
+// item sem `modulo` fica sempre visível (Dashboard, a página de
+// pouso). "Config. Inbox" usa o mesmo módulo de "Mensagens": as duas
+// telas mexem com o mesmo backend (conexão/atendimento WhatsApp), não
+// faz sentido liberar uma sem a outra.
+const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; modulo?: ModuloChave; adminOnly?: boolean; children?: { label: string; path: string }[] }[] = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: Users, label: "Clientes", path: "/clientes" },
-  { icon: KanbanSquare, label: "Reativação", path: "/reativacao" },
-  { icon: Calendar, label: "Agenda", path: "/agenda" },
-  { icon: MessageCircle, label: "Mensagens", path: "/mensagens" },
+  { icon: Users, label: "Clientes", path: "/clientes", modulo: "clientes" },
+  { icon: KanbanSquare, label: "Reativação", path: "/reativacao", modulo: "reativacao" },
+  { icon: Calendar, label: "Agenda", path: "/agenda", modulo: "agenda" },
+  { icon: MessageCircle, label: "Mensagens", path: "/mensagens", modulo: "mensagens" },
   {
-    icon: DollarSign, label: "Financeiro", path: "/financeiro",
+    icon: DollarSign, label: "Financeiro", path: "/financeiro", modulo: "financeiro",
     children: [
       { label: "Visão Geral", path: "/financeiro" },
       { label: "Contas", path: "/financeiro/extratos" },
@@ -49,11 +55,12 @@ const menuItems = [
       { label: "Parâmetros", path: "/financeiro/parametros" },
     ],
   },
-  { icon: Sparkles, label: "Copilot", path: "/copilot" },
-  { icon: Image, label: "Lâminas", path: "/laminas" },
-  { icon: UserPlus, label: "Leads", path: "/leads" },
-  { icon: MessageCircle, label: "Config. Inbox", path: "/config-inbox" },
-  { icon: Settings, label: "Configurações", path: "/configuracoes" },
+  { icon: Sparkles, label: "Copilot", path: "/copilot", modulo: "copilot" },
+  { icon: Image, label: "Lâminas", path: "/laminas", modulo: "laminas" },
+  { icon: UserPlus, label: "Leads", path: "/leads", modulo: "leads" },
+  { icon: MessageCircle, label: "Config. Inbox", path: "/config-inbox", modulo: "mensagens" },
+  { icon: Settings, label: "Configurações", path: "/configuracoes", modulo: "configuracoes" },
+  { icon: Users2, label: "Usuários", path: "/usuarios", adminOnly: true },
   { icon: ScrollText, label: "Log de Auditoria", path: "/auditoria", adminOnly: true },
 ];
 
@@ -151,6 +158,7 @@ function DashboardLayoutContent({
   const trocarAtendenteMutation = trpc.atendentes.sair.useMutation({
     onSuccess: () => utils.atendentes.atual.invalidate(),
   });
+  const { data: minhasPermissoes } = trpc.permissoes.minhas.useQuery();
 
   useEffect(() => {
     if (isCollapsed) {
@@ -225,7 +233,11 @@ function DashboardLayoutContent({
 
           <SidebarContent className="gap-0">
             <SidebarMenu className="px-2 py-1">
-              {menuItems.filter(item => !item.adminOnly || user?.role === "admin").map(item => {
+              {menuItems.filter(item => {
+                if (item.adminOnly && user?.role !== "admin") return false;
+                if (item.modulo && user?.role !== "admin" && minhasPermissoes?.restrito && !minhasPermissoes.modulos.includes(item.modulo)) return false;
+                return true;
+              }).map(item => {
                 const isActive = location === item.path;
 
                 if (!item.children) {
