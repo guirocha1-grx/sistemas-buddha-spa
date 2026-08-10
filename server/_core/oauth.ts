@@ -12,12 +12,18 @@ function getQueryParam(req: Request, key: string): string | undefined {
 }
 
 // Deriva a origem pública da requisição (esquema + host) pra montar o
-// redirect_uri do Google de forma confiável atrás de proxy — mesma
-// lógica de detecção de https que getSessionCookieOptions usa pro
-// cookie de sessão, pra nunca desalinhar as duas.
+// redirect_uri do Google de forma confiável atrás de proxy. `req.headers.host`
+// sozinho não serve aqui: atrás do proxy do Manus ele chega com o hostname
+// interno do Cloud Run (ex: "pv6y2de5jd-....a.run.app"), não o domínio
+// público que o navegador usou (manus.space ou o domínio próprio,
+// spa.grxcorp.com.br) — daí o "redirect_uri_mismatch" mesmo com a URI certa
+// cadastrada no Google. x-forwarded-host carrega o domínio real; cai pra
+// headers.host só se o proxy não mandar (acesso direto, sem proxy).
 function publicOrigin(req: Request): string {
   const proto = isSecureRequest(req) ? "https" : "http";
-  return `${proto}://${req.headers.host}`;
+  const forwardedHost = req.headers["x-forwarded-host"];
+  const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost)?.split(",")[0]?.trim() || req.headers.host;
+  return `${proto}://${host}`;
 }
 
 async function exchangeGoogleCode(code: string, redirectUri: string): Promise<{ accessToken: string }> {
