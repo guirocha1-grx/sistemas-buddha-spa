@@ -360,7 +360,7 @@ function DashboardLayoutContent({
           </div>
         )}
         <main className="flex-1 p-4">
-          {!atendenteLoading && !atendente ? <AtendenteGate /> : children}
+          {!atendenteLoading && !atendente && user?.role !== "admin" ? <AtendenteGate /> : children}
         </main>
       </SidebarInset>
     </>
