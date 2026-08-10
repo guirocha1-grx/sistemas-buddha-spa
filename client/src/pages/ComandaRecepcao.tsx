@@ -90,6 +90,9 @@ export default function ComandaRecepcao() {
   const { unidadeSelecionada } = useUnidade();
   const unidadeId = unidadeSelecionada?.id;
   const utils = trpc.useUtils();
+  // Grupo do Telegram (TELEGRAM_CHAT_ID_GRUPO_RECEPCAO) existe só pra
+  // recepção da Shopping Santa Úrsula — Ribeirão Shopping não tem grupo.
+  const isRbs = unidadeSelecionada?.slug?.includes("ribeirao") || unidadeSelecionada?.slug?.includes("rbs");
 
   const [modoVisualizacao, setModoVisualizacao] = useState<"semana" | "mes">("semana");
   const [inicioSemana, setInicioSemana] = useState(() => toIso(segundaFeiraDa(new Date())));
@@ -255,7 +258,7 @@ export default function ComandaRecepcao() {
 
   const statusEnvioRecepcaoQuery = trpc.comandaRecepcao.statusEnvioRecepcao.useQuery(
     { unidadeId: unidadeId ?? 0 },
-    { enabled: !!unidadeId },
+    { enabled: !!unidadeId && !isRbs },
   );
   const enviarRelatorioRecepcaoMutation = trpc.comandaRecepcao.enviarRelatorioRecepcao.useMutation({
     onError: (err) => toast.error(`Erro ao enviar pra recepção: ${err.message}`),
@@ -638,21 +641,23 @@ export default function ComandaRecepcao() {
                             )}
                             Sincronizar com Drive
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 px-2 text-xs font-normal"
-                            disabled={enviarRelatorioRecepcaoMutation.isPending || !!statusEnvioRecepcaoQuery.data?.jaEnviadoHoje}
-                            onClick={handleEnviarRecepcao}
-                            title={statusEnvioRecepcaoQuery.data?.jaEnviadoHoje ? "Já enviado hoje pro grupo da recepção" : "Enviar o relatório de pendências do período pro grupo da recepção no Telegram"}
-                          >
-                            {enviarRelatorioRecepcaoMutation.isPending ? (
-                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                            ) : (
-                              <Send className="h-3 w-3 mr-1" />
-                            )}
-                            {statusEnvioRecepcaoQuery.data?.jaEnviadoHoje ? "Enviado hoje" : "Enviar recepção"}
-                          </Button>
+                          {!isRbs && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-xs font-normal"
+                              disabled={enviarRelatorioRecepcaoMutation.isPending || !!statusEnvioRecepcaoQuery.data?.jaEnviadoHoje}
+                              onClick={handleEnviarRecepcao}
+                              title={statusEnvioRecepcaoQuery.data?.jaEnviadoHoje ? "Já enviado hoje pro grupo da recepção" : "Enviar o relatório de pendências do período pro grupo da recepção no Telegram"}
+                            >
+                              {enviarRelatorioRecepcaoMutation.isPending ? (
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              ) : (
+                                <Send className="h-3 w-3 mr-1" />
+                              )}
+                              {statusEnvioRecepcaoQuery.data?.jaEnviadoHoje ? "Enviado hoje" : "Enviar recepção"}
+                            </Button>
+                          )}
                         </div>
                       }
                     />

@@ -1892,12 +1892,18 @@ Diretrizes:
       dataInicio: z.string(),
       dataFim: z.string(),
     })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) throw new Error("Unidade não encontrada");
+
+      // O grupo do Telegram (TELEGRAM_CHAT_ID_GRUPO_RECEPCAO) existe só
+      // pra recepção da Shopping Santa Úrsula — Ribeirão Shopping não
+      // tem grupo próprio ainda.
+      const isRbs = unidade.slug.includes("ribeirao") || unidade.slug.includes("rbs");
+      if (isRbs) throw new Error("Ribeirão Shopping ainda não tem grupo de Telegram configurado.");
+
       if (await db.jaEnviouRelatorioRecepcaoHoje(input.unidadeId)) {
         throw new Error("Relatório de pendências já foi enviado hoje para o grupo da recepção.");
       }
-
-      const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade) throw new Error("Unidade não encontrada");
 
       const conciliacaoPorDia = await db.calcularConciliacaoPorDia(input.unidadeId, input.dataInicio, input.dataFim);
       const pendencias = conciliacaoPorDia
