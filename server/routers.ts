@@ -1726,21 +1726,35 @@ Diretrizes:
 
         let totalItens = 0;
         let diasComDados = 0;
+        const diasComErro: string[] = [];
         for (const dia of dias) {
-          const linhas = await lerComandaVirtualDiaSheet(spreadsheetId, dia);
-          if (linhas.length === 0) continue;
-          diasComDados++;
-          const r = await db.upsertComandaItens(input.unidadeId, linhas);
-          totalItens += r.inseridos + r.atualizados;
+          // Um dia falhando (rate limit do Google Sheets, timeout) não pode
+          // derrubar o resto do período — sem isso, um erro transitório no
+          // meio do mês cancelava a sincronização de todos os dias
+          // seguintes, sem aviso claro do que ficou de fora.
+          try {
+            const linhas = await lerComandaVirtualDiaSheet(spreadsheetId, dia);
+            if (linhas.length === 0) continue;
+            diasComDados++;
+            const r = await db.upsertComandaItens(input.unidadeId, linhas);
+            totalItens += r.inseridos + r.atualizados;
+          } catch (erroDia: any) {
+            console.error(`[ComandaItens] Falha no dia ${dia}:`, erroDia);
+            diasComErro.push(dia);
+          }
         }
 
+        const detalhesErro = diasComErro.length > 0 ? ` Falhou em: ${diasComErro.join(", ")}.` : "";
         await db.createSyncLog({
           unidadeId: input.unidadeId,
           tipo: "comanda_itens",
-          status: "sucesso",
+          status: diasComErro.length > 0 ? "erro" : "sucesso",
           registrosProcessados: totalItens,
-          detalhes: `Período ${input.dataInicio} a ${input.dataFim}. Dias com dados: ${diasComDados}/${dias.length}.`,
+          detalhes: `Período ${input.dataInicio} a ${input.dataFim}. Dias com dados: ${diasComDados}/${dias.length}.${detalhesErro}`,
         });
+        if (diasComErro.length > 0) {
+          throw new Error(`Sincronizado, mas falhou em ${diasComErro.length} dia(s): ${diasComErro.join(", ")}. Tenta sincronizar de novo.`);
+        }
         return { success: true, totalItens, diasComDados };
       } catch (error: any) {
         await db.createSyncLog({

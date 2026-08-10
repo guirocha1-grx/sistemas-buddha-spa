@@ -176,11 +176,18 @@ export default function ComandaRecepcao() {
       // Comanda virtual tem uma aba POR DIA — sincroniza só o período
       // exato visível (não o mês inteiro), pra não ficar caro à toa.
       await sincronizarItensMutation.mutateAsync({ unidadeId, dataInicio, dataFim });
-      toast.success("Comanda sincronizada.");
       utils.comandaRecepcao.resumo.invalidate();
       utils.comandaRecepcao.itensDetalhe.invalidate();
+
+      // Recalcula "Contas bancárias" e a conciliação (linha 20 da
+      // planilha) na sequência — um clique só. Sem isso, a célula de
+      // conciliação de um dia já corrigido só sumia se a pessoa
+      // lembrasse de clicar em "Sincronizar com Drive" também.
+      await sincronizarContasBancariasMutation.mutateAsync({ unidadeId, dataInicio, dataFim });
+
+      toast.success("Comanda sincronizada.");
     } catch {
-      // erro já reportado via onError da mutation
+      // erro já reportado via onError de cada mutation
     }
   }
 
@@ -528,11 +535,11 @@ export default function ComandaRecepcao() {
                             size="sm"
                             variant="outline"
                             className="h-6 px-2 text-xs font-normal"
-                            disabled={sincronizarMutation.isPending || sincronizarItensMutation.isPending}
+                            disabled={sincronizarMutation.isPending || sincronizarItensMutation.isPending || sincronizarContasBancariasMutation.isPending}
                             onClick={handleSincronizar}
                             title="Sincronizar comanda com dados Drive"
                           >
-                            {sincronizarMutation.isPending || sincronizarItensMutation.isPending ? (
+                            {sincronizarMutation.isPending || sincronizarItensMutation.isPending || sincronizarContasBancariasMutation.isPending ? (
                               <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                             ) : (
                               <RefreshCw className="h-3 w-3 mr-1" />
