@@ -143,4 +143,26 @@ export const zapiApi = {
     const url = data?.value || data?.profilePictureUrl || null;
     return typeof url === "string" && url.startsWith("http") ? url : null;
   },
+
+  async getQrCodeImage(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+  ): Promise<string | null> {
+    const data = await zapiGet<any>(instanceId, token, clientToken, "/qr-code-image");
+    const value = data?.value || data?.qrcode || data?.base64;
+    if (!value) return null;
+    if (typeof value === "string" && value.startsWith("data:image")) return value;
+    if (typeof value === "string" && value.startsWith("/9j/")) return `data:image/jpeg;base64,${value}`;
+    if (typeof value === "string" && value.startsWith("iVBOR")) return `data:image/png;base64,${value}`;
+    return typeof value === "string" ? value : null;
+  },
+
+  async getStatus(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+  ): Promise<{ connected?: boolean; status?: string; phone?: string } | null> {
+    return zapiGet<any>(instanceId, token, clientToken, "/status");
+  },
 };
