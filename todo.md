@@ -78,14 +78,15 @@
 - [x] Diagnosticar e corrigir a ausência do botão global “Sincronizar tudo” na interface real relatada pelo usuário — funcionamento confirmado em produção pelo usuário.
 - [x] Adicionar a permissão “Sincronização Global” ao módulo Usuários e vinculá-la à visibilidade e execução do botão.
 - [x] Enviar a versão atualizada ao repositório do CRM, pois a produção confirmada ainda está em uma revisão sem o botão global.
-- [ ] Confirmar tecnicamente qual projeto/tarefa publica spa.grxcorp.com.br e registrar essa ligação no projeto.
+- [x] Confirmar tecnicamente qual projeto/tarefa publica spa.grxcorp.com.br e registrar essa ligação no projeto.
 - [x] Registrar spa.grxcorp.com.br como domínio de produção na descrição do projeto.
-- [ ] Recuperar a base da tarefa “Menu de Sincronização” no projeto Sistemas Buddha Spa e aplicar nela a atualização já implementada, com evidência de versão.
-- [ ] Aplicar a versão atual diretamente na implantação vinculada a spa.grxcorp.com.br e registrar publicação verificável.
-- [ ] Confirmar a publicação final sem usar o navegador do usuário, preservando sua sessão de login.
+- [x] Recuperar a base da tarefa “Menu de Sincronização” no projeto Sistemas Buddha Spa e aplicar nela a atualização já implementada, com evidência de versão.
+- [x] Aplicar a versão atual diretamente na implantação vinculada a spa.grxcorp.com.br e registrar publicação verificável.
+- [x] Confirmar a publicação final sem usar o navegador do usuário, preservando sua sessão de login.
 - [x] Mover o extrato Mercado Pago para a primeira posição da categoria Contas, antes do Banco Inter.
 - [x] Executar em paralelo os extratos Mercado Pago das duas unidades, sem bloquear as demais sincronizações.
 - [x] Adicionar a ação “Sincronizar erros” ao resumo final para repetir somente as etapas que falharam.
 - [x] Corrigir a chamada de extrato Mercado Pago no painel global para usar o mesmo fluxo funcional das abas.
 - [x] Garantir que o extrato Mercado Pago não aguarde nem bloqueie as demais etapas do roteiro global.
 - [x] Reaplicar redução de 25% na largura do menu lateral sobre o commit c166b91
+- [x] Documentar explicitamente a base c166b91 recuperada para o Menu de Sincronização e o checkpoint b0959a15 aplicado sobre ela
