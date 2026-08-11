@@ -288,7 +288,7 @@ export default function Mensagens() {
         </div>
       )}
 
-      <Card className="flex h-[calc(100vh-220px)] overflow-hidden p-0">
+      <Card className="flex flex-row h-[calc(100vh-220px)] overflow-hidden p-0">
         {/* Coluna 1: Lista de conversas — tela cheia no mobile quando nenhuma conversa está aberta */}
         <div className={`${conversaSelecionadaId ? "hidden" : "flex"} md:flex w-full md:w-[280px] flex-shrink-0 border-r flex-col min-h-0`}>
           <div className="p-3 border-b space-y-2">
