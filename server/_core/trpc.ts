@@ -167,6 +167,22 @@ const auditMiddleware = t.middleware(async (opts) => {
 
 export const protectedProcedure = t.procedure.use(requireUser).use(moduloMiddleware).use(auditMiddleware);
 
+/**
+ * Protege ações que disparam sincronizações de fontes externas. Admins e
+ * contas sem restrição continuam liberados; contas restritas precisam da
+ * permissão explícita "sincronizacao" gerenciada em Usuários.
+ */
+const requireSyncPermission = t.middleware(async (opts) => {
+  const { ctx, next } = opts;
+  const permissoes = (ctx as TrpcContext).permissoesModulos;
+  if (permissoes && !permissoes.has("sincronizacao")) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Sem permissão para executar a sincronização global" });
+  }
+  return next();
+});
+
+export const syncProcedure = t.procedure.use(requireUser).use(requireSyncPermission).use(auditMiddleware);
+
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;

@@ -18,6 +18,7 @@ export const MODULOS = [
   { chave: "laminas", label: "Lâminas" },
   { chave: "leads", label: "Leads" },
   { chave: "configuracoes", label: "Configurações" },
+  { chave: "sincronizacao", label: "Sincronização Global" },
 ] as const;
 
 export type ModuloChave = (typeof MODULOS)[number]["chave"];

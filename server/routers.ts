@@ -1,7 +1,7 @@
 import { COOKIE_NAME, ATENDENTE_COOKIE_NAME, ATENDENTE_SESSION_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router, protectedProcedure, adminProcedure } from "./_core/trpc";
+import { publicProcedure, router, protectedProcedure, adminProcedure, syncProcedure } from "./_core/trpc";
 import { z } from "zod";
 import { parse as parseCookieHeader } from "cookie";
 import * as db from "./db";
@@ -944,7 +944,7 @@ Diretrizes:
      * Usa paginação por scroll para grandes volumes.
      * Rate limit: 10 req/min — não chamar em loop apertado.
      */
-    sincronizar: protectedProcedure.input(z.object({
+    sincronizar: syncProcedure.input(z.object({
       unidadeId: z.number(),
       dataInicio: z.string(),
       dataFim: z.string(),
@@ -1360,7 +1360,7 @@ Diretrizes:
       return sicrediApi.consultarSaldo();
     }),
 
-    sincronizar: protectedProcedure.input(z.object({
+    sincronizar: syncProcedure.input(z.object({
       unidadeId: z.number(),
       dataInicio: z.string(),
       dataFim: z.string(),
@@ -1512,7 +1512,7 @@ Diretrizes:
      * movimento da conta (dinheiro entrando/saindo do saldo), não a
      * venda em si.
      */
-    sincronizarMercadoPago: protectedProcedure.input(z.object({
+    sincronizarMercadoPago: syncProcedure.input(z.object({
       unidadeId: z.number(),
       dataInicio: z.string(),
       dataFim: z.string(),
@@ -1694,7 +1694,7 @@ Diretrizes:
      * os últimos 60 lançamentos da planilha; o filtro de período da
      * tela só afeta a apresentação, não a busca.
      */
-    sincronizarCaixaFisico: protectedProcedure.input(z.object({
+    sincronizarCaixaFisico: syncProcedure.input(z.object({
       unidadeId: z.number(),
     })).mutation(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
@@ -1754,7 +1754,7 @@ Diretrizes:
 
   // ===== Comanda Recepção (conciliação semanal de caixa) =====
   comandaRecepcao: router({
-    sincronizar: protectedProcedure.input(z.object({
+    sincronizar: syncProcedure.input(z.object({
       unidadeId: z.number(),
       ano: z.number(),
       mes: z.number().min(1).max(12),
@@ -1799,7 +1799,7 @@ Diretrizes:
      * só o drill-down (hover) da linha "Comanda (Recepção)" — não muda
      * o número agregado, que continua vindo de comanda_diaria.
      */
-    sincronizarItens: protectedProcedure.input(z.object({
+    sincronizarItens: syncProcedure.input(z.object({
       unidadeId: z.number(),
       dataInicio: z.string(),
       dataFim: z.string(),
@@ -1905,7 +1905,7 @@ Diretrizes:
      * cada mês é uma aba diferente na planilha; o período pode cair em
      * mais de uma aba se a semana visível cruzar virada de mês.
      */
-    sincronizarContasBancariasParaDrive: protectedProcedure.input(z.object({
+    sincronizarContasBancariasParaDrive: syncProcedure.input(z.object({
       unidadeId: z.number(),
       dataInicio: z.string(),
       dataFim: z.string(),
@@ -2209,7 +2209,7 @@ Diretrizes:
      * débito/pix aprovados chegam com date_approved preenchido — usamos
      * isso como filtro de período (mesmo padrão de dataEntrada no Inter).
      */
-    sincronizarMercadoPago: protectedProcedure.input(z.object({
+    sincronizarMercadoPago: syncProcedure.input(z.object({
       unidadeId: z.number(),
       dataInicio: z.string(),
       dataFim: z.string(),
