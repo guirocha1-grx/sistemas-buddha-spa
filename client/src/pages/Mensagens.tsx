@@ -21,16 +21,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-function canalLabel(canal: string) {
-  return canal === "buddha_mkt" ? "Buddha Mkt" : "Z-API";
-}
-
-function canalBadgeClass(canal: string) {
-  return canal === "buddha_mkt"
-    ? "border-amber-300 text-amber-700 bg-amber-50"
-    : "border-emerald-300 text-emerald-700 bg-emerald-50";
-}
-
 function statusDotClass(status: string) {
   if (status === "encerrada") return "bg-gray-400";
   if (status === "aguardando") return "bg-amber-400";
@@ -270,7 +260,7 @@ export default function Mensagens() {
             Mensagens
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Conversas de WhatsApp — Z-API por unidade e Buddha Mkt.
+            Conversas de WhatsApp.
           </p>
         </div>
         <UnidadeSelector />
@@ -382,16 +372,13 @@ export default function Mensagens() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground truncate mt-0.5">{c.ultimaMensagemTexto || "—"}</p>
-                  <div className="flex gap-1 mt-1 flex-wrap">
-                    <Badge variant="outline" className={`text-[10px] py-0 ${canalBadgeClass(c.canal)}`}>
-                      {canalLabel(c.canal)}
-                    </Badge>
-                    {c.isLidPendente === "true" && (
+                  {c.isLidPendente === "true" && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
                       <Badge variant="outline" className="text-[10px] py-0 border-orange-300 text-orange-700 bg-orange-50">
                         sem número confirmado
                       </Badge>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </button>
             ))}
@@ -423,11 +410,6 @@ export default function Mensagens() {
                   <p className="text-xs text-muted-foreground">{conversaSelecionada?.telefone}</p>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  {conversaSelecionada && (
-                    <Badge variant="outline" className={canalBadgeClass(conversaSelecionada.canal)}>
-                      {canalLabel(conversaSelecionada.canal)}
-                    </Badge>
-                  )}
                   <Button
                     variant={buscaMensagemAtiva ? "secondary" : "ghost"}
                     size="icon"
@@ -472,7 +454,8 @@ export default function Mensagens() {
                 </div>
               )}
 
-              <ScrollArea className="flex-1 p-4">
+              <div className="flex-1 min-h-0 overflow-hidden">
+              <ScrollArea className="h-full p-4">
                 {carregandoMensagens && (
                   <div className="text-sm text-muted-foreground flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" /> Carregando mensagens...
@@ -531,6 +514,7 @@ export default function Mensagens() {
                   <div ref={bottomRef} />
                 </div>
               </ScrollArea>
+              </div>
 
               <div className="p-3 border-t flex items-end gap-2">
                 <input ref={fileInputRef} type="file" accept="image/*,audio/*,application/pdf" className="hidden" onChange={handleAnexo} />
