@@ -386,18 +386,38 @@ export async function upsertInboxConversa(params: {
   const db = await getDb();
   if (!db) return undefined;
 
-  const existente = await db.select().from(inboxConversas)
-    .where(and(eq(inboxConversas.telefone, params.telefone), eq(inboxConversas.canal, params.canal)))
-    .limit(1);
+  // Busca primeiro pelo chatLid (se veio) — evita criar uma segunda
+  // conversa quando essa pessoa já tem uma conversa presa num @lid não
+  // resolvido de uma mensagem anterior (resolveLid pode falhar de forma
+  // intermitente). Só cai pro lookup por telefone se não achar por lid.
+  let existente = params.chatLid
+    ? await db.select().from(inboxConversas)
+        .where(and(eq(inboxConversas.chatLid, params.chatLid), eq(inboxConversas.canal, params.canal)))
+        .limit(1)
+    : [];
+  if (!existente[0]) {
+    existente = await db.select().from(inboxConversas)
+      .where(and(eq(inboxConversas.telefone, params.telefone), eq(inboxConversas.canal, params.canal)))
+      .limit(1);
+  }
 
   const agora = new Date();
 
   if (existente[0]) {
     const naoLidas = params.incrementarNaoLidas ? existente[0].naoLidas + 1 : existente[0].naoLidas;
+    // Nunca regride: uma vez que o @lid foi resolvido pro número real
+    // (isLidPendente vira "false"), uma falha pontual de resolução numa
+    // mensagem posterior não pode voltar a marcar como pendente nem
+    // trocar o telefone de volta pro lid bruto.
+    const jaResolvido = existente[0].isLidPendente === "false";
+    const devePromoverTelefone = params.isLidPendente === false && params.telefone !== existente[0].telefone;
     await db.update(inboxConversas).set({
+      telefone: devePromoverTelefone ? params.telefone : existente[0].telefone,
       nomeContato: params.nomeContato ?? existente[0].nomeContato,
       chatLid: params.chatLid ?? existente[0].chatLid,
-      isLidPendente: params.isLidPendente !== undefined ? (params.isLidPendente ? "true" : "false") : existente[0].isLidPendente,
+      isLidPendente: jaResolvido
+        ? "false"
+        : (params.isLidPendente !== undefined ? (params.isLidPendente ? "true" : "false") : existente[0].isLidPendente),
       ultimaMensagemEm: agora,
       ultimaMensagemTexto: params.ultimaMensagemTexto,
       naoLidas,

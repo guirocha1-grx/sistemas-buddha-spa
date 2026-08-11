@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import { mysqlTable, int, varchar, text, timestamp, boolean } from "drizzle-orm/mysql-core";
 import { eq } from "drizzle-orm";
 import { sendTelegramParaRecepcao } from "./telegramApi";
+import { zapiApi } from "./zapiApi";
 
 // Tabela deploy_pending para comunicação entre webhook (sandbox) e cron (produção)
 const deployPending = mysqlTable("deploy_pending", {
@@ -179,12 +180,29 @@ function registerZapiWebhook(app: Express) {
       }
 
       // Contato via anúncio "clique para WhatsApp" às vezes chega com o
-      // telefone ofuscado como "@lid" — não existe API pra converter @lid
-      // em número real (restrição de privacidade do WhatsApp). Nesse caso
-      // usamos o próprio chatLid como identificador estável: dá pra
-      // responder normalmente, só não sabemos o número de verdade ainda.
-      const ehLid = payload.phone.includes("@lid") || (!payload.phone.match(/^\d+$/) && !!payload.chatLid);
-      const identificadorContato = ehLid ? (payload.chatLid ?? payload.phone) : payload.phone;
+      // telefone ofuscado como "@lid". Bug real encontrado: zapiApi.resolveLid
+      // já existia (GET /contacts/{lid}, confirmado funcional no mobai-crm),
+      // mas nunca era chamado aqui — todo @lid ficava permanentemente
+      // "pendente" mesmo quando a Z-API conseguia resolver. Só cai pro
+      // fallback "pendente" (usando o próprio chatLid como identificador
+      // estável) se a resolução falhar de verdade.
+      const ehLidBruto = payload.phone.includes("@lid") || (!payload.phone.match(/^\d+$/) && !!payload.chatLid);
+      let identificadorContato = ehLidBruto ? (payload.chatLid ?? payload.phone) : payload.phone;
+      let ehLid = ehLidBruto;
+      let nomeResolvidoPorLid: string | undefined;
+
+      if (ehLidBruto && unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken) {
+        try {
+          const resolvido = await zapiApi.resolveLid(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, identificadorContato);
+          if (resolvido) {
+            identificadorContato = resolvido.phone;
+            ehLid = false;
+            nomeResolvidoPorLid = resolvido.name || undefined;
+          }
+        } catch (error) {
+          console.error("[Webhook Z-API] Falha ao resolver @lid:", error);
+        }
+      }
 
       let tipo: "texto" | "imagem" | "audio" | "documento" = "texto";
       let conteudo = payload.text?.message ?? "";
@@ -214,7 +232,10 @@ function registerZapiWebhook(app: Express) {
         // sentido atualizar o nome do contato quando é ele mandando
         // (recebida); num fromMe não teria como significar "nome do
         // contato" e o campo pode nem vir preenchido do mesmo jeito.
-        nomeContato: payload.fromMe ? undefined : payload.senderName,
+        // Se o @lid foi resolvido agora e a Z-API não mandou senderName
+        // (comum em mensagem antiga reprocessada), usa o nome que veio
+        // do próprio resolveLid.
+        nomeContato: payload.fromMe ? undefined : (payload.senderName ?? nomeResolvidoPorLid),
         ultimaMensagemTexto: resumo,
         incrementarNaoLidas: !payload.fromMe,
       });
