@@ -86,3 +86,5 @@
 - [x] Mover o extrato Mercado Pago para a primeira posição da categoria Contas, antes do Banco Inter.
 - [x] Executar em paralelo os extratos Mercado Pago das duas unidades, sem bloquear as demais sincronizações.
 - [x] Adicionar a ação “Sincronizar erros” ao resumo final para repetir somente as etapas que falharam.
+- [x] Corrigir a chamada de extrato Mercado Pago no painel global para usar o mesmo fluxo funcional das abas.
+- [x] Garantir que o extrato Mercado Pago não aguarde nem bloqueie as demais etapas do roteiro global.
