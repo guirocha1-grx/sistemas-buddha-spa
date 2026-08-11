@@ -76,8 +76,8 @@ function GoogleIcon({ className }: { className?: string }) {
 }
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
-const DEFAULT_WIDTH = 280;
-const MIN_WIDTH = 200;
+const DEFAULT_WIDTH = 196;
+const MIN_WIDTH = 180;
 const MAX_WIDTH = 480;
 
 export default function DashboardLayout({
@@ -246,7 +246,7 @@ function DashboardLayoutContent({
                     <PanelLeft className="h-4 w-4 text-muted-foreground" />
                   </button>
                 </div>
-                <img src="/logo.png" alt="Buddha Spa" className="h-[100px] w-auto -mt-1" />
+                <img src="/logo.png" alt="Buddha Spa" className="h-[90px] w-auto -mt-1" />
               </div>
             )}
           </SidebarHeader>

@@ -21,6 +21,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+function formatHora(data: string | Date | null | undefined) {
+  if (!data) return "";
+  const d = new Date(data);
+  const hoje = new Date();
+  const mesmoDay = d.toDateString() === hoje.toDateString();
+  if (mesmoDay) return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
 function statusDotClass(status: string) {
   if (status === "encerrada") return "bg-gray-400";
   if (status === "aguardando") return "bg-amber-400";
@@ -280,7 +289,7 @@ export default function Mensagens() {
 
       <Card className="flex flex-row h-[calc(100vh-220px)] overflow-hidden p-0">
         {/* Coluna 1: Lista de conversas — tela cheia no mobile quando nenhuma conversa está aberta */}
-        <div className={`${conversaSelecionadaId ? "hidden" : "flex"} md:flex w-full md:w-[280px] flex-shrink-0 border-r flex-col min-h-0`}>
+        <div className={`${conversaSelecionadaId ? "hidden" : "flex"} md:flex w-full md:w-[280px] flex-shrink-0 border-r flex-col min-h-0 overflow-hidden`}>
           <div className="p-3 border-b space-y-2">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-sm">Inbox WhatsApp</h2>
@@ -336,7 +345,7 @@ export default function Mensagens() {
             </div>
           </div>
 
-          <ScrollArea className="flex-1">
+          <ScrollArea className="flex-1 min-h-0 w-full overflow-hidden">
             {carregandoConversas && (
               <div className="p-3 space-y-2">
                 {[...Array(5)].map((_, i) => (
@@ -353,25 +362,30 @@ export default function Mensagens() {
               <button
                 key={c.id}
                 onClick={() => setConversaSelecionadaId(c.id)}
-                className={`w-full text-left p-3 border-b hover:bg-muted/50 transition-colors flex gap-3 items-start ${
+                className={`w-full min-w-0 text-left px-3 py-2.5 border-b hover:bg-muted/50 transition-colors flex gap-2 items-start overflow-hidden ${
                   conversaSelecionadaId === c.id ? "bg-muted" : ""
                 }`}
               >
                 <div className="relative shrink-0">
-                  <Avatar className="h-9 w-9">
+                  <Avatar className="h-8 w-8">
                     {c.fotoUrl && <AvatarImage src={c.fotoUrl} alt={c.nomeContato ?? c.telefone} className="object-cover" />}
-                    <AvatarFallback>{(c.nomeContato ?? c.telefone).slice(0, 2).toUpperCase()}</AvatarFallback>
+                    <AvatarFallback className="text-xs">{(c.nomeContato ?? c.telefone).slice(0, 2).toUpperCase()}</AvatarFallback>
                   </Avatar>
                   <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-background ${statusDotClass(c.status)}`} />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="font-medium text-sm truncate">{c.nomeContato || c.telefone}</span>
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <div className="flex items-center gap-1">
+                    <span className="font-medium text-xs truncate min-w-0 flex-1">{c.nomeContato || c.telefone}</span>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{formatHora(c.ultimaMensagemEm)}</span>
+                  </div>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <p className="text-[11px] text-muted-foreground truncate min-w-0 flex-1">{c.ultimaMensagemTexto || "—"}</p>
                     {c.naoLidas > 0 && (
-                      <Badge className="h-5 min-w-5 px-1.5 justify-center">{c.naoLidas}</Badge>
+                      <span className="shrink-0 bg-primary text-primary-foreground text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                        {c.naoLidas > 9 ? "9+" : c.naoLidas}
+                      </span>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground truncate mt-0.5">{c.ultimaMensagemTexto || "—"}</p>
                   {c.isLidPendente === "true" && (
                     <div className="flex gap-1 mt-1 flex-wrap">
                       <Badge variant="outline" className="text-[10px] py-0 border-orange-300 text-orange-700 bg-orange-50">
