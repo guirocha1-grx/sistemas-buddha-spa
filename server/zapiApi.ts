@@ -117,6 +117,12 @@ export const zapiApi = {
    * WhatsApp", que chega sem o telefone real) para o número de verdade.
    * Retorna null se a Z-API não conseguir resolver — nesse caso a
    * conversa continua identificada só pelo lid.
+   *
+   * Não usa zapiGet aqui de propósito: zapiGet engole qualquer resposta
+   * não-2xx e devolve null sem dizer por quê (404 de contato ainda não
+   * sincronizado do lado da Z-API vs. 401 de credencial errada vs. 500
+   * são causas bem diferentes) — loga status+corpo em cada caminho de
+   * falha pra dar pra diagnosticar direto no log do servidor.
    */
   async resolveLid(
     instanceId: string,
@@ -124,12 +130,31 @@ export const zapiApi = {
     clientToken: string,
     lid: string,
   ): Promise<{ phone: string; name: string; imgUrl?: string } | null> {
-    const data = await zapiGet<any>(instanceId, token, clientToken, `/contacts/${encodeURIComponent(lid)}`);
+    const response = await fetch(buildUrl(instanceId, token, `/contacts/${encodeURIComponent(lid)}`), {
+      method: "GET",
+      headers: { "Client-Token": clientToken },
+    });
+    if (!response.ok) {
+      const corpo = await response.text().catch(() => "");
+      console.error(`[Z-API resolveLid] ${lid} → HTTP ${response.status}: ${corpo.slice(0, 300)}`);
+      return null;
+    }
+    const data = await response.json() as any;
     const rawPhone = data?.phone;
-    if (!rawPhone || typeof rawPhone !== "string" || rawPhone.includes("@")) return null;
+    if (!rawPhone || typeof rawPhone !== "string" || rawPhone.includes("@")) {
+      console.warn(`[Z-API resolveLid] ${lid} → resposta sem phone válido: ${JSON.stringify(data).slice(0, 300)}`);
+      return null;
+    }
     const digits = rawPhone.replace(/\D/g, "");
-    if (digits.length < 10) return null;
-    if (rawPhone === lid || digits === lid.replace(/\D/g, "")) return null;
+    if (digits.length < 10) {
+      console.warn(`[Z-API resolveLid] ${lid} → phone retornado muito curto: ${rawPhone}`);
+      return null;
+    }
+    if (rawPhone === lid || digits === lid.replace(/\D/g, "")) {
+      console.warn(`[Z-API resolveLid] ${lid} → phone retornado é o próprio lid, não resolvido`);
+      return null;
+    }
+    console.log(`[Z-API resolveLid] ${lid} → ${rawPhone} (${data.name})`);
     return { phone: rawPhone, name: data.name || data.short || "", imgUrl: data.imgUrl };
   },
 
