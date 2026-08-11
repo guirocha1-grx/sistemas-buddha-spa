@@ -1,6 +1,7 @@
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { globalSyncReducer, initialGlobalSyncState } from "@/lib/globalSyncController";
 import { buildGlobalSyncPlan, getSyncProgress, getSyncSummary, type SyncStep, type SyncStatus } from "@/lib/globalSyncPlan";
+import { runGlobalSyncQueue } from "@/lib/globalSyncRunner";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { AlertCircle, CheckCircle2, ChevronDown, CircleAlert, Loader2, Maximize2, Minimize2, RefreshCw, X, XCircle } from "lucide-react";
@@ -14,10 +15,9 @@ function currentPeriod() {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
   const fim = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const inicioItens = new Date(now);
-  inicioItens.setDate(now.getDate() - 6);
   return {
-    inicio: `${inicioItens.getFullYear()}-${pad(inicioItens.getMonth() + 1)}-${pad(inicioItens.getDate())}`,
+    // Mesmo período padrão da aba de Extratos: mês vigente até hoje.
+    inicio: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`,
     fim,
     ano: now.getFullYear(),
     mes: now.getMonth() + 1,
@@ -90,11 +90,7 @@ export default function GlobalSyncCenter() {
       }
     };
 
-    // A API do extrato Mercado Pago pode levar até dois minutos para disponibilizar
-    // o relatório. Disparamos as duas unidades de imediato e seguimos com o roteiro.
-    const mercadoPagoTasks = selectedSteps.filter((step) => step.kind === "mercadoPagoConta").map(runStep);
-    for (const step of selectedSteps.filter((item) => item.kind !== "mercadoPagoConta")) await runStep(step);
-    await Promise.all(mercadoPagoTasks);
+    await runGlobalSyncQueue(selectedSteps, runStep);
     await Promise.all([
       utils.financeiro.dashboard.invalidate(), utils.financeiro.dashboardConsolidado.invalidate(), utils.inter.extratos.invalidate(),
       utils.adquirentes.vendas.invalidate(), utils.comandaRecepcao.resumo.invalidate(), utils.comandaRecepcao.itensDetalhe.invalidate(),
@@ -139,7 +135,7 @@ export default function GlobalSyncCenter() {
             {finished && <section className="rounded-xl border border-primary/20 bg-primary/5 p-4"><div className="flex gap-3">{summary.error > 0 ? <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" /> : <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-600" />}<div><h3 className="font-semibold">Sincronização finalizada</h3><p className="mt-1 text-sm text-muted-foreground">{summary.success} etapa(s) concluída(s) com sucesso, {summary.error} com erro e {summary.skipped} não configurada(s).</p></div></div></section>}
           </div>}
         </ScrollArea>
-        <div className="flex flex-col-reverse gap-3 border-t bg-muted/20 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-muted-foreground">{steps.length === 0 ? "Nenhuma operação foi iniciada." : finished ? "Os dados das telas serão atualizados automaticamente." : "Os extratos Mercado Pago são iniciados em paralelo; as demais etapas seguem em sequência."}</p><div className="flex flex-wrap gap-2">{finished && <Button variant="outline" onClick={close}><X className="mr-1.5 h-4 w-4" />Fechar</Button>}{!isRunning && !finished && <Button onClick={start} disabled={loading || unidades.length === 0}><RefreshCw className="mr-1.5 h-4 w-4" />Iniciar sincronização</Button>}{finished && summary.error > 0 && <Button variant="outline" onClick={retryErrors}><RefreshCw className="mr-1.5 h-4 w-4" />Sincronizar erros</Button>}{finished && <Button onClick={start}><RefreshCw className="mr-1.5 h-4 w-4" />Sincronizar novamente</Button>}</div></div>
+        <div className="flex flex-col-reverse gap-3 border-t bg-muted/20 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-muted-foreground">{steps.length === 0 ? "Nenhuma operação foi iniciada." : finished ? "Os dados das telas serão atualizados automaticamente." : "Mercado Pago é iniciado em paralelo; os demais itens entram em cadência própria, sem aguardar o relatório."}</p><div className="flex flex-wrap gap-2">{finished && <Button variant="outline" onClick={close}><X className="mr-1.5 h-4 w-4" />Fechar</Button>}{!isRunning && !finished && <Button onClick={start} disabled={loading || unidades.length === 0}><RefreshCw className="mr-1.5 h-4 w-4" />Iniciar sincronização</Button>}{finished && summary.error > 0 && <Button variant="outline" onClick={retryErrors}><RefreshCw className="mr-1.5 h-4 w-4" />Sincronizar erros</Button>}{finished && <Button onClick={start}><RefreshCw className="mr-1.5 h-4 w-4" />Sincronizar novamente</Button>}</div></div>
       </DialogContent>
     </Dialog>
     {isMinimized && <button onClick={() => dispatch({ type: "restore" })} className="fixed bottom-5 right-5 z-50 w-[min(23rem,calc(100vw-2.5rem))] rounded-2xl border bg-card p-3 text-left shadow-xl transition-transform duration-200 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary" aria-label="Restaurar acompanhamento da sincronização"><div className="flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Loader2 className="h-4 w-4 animate-spin" /></span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-3 text-sm font-semibold"><span className="truncate">Sincronização em andamento</span><span className="text-primary">{progress}%</span></span><span className="mt-0.5 block truncate text-xs text-muted-foreground">{current ? `${current.unidadeNome} · ${current.label}` : "Preparando próximas etapas"}</span></span><Maximize2 className="h-4 w-4 shrink-0 text-muted-foreground" /></div><Progress value={progress} className="mt-3 h-1.5" /></button>}
