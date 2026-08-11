@@ -339,7 +339,7 @@ export default function Extratos() {
 
   const sincronizarMpMutation = trpc.contas.sincronizarMercadoPago.useMutation({
     onSuccess: (data) => {
-      toast.success(`Sincronização concluída: ${data.totalInseridos} nova(s) transação(ões) de ${data.totalNoCsv} no relatório.`);
+      toast.success(`Sincronização concluída: ${data.totalInseridos} nova(s) transação(ões) de ${data.totalNoCsv} no relatório. Cruzamento SOURCE_ID: ${data.bateramSourceId}/${data.totalNoCsv} linhas identificadas.`);
       extratosQuery.refetch();
     },
     onError: (err) => toast.error(`Erro na sincronização: ${err.message}`),

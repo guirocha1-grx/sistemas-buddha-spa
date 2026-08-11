@@ -192,6 +192,12 @@ export interface LinhaExtratoMp {
   valor: string;
   titulo?: string;
   descricao?: string;
+  // SOURCE_ID cru (sem o prefixo "mp:" nem a data) — candidato a bater
+  // com o id de pagamento (adquirenteVendas.idTransacaoExterno), pra
+  // enriquecer a descrição da liquidação com o tipo de venda de origem.
+  // Ainda não confirmado com dado real — ver diagnóstico em
+  // contas.sincronizarMercadoPago.
+  sourceId?: string;
 }
 
 /**
@@ -259,6 +265,7 @@ export function parseRelatorioLiberadoMp(texto: string): LinhaExtratoMp[] {
       valor: valor.toFixed(2),
       titulo: iTipo !== -1 ? campos[iTipo] : undefined,
       descricao: iDescricao !== -1 ? campos[iDescricao] : undefined,
+      sourceId: iSourceId !== -1 ? campos[iSourceId] : undefined,
     });
   }
   return linhasDados;

@@ -595,6 +595,23 @@ export function normalizarTipoAdquirente(
   return t || m || "desconhecido";
 }
 
+const LABEL_TIPO_ADQUIRENTE: Record<string, string> = {
+  pix: "Pix",
+  cartao_credito: "Crédito",
+  cartao_debito: "Débito",
+  saldo_mercado_pago: "Saldo Mercado Pago",
+};
+
+/**
+ * Rótulo amigável de um tipo já normalizado (normalizarTipoAdquirente)
+ * — usado pra enriquecer a Descrição da liquidação na Conta Mercado
+ * Pago (que só sabe "payment" genérico) com o tipo de venda real,
+ * quando dá pra cruzar via SOURCE_ID/idTransacaoExterno.
+ */
+export function labelTipoAdquirente(tipoNormalizado: string): string {
+  return LABEL_TIPO_ADQUIRENTE[tipoNormalizado] ?? tipoNormalizado;
+}
+
 /**
  * Classifica o tipo (já normalizado pra Mercado Pago via
  * normalizarTipoAdquirente, ou texto livre do CSV Interpag/Granito —

@@ -1602,10 +1602,43 @@ Diretrizes:
         }
         const linhasCsv = parseRelatorioLiberadoMp(csvTexto);
 
+        // Diagnóstico: confirma (ou não) se SOURCE_ID do relatório de
+        // liquidação bate com idTransacaoExterno das vendas conhecidas
+        // (adquirenteVendas) — ainda não validado com dado real. Janela
+        // alargada 7 dias antes do período pedido porque a liquidação
+        // pode cair depois da venda (money_release_date != date_approved).
+        // Só enriquece a Descrição quando o match é exato — sem match,
+        // fica como já era (RECORD_TYPE genérico), nunca um chute.
+        const seteDiasAntes = (data: string) => {
+          const d = new Date(`${data}T00:00:00Z`);
+          d.setUTCDate(d.getUTCDate() - 7);
+          return d.toISOString().slice(0, 10);
+        };
+        const vendasDoPeriodo = await db.listAdquirenteVendas(
+          input.unidadeId,
+          seteDiasAntes(input.dataInicio),
+          input.dataFim,
+          "mercadopago",
+        );
+        const tipoPorIdTransacao = new Map(
+          vendasDoPeriodo.filter((v) => v.idTransacaoExterno).map((v) => [v.idTransacaoExterno!, v.tipo]),
+        );
+        let bateram = 0;
+        const amostraMatch: string[] = [];
+        const linhasEnriquecidas = linhasCsv.map((l) => {
+          const tipoVenda = l.sourceId ? tipoPorIdTransacao.get(l.sourceId) : undefined;
+          if (!tipoVenda) return l;
+          bateram++;
+          if (amostraMatch.length < 5) {
+            amostraMatch.push(`SOURCE_ID=${l.sourceId} → tipo venda="${tipoVenda}" (RECORD_TYPE original="${l.tipoTransacao}")`);
+          }
+          return { ...l, titulo: `Liquidação · ${db.labelTipoAdquirente(tipoVenda)}` };
+        });
+
         const contaMp = await db.getOrCreateContaMercadoPago(input.unidadeId);
         const inseridos = await db.upsertInterExtratos(
           input.unidadeId,
-          linhasCsv.map((l) => ({
+          linhasEnriquecidas.map((l) => ({
             unidadeId: input.unidadeId,
             contaId: contaMp?.id,
             idTransacao: l.idTransacao,
@@ -1619,15 +1652,17 @@ Diretrizes:
           })),
         );
 
+        const diagnosticoSourceId = `Cruzamento SOURCE_ID x idTransacaoExterno: ${bateram}/${linhasCsv.length} linhas bateram com vendas conhecidas (janela: ${seteDiasAntes(input.dataInicio)} a ${input.dataFim}, ${vendasDoPeriodo.length} vendas MP no período).${amostraMatch.length ? ` Amostra: ${amostraMatch.join(" | ")}` : ""}`;
+
         await db.createSyncLog({
           unidadeId: input.unidadeId,
           tipo: "mercadopago_extrato",
           status: "sucesso",
           registrosProcessados: inseridos,
-          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Linhas no CSV: ${linhasCsv.length}. Novos: ${inseridos}. Amostra CSV (500 chars): ${csvTexto.slice(0, 500)}`,
+          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Linhas no CSV: ${linhasCsv.length}. Novos: ${inseridos}. ${diagnosticoSourceId} Amostra CSV (500 chars): ${csvTexto.slice(0, 500)}`,
         });
 
-        return { success: true, totalInseridos: inseridos, totalNoCsv: linhasCsv.length };
+        return { success: true, totalInseridos: inseridos, totalNoCsv: linhasCsv.length, bateramSourceId: bateram };
       } catch (error: any) {
         await db.createSyncLog({
           unidadeId: input.unidadeId,
