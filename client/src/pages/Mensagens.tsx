@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -345,7 +344,7 @@ export default function Mensagens() {
             </div>
           </div>
 
-          <ScrollArea className="flex-1 min-h-0 w-full overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {carregandoConversas && (
               <div className="p-3 space-y-2">
                 {[...Array(5)].map((_, i) => (
@@ -362,7 +361,7 @@ export default function Mensagens() {
               <button
                 key={c.id}
                 onClick={() => setConversaSelecionadaId(c.id)}
-                className={`w-full min-w-0 text-left pl-3 pr-4 py-2.5 border-b hover:bg-muted/50 transition-colors flex gap-2 items-start overflow-hidden ${
+                className={`w-full min-w-0 text-left px-3 py-2.5 border-b hover:bg-muted/50 transition-colors flex gap-2 items-start overflow-hidden ${
                   conversaSelecionadaId === c.id ? "bg-muted" : ""
                 }`}
               >
@@ -396,7 +395,7 @@ export default function Mensagens() {
                 </div>
               </button>
             ))}
-          </ScrollArea>
+          </div>
         </div>
 
         {/* Coluna 2: Thread — tela cheia no mobile só quando uma conversa está aberta */}
@@ -468,8 +467,7 @@ export default function Mensagens() {
                 </div>
               )}
 
-              <div className="flex-1 min-h-0 overflow-hidden">
-              <ScrollArea className="h-full p-4">
+              <div className="flex-1 min-h-0 overflow-y-auto p-4">
                 {carregandoMensagens && (
                   <div className="text-sm text-muted-foreground flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" /> Carregando mensagens...
@@ -527,7 +525,6 @@ export default function Mensagens() {
                   })}
                   <div ref={bottomRef} />
                 </div>
-              </ScrollArea>
               </div>
 
               <div className="p-3 border-t flex items-end gap-2">
@@ -568,7 +565,7 @@ export default function Mensagens() {
               Selecione uma conversa para ver os detalhes
             </div>
           ) : (
-            <ScrollArea className="flex-1">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               <div className="p-4 space-y-4">
                 <div className="text-center">
                   <Avatar className="h-14 w-14 mx-auto mb-2">
@@ -705,7 +702,7 @@ export default function Mensagens() {
                   </div>
                 </div>
               </div>
-            </ScrollArea>
+            </div>
           )}
         </div>
       </Card>
