@@ -591,6 +591,15 @@ Diretrizes:
         return db.listInboxConversas(input);
       }),
 
+      abrirPorCliente: protectedProcedure.input(z.object({
+        clienteId: z.number(),
+        unidadeId: z.number(),
+      })).mutation(async ({ input }) => {
+        const conversaId = await db.abrirInboxPorCliente(input);
+        if (!conversaId) throw new Error("Não foi possível abrir o Inbox");
+        return { conversaId };
+      }),
+
       qrCode: protectedProcedure.input(z.object({
         unidadeId: z.number(),
       })).query(async ({ input }) => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -19,6 +19,8 @@ import {
   Pencil, Check, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
+import { telefonesCorrespondem } from "@shared/telefone";
 
 function formatHora(data: string | Date | null | undefined) {
   if (!data) return "";
@@ -77,6 +79,7 @@ function fileToBase64(file: File): Promise<string> {
 export default function Mensagens() {
   const { unidadeSelecionada } = useUnidade();
   const { user } = useAuth();
+  const [location] = useLocation();
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState<"todos" | "aberta" | "encerrada">("todos");
   const [conversaSelecionadaId, setConversaSelecionadaId] = useState<number | null>(null);
@@ -110,6 +113,17 @@ export default function Mensagens() {
     { conversaId: conversaSelecionadaId ?? 0 },
     { enabled: !!conversaSelecionadaId, refetchInterval: 8000 },
   );
+
+  const conversaIdSolicitada = useMemo(() => {
+    const query = location.split("?")[1] ?? "";
+    const valor = Number(new URLSearchParams(query).get("conversaId"));
+    return Number.isInteger(valor) && valor > 0 ? valor : null;
+  }, [location]);
+
+  const telefoneSolicitado = useMemo(() => {
+    const query = location.split("?")[1] ?? "";
+    return new URLSearchParams(query).get("telefone")?.trim() ?? "";
+  }, [location]);
 
   const { data: mensageriaStatus } = trpc.mensageria.status.useQuery();
   const setMensageriaStatus = trpc.mensageria.setStatus.useMutation({
@@ -181,6 +195,21 @@ export default function Mensagens() {
     },
     onError: (error) => toast.error(error.message),
   });
+
+  useEffect(() => {
+    if (conversaIdSolicitada) {
+      setBusca("");
+      setConversaSelecionadaId(conversaIdSolicitada);
+      return;
+    }
+    if (!telefoneSolicitado) return;
+    setBusca(telefoneSolicitado);
+    const conversa = (conversas ?? []).find((item) => telefonesCorrespondem(item.telefone, telefoneSolicitado));
+    if (conversa) {
+      setConversaSelecionadaId(conversa.id);
+      setBusca("");
+    }
+  }, [conversas, conversaIdSolicitada, telefoneSolicitado]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

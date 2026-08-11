@@ -3,6 +3,7 @@ import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTab
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
+import { normalizarTelefone } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
@@ -411,7 +412,7 @@ export async function buscarClienteIdPorTelefone(telefoneWhatsapp: string): Prom
   const digitos = telefoneWhatsapp.replace(/\D/g, "");
   if (digitos.length < 8) return undefined; // curto demais pra confiar (ex.: @lid não resolvido)
   const semDDI = digitos.replace(/^55/, "");
-  const normalizar = (coluna: any) => sql`REPLACE(REPLACE(REPLACE(REPLACE(${coluna}, '+', ''), '-', ''), ' ', ''), '(', '')`;
+  const normalizar = (coluna: any) => sql`REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${coluna}, '+', ''), '-', ''), ' ', ''), '(', ''), ')', ''), '.', '')`;
   const colunas = [clientes.celular, clientes.celular2, clientes.telefone];
   const condicoes = colunas.flatMap((coluna) => [
     sql`${normalizar(coluna)} = ${digitos}`,
@@ -494,6 +495,69 @@ export async function upsertInboxConversa(params: {
     naoLidas: params.incrementarNaoLidas ? 1 : 0,
   };
   const result = await db.insert(inboxConversas).values(insertValues).$returningId();
+  return result[0]?.id;
+}
+
+/**
+ * Localiza ou cria uma conversa Z-API para um cliente da base local.
+ * A busca normaliza DDI e formatação para evitar duplicatas quando o
+ * cadastro usa telefone formatado e o WhatsApp usa apenas dígitos.
+ */
+export async function abrirInboxPorCliente(params: { clienteId: number; unidadeId: number }, databaseOverride?: any) {
+  const database = databaseOverride ?? await getDb();
+  if (!database) return undefined;
+
+  const clienteRows = await database.select({
+    id: clientes.id,
+    nome: clientes.nome,
+    celular: clientes.celular,
+    celular2: clientes.celular2,
+    telefone: clientes.telefone,
+  }).from(clientes).where(eq(clientes.id, params.clienteId)).limit(1);
+  const cliente = clienteRows[0];
+  if (!cliente) throw new Error("Cliente não encontrado");
+
+  const telefoneOrigem = cliente.celular ?? cliente.celular2 ?? cliente.telefone;
+  const telefone = normalizarTelefone(telefoneOrigem);
+  if (telefone.length < 8) throw new Error("Este cliente não possui telefone ou celular válido");
+
+  const semDdi = telefone.replace(/^55/, "");
+  const normalizar = (coluna: any) => sql`REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${coluna}, '+', ''), '-', ''), ' ', ''), '(', ''), ')', ''), '.', '')`;
+  const telefoneCondicao = or(
+    sql`${normalizar(inboxConversas.telefone)} = ${telefone}`,
+    sql`${normalizar(inboxConversas.telefone)} = ${semDdi}`,
+    sql`${normalizar(inboxConversas.telefone)} = ${`55${semDdi}`}`,
+  );
+  const existente = await database.select({ id: inboxConversas.id }).from(inboxConversas)
+    .where(and(
+      eq(inboxConversas.canal, "zapi"),
+      or(eq(inboxConversas.unidadeId, params.unidadeId), isNull(inboxConversas.unidadeId)),
+      telefoneCondicao,
+    ))
+    .orderBy(desc(inboxConversas.ultimaMensagemEm))
+    .limit(1);
+
+  if (existente[0]) {
+    await database.update(inboxConversas).set({
+      clienteId: cliente.id,
+      nomeContato: cliente.nome,
+    }).where(eq(inboxConversas.id, existente[0].id));
+    return existente[0].id;
+  }
+
+  const insertValues: InsertInboxConversa = {
+    unidadeId: params.unidadeId,
+    canal: "zapi",
+    telefone,
+    chatLid: null,
+    isLidPendente: "false",
+    nomeContato: cliente.nome,
+    clienteId: cliente.id,
+    ultimaMensagemEm: new Date(),
+    ultimaMensagemTexto: "",
+    naoLidas: 0,
+  };
+  const result = await database.insert(inboxConversas).values(insertValues).$returningId();
   return result[0]?.id;
 }
 

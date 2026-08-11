@@ -91,3 +91,16 @@
 - [x] Reaplicar redução de 25% na largura do menu lateral sobre o commit c166b91
 - [x] Documentar explicitamente a base c166b91 recuperada para o Menu de Sincronização e o checkpoint b0959a15 aplicado sobre ela
 - [x] Ajustar a largura padrão da sidebar para 220px conforme o print de referência
+- [x] Adicionar ícone/atalho de WhatsApp em cada linha da tela de Clientes para abrir o Inbox
+- [x] Criar procedure no backend para localizar ou criar conversa do Inbox a partir do cliente/telefone
+- [x] Fazer o atalho de Clientes abrir o Inbox com a conversa criada ou selecionada
+- [x] Validar o fluxo Clientes → Inbox com e sem histórico prévio
+- [x] Testar o fluxo Clientes → Inbox para cliente com conversa existente e registrar a seleção correta
+- [x] Testar o fluxo Clientes → Inbox para cliente sem histórico e registrar a criação da conversa
+- [x] Adicionar teste automatizado cobrindo localizar conversa existente e criar nova conversa
+- [x] Validar na UI o clique do atalho de Clientes até a conversa existente no Inbox
+- [x] Validar na UI o clique do atalho de Clientes até a criação e abertura de conversa nova no Inbox
+- [x] Adicionar teste funcional/UI automatizado do fluxo Clientes → Inbox cobrindo clique, navegação e abertura da conversa
+- [x] Testar renderização de Clientes.tsx com clique no ícone e verificar a URL real do Inbox
+- [x] Testar Mensagens.tsx com conversaId na URL e verificar a seleção da conversa
+- [x] Salvar checkpoint após a validação completa do fluxo Clientes → Inbox

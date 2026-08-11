@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useEffect } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
@@ -9,8 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, Users, Loader2, Phone, Mail, Calendar, Upload, UserCheck, IdCard, ArrowUp, ArrowDown, ArrowUpDown, X } from "lucide-react";
+import { Search, Users, Loader2, Phone, Mail, Calendar, Upload, UserCheck, IdCard, ArrowUp, ArrowDown, ArrowUpDown, X, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
+import { rotaInboxConversa } from "@shared/inboxNavigation";
+import { ClienteWhatsAppButton } from "@/components/ClienteWhatsAppButton";
 
 function fileParaBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -133,6 +136,7 @@ function SortTh({ col, label, orderBy, orderDir, onSort, className }: {
 
 export default function Clientes() {
   const { unidadeSelecionada } = useUnidade();
+  const [, setLocation] = useLocation();
   const [searchValue, setSearchValue] = useState("");
   const [selectedCliente, setSelectedCliente] = useState<any>(null);
   const [orderBy, setOrderBy] = useState<OrderCol>("nome");
@@ -246,6 +250,9 @@ export default function Clientes() {
                   <TableRow>
                     <SortTh col="nome" label="Cliente" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
                     <SortTh col="celular" label="Contato" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
+                    <TableHead className="w-12 text-center" aria-label="WhatsApp">
+                      <MessageCircle className="mx-auto h-4 w-4 text-emerald-600" />
+                    </TableHead>
                     <SortTh col="cpf" label="CPF" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
                     <SortTh col="dataNascimento" label="Nascimento" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
                     <SortTh col="qtdAtendimentosFinalizados" label="Visitas" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} className="text-right" />
@@ -280,6 +287,13 @@ export default function Clientes() {
                                 </p>
                               )}
                             </div>
+                          </TableCell>
+                          <TableCell className="py-2 text-center">
+                              <ClienteWhatsAppButton
+                                cliente={cliente}
+                                unidadeId={unidadeSelecionada?.id}
+                                onOpenInbox={(conversaId) => setLocation(rotaInboxConversa(conversaId))}
+                              />
                           </TableCell>
                           <TableCell className="py-2 text-xs whitespace-nowrap">{cliente.cpf || "—"}</TableCell>
                           <TableCell className="py-2 text-xs whitespace-nowrap">{fmtDataBr(cliente.dataNascimento)}</TableCell>
