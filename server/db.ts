@@ -1046,16 +1046,24 @@ export async function getOrCreateContaMercadoPago(unidadeId: number) {
  * espírito do getOrCreateContaInter, sem precisar de seed manual. Não
  * recria se o nome já existir (o usuário pode renomear/excluir depois).
  */
-const CONTAS_PADRAO = ["Sicredi", "Mercado Pago"];
+// "Sicredi" precisa nascer com tipo "sicredi_oauth" — senão o botão
+// "Sincronizar com Sicredi" (gated em contaAtual.tipo === "sicredi_oauth")
+// nunca aparece, e só quem promove o tipo é getOrCreateContaSicredi,
+// chamado de dentro do próprio sync que o botão dispara: ovo-e-galinha.
+// "Mercado Pago" fica "manual" mesmo — o botão dela checa por nome, não tipo.
+const CONTAS_PADRAO: { nome: string; tipo: "manual" | "sicredi_oauth" }[] = [
+  { nome: "Sicredi", tipo: "sicredi_oauth" },
+  { nome: "Mercado Pago", tipo: "manual" },
+];
 
 export async function ensureContasPadrao(unidadeId: number) {
   const db = await getDb();
   if (!db) return;
   const existentes = await db.select({ nome: contas.nome }).from(contas).where(eq(contas.unidadeId, unidadeId));
   const nomesExistentes = new Set(existentes.map((c) => c.nome));
-  for (const nome of CONTAS_PADRAO) {
+  for (const { nome, tipo } of CONTAS_PADRAO) {
     if (!nomesExistentes.has(nome)) {
-      const insertValues: InsertConta = { unidadeId, nome, tipo: "manual" };
+      const insertValues: InsertConta = { unidadeId, nome, tipo };
       await db.insert(contas).values(insertValues);
     }
   }
