@@ -2208,7 +2208,7 @@ Diretrizes:
               adquirente: "mercadopago" as const,
               idTransacaoExterno: String(p.id),
               dataHora: (p.date_approved ?? "").replace("T", " ").slice(0, 19),
-              tipo: p.payment_type_id,
+              tipo: db.normalizarTipoAdquirente(p.payment_type_id, p.payment_method_id),
               status: p.status,
               parcela: p.installments ? `1/${p.installments}` : undefined,
               bandeira: p.payment_method_id,

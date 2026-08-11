@@ -568,12 +568,40 @@ export async function upsertInterExtratos(
  * cada parcela de uma venda parcelada (só o campo parcela muda).
  */
 /**
- * Classifica o tipo de uma venda de adquirente (payment_type_id do
- * Mercado Pago — em inglês, ex.: "debit_card" — ou texto livre do CSV
- * Interpag/Granito — em português, ex.: "155 - DÉBITO COBRANÇA
- * REFERENTE..." — confirmado num CSV real) numa das 3 Descrições de
- * receita "de máquina". Pix direto no banco (não pela maquininha) é
- * tratado à parte, via regra de texto "Pix recebido" em inter_extratos.
+ * Traduz o payment_type_id/payment_method_id bruto do Mercado Pago (em
+ * inglês, ex.: "bank_transfer"/"pix", "credit_card", "account_money")
+ * pro rótulo canônico em português usado na coluna Tipo e na
+ * classificação de Descrição DRE. Bug real encontrado: Pix do Mercado
+ * Pago vem com payment_type_id = "bank_transfer" — a palavra "pix" só
+ * aparece no payment_method_id — checar só o primeiro deixava toda
+ * venda Pix como Pendente. `account_money` (saldo interno Mercado
+ * Pago, sem taxa) vira "saldo_mercado_pago"; por decisão do usuário
+ * entra no mesmo balde de Pix na Comanda Recepção (mesmo comportamento
+ * de caixa: instantâneo, sem taxa), mas mantém rótulo próprio na
+ * coluna Tipo pra não esconder a origem real do dado. Tipo não
+ * reconhecido (ex.: "ticket"/boleto) passa como veio, em minúsculo —
+ * fica Pendente na Descrição, mas não some da tela.
+ */
+export function normalizarTipoAdquirente(
+  paymentTypeId: string | null | undefined,
+  paymentMethodId: string | null | undefined,
+): string {
+  const t = (paymentTypeId || "").toLowerCase();
+  const m = (paymentMethodId || "").toLowerCase();
+  if (t === "bank_transfer" || m === "pix") return "pix";
+  if (t === "account_money" || m === "account_money") return "saldo_mercado_pago";
+  if (t === "credit_card" || m.includes("credit")) return "cartao_credito";
+  if (t === "debit_card" || m.includes("debit")) return "cartao_debito";
+  return t || m || "desconhecido";
+}
+
+/**
+ * Classifica o tipo (já normalizado pra Mercado Pago via
+ * normalizarTipoAdquirente, ou texto livre do CSV Interpag/Granito —
+ * em português, ex.: "155 - DÉBITO COBRANÇA REFERENTE..." — confirmado
+ * num CSV real) numa das Descrições de receita "de máquina". Pix
+ * direto no banco (não pela maquininha) é tratado à parte, via regra
+ * de texto "Pix recebido" em inter_extratos.
  *
  * Bug real encontrado: "débito"/"crédito" (com acento) não batem no
  * substring em inglês "debit"/"credit" — normaliza removendo acentos
@@ -583,7 +611,7 @@ export async function upsertInterExtratos(
  */
 function chaveDescricaoAdquirente(tipo: string | null | undefined): string | null {
   const t = (tipo || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  if (t.includes("pix")) return CHAVE_RECEITA_PIX;
+  if (t.includes("pix") || t.includes("saldo_mercado_pago")) return CHAVE_RECEITA_PIX;
   if (t.includes("debit")) return CHAVE_RECEITA_CARTAO_DEBITO;
   if (t.includes("credit")) return CHAVE_RECEITA_CARTAO_CREDITO;
   return null;
