@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { eq, desc, and, gte, lte, isNull, like, ne, inArray, lt } from "drizzle-orm";
+import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
@@ -320,13 +320,24 @@ export async function mensageriaEstaAtiva(): Promise<boolean> {
 
 // ===== Inbox (Mensagens) =====
 
+/**
+ * LEFT JOIN com clientes (mesmo espírito do mobai-crm): o Inbox não
+ * deve mostrar só o que o WhatsApp manda como nome — quando a conversa
+ * já está vinculada a um cliente Belle (clienteId), o nome do cadastro
+ * tem prioridade. O vínculo em si é feito em buscarClienteIdPorTelefone,
+ * chamado no webhook (mensagem nova) e em getInboxConversaById (ao abrir
+ * uma conversa antiga que ainda não tinha sido linkada).
+ */
 export async function listInboxConversas(filtros: { unidadeId?: number; canal?: "zapi" | "buddha_mkt" }) {
   const db = await getDb();
   if (!db) return [];
   const condicoes = [];
   if (filtros.unidadeId !== undefined) condicoes.push(eq(inboxConversas.unidadeId, filtros.unidadeId));
   if (filtros.canal !== undefined) condicoes.push(eq(inboxConversas.canal, filtros.canal));
-  const query = db.select().from(inboxConversas).orderBy(desc(inboxConversas.ultimaMensagemEm));
+  const query = db.select({ ...getTableColumns(inboxConversas), clienteNome: clientes.nome })
+    .from(inboxConversas)
+    .leftJoin(clientes, eq(inboxConversas.clienteId, clientes.id))
+    .orderBy(desc(inboxConversas.ultimaMensagemEm));
   if (condicoes.length === 0) return query;
   return query.where(and(...condicoes));
 }
@@ -335,7 +346,23 @@ export async function getInboxConversaById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(inboxConversas).where(eq(inboxConversas.id, id)).limit(1);
-  return result[0];
+  const conversa = result[0];
+  if (!conversa) return undefined;
+
+  // Linka com Clientes agora, se ainda não tinha (conversa criada antes
+  // desse recurso, ou o match não bateu na hora da mensagem original).
+  if (!conversa.clienteId && conversa.telefone) {
+    const clienteId = await buscarClienteIdPorTelefone(conversa.telefone);
+    if (clienteId) {
+      await db.update(inboxConversas).set({ clienteId }).where(and(eq(inboxConversas.id, id), isNull(inboxConversas.clienteId)));
+      conversa.clienteId = clienteId;
+    }
+  }
+
+  const clienteRows = conversa.clienteId
+    ? await db.select({ nome: clientes.nome }).from(clientes).where(eq(clientes.id, conversa.clienteId)).limit(1)
+    : [];
+  return { ...conversa, clienteNome: clienteRows[0]?.nome };
 }
 
 export async function marcarInboxConversaLida(id: number) {
@@ -370,6 +397,32 @@ export async function definirEtiquetasInbox(id: number, etiquetas: string[]) {
 }
 
 /**
+ * Acha o cliente (Belle) cujo celular/celular2/telefone bate com um
+ * telefone de WhatsApp — mesma ideia do mobai-crm (Inbox deve puxar o
+ * nome de Clientes, não ficar só com o que o WhatsApp manda). Só linka
+ * em match exato e único: se mais de 1 cliente bater no mesmo número
+ * (duplicata de cadastro, por ex.), não escolhe nenhum — certeza, não
+ * achismo. `clientes` não tem unidadeId (cadastro é global, com flags
+ * clienteSsu/clienteRbs), então não filtra por unidade aqui.
+ */
+export async function buscarClienteIdPorTelefone(telefoneWhatsapp: string): Promise<number | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const digitos = telefoneWhatsapp.replace(/\D/g, "");
+  if (digitos.length < 8) return undefined; // curto demais pra confiar (ex.: @lid não resolvido)
+  const semDDI = digitos.replace(/^55/, "");
+  const normalizar = (coluna: any) => sql`REPLACE(REPLACE(REPLACE(REPLACE(${coluna}, '+', ''), '-', ''), ' ', ''), '(', '')`;
+  const colunas = [clientes.celular, clientes.celular2, clientes.telefone];
+  const condicoes = colunas.flatMap((coluna) => [
+    sql`${normalizar(coluna)} = ${digitos}`,
+    sql`${normalizar(coluna)} = ${semDDI}`,
+  ]);
+  const resultado = await db.select({ id: clientes.id }).from(clientes).where(or(...condicoes)).limit(2);
+  if (resultado.length !== 1) return undefined;
+  return resultado[0].id;
+}
+
+/**
  * Busca a conversa por (telefone, canal) — se não achar, cria. Usada pelo
  * webhook de entrada e ao iniciar uma conversa manualmente.
  */
@@ -382,6 +435,7 @@ export async function upsertInboxConversa(params: {
   nomeContato?: string;
   ultimaMensagemTexto: string;
   incrementarNaoLidas?: boolean;
+  clienteId?: number;
 }) {
   const db = await getDb();
   if (!db) return undefined;
@@ -415,6 +469,7 @@ export async function upsertInboxConversa(params: {
       telefone: devePromoverTelefone ? params.telefone : existente[0].telefone,
       nomeContato: params.nomeContato ?? existente[0].nomeContato,
       chatLid: params.chatLid ?? existente[0].chatLid,
+      clienteId: existente[0].clienteId ?? params.clienteId,
       isLidPendente: jaResolvido
         ? "false"
         : (params.isLidPendente !== undefined ? (params.isLidPendente ? "true" : "false") : existente[0].isLidPendente),
@@ -433,6 +488,7 @@ export async function upsertInboxConversa(params: {
     chatLid: params.chatLid,
     isLidPendente: params.isLidPendente ? "true" : "false",
     nomeContato: params.nomeContato,
+    clienteId: params.clienteId,
     ultimaMensagemEm: agora,
     ultimaMensagemTexto: params.ultimaMensagemTexto,
     naoLidas: params.incrementarNaoLidas ? 1 : 0,
@@ -449,6 +505,16 @@ export async function upsertInboxConversa(params: {
 export async function unificarInboxConversas(idLid: number, idReal: number) {
   const db = await getDb();
   if (!db) return;
+  // Salva o chatLid da conversa que vai ser apagada na que sobra — sem
+  // isso, a próxima mensagem da mesma pessoa (se a resolução automática
+  // falhar de novo) não acha a conversa real pelo lookup de chatLid e
+  // cria uma duplicata nova, obrigando a unificar de novo pra sempre.
+  const lidConversa = await db.select({ chatLid: inboxConversas.chatLid }).from(inboxConversas)
+    .where(eq(inboxConversas.id, idLid)).limit(1);
+  if (lidConversa[0]?.chatLid) {
+    await db.update(inboxConversas).set({ chatLid: lidConversa[0].chatLid })
+      .where(and(eq(inboxConversas.id, idReal), isNull(inboxConversas.chatLid)));
+  }
   await db.update(inboxMensagens).set({ conversaId: idReal }).where(eq(inboxMensagens.conversaId, idLid));
   await db.delete(inboxConversas).where(eq(inboxConversas.id, idLid));
 }

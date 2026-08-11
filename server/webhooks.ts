@@ -191,6 +191,9 @@ function registerZapiWebhook(app: Express) {
       let ehLid = ehLidBruto;
       let nomeResolvidoPorLid: string | undefined;
 
+      if (ehLidBruto && !(unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken)) {
+        console.warn(`[Webhook Z-API] @lid ${identificadorContato} não resolvido: faltam credenciais Z-API (instanceId/token/clientToken) na unidade ${unidadeId}.`);
+      }
       if (ehLidBruto && unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken) {
         try {
           const resolvido = await zapiApi.resolveLid(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, identificadorContato);
@@ -222,12 +225,19 @@ function registerZapiWebhook(app: Express) {
 
       const resumo = conteudo || (tipo !== "texto" ? `[${tipo}]` : "");
 
+      // Puxa o nome de Clientes (Belle) quando o telefone bate — mesmo
+      // padrão do mobai-crm, pra Inbox não depender só do nome que o
+      // WhatsApp manda. Só tenta quando o número é real (não @lid ainda
+      // não resolvido — número curto/genérico não teria match confiável).
+      const clienteId = ehLid ? undefined : await db.buscarClienteIdPorTelefone(identificadorContato);
+
       const conversaId = await db.upsertInboxConversa({
         unidadeId,
         canal: "zapi",
         telefone: identificadorContato,
         chatLid: payload.chatLid,
         isLidPendente: ehLid,
+        clienteId,
         // "senderName" nesse payload é o nome de quem mandou — só faz
         // sentido atualizar o nome do contato quando é ele mandando
         // (recebida); num fromMe não teria como significar "nome do

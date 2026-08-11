@@ -201,7 +201,7 @@ export default function Mensagens() {
   const conversasFiltradas = (conversas ?? []).filter((c) => {
     if (filtroStatus !== "todos" && c.status !== filtroStatus) return false;
     if (!busca) return true;
-    const alvo = `${c.nomeContato ?? ""} ${c.telefone}`.toLowerCase();
+    const alvo = `${c.clienteNome ?? ""} ${c.nomeContato ?? ""} ${c.telefone}`.toLowerCase();
     return alvo.includes(busca.toLowerCase());
   });
 
@@ -367,14 +367,14 @@ export default function Mensagens() {
               >
                 <div className="relative shrink-0">
                   <Avatar className="h-8 w-8">
-                    {c.fotoUrl && <AvatarImage src={c.fotoUrl} alt={c.nomeContato ?? c.telefone} className="object-cover" />}
-                    <AvatarFallback className="text-xs">{(c.nomeContato ?? c.telefone).slice(0, 2).toUpperCase()}</AvatarFallback>
+                    {c.fotoUrl && <AvatarImage src={c.fotoUrl} alt={c.clienteNome ?? c.nomeContato ?? c.telefone} className="object-cover" />}
+                    <AvatarFallback className="text-xs">{(c.clienteNome ?? c.nomeContato ?? c.telefone).slice(0, 2).toUpperCase()}</AvatarFallback>
                   </Avatar>
                   <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-background ${statusDotClass(c.status)}`} />
                 </div>
                 <div className="min-w-0 flex-1 overflow-hidden">
                   <div className="flex items-center gap-1">
-                    <span className="font-medium text-xs truncate min-w-0 flex-1">{c.nomeContato || c.telefone}</span>
+                    <span className="font-medium text-xs truncate min-w-0 flex-1">{c.clienteNome || c.nomeContato || c.telefone}</span>
                     <span className="text-[10px] text-muted-foreground shrink-0">{formatHora(c.ultimaMensagemEm)}</span>
                   </div>
                   <div className="flex items-center gap-1 mt-0.5">
@@ -419,7 +419,7 @@ export default function Mensagens() {
                   <ArrowLeft size={18} />
                 </button>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm truncate">{conversaSelecionada?.nomeContato || conversaSelecionada?.telefone}</p>
+                  <p className="font-medium text-sm truncate">{conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || conversaSelecionada?.telefone}</p>
                   <p className="text-xs text-muted-foreground">{conversaSelecionada?.telefone}</p>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
@@ -570,10 +570,10 @@ export default function Mensagens() {
                 <div className="text-center">
                   <Avatar className="h-14 w-14 mx-auto mb-2">
                     {conversaSelecionada?.fotoUrl && (
-                      <AvatarImage src={conversaSelecionada.fotoUrl} alt={conversaSelecionada.nomeContato ?? ""} className="object-cover" />
+                      <AvatarImage src={conversaSelecionada.fotoUrl} alt={conversaSelecionada.clienteNome ?? conversaSelecionada.nomeContato ?? ""} className="object-cover" />
                     )}
                     <AvatarFallback className="text-lg bg-primary/10 text-primary">
-                      {(conversaSelecionada?.nomeContato ?? conversaSelecionada?.telefone ?? "?").charAt(0).toUpperCase()}
+                      {(conversaSelecionada?.clienteNome ?? conversaSelecionada?.nomeContato ?? conversaSelecionada?.telefone ?? "?").charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
 
@@ -599,7 +599,7 @@ export default function Mensagens() {
                     </div>
                   ) : (
                     <div className="flex items-center justify-center gap-1 mt-0.5 group">
-                      <p className="font-semibold text-sm">{conversaSelecionada?.nomeContato || "Contato não identificado"}</p>
+                      <p className="font-semibold text-sm">{conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || "Contato não identificado"}</p>
                       <button className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted" onClick={abrirEdicaoNome} title="Editar nome">
                         <Pencil size={10} className="text-muted-foreground" />
                       </button>
@@ -746,7 +746,7 @@ export default function Mensagens() {
             </DialogTitle>
             <DialogDescription>
               Confirma a exclusão de todas as mensagens da conversa com{" "}
-              <span className="font-semibold text-foreground">{conversaSelecionada?.nomeContato || conversaSelecionada?.telefone}</span>?
+              <span className="font-semibold text-foreground">{conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || conversaSelecionada?.telefone}</span>?
               <br />
               <span className="text-destructive text-xs">Esta ação não pode ser desfeita.</span>
             </DialogDescription>
@@ -791,6 +791,7 @@ export default function Mensagens() {
               {(conversas ?? [])
                 .filter((c) => c.id !== conversaSelecionadaId && c.isLidPendente !== "true" && (
                   unificarBusca === "" ||
+                  (c.clienteNome ?? "").toLowerCase().includes(unificarBusca.toLowerCase()) ||
                   (c.nomeContato ?? "").toLowerCase().includes(unificarBusca.toLowerCase()) ||
                   c.telefone.includes(unificarBusca)
                 ))
@@ -803,7 +804,7 @@ export default function Mensagens() {
                       unificarDestinoId === c.id ? "border-primary bg-primary/10 text-primary" : "border-transparent hover:bg-muted/60"
                     }`}
                   >
-                    <div className="font-medium text-xs">{c.nomeContato || c.telefone}</div>
+                    <div className="font-medium text-xs">{c.clienteNome || c.nomeContato || c.telefone}</div>
                     <div className="text-[10px] text-muted-foreground">{c.telefone} · {c.ultimaMensagemTexto?.slice(0, 40)}</div>
                   </button>
                 ))}
