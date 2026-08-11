@@ -78,24 +78,41 @@ export default function GlobalSyncCenter() {
     return "Conciliação de contas enviada ao Drive";
   };
 
-  const start = async () => {
-    const plan = buildGlobalSyncPlan(unidades);
-    dispatch({ type: "start", steps: plan });
+  const runSteps = async (selectedSteps: SyncStep[]) => {
     const period = currentPeriod();
-    for (const step of plan) {
-      if (step.status === "skipped") continue;
+    const runStep = async (step: SyncStep) => {
+      if (step.status === "skipped") return;
       update(step.id, { status: "running", detail: `Sincronizando ${step.label.toLocaleLowerCase("pt-BR")}…`, error: undefined });
       try {
         update(step.id, { status: "success", detail: await execute(step, period) });
       } catch (error) {
         update(step.id, { status: "error", detail: "Falha nesta etapa", error: readableError(error) });
       }
-    }
+    };
+
+    // A API do extrato Mercado Pago pode levar até dois minutos para disponibilizar
+    // o relatório. Disparamos as duas unidades de imediato e seguimos com o roteiro.
+    const mercadoPagoTasks = selectedSteps.filter((step) => step.kind === "mercadoPagoConta").map(runStep);
+    for (const step of selectedSteps.filter((item) => item.kind !== "mercadoPagoConta")) await runStep(step);
+    await Promise.all(mercadoPagoTasks);
     await Promise.all([
       utils.financeiro.dashboard.invalidate(), utils.financeiro.dashboardConsolidado.invalidate(), utils.inter.extratos.invalidate(),
       utils.adquirentes.vendas.invalidate(), utils.comandaRecepcao.resumo.invalidate(), utils.comandaRecepcao.itensDetalhe.invalidate(),
     ]);
     dispatch({ type: "complete" });
+  };
+
+  const start = async () => {
+    const plan = buildGlobalSyncPlan(unidades);
+    dispatch({ type: "start", steps: plan });
+    await runSteps(plan);
+  };
+
+  const retryErrors = async () => {
+    const failedSteps = steps.filter((step) => step.status === "error");
+    if (failedSteps.length === 0) return;
+    dispatch({ type: "restartErrors" });
+    await runSteps(failedSteps);
   };
 
   const close = () => dispatch({ type: "close" });
@@ -122,7 +139,7 @@ export default function GlobalSyncCenter() {
             {finished && <section className="rounded-xl border border-primary/20 bg-primary/5 p-4"><div className="flex gap-3">{summary.error > 0 ? <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" /> : <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-600" />}<div><h3 className="font-semibold">Sincronização finalizada</h3><p className="mt-1 text-sm text-muted-foreground">{summary.success} etapa(s) concluída(s) com sucesso, {summary.error} com erro e {summary.skipped} não configurada(s).</p></div></div></section>}
           </div>}
         </ScrollArea>
-        <div className="flex flex-col-reverse gap-3 border-t bg-muted/20 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-muted-foreground">{steps.length === 0 ? "Nenhuma operação foi iniciada." : finished ? "Os dados das telas serão atualizados automaticamente." : "As etapas são executadas uma a uma para preservar o limite das integraações."}</p><div className="flex gap-2">{finished && <Button variant="outline" onClick={close}><X className="mr-1.5 h-4 w-4" />Fechar</Button>}{!isRunning && !finished && <Button onClick={start} disabled={loading || unidades.length === 0}><RefreshCw className="mr-1.5 h-4 w-4" />Iniciar sincronização</Button>}{finished && <Button onClick={start}><RefreshCw className="mr-1.5 h-4 w-4" />Sincronizar novamente</Button>}</div></div>
+        <div className="flex flex-col-reverse gap-3 border-t bg-muted/20 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-muted-foreground">{steps.length === 0 ? "Nenhuma operação foi iniciada." : finished ? "Os dados das telas serão atualizados automaticamente." : "Os extratos Mercado Pago são iniciados em paralelo; as demais etapas seguem em sequência."}</p><div className="flex flex-wrap gap-2">{finished && <Button variant="outline" onClick={close}><X className="mr-1.5 h-4 w-4" />Fechar</Button>}{!isRunning && !finished && <Button onClick={start} disabled={loading || unidades.length === 0}><RefreshCw className="mr-1.5 h-4 w-4" />Iniciar sincronização</Button>}{finished && summary.error > 0 && <Button variant="outline" onClick={retryErrors}><RefreshCw className="mr-1.5 h-4 w-4" />Sincronizar erros</Button>}{finished && <Button onClick={start}><RefreshCw className="mr-1.5 h-4 w-4" />Sincronizar novamente</Button>}</div></div>
       </DialogContent>
     </Dialog>
     {isMinimized && <button onClick={() => dispatch({ type: "restore" })} className="fixed bottom-5 right-5 z-50 w-[min(23rem,calc(100vw-2.5rem))] rounded-2xl border bg-card p-3 text-left shadow-xl transition-transform duration-200 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary" aria-label="Restaurar acompanhamento da sincronização"><div className="flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Loader2 className="h-4 w-4 animate-spin" /></span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-3 text-sm font-semibold"><span className="truncate">Sincronização em andamento</span><span className="text-primary">{progress}%</span></span><span className="mt-0.5 block truncate text-xs text-muted-foreground">{current ? `${current.unidadeNome} · ${current.label}` : "Preparando próximas etapas"}</span></span><Maximize2 className="h-4 w-4 shrink-0 text-muted-foreground" /></div><Progress value={progress} className="mt-3 h-1.5" /></button>}

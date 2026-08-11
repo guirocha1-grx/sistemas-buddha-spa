@@ -48,10 +48,10 @@ export function buildGlobalSyncPlan(unidades: SyncUnit[]): SyncStep[] {
   return [...unidades]
     .sort((a, b) => Number(/ribeir[aã]o|rbs/i.test(b.nome)) - Number(/ribeir[aã]o|rbs/i.test(a.nome)))
     .flatMap((unidade) => [
+      step(unidade, "Contas Bancárias", "Conta Mercado Pago · extrato", "mercadoPagoConta", Boolean(unidade.mpAccessToken)),
       step(unidade, "Contas Bancárias", "Conta corrente · Banco Inter", "inter", configured([unidade.interClientId, unidade.interClientSecret, unidade.interCertificado, unidade.interChavePrivada])),
       step(unidade, "Contas Bancárias", "Conta corrente · Sicredi", "sicredi", configured([unidade.sicrediClientId, unidade.sicrediClientSecret, unidade.sicrediCertificado, unidade.sicrediChavePrivada])),
       step(unidade, "Contas Bancárias", "Caixa físico · Google Sheets", "caixa"),
-      step(unidade, "Mercado Pago", "Conta Mercado Pago · extrato", "mercadoPagoConta", Boolean(unidade.mpAccessToken)),
       step(unidade, "Adquirentes", "Mercado Pago · vendas aprovadas", "mercadoPagoAdquirentes", Boolean(unidade.mpAccessToken)),
       step(unidade, "Google Drive / Comanda da Recepção", "Comanda consolidada · recepção", "comandaConsolidado"),
       step(unidade, "Google Drive / Comanda da Recepção", "Comanda virtual · lançamentos", "comandaItens"),
