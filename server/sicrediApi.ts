@@ -77,7 +77,36 @@ interface RequisicaoHttps {
   key: string;
 }
 
+/**
+ * Valida que um PEM (certificado ou chave) tem o cabeçalho esperado
+ * antes de mandar pro Node/OpenSSL — sem isso, um campo vazio ou
+ * colado errado (CSR no lugar do certificado, .CER binário/DER, etc.)
+ * vira o erro genérico "error:0480006C:PEM routines::no start line",
+ * que não diz qual dos dois campos (certificado ou chave) é o
+ * problema. Não ecoa a chave privada de volta (é segredo) — só o
+ * certificado, que é informação pública, pra ajudar a identificar o
+ * arquivo errado colado.
+ */
+function validarPem(valor: string | undefined | null, campo: "Certificado" | "Chave privada"): string {
+  const texto = (valor ?? "").trim();
+  if (!texto) {
+    throw new Error(`[Sicredi] Campo "${campo}" está vazio em Configurações.`);
+  }
+  if (!texto.startsWith("-----BEGIN")) {
+    const amostra = campo === "Certificado" ? ` Início do que foi colado: "${texto.slice(0, 40)}..."` : "";
+    throw new Error(
+      `[Sicredi] Campo "${campo}" não parece um PEM válido (não começa com "-----BEGIN...").${amostra} Confira se não colou o arquivo errado (CSR no lugar do certificado, ou um .CER em formato binário/DER que precisa ser convertido pra PEM primeiro).`,
+    );
+  }
+  if (campo === "Chave privada" && texto.startsWith("-----BEGIN ENCRYPTED")) {
+    throw new Error(`[Sicredi] Campo "Chave privada" ainda está criptografada (ENCRYPTED PRIVATE KEY) — descriptografe com "openssl pkey -in chave.key -out chave_sem_senha.key" antes de colar.`);
+  }
+  return texto;
+}
+
 function requisicaoHttps({ url, method = "GET", headers = {}, body, cert, key }: RequisicaoHttps): Promise<{ status: number; body: string }> {
+  validarPem(cert, "Certificado");
+  validarPem(key, "Chave privada");
   return new Promise((resolve, reject) => {
     const alvo = new URL(url);
     const req = https.request(
