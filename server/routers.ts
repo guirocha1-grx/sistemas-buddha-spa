@@ -687,6 +687,7 @@ Diretrizes:
         const conversa = await db.getInboxConversaById(input.conversaId);
         if (!conversa) throw new Error("Conversa não encontrada");
 
+        let zapiMessageId: string | undefined;
         if (conversa.canal === "zapi") {
           if (!conversa.unidadeId) throw new Error("Conversa sem unidade associada");
           const unidade = await db.getUnidadeById(conversa.unidadeId);
@@ -694,7 +695,8 @@ Diretrizes:
             throw new Error("Z-API não configurado para esta unidade");
           }
           try {
-            await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, input.texto);
+            const resultado = await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, input.texto);
+            zapiMessageId = resultado.messageId;
           } catch (error) {
             console.error("[Inbox] Falha ao enviar via Z-API:", error);
           }
@@ -713,6 +715,7 @@ Diretrizes:
           conteudo: input.texto,
           enviadaPorUserId: ctx.user.id,
           enviadaPorAtendenteId: ctx.atendente?.id ?? null,
+          zapiMessageId: zapiMessageId ?? null,
         });
         await db.upsertInboxConversa({
           unidadeId: conversa.unidadeId,
@@ -747,6 +750,7 @@ Diretrizes:
         );
         const url = await storageGetSignedUrl(key);
 
+        let zapiMessageId: string | undefined;
         if (conversa.canal === "zapi") {
           if (!conversa.unidadeId) throw new Error("Conversa sem unidade associada");
           const unidade = await db.getUnidadeById(conversa.unidadeId);
@@ -754,13 +758,15 @@ Diretrizes:
             throw new Error("Z-API não configurado para esta unidade");
           }
           try {
+            let resultado;
             if (input.tipo === "imagem") {
-              await zapiApi.sendImage(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url, input.legenda);
+              resultado = await zapiApi.sendImage(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url, input.legenda);
             } else if (input.tipo === "audio") {
-              await zapiApi.sendAudio(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url);
+              resultado = await zapiApi.sendAudio(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url);
             } else if (input.tipo === "documento") {
-              await zapiApi.sendDocument(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url, input.fileName);
+              resultado = await zapiApi.sendDocument(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url, input.fileName);
             }
+            zapiMessageId = resultado?.messageId;
           } catch (error) {
             console.error("[Inbox] Falha ao enviar mídia via Z-API:", error);
           }
@@ -777,6 +783,7 @@ Diretrizes:
           metadados: JSON.stringify({ url, legenda: input.legenda, fileName: input.fileName }),
           enviadaPorUserId: ctx.user.id,
           enviadaPorAtendenteId: ctx.atendente?.id ?? null,
+          zapiMessageId: zapiMessageId ?? null,
         });
 
         return { success: true, url };

@@ -470,6 +470,21 @@ export async function insertInboxMensagem(mensagem: InsertInboxMensagem) {
   return result[0]?.id;
 }
 
+/**
+ * Uma mensagem enviada pelo CRM já foi gravada na hora do envio (ver
+ * inbox.mensagens.enviar) — quando o webhook da Z-API ecoa esse mesmo
+ * envio de volta (fromMe: true), isso evita duplicar. Só serve pra
+ * distinguir "já registrada pelo CRM" de "recepção respondeu direto
+ * pelo app do WhatsApp Business" (aí sim precisa inserir).
+ */
+export async function existeMensagemComZapiMessageId(zapiMessageId: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const rows = await db.select({ id: inboxMensagens.id }).from(inboxMensagens)
+    .where(eq(inboxMensagens.zapiMessageId, zapiMessageId)).limit(1);
+  return rows.length > 0;
+}
+
 export async function updateInboxMensagemTranscricao(id: number, transcricao: string) {
   const db = await getDb();
   if (!db) return;

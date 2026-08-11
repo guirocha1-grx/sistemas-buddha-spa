@@ -362,7 +362,7 @@ export default function Mensagens() {
               <button
                 key={c.id}
                 onClick={() => setConversaSelecionadaId(c.id)}
-                className={`w-full min-w-0 text-left px-3 py-2.5 border-b hover:bg-muted/50 transition-colors flex gap-2 items-start overflow-hidden ${
+                className={`w-full min-w-0 text-left pl-3 pr-4 py-2.5 border-b hover:bg-muted/50 transition-colors flex gap-2 items-start overflow-hidden ${
                   conversaSelecionadaId === c.id ? "bg-muted" : ""
                 }`}
               >

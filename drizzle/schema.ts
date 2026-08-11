@@ -429,6 +429,11 @@ export const inboxMensagens = mysqlTable("inbox_mensagens", {
   // conta Google/Manus compartilhada da recepção) — ver atendentes
   // abaixo. Alimenta o "enviada por" mostrado em cada balão no Inbox.
   enviadaPorAtendenteId: int("enviadaPorAtendenteId"),
+  // messageId devolvido pela Z-API ao enviar pelo CRM — usado só pra
+  // deduplicar contra o webhook fromMe (recepção respondendo direto
+  // pelo app do WhatsApp Business, fora do CRM). Própria do
+  // buddha-spa, migração 2026-08-11-inbox-zapi-message-id.sql.
+  zapiMessageId: varchar("zapiMessageId", { length: 100 }),
 }, (table) => ({
   conversaCreatedIdx: index("inbox_mensagens_conversa_created_idx").on(table.conversaId, table.createdAt),
 }));

@@ -76,8 +76,8 @@ function GoogleIcon({ className }: { className?: string }) {
 }
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
-const DEFAULT_WIDTH = 196;
-const MIN_WIDTH = 180;
+const DEFAULT_WIDTH = 157;
+const MIN_WIDTH = 140;
 const MAX_WIDTH = 480;
 
 export default function DashboardLayout({

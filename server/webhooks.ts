@@ -157,15 +157,24 @@ function registerZapiWebhook(app: Express) {
 
       const payload = req.body as ZapiWebhookPayload;
 
-      // Só processa mensagens recebidas de verdade — ignora eco de envio
-      // (fromMe) e mensagens de grupo, que não são atendimento 1:1.
-      if (payload.type !== "ReceivedCallback" || payload.fromMe || payload.isGroup || !payload.phone) {
+      // Mensagens de grupo não são atendimento 1:1 — sempre ignora.
+      // fromMe (recepção mandou) NÃO é mais ignorado: quando alguém
+      // responde direto pelo app do WhatsApp Business no celular (fora
+      // do CRM), é assim que ficamos sabendo — ver dedup por
+      // zapiMessageId abaixo pra não duplicar o que já foi registrado
+      // na hora do envio pelo próprio CRM.
+      if (payload.type !== "ReceivedCallback" || payload.isGroup || !payload.phone) {
         res.status(200).json({ ignored: true });
         return;
       }
 
       if (jaProcessada(payload.messageId)) {
         res.status(200).json({ ignored: true, motivo: "duplicado" });
+        return;
+      }
+
+      if (payload.fromMe && payload.messageId && await db.existeMensagemComZapiMessageId(payload.messageId)) {
+        res.status(200).json({ ignored: true, motivo: "já registrada pelo envio via CRM" });
         return;
       }
 
@@ -201,9 +210,13 @@ function registerZapiWebhook(app: Express) {
         telefone: identificadorContato,
         chatLid: payload.chatLid,
         isLidPendente: ehLid,
-        nomeContato: payload.senderName,
+        // "senderName" nesse payload é o nome de quem mandou — só faz
+        // sentido atualizar o nome do contato quando é ele mandando
+        // (recebida); num fromMe não teria como significar "nome do
+        // contato" e o campo pode nem vir preenchido do mesmo jeito.
+        nomeContato: payload.fromMe ? undefined : payload.senderName,
         ultimaMensagemTexto: resumo,
-        incrementarNaoLidas: true,
+        incrementarNaoLidas: !payload.fromMe,
       });
 
       if (!conversaId) {
@@ -213,10 +226,11 @@ function registerZapiWebhook(app: Express) {
 
       const mensagemId = await db.insertInboxMensagem({
         conversaId,
-        direcao: "recebida",
+        direcao: payload.fromMe ? "enviada" : "recebida",
         tipo,
         conteudo,
         metadados: metadados ? JSON.stringify(metadados) : null,
+        zapiMessageId: payload.fromMe ? (payload.messageId ?? null) : null,
       });
 
       if (tipo === "audio" && payload.audio?.audioUrl && mensagemId) {
