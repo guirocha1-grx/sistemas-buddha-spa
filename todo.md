@@ -64,3 +64,4 @@
 ## Testes
 - [x] Testes unitários (vitest) — 9 testes passando
 - [x] Testes de integração da API Belle (cobertura de endpoints principais)
+- [x] Melhorar validação do Sicredi para detectar e informar quando certificado e chave privada não pertencem ao mesmo par mTLS
