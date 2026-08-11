@@ -116,7 +116,7 @@ export default function GlobalSyncCenter() {
   if (permissoesLoading || !podeSincronizar) return null;
 
   return <>
-    <div className="fixed right-4 top-4 z-40 md:right-6 md:top-5">
+    <div className="fixed bottom-5 right-5 z-40 md:bottom-6 md:right-6">
       <Button onClick={() => isRunning ? dispatch({ type: "restore" }) : prepare()} disabled={loading || unidades.length === 0} className="h-10 rounded-xl px-4 text-sm font-semibold shadow-lg shadow-primary/20">
         <RefreshCw className={cn("mr-2 h-4 w-4", isRunning && "animate-spin")} />{isRunning ? "Sincronizando" : "Sincronizar tudo"}
       </Button>

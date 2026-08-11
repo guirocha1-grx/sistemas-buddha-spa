@@ -104,3 +104,4 @@
 - [x] Testar renderização de Clientes.tsx com clique no ícone e verificar a URL real do Inbox
 - [x] Testar Mensagens.tsx com conversaId na URL e verificar a seleção da conversa
 - [x] Salvar checkpoint após a validação completa do fluxo Clientes → Inbox
+- [x] Corrigir o botão global “Sincronizar tudo” para ficar no canto inferior em todas as telas
