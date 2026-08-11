@@ -5,7 +5,7 @@ describe("global sync plan", () => {
   it("organiza as duas unidades e sinaliza integrações não configuradas", () => {
     const plan = buildGlobalSyncPlan([{ id: 2, nome: "Shopping Santa Úrsula" }, { id: 1, nome: "Ribeirão Shopping", interClientId: "id", interClientSecret: "secret", interCertificado: "cert", interChavePrivada: "key", mpAccessToken: "token" }]);
     expect(plan).toHaveLength(16);
-    expect(plan[0]).toMatchObject({ unidadeNome: "Ribeirão Shopping", kind: "inter", status: "pending" });
+    expect(plan[0]).toMatchObject({ unidadeNome: "Ribeirão Shopping", kind: "mercadoPagoConta", category: "Contas Bancárias", status: "pending" });
     expect(plan.find((item) => item.id === "2-mercadoPagoConta")).toMatchObject({ status: "skipped" });
   });
 

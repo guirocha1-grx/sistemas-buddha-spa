@@ -7,11 +7,18 @@ export const initialGlobalSyncState: GlobalSyncState = { isOpen: false, isMinimi
 export type GlobalSyncAction =
   | { type: "prepare" | "start"; steps: SyncStep[] }
   | { type: "updateStep"; id: string; patch: Partial<SyncStep> }
-  | { type: "minimize" | "restore" | "complete" | "close" };
+  | { type: "minimize" | "restore" | "complete" | "close" | "restartErrors" };
 
 export function globalSyncReducer(state: GlobalSyncState, action: GlobalSyncAction): GlobalSyncState {
   if (action.type === "prepare") return { isOpen: true, isMinimized: false, isRunning: false, steps: action.steps };
   if (action.type === "start") return { isOpen: true, isMinimized: false, isRunning: true, steps: action.steps };
+  if (action.type === "restartErrors") return {
+    ...state,
+    isOpen: true,
+    isMinimized: false,
+    isRunning: true,
+    steps: state.steps.map((item) => item.status === "error" ? { ...item, status: "pending", detail: "Aguardando nova tentativa", error: undefined } : item),
+  };
   if (action.type === "updateStep") return { ...state, steps: state.steps.map((item) => item.id === action.id ? { ...item, ...action.patch } : item) };
   if (action.type === "minimize") return state.isRunning ? { ...state, isMinimized: true } : state;
   if (action.type === "restore") return { ...state, isOpen: true, isMinimized: false };

@@ -75,4 +75,17 @@ describe("GlobalSyncCenter", () => {
     fireEvent.click(bar);
     expect(await screen.findByRole("heading", { name: "Sincronização em andamento" })).toBeInTheDocument();
   });
+
+  it("oferece a repetição seletiva quando uma ou mais etapas terminam com erro", async () => {
+    mocks.mutateAsync.mockReset();
+    mocks.mutateAsync.mockRejectedValue(new Error("Relatório ainda indisponível"));
+    render(<GlobalSyncCenter />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sincronizar tudo" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Iniciar sincronização" }));
+
+    expect(await screen.findByText("Sincronização finalizada")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sincronizar erros" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sincronizar novamente" })).toBeInTheDocument();
+  });
 });
