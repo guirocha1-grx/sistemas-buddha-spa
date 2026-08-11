@@ -1652,6 +1652,18 @@ Diretrizes:
           })),
         );
 
+        // upsertInterExtratos é insert-only (nunca atualiza linha já
+        // existente, de propósito — não pode recalcular dreDescricaoId/
+        // categorizacaoStatus a cada re-sync, senão apagaria categorização
+        // manual). Então, pra linhas que já existiam de um sync anterior a
+        // esse enriquecimento, o título novo não é gravado pelo upsert
+        // acima — atualiza à parte, só o título, sem tocar em mais nada.
+        for (const l of linhasEnriquecidas) {
+          if (l.titulo?.startsWith("Liquidação · ")) {
+            await db.atualizarTituloInterExtrato(input.unidadeId, l.idTransacao, l.titulo);
+          }
+        }
+
         const diagnosticoSourceId = `Cruzamento SOURCE_ID x idTransacaoExterno: ${bateram}/${linhasCsv.length} linhas bateram com vendas conhecidas (janela: ${seteDiasAntes(input.dataInicio)} a ${input.dataFim}, ${vendasDoPeriodo.length} vendas MP no período).${amostraMatch.length ? ` Amostra: ${amostraMatch.join(" | ")}` : ""}`;
 
         await db.createSyncLog({

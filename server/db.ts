@@ -556,6 +556,27 @@ export async function upsertInterExtratos(
   return inseridos;
 }
 
+/**
+ * Atualiza só o `titulo` de uma linha já existente (por idTransacao) —
+ * usado pra corrigir a descrição da liquidação Mercado Pago (ver
+ * enriquecimento por SOURCE_ID em contas.sincronizarMercadoPago) sem
+ * mexer em dreDescricaoId/categorizacaoStatus, que `upsertInterExtratos`
+ * nunca toca em linha já existente (insert-only) e que não podem ser
+ * recalculados a cada re-sync — apagaria categorização manual que o
+ * usuário já tenha confirmado.
+ */
+export async function atualizarTituloInterExtrato(
+  unidadeId: number,
+  idTransacao: string,
+  titulo: string,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(interExtratos)
+    .set({ titulo })
+    .where(and(eq(interExtratos.unidadeId, unidadeId), eq(interExtratos.idTransacao, idTransacao)));
+}
+
 // ===== Adquirentes (vendas de maquininha) =====
 
 /**
