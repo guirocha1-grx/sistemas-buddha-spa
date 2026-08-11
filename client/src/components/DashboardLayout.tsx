@@ -76,9 +76,11 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-const SIDEBAR_WIDTH_KEY = "sidebar-width";
-const DEFAULT_WIDTH = 157;
-const MIN_WIDTH = 140;
+// Versão compacta: 25% menor que a largura anterior de 157px.
+// A chave versionada aplica a redução também a usuários com largura salva anteriormente.
+const SIDEBAR_WIDTH_KEY = "sidebar-width-compact-v2";
+const DEFAULT_WIDTH = 118;
+const MIN_WIDTH = 118;
 const MAX_WIDTH = 480;
 
 export default function DashboardLayout({

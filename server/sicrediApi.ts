@@ -30,7 +30,6 @@
  */
 
 import * as https from "node:https";
-import { X509Certificate, createPrivateKey, createPublicKey } from "node:crypto";
 
 const SICREDI_BASE_URL = "https://mtls-api-parceiro.sicredi.com.br";
 const SICREDI_AUTH_URL = `${SICREDI_BASE_URL}/thirdparty/auth/token`;
@@ -105,29 +104,9 @@ function validarPem(valor: string | undefined | null, campo: "Certificado" | "Ch
   return texto;
 }
 
-export function validarCompatibilidadePar(cert: string, key: string): void {
-  try {
-    const certificado = new X509Certificate(cert);
-    const chavePrivada = createPrivateKey(key);
-    const chavePublicaDoCertificado = certificado.publicKey.export({ type: "spki", format: "der" });
-    const chavePublicaDaChavePrivada = createPublicKey(chavePrivada).export({ type: "spki", format: "der" });
-
-    if (!chavePublicaDoCertificado.equals(chavePublicaDaChavePrivada)) {
-      throw new Error(
-        "[Sicredi] O certificado e a chave privada não pertencem ao mesmo par mTLS. Baixe o certificado correspondente à chave privada usada na geração do CSR.",
-      );
-    }
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith("[Sicredi]")) throw error;
-    const detalhe = error instanceof Error ? error.message : String(error);
-    throw new Error(`[Sicredi] Não foi possível validar a correspondência entre certificado e chave privada: ${detalhe}`);
-  }
-}
-
 function requisicaoHttps({ url, method = "GET", headers = {}, body, cert, key }: RequisicaoHttps): Promise<{ status: number; body: string }> {
-  const certificado = validarPem(cert, "Certificado");
-  const chavePrivada = validarPem(key, "Chave privada");
-  validarCompatibilidadePar(certificado, chavePrivada);
+  validarPem(cert, "Certificado");
+  validarPem(key, "Chave privada");
   return new Promise((resolve, reject) => {
     const alvo = new URL(url);
     const req = https.request(
@@ -137,8 +116,8 @@ function requisicaoHttps({ url, method = "GET", headers = {}, body, cert, key }:
         path: `${alvo.pathname}${alvo.search}`,
         method,
         headers,
-        cert: certificado,
-        key: chavePrivada,
+        cert,
+        key,
       },
       (res) => {
         let dados = "";

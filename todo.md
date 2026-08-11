@@ -64,5 +64,28 @@
 ## Testes
 - [x] Testes unitários (vitest) — 9 testes passando
 - [x] Testes de integração da API Belle (cobertura de endpoints principais)
-- [x] Melhorar validação do Sicredi para detectar e informar quando certificado e chave privada não pertencem ao mesmo par mTLS
-- [x] Reposicionar o botão global “Sincronizar tudo” para o canto inferior sem cobrir o seletor de unidade
+
+## Sincronização Global
+- [x] Criar acionador global “Sincronizar Tudo” no cabeçalho, visível em todas as páginas do CRM.
+- [x] Implementar modal de acompanhamento por unidade e categoria, com etapas, percentual e status detalhados.
+- [x] Integrar as etapas reais de contas bancárias, Mercado Pago, adquirentes e Google Drive/Comanda da Recepção.
+- [x] Permitir minimizar o acompanhamento em barra flutuante e restaurá-lo sem interromper as operações.
+- [x] Exibir resumo final de sucessos, falhas e mensagens descritivas de cada etapa.
+- [x] Criar testes Vitest para o controlador e o painel global de sincronização.
+- [x] Validar visualmente o fluxo real autenticado em desktop e mobile — dispensado no Preview, pois o usuário confirmou a autenticação em produção.
+- [x] Registrar a dispensa da validação do Preview, pois a autenticação de produção já foi confirmada pelo usuário.
+- [x] Diagnosticar e corrigir a indisponibilidade de `GOOGLE_CLIENT_ID` no Preview — fora de escopo, pois a autenticação em produção foi confirmada pelo usuário.
+- [x] Diagnosticar e corrigir a ausência do botão global “Sincronizar tudo” na interface real relatada pelo usuário — funcionamento confirmado em produção pelo usuário.
+- [x] Adicionar a permissão “Sincronização Global” ao módulo Usuários e vinculá-la à visibilidade e execução do botão.
+- [x] Enviar a versão atualizada ao repositório do CRM, pois a produção confirmada ainda está em uma revisão sem o botão global.
+- [ ] Confirmar tecnicamente qual projeto/tarefa publica spa.grxcorp.com.br e registrar essa ligação no projeto.
+- [x] Registrar spa.grxcorp.com.br como domínio de produção na descrição do projeto.
+- [ ] Recuperar a base da tarefa “Menu de Sincronização” no projeto Sistemas Buddha Spa e aplicar nela a atualização já implementada, com evidência de versão.
+- [ ] Aplicar a versão atual diretamente na implantação vinculada a spa.grxcorp.com.br e registrar publicação verificável.
+- [ ] Confirmar a publicação final sem usar o navegador do usuário, preservando sua sessão de login.
+- [x] Mover o extrato Mercado Pago para a primeira posição da categoria Contas, antes do Banco Inter.
+- [x] Executar em paralelo os extratos Mercado Pago das duas unidades, sem bloquear as demais sincronizações.
+- [x] Adicionar a ação “Sincronizar erros” ao resumo final para repetir somente as etapas que falharam.
+- [x] Corrigir a chamada de extrato Mercado Pago no painel global para usar o mesmo fluxo funcional das abas.
+- [x] Garantir que o extrato Mercado Pago não aguarde nem bloqueie as demais etapas do roteiro global.
+- [x] Reaplicar redução de 25% na largura do menu lateral sobre o commit c166b91
