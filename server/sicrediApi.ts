@@ -1,43 +1,39 @@
 /**
  * sicrediApi.ts
- * Cliente para as APIs "Extrato de Conta Corrente" e "Saldo de Conta
- * Corrente" do Sicredi.
+ * Cliente para a API "Extrato de Conta Corrente" do Sicredi.
  *
- * ============================================================
- * PROVISÓRIO — ainda sem adesão aprovada no Portal do Desenvolvedor
- * do Sicredi, então não há acesso à documentação técnica exata (fica
- * atrás de login em developers.sicredi.com.br). Confirmado via doc
- * pública (general-information + API catalog):
- *   - Autenticação: OAuth 2.0 client_credentials + mTLS obrigatório
- *     em toda chamada, mesmo modelo do Inter (server/interApi.ts).
- *   - Consultas diretas, sem webhook.
- *   - Credenciais obtidas no Portal do Desenvolvedor após validação
- *     de certificado (CSR gerado e enviado pra emissão).
- * NÃO confirmado (ajustar assim que a adesão sair e chegar uma
- * amostra de payload real — mesmo processo usado pro Inter):
- *   - URL base exata (produtos diferentes do Sicredi usam hosts
- *     diferentes — ex. Pix usa api-pix.sicredi.com.br — "Extrato/
- *     Saldo de Conta Corrente" pode ter host próprio).
- *   - Se o token usa Basic Auth (client_id:client_secret em base64,
- *     como a API Pix) ou client_id/secret no corpo (como o Inter) —
- *     assumido Basic Auth abaixo por ser o padrão confirmado num
- *     produto Sicredi, mas pode variar por API.
- *   - Path exato dos endpoints de extrato/saldo e formato da resposta
- *     (nomes de campo, paginação).
- * ============================================================
+ * Confirmado contra a documentação oficial (developers.sicredi.com.br/
+ * public/docs/getting-started-current-account, 2026-08-11):
+ *   - Autenticação: OAuth 2.0 client_credentials + mTLS obrigatório em
+ *     toda chamada, mesmo servidor de auth da família Multipag.
+ *     Credenciais vão no CORPO da requisição (client_id/client_secret/
+ *     grant_type/scope), não em Basic Auth — diferente do que a versão
+ *     anterior deste arquivo assumia.
+ *   - Escopo: contacorrente.extratos.consultar.
+ *   - Endpoint plural: GET /contacorrente/v1/extratos (não /extrato).
+ *   - Sem parâmetros de cooperativa/agência/conta na query — a conta é
+ *     implícita nas credenciais/certificado do associado.
+ *   - Paginado (page/size); resposta traz saldoAnterior + saldo por
+ *     movimento (não precisa recalcular saldo corrido).
+ *   - Token Bearer, validade 60 min.
+ *
+ * NÃO confirmado ainda: API "Saldo de Conta Corrente" (saldo atual,
+ * bloqueios, limite de cheque especial) — doc existe mas ainda não foi
+ * consultada; consultarSaldo() permanece um stub até isso acontecer.
  *
  * Credenciais armazenadas por unidade na tabela `unidades`:
  *   sicrediClientId, sicrediClientSecret, sicrediCertificado (.crt em
- *   PEM), sicrediChavePrivada (.key em PEM), sicrediCooperativa,
- *   sicrediAgencia, sicrediConta, sicrediAccessToken,
- *   sicrediTokenExpiresAt
+ *   PEM), sicrediChavePrivada (.key em PEM) — obtidos via Portal do
+ *   Desenvolvedor (developer.sicredi.com.br), não geração manual de
+ *   CSR: o próprio Portal tem o fluxo "Registrar Novo CSR" em
+ *   Certificados e Credenciais.
  */
 
 import * as https from "node:https";
 
-// TODO(Fase B): confirmar host real assim que a adesão sair.
-const SICREDI_BASE_URL = "https://api.sicredi.com.br";
-const SICREDI_TOKEN_URL = `${SICREDI_BASE_URL}/oauth/token`;
+const SICREDI_BASE_URL = "https://mtls-api-parceiro.sicredi.com.br";
+const SICREDI_AUTH_URL = `${SICREDI_BASE_URL}/thirdparty/auth/token`;
+const SICREDI_SCOPE = "contacorrente.extratos.consultar";
 
 export interface SicrediToken {
   access_token: string;
@@ -46,22 +42,25 @@ export interface SicrediToken {
   scope?: string;
 }
 
-/** PROVISÓRIO — ajustar nomes de campo contra payload real (Fase B). */
-export interface SicrediTransacao {
-  data: string;
-  tipoOperacao: "D" | "C";
-  valor: string;
+export interface SicrediMovimento {
+  data: string; // yyyy-mm-dd
   descricao: string;
-  historico?: string;
-  documento?: string;
+  complemento: string | null;
+  documento: string | null;
+  valor: number; // negativo = débito, positivo = crédito
+  saldo: number; // saldo resultante após este movimento
+  codigoLancamento: string;
+  idMovimento: string; // identificador único do movimento — usar como idTransacao
 }
 
 export interface SicrediExtratoResponse {
-  transacoes: SicrediTransacao[];
-}
-
-export interface SicrediSaldoResponse {
-  saldoDisponivel: string;
+  saldoAnterior: number;
+  dtlMovimentos: SicrediMovimento[];
+  quantidade: number;
+  totalElements: number;
+  totalPages: number;
+  pageNumber: number;
+  pageSize: number;
 }
 
 export interface CredenciaisSicredi {
@@ -104,25 +103,28 @@ function requisicaoHttps({ url, method = "GET", headers = {}, body, cert, key }:
 }
 
 /**
- * Obtém ou renova o token OAuth. Assume Basic Auth (client_id:secret em
- * base64) por ser o padrão confirmado na API Pix do Sicredi — confirmar
- * se "Extrato/Saldo de Conta Corrente" segue o mesmo (Fase B).
+ * Obtém ou renova o token OAuth. Credenciais vão no corpo (urlencoded),
+ * não em header Authorization — confirmado no exemplo curl da doc
+ * oficial.
  */
 export async function getSicrediAccessToken(
   clientId: string,
   clientSecret: string,
   credenciais: CredenciaisSicredi,
 ): Promise<{ accessToken: string; expiresAt: number }> {
-  const body = new URLSearchParams({ grant_type: "client_credentials" }).toString();
-  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+  const body = new URLSearchParams({
+    grant_type: "client_credentials",
+    client_id: clientId,
+    client_secret: clientSecret,
+    scope: SICREDI_SCOPE,
+  }).toString();
 
   const res = await requisicaoHttps({
-    url: SICREDI_TOKEN_URL,
+    url: SICREDI_AUTH_URL,
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       "Content-Length": String(Buffer.byteLength(body)),
-      Authorization: `Basic ${basicAuth}`,
     },
     body,
     cert: credenciais.certificado,
@@ -171,43 +173,35 @@ async function sicrediRequest<T>(
 }
 
 export const sicrediApi = {
-  /** PROVISÓRIO — path e parâmetros não confirmados (Fase B). */
+  /**
+   * GET /contacorrente/v1/extratos — paginado. `size` default 100 pra
+   * reduzir o número de chamadas; ajustar se a API tiver um teto menor
+   * em produção (a doc não especifica um máximo).
+   */
   async consultarExtrato(
     accessToken: string,
     dataInicio: string,
     dataFim: string,
-    conta: { cooperativa?: string | null; agencia?: string | null; numeroConta?: string | null },
     credenciais: CredenciaisSicredi,
+    page = 0,
+    size = 100,
   ): Promise<SicrediExtratoResponse> {
     return sicrediRequest<SicrediExtratoResponse>(
-      "/conta-corrente/v1/extrato",
+      "/contacorrente/v1/extratos",
       accessToken,
-      {
-        dataInicio,
-        dataFim,
-        cooperativa: conta.cooperativa ?? "",
-        agencia: conta.agencia ?? "",
-        conta: conta.numeroConta ?? "",
-      },
+      { dataInicio, dataFim, page: String(page), size: String(size) },
       credenciais,
     );
   },
 
-  /** PROVISÓRIO — path e formato de resposta não confirmados (Fase B). */
-  async consultarSaldo(
-    accessToken: string,
-    conta: { cooperativa?: string | null; agencia?: string | null; numeroConta?: string | null },
-    credenciais: CredenciaisSicredi,
-  ): Promise<SicrediSaldoResponse> {
-    return sicrediRequest<SicrediSaldoResponse>(
-      "/conta-corrente/v1/saldo",
-      accessToken,
-      {
-        cooperativa: conta.cooperativa ?? "",
-        agencia: conta.agencia ?? "",
-        conta: conta.numeroConta ?? "",
-      },
-      credenciais,
+  /**
+   * PROVISÓRIO — API "Saldo de Conta Corrente" documentada
+   * separadamente pelo Sicredi, ainda não consultada. Path/formato
+   * abaixo são um chute e vão falhar até isso ser confirmado.
+   */
+  async consultarSaldo(): Promise<never> {
+    throw new Error(
+      "API Saldo de Conta Corrente do Sicredi ainda não foi confirmada — falta consultar a documentação oficial (link 'API Saldo de Conta Corrente Sicredi' no portal do desenvolvedor).",
     );
   },
 };

@@ -1320,12 +1320,9 @@ Diretrizes:
   }),
 
   // ===== Sicredi =====
-  // PROVISÓRIO (ver server/sicrediApi.ts): sem adesão aprovada no Portal
-  // do Desenvolvedor ainda, então o formato do payload de extrato não
-  // está confirmado. O sync abaixo já grava uma amostra bruta da
-  // resposta no log — assim que rodar contra credencial real pela
-  // primeira vez, uso esse log pra corrigir o mapeamento (mesmo processo
-  // usado pro Inter em InterTransacaoCompleta).
+  // API "Extrato de Conta Corrente" confirmada contra a documentação
+  // oficial (developers.sicredi.com.br, 2026-08-11) — ver
+  // server/sicrediApi.ts. "Saldo de Conta Corrente" ainda não.
   sicredi: router({
     status: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
@@ -1360,7 +1357,7 @@ Diretrizes:
         await db.updateSicrediToken(input.unidadeId, accessToken, expiresAt);
         token = accessToken;
       }
-      return sicrediApi.consultarSaldo(token, { cooperativa: unidade.sicrediCooperativa, agencia: unidade.sicrediAgencia, numeroConta: unidade.sicrediConta }, credenciais);
+      return sicrediApi.consultarSaldo();
     }),
 
     sincronizar: protectedProcedure.input(z.object({
@@ -1386,37 +1383,39 @@ Diretrizes:
       const cnpjsContasDre = await db.listCnpjsDeContas();
 
       try {
-        const resposta = await sicrediApi.consultarExtrato(
-          token,
-          input.dataInicio,
-          input.dataFim,
-          { cooperativa: unidade.sicrediCooperativa, agencia: unidade.sicrediAgencia, numeroConta: unidade.sicrediConta },
-          credenciais,
-        );
+        // Paginado — busca a página 0 pra saber quantas existem, depois
+        // o resto, acumulando tudo antes de processar.
+        const primeira = await sicrediApi.consultarExtrato(token, input.dataInicio, input.dataFim, credenciais, 0);
+        const movimentos = [...primeira.dtlMovimentos];
+        for (let pagina = 1; pagina < primeira.totalPages; pagina++) {
+          const proxima = await sicrediApi.consultarExtrato(token, input.dataInicio, input.dataFim, credenciais, pagina);
+          movimentos.push(...proxima.dtlMovimentos);
+        }
 
-        const transacoes = await Promise.all(resposta.transacoes.map(async (t) => {
+        const transacoes = await Promise.all(movimentos.map(async (m) => {
+          const tipoOperacao: "C" | "D" = m.valor >= 0 ? "C" : "D";
           const resultado = contaSicredi?.id
             ? await db.categorizarTransacaoAutomaticamente({
               contaId: contaSicredi.id,
-              dataEntrada: t.data,
-              tipoTransacao: t.historico ?? "",
-              titulo: t.descricao,
-              descricao: t.historico ?? "",
-              valor: parseFloat(t.valor),
+              dataEntrada: m.data,
+              tipoTransacao: m.codigoLancamento,
+              titulo: m.descricao,
+              descricao: m.complemento ?? "",
+              valor: m.valor,
               origem: "sicredi",
-              tipoOperacao: t.tipoOperacao,
+              tipoOperacao,
             }, regrasDre, cnpjsContasDre)
             : { dreDescricaoId: undefined, categorizacaoStatus: "pendente" as const };
           return {
             unidadeId: input.unidadeId,
             contaId: contaSicredi?.id,
-            idTransacao: t.documento || `sicredi:${t.data}:${t.tipoOperacao}:${t.descricao.slice(0, 60)}:${t.valor}`,
-            dataEntrada: t.data,
-            tipoTransacao: t.historico,
-            tipoOperacao: t.tipoOperacao,
-            valor: t.valor,
-            titulo: t.descricao,
-            descricao: t.historico,
+            idTransacao: m.idMovimento,
+            dataEntrada: m.data,
+            tipoTransacao: m.codigoLancamento,
+            tipoOperacao,
+            valor: String(m.valor),
+            titulo: m.descricao,
+            descricao: m.complemento,
             origem: "sicredi" as const,
             dreDescricaoId: resultado.dreDescricaoId ?? undefined,
             categorizacaoStatus: resultado.categorizacaoStatus,
@@ -1430,10 +1429,10 @@ Diretrizes:
           tipo: "sicredi_extrato",
           status: "sucesso",
           registrosProcessados: inseridos,
-          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Total API: ${resposta.transacoes.length}. Novos: ${inseridos}. Amostra bruta: ${JSON.stringify(resposta).slice(0, 2000)}`,
+          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Saldo anterior: ${primeira.saldoAnterior}. Total API: ${movimentos.length}. Novos: ${inseridos}.`,
         });
 
-        return { success: true, totalInseridos: inseridos, totalTransacoes: resposta.transacoes.length };
+        return { success: true, totalInseridos: inseridos, totalTransacoes: movimentos.length };
       } catch (error: any) {
         await db.createSyncLog({
           unidadeId: input.unidadeId,
