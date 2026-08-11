@@ -90,3 +90,4 @@
 - [x] Garantir que o extrato Mercado Pago não aguarde nem bloqueie as demais etapas do roteiro global.
 - [x] Reaplicar redução de 25% na largura do menu lateral sobre o commit c166b91
 - [x] Documentar explicitamente a base c166b91 recuperada para o Menu de Sincronização e o checkpoint b0959a15 aplicado sobre ela
+- [x] Ajustar a largura padrão da sidebar para 220px conforme o print de referência

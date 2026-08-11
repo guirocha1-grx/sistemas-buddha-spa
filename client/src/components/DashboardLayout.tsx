@@ -76,11 +76,11 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-// Versão compacta: 25% menor que a largura anterior de 157px.
-// A chave versionada aplica a redução também a usuários com largura salva anteriormente.
-const SIDEBAR_WIDTH_KEY = "sidebar-width-compact-v2";
-const DEFAULT_WIDTH = 118;
-const MIN_WIDTH = 118;
+// Largura alinhada ao layout de referência, com os rótulos das seções completos.
+// A chave versionada evita que a preferência compactada de 118px prevaleça.
+const SIDEBAR_WIDTH_KEY = "sidebar-width-reference-v3";
+const DEFAULT_WIDTH = 220;
+const MIN_WIDTH = 180;
 const MAX_WIDTH = 480;
 
 export default function DashboardLayout({
