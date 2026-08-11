@@ -32,6 +32,7 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { AtendenteGate, useAtendenteAtual } from "./AtendenteGate";
+import GlobalSyncCenter from "./GlobalSyncCenter";
 import type { ModuloChave } from "@shared/modulos";
 
 // `modulo` liga cada item ao controle de acesso (shared/modulos.ts) —
@@ -405,6 +406,7 @@ function DashboardLayoutContent({
           {!atendenteLoading && !atendente && user?.role !== "admin" ? <AtendenteGate /> : children}
         </main>
       </SidebarInset>
+      <GlobalSyncCenter />
     </>
   );
 }
