@@ -389,11 +389,13 @@ export const inboxConversas = mysqlTable("inbox_conversas", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   // Identificador estável de chat que a Z-API sempre envia, mesmo quando
   // o telefone real vem ofuscado como "@lid" (contato via anúncio
-  // "clique para WhatsApp" — não dá pra converter @lid em telefone via
-  // nenhuma API, restrição de privacidade do próprio WhatsApp). Nesse
-  // caso telefone fica com o valor "@lid" recebido (serve pra enviar
-  // mensagem de volta) e chatLid guarda o mesmo valor pra indexação/
-  // exibição, com isLidPendente marcando que o número real é desconhecido.
+  // "clique para WhatsApp"). A Z-API consegue resolver a maioria pro
+  // telefone real via GET /contacts/{lid} (zapiApi.resolveLid, chamado
+  // no webhook) — só cai no fallback abaixo quando essa resolução falha
+  // de verdade. Nesse caso telefone fica com o valor "@lid" recebido
+  // (serve pra enviar mensagem de volta) e chatLid guarda o mesmo valor
+  // pra indexação/exibição, com isLidPendente marcando que o número real
+  // ainda é desconhecido.
   chatLid: varchar("chatLid", { length: 64 }),
   isLidPendente: mysqlEnum("isLidPendente", ["true", "false"]).default("false").notNull(),
 }, (table) => ({
