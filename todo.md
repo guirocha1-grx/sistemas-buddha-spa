@@ -123,3 +123,4 @@
 - [x] Publicar o checkpoint correspondente ao merge do commit 48e7090
 - [x] Puxar a última versão do GitHub, verificar migrações e publicar
 - [x] Publicar o checkpoint correspondente ao merge do commit 79f6797
+- [x] Puxar a última versão do GitHub, verificar migrações e publicar
