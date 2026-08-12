@@ -126,3 +126,5 @@
 - [x] Puxar a última versão do GitHub, verificar migrações e publicar
 - [x] Puxar a última versão do GitHub, verificar migrações e publicar
 - [x] Publicar o checkpoint correspondente ao merge do commit 01ac3eb
+- [x] Puxar a última versão do GitHub, verificar migrações e publicar
+- [x] Publicar o checkpoint correspondente ao merge do commit 80af545
