@@ -361,9 +361,18 @@ export async function getInboxConversaById(id: number) {
   }
 
   const clienteRows = conversa.clienteId
-    ? await db.select({ nome: clientes.nome }).from(clientes).where(eq(clientes.id, conversa.clienteId)).limit(1)
+    ? await db.select({
+        nome: clientes.nome,
+        qtdServicosFinalizados: clientes.qtdServicosFinalizados,
+        ultimoAtendimento: clientes.ultimoAtendimento,
+      }).from(clientes).where(eq(clientes.id, conversa.clienteId)).limit(1)
     : [];
-  return { ...conversa, clienteNome: clienteRows[0]?.nome };
+  return {
+    ...conversa,
+    clienteNome: clienteRows[0]?.nome,
+    clienteQtdServicos: clienteRows[0]?.qtdServicosFinalizados,
+    clienteUltimoAtendimento: clienteRows[0]?.ultimoAtendimento,
+  };
 }
 
 export async function marcarInboxConversaLida(id: number) {
