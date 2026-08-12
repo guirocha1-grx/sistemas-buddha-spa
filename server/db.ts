@@ -1359,6 +1359,7 @@ export async function ensureContasPadrao(unidadeId: number) {
 
 export interface DadosConta {
   nome: string;
+  tipo?: "manual" | "cartao_credito";
   agencia?: string;
   numeroConta?: string;
   cnpj?: string;

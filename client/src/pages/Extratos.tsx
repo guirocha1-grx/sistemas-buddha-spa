@@ -151,7 +151,7 @@ function fileParaBase64(file: File): Promise<string> {
   });
 }
 
-const CONTA_FORM_VAZIO = { nome: "", agencia: "", numeroConta: "", cnpj: "", saldoInicial: "", saldoInicialEm: "" };
+const CONTA_FORM_VAZIO = { nome: "", tipo: "manual" as "manual" | "cartao_credito", agencia: "", numeroConta: "", cnpj: "", saldoInicial: "", saldoInicialEm: "" };
 
 export default function Extratos() {
   const { unidadeSelecionada } = useUnidade();
@@ -192,6 +192,7 @@ export default function Extratos() {
     setContaEditandoId(contaAtual.id);
     setContaForm({
       nome: contaAtual.nome,
+      tipo: contaAtual.tipo === "cartao_credito" ? "cartao_credito" : "manual",
       agencia: contaAtual.agencia ?? "",
       numeroConta: contaAtual.numeroConta ?? "",
       cnpj: contaAtual.cnpj ?? "",
@@ -237,6 +238,7 @@ export default function Extratos() {
     const saldoInicialNum = contaForm.saldoInicial ? parseFloat(contaForm.saldoInicial.replace(",", ".")) : undefined;
     const dados = {
       nome: contaForm.nome.trim(),
+      tipo: contaForm.tipo,
       agencia: contaForm.agencia.trim() || undefined,
       numeroConta: contaForm.numeroConta.trim() || undefined,
       cnpj: contaForm.cnpj.trim() || undefined,
@@ -557,7 +559,7 @@ export default function Extratos() {
               <CardContent className="px-4">
                 <CardDescription className="flex items-center gap-1.5 text-xs">
                   <Wallet className="h-3.5 w-3.5" />
-                  {!contaAtual ? "Saldo Consolidado" : contaAtual.tipo === "inter_oauth" ? "Saldo Disponível (Inter)" : `Saldo (${contaAtual.nome})`}
+                  {!contaAtual ? "Saldo Consolidado" : contaAtual.tipo === "inter_oauth" ? "Saldo Disponível (Inter)" : contaAtual.tipo === "cartao_credito" ? "Fatura em aberto" : `Saldo (${contaAtual.nome})`}
                 </CardDescription>
                 {!contaAtual ? (
                   saldoConsolidado !== null ? (
@@ -565,6 +567,8 @@ export default function Extratos() {
                   ) : (
                     <span className="text-xs text-muted-foreground">Nenhuma conta com saldo configurado ainda</span>
                   )
+                ) : contaAtual.tipo === "cartao_credito" ? (
+                  <div className="text-base font-bold mt-0.5">{fmtCurrencyExtrato(totalDebitosExtrato - totalCreditosExtrato)}</div>
                 ) : contaAtual.tipo === "inter_oauth" ? (
                   saldoInterQuery.isLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mt-0.5" />
@@ -639,6 +643,16 @@ export default function Extratos() {
                           value={contaForm.nome}
                           onChange={(e) => setContaForm({ ...contaForm, nome: e.target.value })}
                         />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Tipo</Label>
+                        <Select value={contaForm.tipo} onValueChange={(v) => setContaForm({ ...contaForm, tipo: v as "manual" | "cartao_credito" })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="manual">Manual</SelectItem>
+                            <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>

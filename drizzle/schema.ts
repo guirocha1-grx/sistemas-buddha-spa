@@ -461,7 +461,7 @@ export const contas = mysqlTable("contas", {
   id: int("id").autoincrement().primaryKey(),
   unidadeId: int("unidadeId").notNull(),
   nome: varchar("nome", { length: 128 }).notNull(),
-  tipo: mysqlEnum("tipo", ["inter_oauth", "sicredi_oauth", "manual"]).default("manual").notNull(),
+  tipo: mysqlEnum("tipo", ["inter_oauth", "sicredi_oauth", "manual", "cartao_credito"]).default("manual").notNull(),
   // Ag/conta/CNPJ — identifica a conta pra bater contra
   // cpfCnpjOrigem/cpfCnpjDestino do extrato e detectar transferência
   // entre contas próprias automaticamente (sem depender de texto).

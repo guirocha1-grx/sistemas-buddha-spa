@@ -1553,6 +1553,7 @@ Diretrizes:
     create: adminProcedure.input(z.object({
       unidadeId: z.number(),
       nome: z.string().min(1),
+      tipo: z.enum(["manual", "cartao_credito"]).optional(),
       agencia: z.string().optional(),
       numeroConta: z.string().optional(),
       cnpj: z.string().optional(),
@@ -1570,6 +1571,7 @@ Diretrizes:
     atualizar: adminProcedure.input(z.object({
       id: z.number(),
       nome: z.string().min(1),
+      tipo: z.enum(["manual", "cartao_credito"]).optional(),
       agencia: z.string().optional(),
       numeroConta: z.string().optional(),
       cnpj: z.string().optional(),
