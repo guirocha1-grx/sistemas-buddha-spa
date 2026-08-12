@@ -897,7 +897,10 @@ export function normalizarTipoAdquirente(
   if (t === "bank_transfer" || m === "pix") return "pix";
   if (t === "account_money" || m === "account_money") return "saldo_mercado_pago";
   if (t === "credit_card" || m.includes("credit")) return "cartao_credito";
-  if (t === "debit_card" || m.includes("debit")) return "cartao_debito";
+  // prepaid_card (cartão pré-pago) debita na hora do saldo carregado,
+  // sem parcelamento/linha de crédito — mesmo comportamento de
+  // liquidação do débito comum, por isso entra no mesmo balde.
+  if (t === "debit_card" || t === "prepaid_card" || m.includes("debit")) return "cartao_debito";
   return t || m || "desconhecido";
 }
 

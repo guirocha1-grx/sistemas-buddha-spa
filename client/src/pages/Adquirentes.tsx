@@ -290,11 +290,11 @@ export default function Adquirentes() {
               <CardTitle className="text-base flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
                 <CreditCard className="h-4 w-4" /> Vendas
               </CardTitle>
-              <CardDescription>
-                {abaAtiva === "consolidado"
-                  ? "Mercado Pago + Interpag juntos, com a forma de pagamento já classificada — mesma leitura que a Comanda Recepção usa."
-                  : "Uma linha por venda (ou por parcela) — não é o crédito agregado que cai na conta"}
-              </CardDescription>
+              {abaAtiva === "consolidado" && (
+                <CardDescription>
+                  Mercado Pago + Interpag juntos, com a forma de pagamento já classificada — mesma leitura que a Comanda Recepção usa.
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent className="space-y-4">
               <Tabs value={abaAtiva} onValueChange={(v) => setAbaAtiva(v as "consolidado" | "mercadopago" | "interpag")}>
