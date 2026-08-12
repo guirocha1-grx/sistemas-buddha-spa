@@ -928,7 +928,7 @@ export default function Extratos() {
                     size="sm"
                     variant="outline"
                     className="h-6 text-xs"
-                    onClick={() => unidadeId && reprocessarMutation.mutate({ unidadeId })}
+                    onClick={() => unidadeId && reprocessarMutation.mutate({ unidadeId, contaId: contaIdSelecionada, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato })}
                     disabled={!unidadeId || reprocessarMutation.isPending}
                   >
                     {reprocessarMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}

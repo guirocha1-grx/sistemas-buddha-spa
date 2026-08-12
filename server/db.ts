@@ -1864,16 +1864,33 @@ export async function categorizarTransacaoAutomaticamente(
  * confirmação. Se nenhuma regra bater mais numa linha que estava
  * "sugerida" (ex.: regra removida/alterada), volta pra "pendente" de
  * verdade em vez de ficar com uma sugestão que não existe mais.
+ *
+ * contaId/dataInicio/dataFim são opcionais mas devem ser passados pela
+ * tela sempre que o botão for clicado dentro de uma aba/período
+ * específico — sem isso a função reprocessa a unidade inteira, em
+ * qualquer data, o que já causou confusão real: usuário via "14
+ * sugerida(s)" na aba Mercado Pago do mês vigente, clicava, e o
+ * resultado dizia "1537 categorizada(s)" porque pegou o histórico
+ * inteiro de todas as contas.
  */
-export async function reprocessarPendentes(unidadeId: number): Promise<number> {
+export async function reprocessarPendentes(
+  unidadeId: number,
+  contaId?: number,
+  dataInicio?: string,
+  dataFim?: string,
+): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
 
   const regras = await listRegrasParaMatch();
   const cnpjsContas = await listCnpjsDeContas();
 
-  const naoConfirmadas = await db.select().from(interExtratos)
-    .where(and(eq(interExtratos.unidadeId, unidadeId), ne(interExtratos.categorizacaoStatus, "confirmada")));
+  const condicoes = [eq(interExtratos.unidadeId, unidadeId), ne(interExtratos.categorizacaoStatus, "confirmada")];
+  if (contaId !== undefined) condicoes.push(eq(interExtratos.contaId, contaId));
+  if (dataInicio) condicoes.push(gte(interExtratos.dataEntrada, dataInicio));
+  if (dataFim) condicoes.push(lte(interExtratos.dataEntrada, dataFim));
+
+  const naoConfirmadas = await db.select().from(interExtratos).where(and(...condicoes));
 
   let atualizados = 0;
   for (const t of naoConfirmadas) {

@@ -1022,8 +1022,11 @@ Diretrizes:
      */
     reprocessarCategorias: protectedProcedure.input(z.object({
       unidadeId: z.number(),
+      contaId: z.number().optional(),
+      dataInicio: z.string().optional(),
+      dataFim: z.string().optional(),
     })).mutation(async ({ input }) => {
-      const atualizados = await db.reprocessarPendentes(input.unidadeId);
+      const atualizados = await db.reprocessarPendentes(input.unidadeId, input.contaId, input.dataInicio, input.dataFim);
       return { success: true, atualizados };
     }),
 
