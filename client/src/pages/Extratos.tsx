@@ -34,7 +34,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { DescricaoCombobox } from "@/components/DescricaoCombobox";
 import { SplitLancamentoDialog } from "@/components/SplitLancamentoDialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Check, Pencil, Search, TriangleAlert, ChevronsUpDown, StickyNote, SplitSquareHorizontal } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, Plus, Check, Pencil, Search, TriangleAlert, ChevronsUpDown, StickyNote, SplitSquareHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
 // ===== Períodos rápidos =====
@@ -615,23 +615,6 @@ export default function Extratos() {
         </div>
       ) : (
         <>
-          {!statusInterQuery.data?.configurado && (
-            <Card className="border-amber-200 bg-amber-50">
-              <CardContent className="pt-6">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-amber-900">Banco Inter não configurado</p>
-                    <p className="text-xs text-amber-700 mt-1">
-                      Acesse <strong>Configurações → Banco Inter</strong> para sincronizar automaticamente,
-                      ou importe um extrato manualmente numa conta abaixo.
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
           <div className="grid gap-3 md:grid-cols-3">
             <Card className="border-border/50 shadow-sm py-2.5">
               <CardContent className="px-4">
