@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, scripts, scriptsUso, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem, type InsertScript } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import { normalizarTelefone } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
@@ -361,9 +361,18 @@ export async function getInboxConversaById(id: number) {
   }
 
   const clienteRows = conversa.clienteId
-    ? await db.select({ nome: clientes.nome }).from(clientes).where(eq(clientes.id, conversa.clienteId)).limit(1)
+    ? await db.select({
+        nome: clientes.nome,
+        qtdServicosFinalizados: clientes.qtdServicosFinalizados,
+        ultimoAtendimento: clientes.ultimoAtendimento,
+      }).from(clientes).where(eq(clientes.id, conversa.clienteId)).limit(1)
     : [];
-  return { ...conversa, clienteNome: clienteRows[0]?.nome };
+  return {
+    ...conversa,
+    clienteNome: clienteRows[0]?.nome,
+    clienteQtdServicos: clienteRows[0]?.qtdServicosFinalizados,
+    clienteUltimoAtendimento: clienteRows[0]?.ultimoAtendimento,
+  };
 }
 
 export async function marcarInboxConversaLida(id: number) {
@@ -2558,4 +2567,69 @@ export async function jaEnviouRelatorioRecepcaoHoje(unidadeId: number): Promise<
 export async function marcarRelatorioRecepcaoEnviadoHoje(unidadeId: number): Promise<void> {
   const hoje = new Date().toISOString().slice(0, 10);
   await setConfig(chaveEnvioRecepcao(unidadeId), hoje);
+}
+
+// ===== Scripts (mensagens prontas do Inbox) =====
+
+export async function listScripts(busca?: string, categoria?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const condicoes = [eq(scripts.ativo, true)];
+  if (categoria) condicoes.push(eq(scripts.categoriaScript, categoria));
+  if (busca) condicoes.push(like(scripts.script, `%${busca}%`));
+  return db.select().from(scripts).where(and(...condicoes)).orderBy(scripts.categoriaScript, scripts.id);
+}
+
+export async function listCategoriasScript(): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const linhas = await db.selectDistinct({ categoria: scripts.categoriaScript }).from(scripts).where(eq(scripts.ativo, true));
+  return linhas.map((l) => l.categoria).sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
+/** Últimos scripts distintos usados por qualquer usuário — alimenta a coluna "Recentes" do seletor. */
+export async function listScriptsRecentes(limit: number = 8) {
+  const db = await getDb();
+  if (!db) return [];
+  const usos = await db.select({ scriptId: scriptsUso.scriptId, usadoEm: scriptsUso.usadoEm })
+    .from(scriptsUso).orderBy(desc(scriptsUso.usadoEm)).limit(limit * 4);
+  const idsVistos = new Set<number>();
+  const idsOrdenados: number[] = [];
+  for (const u of usos) {
+    if (idsVistos.has(u.scriptId)) continue;
+    idsVistos.add(u.scriptId);
+    idsOrdenados.push(u.scriptId);
+    if (idsOrdenados.length >= limit) break;
+  }
+  if (idsOrdenados.length === 0) return [];
+  const linhas = await db.select().from(scripts).where(and(inArray(scripts.id, idsOrdenados), eq(scripts.ativo, true)));
+  const porId = new Map(linhas.map((l) => [l.id, l]));
+  return idsOrdenados.map((id) => porId.get(id)).filter((s): s is NonNullable<typeof s> => !!s);
+}
+
+export async function registrarUsoScript(scriptId: number, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(scriptsUso).values({ scriptId, userId });
+}
+
+export async function createScript(dados: { categoriaScript: string; script: string; observacoes?: string }): Promise<number | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const insertValues: InsertScript = { categoriaScript: dados.categoriaScript, script: dados.script, observacoes: dados.observacoes };
+  const result = await db.insert(scripts).values(insertValues).$returningId();
+  return result[0]?.id;
+}
+
+export async function updateScript(id: number, dados: { categoriaScript?: string; script?: string; observacoes?: string | null }): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(scripts).set(dados).where(eq(scripts.id, id));
+}
+
+/** Exclusão soft — preserva o histórico em scriptsUso. */
+export async function excluirScript(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(scripts).set({ ativo: false }).where(eq(scripts.id, id));
 }

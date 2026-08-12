@@ -10,6 +10,7 @@ import Clientes from "./pages/Clientes";
 import Reativacao from "./pages/Reativacao";
 import Agenda from "./pages/Agenda";
 import Mensagens from "./pages/Mensagens";
+import Scripts from "./pages/Scripts";
 import Financeiro from "./pages/Financeiro";
 import Extratos from "./pages/Extratos";
 import ComandaRecepcao from "./pages/ComandaRecepcao";
@@ -32,6 +33,7 @@ function Router() {
         <Route path="/reativacao" component={Reativacao} />
         <Route path="/agenda" component={Agenda} />
         <Route path="/mensagens" component={Mensagens} />
+        <Route path="/scripts" component={Scripts} />
         <Route path="/financeiro" component={Financeiro} />
         <Route path="/financeiro/extratos" component={Extratos} />
         <Route path="/financeiro/comanda-recepcao" component={ComandaRecepcao} />

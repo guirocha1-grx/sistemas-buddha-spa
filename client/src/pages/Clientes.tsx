@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { rotaInboxConversa } from "@shared/inboxNavigation";
 import { ClienteWhatsAppButton } from "@/components/ClienteWhatsAppButton";
+import { diasDesde } from "@/lib/utils";
 
 function fileParaBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -298,7 +299,12 @@ export default function Clientes() {
                           <TableCell className="py-2 text-xs whitespace-nowrap">{cliente.cpf || "—"}</TableCell>
                           <TableCell className="py-2 text-xs whitespace-nowrap">{fmtDataBr(cliente.dataNascimento)}</TableCell>
                           <TableCell className="py-2 text-xs text-right tabular-nums">{cliente.qtdAtendimentosFinalizados}</TableCell>
-                          <TableCell className="py-2 text-xs whitespace-nowrap">{fmtDataBr(cliente.ultimoAtendimento)}</TableCell>
+                          <TableCell className="py-2 text-xs whitespace-nowrap">
+                            {fmtDataBr(cliente.ultimoAtendimento)}
+                            {diasDesde(cliente.ultimoAtendimento) !== null && (
+                              <span className="text-muted-foreground"> ({diasDesde(cliente.ultimoAtendimento)}d)</span>
+                            )}
+                          </TableCell>
                         </TableRow>
                       </DialogTrigger>
                       <DialogContent className="max-w-2lg max-h-[80vh] overflow-y-auto">
@@ -367,7 +373,12 @@ export default function Clientes() {
                         </div>
                         <div>
                           <span className="text-muted-foreground">Último atendimento:</span>
-                          <p className="font-medium">{fmtDataBr(selectedCliente.ultimoAtendimento)}</p>
+                          <p className="font-medium">
+                            {fmtDataBr(selectedCliente.ultimoAtendimento)}
+                            {diasDesde(selectedCliente.ultimoAtendimento) !== null && (
+                              <span className="text-muted-foreground font-normal"> ({diasDesde(selectedCliente.ultimoAtendimento)} dias atrás)</span>
+                            )}
+                          </p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Atendimentos finalizados:</span>

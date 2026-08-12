@@ -44,6 +44,7 @@ const ROUTER_MODULO: Record<string, string> = {
   agenda: "agenda",
   inbox: "mensagens",
   mensageria: "mensagens",
+  scripts: "scripts",
   financeiro: "financeiro",
   inter: "financeiro",
   sicredi: "financeiro",

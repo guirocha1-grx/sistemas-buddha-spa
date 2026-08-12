@@ -15,14 +15,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
   Pencil, Check, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
-  UserPlus,
+  UserPlus, SmilePlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { telefonesCorrespondem } from "@shared/telefone";
+import { formatPhone, diasDesde } from "@/lib/utils";
+import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
+import { ScriptPicker } from "@/components/ScriptPicker";
 
 function formatHora(data: string | Date | null | undefined) {
   if (!data) return "";
@@ -101,6 +105,7 @@ export default function Mensagens() {
   const [modalNovoCliente, setModalNovoCliente] = useState(false);
   const [novoClienteNome, setNovoClienteNome] = useState("");
   const [novoClienteTelefone, setNovoClienteTelefone] = useState("");
+  const [scriptPickerOpen, setScriptPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
@@ -440,7 +445,7 @@ export default function Mensagens() {
                 </div>
                 <div className="min-w-0 flex-1 overflow-hidden">
                   <div className="flex items-center gap-1">
-                    <span className="font-medium text-xs truncate min-w-0 flex-1">{c.clienteNome || c.nomeContato || c.telefone}</span>
+                    <span className="font-medium text-xs truncate min-w-0 flex-1">{c.clienteNome || c.nomeContato || formatPhone(c.telefone)}</span>
                     <span className="text-[10px] text-muted-foreground shrink-0">{formatHora(c.ultimaMensagemEm)}</span>
                   </div>
                   <div className="flex items-center gap-1 mt-0.5">
@@ -485,8 +490,8 @@ export default function Mensagens() {
                   <ArrowLeft size={18} />
                 </button>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm truncate">{conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || conversaSelecionada?.telefone}</p>
-                  <p className="text-xs text-muted-foreground">{conversaSelecionada?.telefone}</p>
+                  <p className="font-medium text-sm truncate">{conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || formatPhone(conversaSelecionada?.telefone)}</p>
+                  <p className="text-xs text-muted-foreground">{formatPhone(conversaSelecionada?.telefone)}</p>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <Button
@@ -604,6 +609,29 @@ export default function Mensagens() {
                 >
                   {enviarMidiaMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                 </Button>
+                <ScriptPicker
+                  open={scriptPickerOpen}
+                  onOpenChange={setScriptPickerOpen}
+                  onSelect={(s) => setTexto((prev) => (prev ? `${prev}\n${s}` : s))}
+                  disabled={!conversaSelecionadaId}
+                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="icon" className="shrink-0" title="Inserir emoji">
+                      <SmilePlus className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0 border-0" side="top" align="end">
+                    <EmojiPicker
+                      theme={Theme.AUTO}
+                      onEmojiClick={(emojiData: EmojiClickData) => setTexto((prev) => prev + emojiData.emoji)}
+                      searchPlaceholder="Buscar emoji..."
+                      lazyLoadEmojis
+                      height={380}
+                      width={320}
+                    />
+                  </PopoverContent>
+                </Popover>
                 <Textarea
                   placeholder="Digite uma mensagem..."
                   className="min-h-9 max-h-32 resize-none"
@@ -613,6 +641,13 @@ export default function Mensagens() {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
                       handleEnviar();
+                      return;
+                    }
+                    const target = e.target as HTMLTextAreaElement;
+                    const cursorNoInicio = target.selectionStart === 0 || /\s$/.test(texto.slice(0, target.selectionStart));
+                    if (e.key === "/" && cursorNoInicio) {
+                      e.preventDefault();
+                      setScriptPickerOpen(true);
                     }
                   }}
                 />
@@ -678,7 +713,7 @@ export default function Mensagens() {
                       <p className="text-xs text-orange-500 font-medium">Número não confirmado</p>
                     </div>
                   ) : (
-                    <p className="text-xs text-muted-foreground">{conversaSelecionada?.telefone}</p>
+                    <p className="text-xs text-muted-foreground">{formatPhone(conversaSelecionada?.telefone)}</p>
                   )}
                   {conversaSelecionada?.isLidPendente === "true" && (
                     <Button
@@ -692,6 +727,25 @@ export default function Mensagens() {
                     </Button>
                   )}
                 </div>
+
+                {conversaSelecionada?.clienteId && (
+                  <div className="rounded-lg border bg-muted/30 p-2.5 flex items-center justify-around text-center">
+                    <div>
+                      <p className="text-sm font-semibold">{conversaSelecionada.clienteQtdServicos ?? 0}</p>
+                      <p className="text-[10px] text-muted-foreground">serviços na unidade</p>
+                    </div>
+                    <Separator orientation="vertical" className="h-8" />
+                    <div>
+                      <p className="text-sm font-semibold">
+                        {(() => {
+                          const dias = diasDesde(conversaSelecionada.clienteUltimoAtendimento);
+                          return dias === null ? "—" : dias === 0 ? "Hoje" : `${dias}d`;
+                        })()}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">desde a última visita</p>
+                    </div>
+                  </div>
+                )}
 
                 {conversaSelecionada && !conversaSelecionada.clienteId && (
                   <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-2">
@@ -847,7 +901,7 @@ export default function Mensagens() {
             </DialogTitle>
             <DialogDescription>
               Confirma a exclusão de todas as mensagens da conversa com{" "}
-              <span className="font-semibold text-foreground">{conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || conversaSelecionada?.telefone}</span>?
+              <span className="font-semibold text-foreground">{conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || formatPhone(conversaSelecionada?.telefone)}</span>?
               <br />
               <span className="text-destructive text-xs">Esta ação não pode ser desfeita.</span>
             </DialogDescription>
@@ -905,8 +959,8 @@ export default function Mensagens() {
                       unificarDestinoId === c.id ? "border-primary bg-primary/10 text-primary" : "border-transparent hover:bg-muted/60"
                     }`}
                   >
-                    <div className="font-medium text-xs">{c.clienteNome || c.nomeContato || c.telefone}</div>
-                    <div className="text-[10px] text-muted-foreground">{c.telefone} · {c.ultimaMensagemTexto?.slice(0, 40)}</div>
+                    <div className="font-medium text-xs">{c.clienteNome || c.nomeContato || formatPhone(c.telefone)}</div>
+                    <div className="text-[10px] text-muted-foreground">{formatPhone(c.telefone)} · {c.ultimaMensagemTexto?.slice(0, 40)}</div>
                   </button>
                 ))}
               {(conversas ?? []).filter((c) => c.id !== conversaSelecionadaId && c.isLidPendente !== "true").length === 0 && (
