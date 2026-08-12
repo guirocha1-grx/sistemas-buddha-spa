@@ -117,3 +117,5 @@
 - [x] Publicar o checkpoint correspondente ao merge do commit be627a9
 - [x] Puxar a última versão do GitHub, verificar migrações e publicar
 - [x] Publicar o checkpoint correspondente ao merge do commit fba8a3c
+- [x] Puxar a última versão do GitHub, verificar migrações e publicar
+- [x] Publicar o checkpoint correspondente ao merge do commit a7dba71
