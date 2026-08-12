@@ -115,3 +115,5 @@
 - [x] Confirmar e enviar ao GitHub a correção Mercado Pago publicada como 2d9b21e0
 - [x] Puxar a última versão do GitHub, aplicar migrações pendentes e publicar
 - [x] Publicar o checkpoint correspondente ao merge do commit be627a9
+- [x] Puxar a última versão do GitHub, verificar migrações e publicar
+- [x] Publicar o checkpoint correspondente ao merge do commit fba8a3c
