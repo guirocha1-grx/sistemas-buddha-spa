@@ -134,3 +134,5 @@
 - [x] Publicar o checkpoint correspondente ao merge do commit ecc5b2f
 - [x] Puxar a última versão do GitHub, verificar migrações e publicar
 - [x] Registrar checkpoint da verificação final sem novos commits
+- [x] Puxar a última versão do GitHub, verificar migrações e publicar
+- [x] Publicar o checkpoint correspondente ao merge do commit 1e35f75
