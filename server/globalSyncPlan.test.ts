@@ -14,6 +14,6 @@ describe("global sync plan", () => {
     plan[0] = { ...plan[0], status: "success" };
     plan[1] = { ...plan[1], status: "error" };
     expect(getSyncProgress(plan)).toBe(50);
-    expect(getSyncSummary(plan)).toEqual({ success: 1, error: 1, skipped: 2 });
+    expect(getSyncSummary(plan)).toEqual({ success: 1, error: 1, skipped: 2, background: 0 });
   });
 });
