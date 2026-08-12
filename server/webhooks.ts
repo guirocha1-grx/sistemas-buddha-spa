@@ -134,6 +134,14 @@ interface ZapiWebhookPayload {
   senderName?: string;
   fromMe?: boolean;
   isGroup?: boolean;
+  // Só vêm preenchidos quando isGroup=true (confirmado contra
+  // developer.z-api.io/webhooks/on-message-received-examples).
+  // chatName = nome do grupo; participantPhone/senderName = quem
+  // dentro do grupo mandou essa mensagem específica (muda a cada uma,
+  // diferente do resto do payload que descreve a conversa).
+  chatName?: string;
+  participantPhone?: string;
+  participantLid?: string;
   text?: { message?: string };
   image?: { imageUrl?: string; caption?: string };
   audio?: { audioUrl?: string };
@@ -158,13 +166,14 @@ function registerZapiWebhook(app: Express) {
 
       const payload = req.body as ZapiWebhookPayload;
 
-      // Mensagens de grupo não são atendimento 1:1 — sempre ignora.
-      // fromMe (recepção mandou) NÃO é mais ignorado: quando alguém
-      // responde direto pelo app do WhatsApp Business no celular (fora
-      // do CRM), é assim que ficamos sabendo — ver dedup por
-      // zapiMessageId abaixo pra não duplicar o que já foi registrado
-      // na hora do envio pelo próprio CRM.
-      if (payload.type !== "ReceivedCallback" || payload.isGroup || !payload.phone) {
+      // fromMe (recepção mandou) NÃO é ignorado: quando alguém responde
+      // direto pelo app do WhatsApp Business no celular (fora do CRM),
+      // é assim que ficamos sabendo — ver dedup por zapiMessageId
+      // abaixo pra não duplicar o que já foi registrado na hora do
+      // envio pelo próprio CRM. Mensagem de grupo também não é mais
+      // ignorada (2026-08-12, a pedido do usuário) — vira uma conversa
+      // completa no Inbox, ver tratamento de isGroup logo abaixo.
+      if (payload.type !== "ReceivedCallback" || !payload.phone) {
         res.status(200).json({ ignored: true });
         return;
       }
@@ -179,31 +188,39 @@ function registerZapiWebhook(app: Express) {
         return;
       }
 
-      // Contato via anúncio "clique para WhatsApp" às vezes chega com o
-      // telefone ofuscado como "@lid". Bug real encontrado: zapiApi.resolveLid
-      // já existia (GET /contacts/{lid}, confirmado funcional no mobai-crm),
-      // mas nunca era chamado aqui — todo @lid ficava permanentemente
-      // "pendente" mesmo quando a Z-API conseguia resolver. Só cai pro
-      // fallback "pendente" (usando o próprio chatLid como identificador
-      // estável) se a resolução falhar de verdade.
-      const ehLidBruto = payload.phone.includes("@lid") || (!payload.phone.match(/^\d+$/) && !!payload.chatLid);
-      let identificadorContato = ehLidBruto ? (payload.chatLid ?? payload.phone) : payload.phone;
-      let ehLid = ehLidBruto;
+      let identificadorContato = payload.phone;
+      let ehLid = false;
       let nomeResolvidoPorLid: string | undefined;
 
-      if (ehLidBruto && !(unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken)) {
-        console.warn(`[Webhook Z-API] @lid ${identificadorContato} não resolvido: faltam credenciais Z-API (instanceId/token/clientToken) na unidade ${unidadeId}.`);
-      }
-      if (ehLidBruto && unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken) {
-        try {
-          const resolvido = await zapiApi.resolveLid(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, identificadorContato);
-          if (resolvido) {
-            identificadorContato = resolvido.phone;
-            ehLid = false;
-            nomeResolvidoPorLid = resolvido.name || undefined;
+      // Grupo nunca vem como "@lid" (o ID do grupo, sufixo "-group", já
+      // é o identificador definitivo) — pula toda a resolução abaixo,
+      // que é só pra contato individual via anúncio "clique para WhatsApp".
+      if (!payload.isGroup) {
+        // Contato via anúncio "clique para WhatsApp" às vezes chega com o
+        // telefone ofuscado como "@lid". Bug real encontrado: zapiApi.resolveLid
+        // já existia (GET /contacts/{lid}, confirmado funcional no mobai-crm),
+        // mas nunca era chamado aqui — todo @lid ficava permanentemente
+        // "pendente" mesmo quando a Z-API conseguia resolver. Só cai pro
+        // fallback "pendente" (usando o próprio chatLid como identificador
+        // estável) se a resolução falhar de verdade.
+        const ehLidBruto = payload.phone.includes("@lid") || (!payload.phone.match(/^\d+$/) && !!payload.chatLid);
+        identificadorContato = ehLidBruto ? (payload.chatLid ?? payload.phone) : payload.phone;
+        ehLid = ehLidBruto;
+
+        if (ehLidBruto && !(unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken)) {
+          console.warn(`[Webhook Z-API] @lid ${identificadorContato} não resolvido: faltam credenciais Z-API (instanceId/token/clientToken) na unidade ${unidadeId}.`);
+        }
+        if (ehLidBruto && unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken) {
+          try {
+            const resolvido = await zapiApi.resolveLid(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, identificadorContato);
+            if (resolvido) {
+              identificadorContato = resolvido.phone;
+              ehLid = false;
+              nomeResolvidoPorLid = resolvido.name || undefined;
+            }
+          } catch (error) {
+            console.error("[Webhook Z-API] Falha ao resolver @lid:", error);
           }
-        } catch (error) {
-          console.error("[Webhook Z-API] Falha ao resolver @lid:", error);
         }
       }
 
@@ -228,8 +245,9 @@ function registerZapiWebhook(app: Express) {
       // Puxa o nome de Clientes (Belle) quando o telefone bate — mesmo
       // padrão do mobai-crm, pra Inbox não depender só do nome que o
       // WhatsApp manda. Só tenta quando o número é real (não @lid ainda
-      // não resolvido — número curto/genérico não teria match confiável).
-      const clienteId = ehLid ? undefined : await db.buscarClienteIdPorTelefone(identificadorContato);
+      // não resolvido, nem grupo — grupo não é 1 cliente, não tem como
+      // bater telefone).
+      const clienteId = (ehLid || payload.isGroup) ? undefined : await db.buscarClienteIdPorTelefone(identificadorContato);
 
       const conversaId = await db.upsertInboxConversa({
         unidadeId,
@@ -237,6 +255,7 @@ function registerZapiWebhook(app: Express) {
         telefone: identificadorContato,
         chatLid: payload.chatLid,
         isLidPendente: ehLid,
+        isGrupo: payload.isGroup,
         clienteId,
         // "senderName" nesse payload é o nome de quem mandou — só faz
         // sentido atualizar o nome do contato quando é ele mandando
@@ -244,8 +263,12 @@ function registerZapiWebhook(app: Express) {
         // contato" e o campo pode nem vir preenchido do mesmo jeito.
         // Se o @lid foi resolvido agora e a Z-API não mandou senderName
         // (comum em mensagem antiga reprocessada), usa o nome que veio
-        // do próprio resolveLid.
-        nomeContato: payload.fromMe ? undefined : (payload.senderName ?? nomeResolvidoPorLid),
+        // do próprio resolveLid. Em grupo, o nome da CONVERSA é o nome
+        // do grupo (chatName) — senderName ali é de quem mandou aquela
+        // mensagem específica, não do grupo.
+        nomeContato: payload.isGroup
+          ? payload.chatName
+          : (payload.fromMe ? undefined : (payload.senderName ?? nomeResolvidoPorLid)),
         ultimaMensagemTexto: resumo,
         incrementarNaoLidas: !payload.fromMe,
       });
@@ -258,6 +281,12 @@ function registerZapiWebhook(app: Express) {
       const mensagemId = await db.insertInboxMensagem({
         conversaId,
         direcao: payload.fromMe ? "enviada" : "recebida",
+        // Quem dentro do grupo mandou essa mensagem — só em recebida
+        // (fromMe é a própria recepção, não um participante do grupo).
+        ...(payload.isGroup && !payload.fromMe ? {
+          participanteTelefone: payload.participantPhone,
+          participanteNome: payload.senderName,
+        } : {}),
         tipo,
         conteudo,
         metadados: metadados ? JSON.stringify(metadados) : null,

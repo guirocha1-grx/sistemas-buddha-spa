@@ -406,6 +406,10 @@ export const inboxConversas = mysqlTable("inbox_conversas", {
   // ainda é desconhecido.
   chatLid: varchar("chatLid", { length: 64 }),
   isLidPendente: mysqlEnum("isLidPendente", ["true", "false"]).default("false").notNull(),
+  // Grupo do WhatsApp em vez de conversa 1:1 (telefone = ID do grupo,
+  // sufixo "-group"; nomeContato = nome do grupo). Nunca regride depois
+  // de criada — mesmo espírito de isLidPendente.
+  isGrupo: mysqlEnum("isGrupo", ["true", "false"]).default("false").notNull(),
 }, (table) => ({
   telefoneCanalIdx: index("inbox_conversas_telefone_canal_idx").on(table.telefone, table.canal),
   unidadeIdx: index("inbox_conversas_unidade_idx").on(table.unidadeId),
@@ -444,6 +448,12 @@ export const inboxMensagens = mysqlTable("inbox_mensagens", {
   // pelo app do WhatsApp Business, fora do CRM). Própria do
   // buddha-spa, migração 2026-08-11-inbox-zapi-message-id.sql.
   zapiMessageId: varchar("zapiMessageId", { length: 100 }),
+  // Quem DENTRO de um grupo mandou essa mensagem específica (null pra
+  // conversa 1:1) — muda a cada mensagem, por isso mora aqui e não na
+  // conversa. Contraparte de enviadaPorAtendenteId (que é "quem da
+  // nossa equipe mandou").
+  participanteTelefone: varchar("participanteTelefone", { length: 30 }),
+  participanteNome: varchar("participanteNome", { length: 200 }),
 }, (table) => ({
   conversaCreatedIdx: index("inbox_mensagens_conversa_created_idx").on(table.conversaId, table.createdAt),
 }));
