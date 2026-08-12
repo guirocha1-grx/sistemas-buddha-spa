@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CategoriaCombobox } from "@/components/CategoriaCombobox";
 import {
   Dialog,
   DialogContent,
@@ -337,14 +338,11 @@ export default function Parametros() {
                   </div>
                   <div>
                     <Label className="text-xs">Categoria</Label>
-                    <Select value={descricaoForm.dreCategoriaId} onValueChange={(v) => setDescricaoForm({ ...descricaoForm, dreCategoriaId: v })}>
-                      <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                      <SelectContent>
-                        {categorias.map((c) => (
-                          <SelectItem key={c.id} value={String(c.id)}>{c.nome}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <CategoriaCombobox
+                      categorias={categorias}
+                      value={descricaoForm.dreCategoriaId}
+                      onChange={(v) => setDescricaoForm({ ...descricaoForm, dreCategoriaId: v })}
+                    />
                   </div>
                   <div className="flex justify-end">
                     <Button
