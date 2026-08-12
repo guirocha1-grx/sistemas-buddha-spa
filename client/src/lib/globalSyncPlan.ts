@@ -1,4 +1,4 @@
-export type SyncStatus = "pending" | "running" | "success" | "error" | "skipped";
+export type SyncStatus = "pending" | "running" | "background" | "success" | "error" | "skipped";
 
 export type SyncStepKind = "inter" | "sicredi" | "caixa" | "mercadoPagoConta" | "mercadoPagoAdquirentes" | "comandaConsolidado" | "comandaItens" | "driveContas";
 
@@ -48,7 +48,7 @@ export function buildGlobalSyncPlan(unidades: SyncUnit[]): SyncStep[] {
   return [...unidades]
     .sort((a, b) => Number(/ribeir[aã]o|rbs/i.test(b.nome)) - Number(/ribeir[aã]o|rbs/i.test(a.nome)))
     .flatMap((unidade) => [
-      step(unidade, "Contas Bancárias", "Conta Mercado Pago · extrato", "mercadoPagoConta", Boolean(unidade.mpAccessToken)),
+      step(unidade, "Contas Bancárias", "Conta Corrente Mercado Pago", "mercadoPagoConta", Boolean(unidade.mpAccessToken)),
       step(unidade, "Contas Bancárias", "Conta corrente · Banco Inter", "inter", configured([unidade.interClientId, unidade.interClientSecret, unidade.interCertificado, unidade.interChavePrivada])),
       step(unidade, "Contas Bancárias", "Conta corrente · Sicredi", "sicredi", configured([unidade.sicrediClientId, unidade.sicrediClientSecret, unidade.sicrediCertificado, unidade.sicrediChavePrivada])),
       step(unidade, "Contas Bancárias", "Caixa físico · Google Sheets", "caixa"),
@@ -61,7 +61,7 @@ export function buildGlobalSyncPlan(unidades: SyncUnit[]): SyncStep[] {
 
 export function getSyncProgress(steps: SyncStep[]) {
   if (steps.length === 0) return 0;
-  return Math.round((steps.filter((item) => ["success", "error", "skipped"].includes(item.status)).length / steps.length) * 100);
+  return Math.round((steps.filter((item) => ["background", "success", "error", "skipped"].includes(item.status)).length / steps.length) * 100);
 }
 
 export function getSyncSummary(steps: SyncStep[]) {
@@ -69,6 +69,7 @@ export function getSyncSummary(steps: SyncStep[]) {
     if (item.status === "success") summary.success += 1;
     if (item.status === "error") summary.error += 1;
     if (item.status === "skipped") summary.skipped += 1;
+    if (item.status === "background") summary.background += 1;
     return summary;
-  }, { success: 0, error: 0, skipped: 0 });
+  }, { success: 0, error: 0, skipped: 0, background: 0 });
 }

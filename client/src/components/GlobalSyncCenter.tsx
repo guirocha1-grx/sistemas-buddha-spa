@@ -34,6 +34,7 @@ function StepIcon({ status }: { status: SyncStatus }) {
     running: { Icon: Loader2, className: "text-primary animate-spin" },
     success: { Icon: CheckCircle2, className: "text-emerald-600" },
     error: { Icon: XCircle, className: "text-destructive" },
+    background: { Icon: Loader2, className: "text-amber-600" },
     skipped: { Icon: CircleAlert, className: "text-amber-600" },
   }[status];
   return <config.Icon className={cn("h-4 w-4 shrink-0", config.className)} />;
@@ -66,6 +67,22 @@ export default function GlobalSyncCenter() {
 
   const update = (id: string, patch: Partial<SyncStep>) => dispatch({ type: "updateStep", id, patch });
 
+  const startMercadoPagoInBackground = (step: SyncStep, period: ReturnType<typeof currentPeriod>) => {
+    update(step.id, { status: "running", detail: "Iniciando relatório da Conta Corrente Mercado Pago…", error: undefined });
+    void syncMpConta.mutateAsync({ unidadeId: step.unidadeId, dataInicio: period.inicio, dataFim: period.fim }).then(
+      () => {
+        update(step.id, { status: "success", detail: "Conta Corrente Mercado Pago atualizada" });
+        void Promise.all([
+          utils.financeiro.dashboard.invalidate(),
+          utils.financeiro.dashboardConsolidado.invalidate(),
+          utils.inter.extratos.invalidate(),
+        ]);
+      },
+      (error) => update(step.id, { status: "error", detail: "Falha na Conta Corrente Mercado Pago", error: readableError(error) }),
+    );
+    update(step.id, { status: "background", detail: "Solicitação enviada ao Mercado Pago. O painel continuará sem aguardar o relatório." });
+  };
+
   const execute = async (step: SyncStep, period: ReturnType<typeof currentPeriod>) => {
     if (step.kind === "inter") { await syncInter.mutateAsync({ unidadeId: step.unidadeId, dataInicio: period.inicio, dataFim: period.fim }); return "Extrato do Banco Inter atualizado"; }
     if (step.kind === "sicredi") { await syncSicredi.mutateAsync({ unidadeId: step.unidadeId, dataInicio: period.inicio, dataFim: period.fim }); return "Extrato do Sicredi atualizado"; }
@@ -82,6 +99,10 @@ export default function GlobalSyncCenter() {
     const period = currentPeriod();
     const runStep = async (step: SyncStep) => {
       if (step.status === "skipped") return;
+      if (step.kind === "mercadoPagoConta") {
+        startMercadoPagoInBackground(step, period);
+        return;
+      }
       update(step.id, { status: "running", detail: `Sincronizando ${step.label.toLocaleLowerCase("pt-BR")}…`, error: undefined });
       try {
         update(step.id, { status: "success", detail: await execute(step, period) });
@@ -131,8 +152,8 @@ export default function GlobalSyncCenter() {
         </DialogHeader>
         <ScrollArea className="max-h-[52vh] px-6">
           {steps.length === 0 ? <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center"><div className="mb-4 rounded-2xl bg-primary/10 p-3 text-primary"><RefreshCw className="h-5 w-5" /></div><p className="text-base font-semibold">Pronto para sincronizar todas as unidades</p><p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">O processo executará as integrações disponíveis de contas bancárias, Mercado Pago, adquirentes e dados da recepção no Google Drive.</p></div> : <div className="space-y-7 py-6">
-            {units.map(([unidadeId, unidadeNome]) => { const unitSteps = steps.filter((item) => item.unidadeId === unidadeId); const categories = Array.from(new Set(unitSteps.map((item) => item.category))); return <section key={unidadeId} className="rounded-xl border bg-card p-4 shadow-sm"><div className="mb-4 flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2.5"><span className="h-2.5 w-2.5 rounded-full bg-primary" /><h3 className="font-semibold">{unidadeNome}</h3></div><div className="flex items-center gap-3 text-xs text-muted-foreground"><span>{getSyncProgress(unitSteps)}% concluído</span><Progress value={getSyncProgress(unitSteps)} className="h-1.5 w-28" /></div></div><div className="space-y-5">{categories.map((category) => <div key={category}><p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{category}</p><div className="divide-y rounded-lg border">{unitSteps.filter((item) => item.category === category).map((item) => <div key={item.id} className="flex gap-3 px-3 py-3"><StepIcon status={item.status} /><div className="min-w-0 flex-1"><div className="flex flex-col justify-between gap-1 sm:flex-row"><span className="text-sm font-medium">{item.label}</span><span className={cn("text-xs font-medium", item.status === "success" && "text-emerald-700", item.status === "error" && "text-destructive", item.status === "skipped" && "text-amber-700", item.status === "running" && "text-primary", item.status === "pending" && "text-muted-foreground")}>{item.status === "success" ? "Concluída" : item.status === "error" ? "Com erro" : item.status === "skipped" ? "Não configurada" : item.status === "running" ? "Em andamento" : "Na fila"}</span></div><p className={cn("mt-1 text-xs leading-5", item.status === "error" ? "text-destructive" : "text-muted-foreground")}>{item.error ?? item.detail}</p></div></div>)}</div></div>)}</div></section>; })}
-            {finished && <section className="rounded-xl border border-primary/20 bg-primary/5 p-4"><div className="flex gap-3">{summary.error > 0 ? <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" /> : <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-600" />}<div><h3 className="font-semibold">Sincronização finalizada</h3><p className="mt-1 text-sm text-muted-foreground">{summary.success} etapa(s) concluída(s) com sucesso, {summary.error} com erro e {summary.skipped} não configurada(s).</p></div></div></section>}
+              {units.map(([unidadeId, unidadeNome]) => { const unitSteps = steps.filter((item) => item.unidadeId === unidadeId); const categories = Array.from(new Set(unitSteps.map((item) => item.category))); return <section key={unidadeId} className="rounded-xl border bg-card p-4 shadow-sm"><div className="mb-4 flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2.5"><span className="h-2.5 w-2.5 rounded-full bg-primary" /><h3 className="font-semibold">{unidadeNome}</h3></div><div className="flex items-center gap-3 text-xs text-muted-foreground"><span>{getSyncProgress(unitSteps)}% concluído</span><Progress value={getSyncProgress(unitSteps)} className="h-1.5 w-28" /></div></div><div className="space-y-5">{categories.map((category) => <div key={category}><p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{category}</p><div className="divide-y rounded-lg border">{unitSteps.filter((item) => item.category === category).map((item) => <div key={item.id} className="flex gap-3 px-3 py-3"><StepIcon status={item.status} /><div className="min-w-0 flex-1"><div className="flex flex-col justify-between gap-1 sm:flex-row"><span className="text-sm font-medium">{item.label}</span><span className={cn("text-xs font-medium", item.status === "success" && "text-emerald-700", item.status === "error" && "text-destructive", (item.status === "skipped" || item.status === "background") && "text-amber-700", item.status === "running" && "text-primary", item.status === "pending" && "text-muted-foreground")}>{item.status === "success" ? "Concluída" : item.status === "error" ? "Com erro" : item.status === "background" ? "Em processamento externo" : item.status === "skipped" ? "Não configurada" : item.status === "running" ? "Em andamento" : "Na fila"}</span></div><p className={cn("mt-1 text-xs leading-5", item.status === "error" ? "text-destructive" : "text-muted-foreground")}>{item.error ?? item.detail}</p></div></div>)}</div></div>)}</div></section>; })}
+            {finished && <section className="rounded-xl border border-primary/20 bg-primary/5 p-4"><div className="flex gap-3">{summary.error > 0 ? <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" /> : <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-600" />}<div><h3 className="font-semibold">Sincronização finalizada</h3><p className="mt-1 text-sm text-muted-foreground">{summary.success} etapa(s) concluída(s) com sucesso, {summary.error} com erro, {summary.skipped} não configurada(s) e {summary.background} em processamento externo.</p></div></div></section>}
           </div>}
         </ScrollArea>
         <div className="flex flex-col-reverse gap-3 border-t bg-muted/20 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-muted-foreground">{steps.length === 0 ? "Nenhuma operação foi iniciada." : finished ? "Os dados das telas serão atualizados automaticamente." : "Mercado Pago é iniciado em paralelo; os demais itens entram em cadência própria, sem aguardar o relatório."}</p><div className="flex flex-wrap gap-2">{finished && <Button variant="outline" onClick={close}><X className="mr-1.5 h-4 w-4" />Fechar</Button>}{!isRunning && !finished && <Button onClick={start} disabled={loading || unidades.length === 0}><RefreshCw className="mr-1.5 h-4 w-4" />Iniciar sincronização</Button>}{finished && summary.error > 0 && <Button variant="outline" onClick={retryErrors}><RefreshCw className="mr-1.5 h-4 w-4" />Sincronizar erros</Button>}{finished && <Button onClick={start}><RefreshCw className="mr-1.5 h-4 w-4" />Sincronizar novamente</Button>}</div></div>

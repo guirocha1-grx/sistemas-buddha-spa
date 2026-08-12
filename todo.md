@@ -106,3 +106,9 @@
 - [x] Salvar checkpoint após a validação completa do fluxo Clientes → Inbox
 - [x] Corrigir o botão global “Sincronizar tudo” para ficar no canto inferior em todas as telas
 - [x] Enviar a versão 0a57df60 para o GitHub (botão global na parte inferior)
+- [x] Impedir que a etapa Conta Corrente Mercado Pago deixe a sincronização global em andamento após as demais etapas concluírem
+- [x] Renomear a etapa de sincronização para "Conta Corrente Mercado Pago"
+- [x] Atualizar os testes do executor global para cobrir a finalização sem aguardar o Mercado Pago
+- [x] Padronizar o rótulo como "Conta Corrente Mercado Pago" em todo o fluxo global
+- [x] Publicar a correção final de isolamento e nomenclatura do Mercado Pago
+- [x] Salvar e publicar checkpoint com a correção final de isolamento do Mercado Pago
