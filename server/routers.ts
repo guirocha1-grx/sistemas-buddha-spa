@@ -14,6 +14,8 @@ import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
 import { sicrediApi, getSicrediAccessToken, isSicrediTokenValid } from "./sicrediApi";
 import { parseExtratoInterPdf } from "./interExtratoPdfParser";
+import { parseFaturaInterPdf } from "./interFaturaPdfParser";
+import { parseFaturaSicrediPdf } from "./sicrediFaturaPdfParser";
 import { parseClientesXlsx } from "./clientesXlsxParser";
 import { parseComandaVirtualXlsx } from "./comandaVirtualXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
@@ -24,6 +26,19 @@ import { sendTelegramParaRecepcao } from "./telegramApi";
 
 function fmtDateIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Identifica quem emitiu a fatura de cartão (Inter ou Sicredi) pelo
+ * próprio conteúdo do PDF, pra aplicar o parser certo sem depender de
+ * o usuário escolher manualmente — critério exato (marca d'água de
+ * texto que só aparece na fatura de cada banco), não heurística.
+ */
+function detectarEmissorFatura(texto: string): "inter" | "sicredi" | null {
+  const lower = texto.toLowerCase();
+  if (lower.includes("bancointer.com.br") || lower.includes("banco inter s/a")) return "inter";
+  if (lower.includes("sicredi.com.br")) return "sicredi";
+  return null;
 }
 
 /**
@@ -1377,6 +1392,78 @@ Diretrizes:
         detalhes: `Importação manual via PDF (Banco Inter) na conta "${conta.nome}". ${linhas.length} transação(ões) no arquivo, ${inseridos} nova(s).`,
       });
       return { success: true, totalInseridos: inseridos, totalLinhas: linhas.length };
+    }),
+
+    /**
+     * Importa a fatura de cartão de crédito em PDF (Inter ou Sicredi —
+     * conta tipo "cartao_credito") item a item. Detecta sozinho qual
+     * dos dois bancos emitiu o PDF pelo próprio conteúdo
+     * (detectarEmissorFatura) e aplica o parser certo — o usuário só
+     * escolhe o arquivo, não precisa dizer de qual banco é.
+     */
+    importarFaturaCartao: protectedProcedure.input(z.object({
+      contaId: z.number(),
+      pdfBase64: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      const conta = await db.getContaById(input.contaId);
+      if (!conta) throw new Error("Conta não encontrada");
+
+      const buffer = Buffer.from(input.pdfBase64, "base64");
+      const parser = new PDFParse({ data: buffer });
+      let texto: string;
+      try {
+        const resultado = await parser.getText();
+        texto = resultado.text;
+      } finally {
+        await parser.destroy();
+      }
+
+      const emissor = detectarEmissorFatura(texto);
+      if (!emissor) {
+        throw new Error("Não foi possível identificar o banco emissor da fatura. Confirme que é um PDF de fatura do Inter ou do Sicredi.");
+      }
+
+      const linhas = emissor === "inter" ? parseFaturaInterPdf(texto) : parseFaturaSicrediPdf(texto);
+      if (linhas.length === 0) {
+        throw new Error(`Nenhuma transação encontrada na fatura (${emissor === "inter" ? "Inter" : "Sicredi"}). Confirme que o PDF é a fatura completa, com a seção de transações.`);
+      }
+
+      const regras = await db.listRegrasParaMatch();
+      const cnpjsPorUnidade = await db.listCnpjsPorUnidade();
+      const transacoes = await Promise.all(linhas.map(async (linha, i) => {
+        const resultado = await db.categorizarTransacaoAutomaticamente({
+          unidadeId: conta.unidadeId,
+          contaId: input.contaId,
+          dataEntrada: linha.data,
+          titulo: linha.descricao,
+          valor: linha.valor,
+          origem: "pdf",
+          tipoOperacao: linha.tipo,
+        }, regras, cnpjsPorUnidade);
+        return {
+          unidadeId: conta.unidadeId,
+          contaId: input.contaId,
+          idTransacao: `fatura:${input.contaId}:${linha.data}:${linha.tipo}:${linha.valor}:${i}`,
+          dataEntrada: linha.data,
+          tipoOperacao: linha.tipo,
+          valor: linha.valor.toFixed(2),
+          titulo: linha.descricao,
+          origem: "pdf" as const,
+          dreDescricaoId: resultado.dreDescricaoId,
+          categorizacaoStatus: resultado.categorizacaoStatus,
+          alerta: resultado.alerta,
+        };
+      }));
+
+      const inseridos = await db.upsertInterExtratos(conta.unidadeId, transacoes);
+      await db.createSyncLog({
+        unidadeId: conta.unidadeId,
+        tipo: "pdf_extrato",
+        status: "sucesso",
+        registrosProcessados: inseridos,
+        detalhes: `Importação de fatura (${emissor === "inter" ? "Inter" : "Sicredi"}) na conta "${conta.nome}". ${linhas.length} transação(ões) no arquivo, ${inseridos} nova(s).`,
+      });
+      return { success: true, emissor, totalInseridos: inseridos, totalLinhas: linhas.length };
     }),
 
     /**

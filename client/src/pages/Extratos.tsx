@@ -428,6 +428,28 @@ export default function Extratos() {
     }
   }
 
+  const filePdfFaturaRef = useRef<HTMLInputElement>(null);
+  const importarFaturaCartaoMutation = trpc.inter.importarFaturaCartao.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Fatura ${data.emissor === "inter" ? "Inter" : "Sicredi"} importada: ${data.totalInseridos} nova(s) transação(ões) de ${data.totalLinhas} encontrada(s).`);
+      utils.inter.extratos.invalidate();
+    },
+    onError: (err) => toast.error(`Erro ao importar fatura: ${err.message}`),
+  });
+
+  async function handleImportarFaturaCartao(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !contaIdSelecionada) return;
+    try {
+      const pdfBase64 = await fileParaBase64(file);
+      importarFaturaCartaoMutation.mutate({ contaId: contaIdSelecionada, pdfBase64 });
+    } catch (err: any) {
+      toast.error(err.message ?? "Falha ao ler o arquivo PDF");
+    } finally {
+      e.target.value = "";
+    }
+  }
+
   const importarOfxMutation = trpc.inter.importarOfx.useMutation({
     onSuccess: (data) => {
       toast.success(`OFX importado: ${data.totalInseridos} nova(s) transação(ões) de ${data.totalLinhas} encontrada(s).`);
@@ -864,35 +886,61 @@ export default function Extratos() {
                     Sincronizar Caixa Físico
                   </Button>
                 )}
-                <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportarCsv} />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={!contaIdSelecionada || importarCsvMutation.isPending}
-                >
-                  {importarCsvMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
-                  Importar CSV
-                </Button>
-                <input ref={filePdfInputRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={handleImportarPdf} />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => filePdfInputRef.current?.click()}
-                  disabled={!contaIdSelecionada || importarPdfMutation.isPending}
-                >
-                  {importarPdfMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
-                  Importar PDF
-                </Button>
-                <input ref={fileOfxInputRef} type="file" accept=".ofx,application/x-ofx" className="hidden" onChange={handleImportarOfx} />
-                <Button
-                  size="sm"
-                  onClick={() => fileOfxInputRef.current?.click()}
-                  disabled={!contaIdSelecionada || importarOfxMutation.isPending}
-                >
-                  {importarOfxMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
-                  Importar OFX
-                </Button>
+                {contaAtual?.tipo === "cartao_credito" ? (
+                  <>
+                    <input ref={filePdfFaturaRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={handleImportarFaturaCartao} />
+                    <Button
+                      size="sm"
+                      onClick={() => filePdfFaturaRef.current?.click()}
+                      disabled={!contaIdSelecionada || importarFaturaCartaoMutation.isPending}
+                    >
+                      {importarFaturaCartaoMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+                      Importar Fatura
+                    </Button>
+                    <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportarCsv} />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={!contaIdSelecionada || importarCsvMutation.isPending}
+                    >
+                      {importarCsvMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+                      Importar CSV
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportarCsv} />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={!contaIdSelecionada || importarCsvMutation.isPending}
+                    >
+                      {importarCsvMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+                      Importar CSV
+                    </Button>
+                    <input ref={filePdfInputRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={handleImportarPdf} />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => filePdfInputRef.current?.click()}
+                      disabled={!contaIdSelecionada || importarPdfMutation.isPending}
+                    >
+                      {importarPdfMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+                      Importar PDF
+                    </Button>
+                    <input ref={fileOfxInputRef} type="file" accept=".ofx,application/x-ofx" className="hidden" onChange={handleImportarOfx} />
+                    <Button
+                      size="sm"
+                      onClick={() => fileOfxInputRef.current?.click()}
+                      disabled={!contaIdSelecionada || importarOfxMutation.isPending}
+                    >
+                      {importarOfxMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+                      Importar OFX
+                    </Button>
+                  </>
+                )}
               </div>
 
               <div className="flex flex-wrap gap-3 items-end border-t border-border/30 pt-3">
