@@ -1527,6 +1527,7 @@ export async function listDreDescricoes() {
     nome: dreDescricoes.nome,
     dreCategoriaId: dreDescricoes.dreCategoriaId,
     categoriaNome: dreCategorias.nome,
+    chave: dreDescricoes.chave,
   })
     .from(dreDescricoes)
     .innerJoin(dreCategorias, eq(dreDescricoes.dreCategoriaId, dreCategorias.id))
