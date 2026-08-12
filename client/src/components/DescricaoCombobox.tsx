@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CategoriaCombobox, type DreCategoriaOption } from "@/components/CategoriaCombobox";
 import { ChevronsUpDown, Plus, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
@@ -14,11 +14,6 @@ export interface DreDescricaoOption {
   id: number;
   nome: string;
   categoriaNome: string;
-}
-
-export interface DreCategoriaOption {
-  id: number;
-  nome: string;
 }
 
 /**
@@ -216,16 +211,7 @@ export function DescricaoCombobox({
             </div>
             <div className="space-y-1.5">
               <Label>Categoria</Label>
-              <Select value={categoriaId} onValueChange={setCategoriaId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a categoria" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categorias.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>{c.nome}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CategoriaCombobox categorias={categorias} value={categoriaId} onChange={setCategoriaId} />
             </div>
             <div className="space-y-1.5">
               <Label>Padrão de identificação no extrato (opcional)</Label>
