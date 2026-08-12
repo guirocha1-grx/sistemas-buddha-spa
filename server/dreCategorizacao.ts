@@ -137,6 +137,12 @@ export const CHAVE_RECEITA_CARTAO_CREDITO = "receita_c_credito";
 // usada pelos dois lados causava dupla contagem na Comanda Recepção).
 export const CHAVE_RECEITA_LIQ_CARTAO_DEBITO = "receita_liq_c_debito";
 export const CHAVE_RECEITA_LIQ_CARTAO_CREDITO = "receita_liq_c_credito";
+// Transferência bancária real entre a conta de uma unidade e a de
+// outra (ex.: RBS manda dinheiro pro SSU cobrir uma conta) — detectada
+// por CNPJ (server/db.ts, categorizarTransacaoAutomaticamente), nunca
+// afeta o DRE, e ao ser confirmada gera 1 linha em
+// transacoes_entre_unidades (server/db.ts, confirmarSugestao).
+export const CHAVE_TRANSACAO_ENTRE_UNIDADES = "transacao_entre_unidades";
 
 /**
  * Descrições semeadas — o nível intermediário entre Categoria e
@@ -161,6 +167,7 @@ export const DRE_DESCRICOES_SEED: { nome: string; categoriaNome: string; chave?:
   { nome: "Contribuição Sindical", categoriaNome: "Contribuição Sindical" },
   { nome: "Juros + Multas", categoriaNome: "Juros + Multas" },
   { nome: EXCLUIDO_NOME, categoriaNome: EXCLUIDO_NOME, chave: CHAVE_EXCLUIDO },
+  { nome: "Transação entre Unidades", categoriaNome: EXCLUIDO_NOME, chave: CHAVE_TRANSACAO_ENTRE_UNIDADES },
   { nome: "Parcerias Comerciais", categoriaNome: "Parcerias Comerciais" },
   { nome: "Totalpass", categoriaNome: "Parcerias Comerciais" },
   { nome: "Wellhub", categoriaNome: "Parcerias Comerciais" },

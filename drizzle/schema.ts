@@ -461,7 +461,7 @@ export const contas = mysqlTable("contas", {
   id: int("id").autoincrement().primaryKey(),
   unidadeId: int("unidadeId").notNull(),
   nome: varchar("nome", { length: 128 }).notNull(),
-  tipo: mysqlEnum("tipo", ["inter_oauth", "sicredi_oauth", "manual"]).default("manual").notNull(),
+  tipo: mysqlEnum("tipo", ["inter_oauth", "sicredi_oauth", "manual", "cartao_credito"]).default("manual").notNull(),
   // Ag/conta/CNPJ — identifica a conta pra bater contra
   // cpfCnpjOrigem/cpfCnpjDestino do extrato e detectar transferência
   // entre contas próprias automaticamente (sem depender de texto).
@@ -748,6 +748,62 @@ export const dreRegras = mysqlTable("dre_regras", {
 
 export type DreRegra = typeof dreRegras.$inferSelect;
 export type InsertDreRegra = typeof dreRegras.$inferInsert;
+
+/**
+ * Split de lançamento: quando uma transação do extrato (ex.: fatura de
+ * cartão paga de uma vez, mas na real é várias categorias diferentes)
+ * é dividida em N partes, cada parte vira 1 linha aqui, com sua
+ * própria Descrição e (opcionalmente) unidade dona daquela parte —
+ * diferente da unidade do lançamento original quando o gasto é
+ * rateado entre unidades (ver `transacoesEntreUnidades`). Enquanto uma
+ * transação tem linhas aqui, `inter_extratos.dreDescricaoId` fica null
+ * (a Descrição "mora" nos splits, não na linha-mãe).
+ */
+export const lancamentoSplits = mysqlTable("lancamento_splits", {
+  id: int("id").autoincrement().primaryKey(),
+  interExtratoId: int("interExtratoId").notNull(),
+  dreDescricaoId: int("dreDescricaoId").notNull(),
+  valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
+  unidadeId: int("unidadeId").notNull(),
+  observacao: varchar("observacao", { length: 256 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  extratoIdx: index("lancamento_splits_extrato_idx").on(table.interExtratoId),
+}));
+
+export type LancamentoSplit = typeof lancamentoSplits.$inferSelect;
+export type InsertLancamentoSplit = typeof lancamentoSplits.$inferInsert;
+
+/**
+ * "Conta corrente" entre as 2 unidades (RBS/Satori e SSU/Agama) —
+ * junta 2 eventos diferentes na mesma tabela: rateio de despesa
+ * (nasce de uma linha de `lancamentoSplits` com unidade diferente da
+ * do lançamento, ex.: assistência administrativa paga por uma unidade
+ * mas devida em parte pela outra) e transferência bancária real entre
+ * as contas das duas unidades (ex.: RBS manda dinheiro pro SSU cobrir
+ * uma conta — detectada por CNPJ, ver CHAVE_TRANSACAO_ENTRE_UNIDADES
+ * em server/dreCategorizacao.ts). `unidadeCredora` é quem "pagou"/tem
+ * a receber; `unidadeDevedora` é quem deve. O saldo líquido entre as
+ * duas é `SUM(credora=A,devedora=B) - SUM(credora=B,devedora=A)`.
+ */
+export const transacoesEntreUnidades = mysqlTable("transacoes_entre_unidades", {
+  id: int("id").autoincrement().primaryKey(),
+  data: varchar("data", { length: 10 }).notNull(), // AAAA-MM-DD
+  tipo: mysqlEnum("tipo", ["rateio_despesa", "transferencia_real", "manual"]).notNull(),
+  unidadeCredora: int("unidadeCredora").notNull(),
+  unidadeDevedora: int("unidadeDevedora").notNull(),
+  valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
+  descricao: varchar("descricao", { length: 256 }).notNull(),
+  lancamentoSplitId: int("lancamentoSplitId"), // origem = rateio_despesa
+  interExtratoId: int("interExtratoId"), // origem = transferencia_real
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  credoraIdx: index("transacoes_unidades_credora_idx").on(table.unidadeCredora),
+  devedoraIdx: index("transacoes_unidades_devedora_idx").on(table.unidadeDevedora),
+}));
+
+export type TransacaoEntreUnidades = typeof transacoesEntreUnidades.$inferSelect;
+export type InsertTransacaoEntreUnidades = typeof transacoesEntreUnidades.$inferInsert;
 
 /**
  * Biblioteca de mensagens prontas do Inbox (mesmo conceito do

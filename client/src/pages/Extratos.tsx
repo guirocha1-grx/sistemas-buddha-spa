@@ -32,8 +32,9 @@ import {
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DescricaoCombobox } from "@/components/DescricaoCombobox";
+import { SplitLancamentoDialog } from "@/components/SplitLancamentoDialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Check, Pencil, Search, TriangleAlert, ChevronsUpDown, StickyNote } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Check, Pencil, Search, TriangleAlert, ChevronsUpDown, StickyNote, SplitSquareHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
 // ===== Períodos rápidos =====
@@ -151,7 +152,7 @@ function fileParaBase64(file: File): Promise<string> {
   });
 }
 
-const CONTA_FORM_VAZIO = { nome: "", agencia: "", numeroConta: "", cnpj: "", saldoInicial: "", saldoInicialEm: "" };
+const CONTA_FORM_VAZIO = { nome: "", tipo: "manual" as "manual" | "cartao_credito", agencia: "", numeroConta: "", cnpj: "", saldoInicial: "", saldoInicialEm: "" };
 
 export default function Extratos() {
   const { unidadeSelecionada } = useUnidade();
@@ -192,6 +193,7 @@ export default function Extratos() {
     setContaEditandoId(contaAtual.id);
     setContaForm({
       nome: contaAtual.nome,
+      tipo: contaAtual.tipo === "cartao_credito" ? "cartao_credito" : "manual",
       agencia: contaAtual.agencia ?? "",
       numeroConta: contaAtual.numeroConta ?? "",
       cnpj: contaAtual.cnpj ?? "",
@@ -237,6 +239,7 @@ export default function Extratos() {
     const saldoInicialNum = contaForm.saldoInicial ? parseFloat(contaForm.saldoInicial.replace(",", ".")) : undefined;
     const dados = {
       nome: contaForm.nome.trim(),
+      tipo: contaForm.tipo,
       agencia: contaForm.agencia.trim() || undefined,
       numeroConta: contaForm.numeroConta.trim() || undefined,
       cnpj: contaForm.cnpj.trim() || undefined,
@@ -322,6 +325,22 @@ export default function Extratos() {
     { unidadeId: unidadeId!, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato, contaId: contaIdSelecionada },
     { enabled: !!unidadeId },
   );
+
+  const splitsQuery = trpc.inter.splits.list.useQuery(
+    { unidadeId: unidadeId!, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato, contaId: contaIdSelecionada },
+    { enabled: !!unidadeId },
+  );
+  const splitsPorTransacao = useMemo(() => {
+    const mapa = new Map<number, NonNullable<typeof splitsQuery.data>[number][]>();
+    for (const s of splitsQuery.data ?? []) {
+      const lista = mapa.get(s.interExtratoId) ?? [];
+      lista.push(s);
+      mapa.set(s.interExtratoId, lista);
+    }
+    return mapa;
+  }, [splitsQuery.data]);
+
+  const [splitDialogTransacaoId, setSplitDialogTransacaoId] = useState<number | null>(null);
 
   const sincronizarInterMutation = trpc.inter.sincronizar.useMutation({
     onSuccess: (data) => {
@@ -557,7 +576,7 @@ export default function Extratos() {
               <CardContent className="px-4">
                 <CardDescription className="flex items-center gap-1.5 text-xs">
                   <Wallet className="h-3.5 w-3.5" />
-                  {!contaAtual ? "Saldo Consolidado" : contaAtual.tipo === "inter_oauth" ? "Saldo Disponível (Inter)" : `Saldo (${contaAtual.nome})`}
+                  {!contaAtual ? "Saldo Consolidado" : contaAtual.tipo === "inter_oauth" ? "Saldo Disponível (Inter)" : contaAtual.tipo === "cartao_credito" ? "Fatura em aberto" : `Saldo (${contaAtual.nome})`}
                 </CardDescription>
                 {!contaAtual ? (
                   saldoConsolidado !== null ? (
@@ -565,6 +584,8 @@ export default function Extratos() {
                   ) : (
                     <span className="text-xs text-muted-foreground">Nenhuma conta com saldo configurado ainda</span>
                   )
+                ) : contaAtual.tipo === "cartao_credito" ? (
+                  <div className="text-base font-bold mt-0.5">{fmtCurrencyExtrato(totalDebitosExtrato - totalCreditosExtrato)}</div>
                 ) : contaAtual.tipo === "inter_oauth" ? (
                   saldoInterQuery.isLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mt-0.5" />
@@ -639,6 +660,16 @@ export default function Extratos() {
                           value={contaForm.nome}
                           onChange={(e) => setContaForm({ ...contaForm, nome: e.target.value })}
                         />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Tipo</Label>
+                        <Select value={contaForm.tipo} onValueChange={(v) => setContaForm({ ...contaForm, tipo: v as "manual" | "cartao_credito" })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="manual">Manual</SelectItem>
+                            <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
@@ -992,19 +1023,31 @@ export default function Extratos() {
                               <TableCell className="max-w-0">
                                 <div className="flex items-center gap-1">
                                   <div className="min-w-0 flex-1">
-                                    <DescricaoCombobox
-                                      descricoes={descricoes}
-                                      categorias={categorias}
-                                      value={t.dreDescricaoId}
-                                      status={t.categorizacaoStatus}
-                                      onChange={(id) => categorizarMutation.mutate({
-                                        transacaoId: t.id,
-                                        dreDescricaoId: id,
-                                      })}
-                                    />
+                                    {splitsPorTransacao.has(t.id) ? (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 text-xs justify-start font-normal w-full border-purple-400 text-purple-700 hover:text-purple-700"
+                                        onClick={() => setSplitDialogTransacaoId(t.id)}
+                                      >
+                                        <SplitSquareHorizontal className="h-3 w-3 mr-1.5 shrink-0" />
+                                        Dividido em {splitsPorTransacao.get(t.id)!.length}
+                                      </Button>
+                                    ) : (
+                                      <DescricaoCombobox
+                                        descricoes={descricoes}
+                                        categorias={categorias}
+                                        value={t.dreDescricaoId}
+                                        status={t.categorizacaoStatus}
+                                        onChange={(id) => categorizarMutation.mutate({
+                                          transacaoId: t.id,
+                                          dreDescricaoId: id,
+                                        })}
+                                      />
+                                    )}
                                   </div>
                                   <div className="flex items-center shrink-0">
-                                    {t.categorizacaoStatus === "sugerida" && (
+                                    {t.categorizacaoStatus === "sugerida" && !splitsPorTransacao.has(t.id) && (
                                       <Button
                                         size="icon"
                                         variant="ghost"
@@ -1014,6 +1057,17 @@ export default function Extratos() {
                                         disabled={confirmarMutation.isPending}
                                       >
                                         <Check className="h-3.5 w-3.5" />
+                                      </Button>
+                                    )}
+                                    {!splitsPorTransacao.has(t.id) && (
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                        title="Dividir lançamento"
+                                        onClick={() => setSplitDialogTransacaoId(t.id)}
+                                      >
+                                        <SplitSquareHorizontal className="h-3.5 w-3.5" />
                                       </Button>
                                     )}
                                     <Button
@@ -1080,6 +1134,15 @@ export default function Extratos() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SplitLancamentoDialog
+        open={splitDialogTransacaoId !== null}
+        onOpenChange={(v) => { if (!v) setSplitDialogTransacaoId(null); }}
+        transacao={transacoesExtrato.find((t) => t.id === splitDialogTransacaoId) ?? null}
+        splitsExistentes={splitDialogTransacaoId ? splitsPorTransacao.get(splitDialogTransacaoId) ?? [] : []}
+        descricoes={descricoes}
+        categorias={categorias}
+      />
     </div>
   );
 }

@@ -1002,6 +1002,40 @@ Diretrizes:
     }),
 
     /**
+     * Split de lançamento: divide uma transação em N Descrições (e,
+     * opcionalmente, unidades) diferentes — pra casos como fatura de
+     * cartão paga de uma vez que na real é várias categorias.
+     */
+    splits: router({
+      list: protectedProcedure.input(z.object({
+        unidadeId: z.number(),
+        dataInicio: z.string(),
+        dataFim: z.string(),
+        contaId: z.number().optional(),
+      })).query(async ({ input }) => {
+        return db.listSplitsPorPeriodo(input.unidadeId, input.dataInicio, input.dataFim, input.contaId);
+      }),
+      salvar: protectedProcedure.input(z.object({
+        interExtratoId: z.number(),
+        linhas: z.array(z.object({
+          dreDescricaoId: z.number(),
+          valor: z.number().positive(),
+          unidadeId: z.number(),
+          observacao: z.string().optional(),
+        })).min(1),
+      })).mutation(async ({ input }) => {
+        await db.salvarSplits(input.interExtratoId, input.linhas);
+        return { success: true };
+      }),
+      excluir: protectedProcedure.input(z.object({
+        interExtratoId: z.number(),
+      })).mutation(async ({ input }) => {
+        await db.excluirSplits(input.interExtratoId);
+        return { success: true };
+      }),
+    }),
+
+    /**
      * Nota livre por transação, separada da categoria — esclarece o
      * caso específico quando a categoria sozinha agrupa vários tipos
      * de lançamento diferentes.
@@ -1060,11 +1094,12 @@ Diretrizes:
 
       const contaInter = await db.getOrCreateContaInter(input.unidadeId);
       const regrasDre = await db.listRegrasParaMatch();
-      const cnpjsContasDre = await db.listCnpjsDeContas();
+      const cnpjsPorUnidadeDre = await db.listCnpjsPorUnidade();
       const categorizar = async (t: InterTransacaoCompleta) => {
         if (!contaInter?.id) return { dreDescricaoId: undefined, categorizacaoStatus: "pendente" as const, alerta: null };
         const contraparte = extrairContraparte(t);
         const resultado = await db.categorizarTransacaoAutomaticamente({
+          unidadeId: input.unidadeId,
           contaId: contaInter.id,
           dataEntrada: dataEntradaDe(t),
           tipoTransacao: t.tipoTransacao,
@@ -1075,7 +1110,7 @@ Diretrizes:
           cpfCnpjDestino: contraparte.cpfCnpjDestino,
           origem: "inter",
           tipoOperacao: (t.tipoOperacao === "D" || t.tipoOperacao === "C") ? t.tipoOperacao : "D",
-        }, regrasDre, cnpjsContasDre);
+        }, regrasDre, cnpjsPorUnidadeDre);
         return { dreDescricaoId: resultado.dreDescricaoId ?? undefined, categorizacaoStatus: resultado.categorizacaoStatus, alerta: resultado.alerta };
       };
 
@@ -1240,17 +1275,18 @@ Diretrizes:
       if (!conta) throw new Error("Conta não encontrada");
 
       const regras = await db.listRegrasParaMatch();
-      const cnpjsContas = await db.listCnpjsDeContas();
+      const cnpjsPorUnidade = await db.listCnpjsPorUnidade();
       const transacoes = await Promise.all(input.linhas.map(async (linha, i) => {
         const idTransacao = `csv:${input.contaId}:${linha.data}:${linha.tipo}:${linha.valor}:${i}`;
         const resultado = await db.categorizarTransacaoAutomaticamente({
+          unidadeId: conta.unidadeId,
           contaId: input.contaId,
           dataEntrada: linha.data,
           titulo: linha.descricao,
           valor: linha.valor,
           origem: "csv",
           tipoOperacao: linha.tipo,
-        }, regras, cnpjsContas);
+        }, regras, cnpjsPorUnidade);
         return {
           unidadeId: conta.unidadeId,
           contaId: input.contaId,
@@ -1306,16 +1342,17 @@ Diretrizes:
       }
 
       const regras = await db.listRegrasParaMatch();
-      const cnpjsContas = await db.listCnpjsDeContas();
+      const cnpjsPorUnidade = await db.listCnpjsPorUnidade();
       const transacoes = await Promise.all(linhas.map(async (linha, i) => {
         const resultado = await db.categorizarTransacaoAutomaticamente({
+          unidadeId: conta.unidadeId,
           contaId: input.contaId,
           dataEntrada: linha.data,
           titulo: linha.descricao,
           valor: linha.valor,
           origem: "pdf",
           tipoOperacao: linha.tipo,
-        }, regras, cnpjsContas);
+        }, regras, cnpjsPorUnidade);
         return {
           unidadeId: conta.unidadeId,
           contaId: input.contaId,
@@ -1361,9 +1398,10 @@ Diretrizes:
       }
 
       const regras = await db.listRegrasParaMatch();
-      const cnpjsContas = await db.listCnpjsDeContas();
+      const cnpjsPorUnidade = await db.listCnpjsPorUnidade();
       const transacoes = await Promise.all(linhas.map(async (linha) => {
         const resultado = await db.categorizarTransacaoAutomaticamente({
+          unidadeId: conta.unidadeId,
           contaId: input.contaId,
           dataEntrada: linha.data,
           tipoTransacao: linha.trnType,
@@ -1371,7 +1409,7 @@ Diretrizes:
           valor: linha.valor,
           origem: "ofx",
           tipoOperacao: linha.tipo,
-        }, regras, cnpjsContas);
+        }, regras, cnpjsPorUnidade);
         return {
           unidadeId: conta.unidadeId,
           contaId: input.contaId,
@@ -1407,6 +1445,32 @@ Diretrizes:
         detalhes: `Importação manual via OFX na conta "${conta.nome}". ${linhas.length} transação(ões) no arquivo, ${inseridos} nova(s).`,
       });
       return { success: true, totalInseridos: inseridos, totalLinhas: linhas.length };
+    }),
+  }),
+
+  /**
+   * "Conta corrente" entre RBS/Satori e SSU/Agama — junta rateio de
+   * despesa (gerado por inter.splits.salvar) e transferência bancária
+   * real entre as unidades (gerada por inter.confirmarSugestao), além
+   * de lançamento manual pra casos sem transação bancária (ex.:
+   * mercadoria que volta de uma unidade pra outra).
+   */
+  transacoesEntreUnidades: router({
+    list: protectedProcedure.query(async () => {
+      return db.listTransacoesEntreUnidades();
+    }),
+    saldo: protectedProcedure.query(async () => {
+      return db.saldoEntreUnidades();
+    }),
+    criar: adminProcedure.input(z.object({
+      data: z.string(),
+      unidadeCredora: z.number(),
+      unidadeDevedora: z.number(),
+      valor: z.number().positive(),
+      descricao: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      const id = await db.criarTransacaoManualEntreUnidades(input);
+      return { success: true, id };
     }),
   }),
 
@@ -1471,7 +1535,7 @@ Diretrizes:
 
       const contaSicredi = await db.getOrCreateContaSicredi(input.unidadeId);
       const regrasDre = await db.listRegrasParaMatch();
-      const cnpjsContasDre = await db.listCnpjsDeContas();
+      const cnpjsPorUnidadeDre = await db.listCnpjsPorUnidade();
 
       try {
         // Paginado — busca a página 0 pra saber quantas existem, depois
@@ -1487,6 +1551,7 @@ Diretrizes:
           const tipoOperacao: "C" | "D" = m.valor >= 0 ? "C" : "D";
           const resultado = contaSicredi?.id
             ? await db.categorizarTransacaoAutomaticamente({
+              unidadeId: input.unidadeId,
               contaId: contaSicredi.id,
               dataEntrada: m.data,
               tipoTransacao: m.codigoLancamento,
@@ -1495,7 +1560,7 @@ Diretrizes:
               valor: m.valor,
               origem: "sicredi",
               tipoOperacao,
-            }, regrasDre, cnpjsContasDre)
+            }, regrasDre, cnpjsPorUnidadeDre)
             : { dreDescricaoId: undefined, categorizacaoStatus: "pendente" as const };
           return {
             unidadeId: input.unidadeId,
@@ -1553,6 +1618,7 @@ Diretrizes:
     create: adminProcedure.input(z.object({
       unidadeId: z.number(),
       nome: z.string().min(1),
+      tipo: z.enum(["manual", "cartao_credito"]).optional(),
       agencia: z.string().optional(),
       numeroConta: z.string().optional(),
       cnpj: z.string().optional(),
@@ -1570,6 +1636,7 @@ Diretrizes:
     atualizar: adminProcedure.input(z.object({
       id: z.number(),
       nome: z.string().min(1),
+      tipo: z.enum(["manual", "cartao_credito"]).optional(),
       agencia: z.string().optional(),
       numeroConta: z.string().optional(),
       cnpj: z.string().optional(),
