@@ -12,6 +12,7 @@ export const SUBSECOES: Record<string, { chave: string; label: string }[]> = {
     { chave: "financeiro:contas", label: "Contas" },
     { chave: "financeiro:comanda-recepcao", label: "Comanda Recepção" },
     { chave: "financeiro:adquirentes", label: "Adquirentes" },
+    { chave: "financeiro:transacoes-entre-unidades", label: "Transações entre Unidades" },
     { chave: "financeiro:parametros", label: "Parâmetros" },
   ],
 };

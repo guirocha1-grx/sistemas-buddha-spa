@@ -1,13 +1,13 @@
 import crypto from "node:crypto";
 import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, scripts, scriptsUso, lancamentoSplits, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem, type InsertScript } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem, type InsertScript } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import { normalizarTelefone } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
-import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, extrairPadraoContraparte, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, type RegraMatch } from "./dreCategorizacao";
+import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, extrairPadraoContraparte, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -964,7 +964,7 @@ export async function upsertAdquirenteVendas(
   if (vendas.length === 0) return 0;
 
   // Resolve os ids das Descrições de receita uma vez (não numa query
-  // por linha) — mesmo espírito de listRegrasParaMatch/listCnpjsDeContas.
+  // por linha) — mesmo espírito de listRegrasParaMatch/listCnpjsPorUnidade.
   const chavesNecessarias = Array.from(new Set(
     vendas.map((v) => chaveDescricaoAdquirente(v.tipo)).filter((c): c is string => c !== null),
   ));
@@ -1244,15 +1244,24 @@ export async function listContas(unidadeId: number) {
 
 /**
  * CNPJs de todas as contas cadastradas (qualquer unidade — transferência
- * entre Satori e Agama, por exemplo, atravessa unidade). Normalizado
- * (só dígitos), pra bater contra cpfCnpjOrigem/cpfCnpjDestino do extrato
- * sem depender de formatação.
+ * entre Satori e Agama, por exemplo, atravessa unidade), guardando a
+ * unidade dona de cada um — usada pra detectar transferência bancária
+ * real *entre* unidades (CNPJ de destino/origem bate com uma conta de
+ * uma unidade diferente da do lançamento), critério exato via CNPJ
+ * cadastrado, não heurística. Normalizado (só dígitos), pra bater
+ * contra cpfCnpjOrigem/cpfCnpjDestino do extrato sem depender de
+ * formatação.
  */
-export async function listCnpjsDeContas(): Promise<string[]> {
+export async function listCnpjsPorUnidade(): Promise<Map<string, number>> {
   const db = await getDb();
-  if (!db) return [];
-  const todas = await db.select({ cnpj: contas.cnpj }).from(contas);
-  return todas.map((c) => c.cnpj?.replace(/\D/g, "")).filter((c): c is string => !!c);
+  if (!db) return new Map();
+  const todas = await db.select({ cnpj: contas.cnpj, unidadeId: contas.unidadeId }).from(contas);
+  const mapa = new Map<string, number>();
+  for (const c of todas) {
+    const digitos = c.cnpj?.replace(/\D/g, "");
+    if (digitos) mapa.set(digitos, c.unidadeId);
+  }
+  return mapa;
 }
 
 /**
@@ -1766,6 +1775,7 @@ export async function listRegrasParaMatch(): Promise<(RegraMatch & { dreDescrica
 }
 
 export interface DadosParaCategorizar {
+  unidadeId: number;
   contaId: number;
   dataEntrada: string; // AAAA-MM-DD
   tipoTransacao?: string | null;
@@ -1774,8 +1784,8 @@ export interface DadosParaCategorizar {
   valor: number; // sempre positivo
   cpfCnpjOrigem?: string | null;
   cpfCnpjDestino?: string | null;
-  // origem/tipoOperacao habilitam os 2 casos determinísticos abaixo
-  // (Caixa Físico e liquidação Mercado Pago) — sem eles, cai direto na
+  // origem/tipoOperacao habilitam os casos determinísticos abaixo
+  // (Caixa Físico, liquidação Mercado Pago) — sem eles, cai direto na
   // regra de texto/valor de sempre.
   origem?: string | null;
   tipoOperacao?: "D" | "C" | null;
@@ -1793,33 +1803,51 @@ export interface DadosParaCategorizar {
  *    só vira trabalho manual repetitivo (confirmado pelo usuário em
  *    2026-08-12: "se for na conta caixa e valor = 0 pode considerar
  *    Confirmado automaticamente" — critério exato, não é heurística);
- * 2) regra de texto/valor (como sempre foi).
+ * 2) CNPJ de origem/destino batendo com uma conta de uma unidade
+ *    *diferente* da do lançamento = transferência bancária real entre
+ *    unidades (ex.: RBS manda dinheiro pro SSU cobrir uma conta) —
+ *    critério exato (CNPJ cadastrado), sugere "Transação entre
+ *    Unidades" mas nunca confirma sozinho (1 clique, como toda
+ *    sugestão); ao confirmar (`confirmarSugestao`) gera 1 linha em
+ *    `transacoes_entre_unidades`;
+ * 3) regra de texto/valor (como sempre foi).
  * Se a regra tiver alertaSeRepetirNoMes e já existir outra transação
  * da mesma descrição na mesma conta no mesmo mês, marca um aviso (não
  * bloqueia, só avisa).
  *
  * Removidas em 2026-08-12 (a pedido do usuário, "vamos testar só com
- * padrões"): a exclusão automática por CNPJ de conta própria
- * (transferência entre contas) e a exclusão automática de origem
- * "mercadopago" — essa última porque o Mercado Pago deixou de ser só
- * liquidação de adquirente (hoje recebe outros tipos de entrada
- * também), então excluir tudo incondicionalmente virou incorreto. Sem
- * padrão correspondente, essas transações agora ficam "Pendente" (não
- * mais um Excluído do DRE automático) — decisão explícita do usuário
- * mesmo sabendo que isso pode reabrir o bug de contaminação do Pix na
- * Comanda Recepção que essa exclusão automática tinha corrigido, até
- * que os padrões de texto cubram os casos do Mercado Pago.
+ * padrões"): a exclusão automática por CNPJ de conta própria *da
+ * mesma unidade* (transferência entre contas) e a exclusão automática
+ * de origem "mercadopago" — essa última porque o Mercado Pago deixou
+ * de ser só liquidação de adquirente (hoje recebe outros tipos de
+ * entrada também), então excluir tudo incondicionalmente virou
+ * incorreto. Sem padrão correspondente, essas transações agora ficam
+ * "Pendente" (não mais um Excluído do DRE automático) — decisão
+ * explícita do usuário mesmo sabendo que isso pode reabrir o bug de
+ * contaminação do Pix na Comanda Recepção que essa exclusão automática
+ * tinha corrigido, até que os padrões de texto cubram os casos do
+ * Mercado Pago.
  */
 export async function categorizarTransacaoAutomaticamente(
   dados: DadosParaCategorizar,
   regras: (RegraMatch & { dreDescricaoId: number; alertaSeRepetirNoMes: boolean })[],
-  cnpjsContas: string[],
+  cnpjsPorUnidade: Map<string, number>,
   transacaoIdParaExcluirDoAlerta?: number,
 ): Promise<{ dreDescricaoId: number | null; categorizacaoStatus: "sugerida" | "pendente" | "confirmada"; alerta: string | null }> {
   if (dados.origem === "caixa_fisico" && dados.tipoOperacao === "C") {
     const especieId = await resolverDescricaoIdPorChave(CHAVE_RECEITA_ESPECIE);
     if (especieId) {
       return { dreDescricaoId: especieId, categorizacaoStatus: dados.valor === 0 ? "confirmada" : "sugerida", alerta: null };
+    }
+  }
+
+  const cnpjContraparte = [dados.cpfCnpjOrigem, dados.cpfCnpjDestino]
+    .map((c) => c?.replace(/\D/g, ""))
+    .find((c): c is string => !!c && cnpjsPorUnidade.has(c) && cnpjsPorUnidade.get(c) !== dados.unidadeId);
+  if (cnpjContraparte) {
+    const transacaoEntreUnidadesId = await resolverDescricaoIdPorChave(CHAVE_TRANSACAO_ENTRE_UNIDADES);
+    if (transacaoEntreUnidadesId) {
+      return { dreDescricaoId: transacaoEntreUnidadesId, categorizacaoStatus: "sugerida", alerta: null };
     }
   }
 
@@ -1884,7 +1912,7 @@ export async function reprocessarPendentes(
   if (!db) return 0;
 
   const regras = await listRegrasParaMatch();
-  const cnpjsContas = await listCnpjsDeContas();
+  const cnpjsPorUnidade = await listCnpjsPorUnidade();
 
   const condicoes = [eq(interExtratos.unidadeId, unidadeId), ne(interExtratos.categorizacaoStatus, "confirmada")];
   if (contaId !== undefined) condicoes.push(eq(interExtratos.contaId, contaId));
@@ -1896,6 +1924,7 @@ export async function reprocessarPendentes(
   let atualizados = 0;
   for (const t of naoConfirmadas) {
     const resultado = await categorizarTransacaoAutomaticamente({
+      unidadeId: t.unidadeId,
       contaId: t.contaId ?? 0,
       dataEntrada: t.dataEntrada,
       tipoTransacao: t.tipoTransacao,
@@ -1906,7 +1935,7 @@ export async function reprocessarPendentes(
       cpfCnpjDestino: t.cpfCnpjDestino,
       origem: t.origem,
       tipoOperacao: t.tipoOperacao,
-    }, regras, cnpjsContas, t.id);
+    }, regras, cnpjsPorUnidade, t.id);
     if (!resultado.dreDescricaoId) {
       if (t.categorizacaoStatus !== "pendente") {
         await db.update(interExtratos).set({
@@ -1972,11 +2001,48 @@ export async function categorizarManual(transacaoId: number, dreDescricaoId: num
  * certo" de 1 clique. Só age em linha "sugerida"; ignora silenciosamente
  * qualquer outro estado (evita confirmar algo que já não é sugestão).
  */
+/**
+ * Confirma uma sugestão automática. Caso especial: se a Descrição
+ * confirmada for "Transação entre Unidades" (chave
+ * CHAVE_TRANSACAO_ENTRE_UNIDADES) E a transação for de saída (D — o
+ * dinheiro saiu desta unidade rumo à outra), gera 1 linha em
+ * `transacoes_entre_unidades` automaticamente. Só no lado "D" de
+ * propósito: a mesma transferência real também aparece como "C" no
+ * extrato da unidade que recebeu (sincronizado à parte) — gerar dos
+ * dois lados duplicaria o valor no saldo; o lado "D" já é o suficiente
+ * pra registrar a dívida (quem mandou = credora, quem recebeu =
+ * devedora).
+ */
 export async function confirmarSugestao(transacaoId: number) {
   const db = await getDb();
   if (!db) return;
-  await db.update(interExtratos).set({ categorizacaoStatus: "confirmada" })
-    .where(and(eq(interExtratos.id, transacaoId), eq(interExtratos.categorizacaoStatus, "sugerida")));
+
+  const [transacao] = await db.select().from(interExtratos)
+    .where(and(eq(interExtratos.id, transacaoId), eq(interExtratos.categorizacaoStatus, "sugerida")))
+    .limit(1);
+  if (!transacao) return;
+
+  await db.update(interExtratos).set({ categorizacaoStatus: "confirmada" }).where(eq(interExtratos.id, transacaoId));
+
+  const transacaoEntreUnidadesId = await resolverDescricaoIdPorChave(CHAVE_TRANSACAO_ENTRE_UNIDADES);
+  if (transacaoEntreUnidadesId && transacao.dreDescricaoId === transacaoEntreUnidadesId && transacao.tipoOperacao === "D") {
+    const cnpjsPorUnidade = await listCnpjsPorUnidade();
+    const cnpjContraparte = [transacao.cpfCnpjOrigem, transacao.cpfCnpjDestino]
+      .map((c) => c?.replace(/\D/g, ""))
+      .find((c): c is string => !!c && cnpjsPorUnidade.has(c) && cnpjsPorUnidade.get(c) !== transacao.unidadeId);
+    const unidadeDevedora = cnpjContraparte ? cnpjsPorUnidade.get(cnpjContraparte) : undefined;
+    if (unidadeDevedora !== undefined) {
+      await db.insert(transacoesEntreUnidades).values({
+        data: transacao.dataEntrada,
+        tipo: "transferencia_real",
+        unidadeCredora: transacao.unidadeId,
+        unidadeDevedora,
+        valor: transacao.valor,
+        descricao: transacao.titulo || "Transferência entre unidades",
+        interExtratoId: transacao.id,
+      });
+    }
+  }
 }
 
 // ===== Split de lançamento =====
@@ -2024,6 +2090,10 @@ export async function listSplitsPorPeriodo(unidadeId: number, dataInicio: string
  * espírito do reprocessamento: o conjunto novo é sempre a verdade).
  * Dividir é decisão humana — mesma régua de `categorizarManual`, marca
  * direto como "confirmada".
+ *
+ * Linha com `unidadeId` diferente da unidade da transação = rateio de
+ * despesa entre unidades — gera 1 linha em `transacoes_entre_unidades`
+ * (a unidade que pagou de verdade vira credora daquela parte).
  */
 export async function salvarSplits(interExtratoId: number, linhas: LinhaSplitInput[]): Promise<void> {
   const db = await getDb();
@@ -2039,29 +2109,129 @@ export async function salvarSplits(interExtratoId: number, linhas: LinhaSplitInp
     throw new Error(`A soma das linhas (R$${somaLinhas.toFixed(2)}) não bate com o valor da transação (R$${valorTransacao.toFixed(2)}).`);
   }
 
+  const splitsAntigos = await db.select({ id: lancamentoSplits.id }).from(lancamentoSplits)
+    .where(eq(lancamentoSplits.interExtratoId, interExtratoId));
+  if (splitsAntigos.length > 0) {
+    await db.delete(transacoesEntreUnidades).where(inArray(transacoesEntreUnidades.lancamentoSplitId, splitsAntigos.map((s) => s.id)));
+  }
   await db.delete(lancamentoSplits).where(eq(lancamentoSplits.interExtratoId, interExtratoId));
-  await db.insert(lancamentoSplits).values(linhas.map((l) => ({
+
+  const idsInseridos = await db.insert(lancamentoSplits).values(linhas.map((l) => ({
     interExtratoId,
     dreDescricaoId: l.dreDescricaoId,
     valor: l.valor.toFixed(2),
     unidadeId: l.unidadeId,
     observacao: l.observacao?.trim() || null,
-  })));
+  }))).$returningId();
+
+  const linhasCrossUnidade = linhas
+    .map((l, i) => ({ ...l, splitId: idsInseridos[i]?.id }))
+    .filter((l): l is typeof l & { splitId: number } => l.unidadeId !== transacao.unidadeId && l.splitId !== undefined);
+
+  if (linhasCrossUnidade.length > 0) {
+    const nomesDescricoes = new Map(
+      (await db.select({ id: dreDescricoes.id, nome: dreDescricoes.nome }).from(dreDescricoes)).map((d) => [d.id, d.nome]),
+    );
+    await db.insert(transacoesEntreUnidades).values(linhasCrossUnidade.map((l) => ({
+      data: transacao.dataEntrada,
+      tipo: "rateio_despesa" as const,
+      unidadeCredora: transacao.unidadeId,
+      unidadeDevedora: l.unidadeId,
+      valor: l.valor.toFixed(2),
+      descricao: l.observacao?.trim() || nomesDescricoes.get(l.dreDescricaoId) || "Rateio de despesa",
+      lancamentoSplitId: l.splitId,
+    })));
+  }
 
   await db.update(interExtratos).set({ dreDescricaoId: null, categorizacaoStatus: "confirmada" })
     .where(eq(interExtratos.id, interExtratoId));
 }
 
 /**
- * Remove o split e devolve a transação pra "Pendente" — volta a poder
- * escolher uma Descrição única normalmente.
+ * Remove o split (e qualquer rateio gerado por ele em
+ * transacoes_entre_unidades) e devolve a transação pra "Pendente" —
+ * volta a poder escolher uma Descrição única normalmente.
  */
 export async function excluirSplits(interExtratoId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
+  const splits = await db.select({ id: lancamentoSplits.id }).from(lancamentoSplits)
+    .where(eq(lancamentoSplits.interExtratoId, interExtratoId));
+  if (splits.length > 0) {
+    await db.delete(transacoesEntreUnidades).where(inArray(transacoesEntreUnidades.lancamentoSplitId, splits.map((s) => s.id)));
+  }
   await db.delete(lancamentoSplits).where(eq(lancamentoSplits.interExtratoId, interExtratoId));
   await db.update(interExtratos).set({ dreDescricaoId: null, categorizacaoStatus: "pendente" })
     .where(eq(interExtratos.id, interExtratoId));
+}
+
+// ===== Transações entre Unidades =====
+
+export async function listTransacoesEntreUnidades() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(transacoesEntreUnidades)
+    .orderBy(desc(transacoesEntreUnidades.data), desc(transacoesEntreUnidades.id));
+}
+
+export interface DadosTransacaoManualEntreUnidades {
+  data: string;
+  unidadeCredora: number;
+  unidadeDevedora: number;
+  valor: number;
+  descricao: string;
+}
+
+/**
+ * Lançamento manual na conta corrente entre unidades — pro caso sem
+ * transação bancária nenhuma por trás (ex.: mercadoria que volta de
+ * uma unidade pra outra, abatendo o que era devido em dinheiro).
+ */
+export async function criarTransacaoManualEntreUnidades(dados: DadosTransacaoManualEntreUnidades) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.insert(transacoesEntreUnidades).values({
+    data: dados.data,
+    tipo: "manual",
+    unidadeCredora: dados.unidadeCredora,
+    unidadeDevedora: dados.unidadeDevedora,
+    valor: dados.valor.toFixed(2),
+    descricao: dados.descricao,
+  }).$returningId();
+  return result[0]?.id;
+}
+
+/**
+ * Saldo líquido por par de unidades — soma tudo (rateio de despesa +
+ * transferência real + manual) nos dois sentidos e devolve só o
+ * resultado líquido, já normalizado pro lado que efetivamente é
+ * credor (saldo sempre positivo).
+ */
+export async function saldoEntreUnidades(): Promise<{ unidadeCredora: number; unidadeDevedora: number; saldo: number }[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const todas = await db.select({
+    unidadeCredora: transacoesEntreUnidades.unidadeCredora,
+    unidadeDevedora: transacoesEntreUnidades.unidadeDevedora,
+    valor: transacoesEntreUnidades.valor,
+  }).from(transacoesEntreUnidades);
+
+  const saldoPorPar = new Map<string, number>();
+  for (const t of todas) {
+    const [a, b] = [t.unidadeCredora, t.unidadeDevedora].sort((x, y) => x - y);
+    const chave = `${a}-${b}`;
+    const sinal = t.unidadeCredora === a ? 1 : -1;
+    saldoPorPar.set(chave, (saldoPorPar.get(chave) ?? 0) + sinal * parseFloat(t.valor));
+  }
+
+  return Array.from(saldoPorPar.entries())
+    .filter(([, saldo]) => Math.abs(saldo) > 0.005)
+    .map(([chave, saldo]) => {
+      const [a, b] = chave.split("-").map(Number);
+      return saldo >= 0
+        ? { unidadeCredora: a, unidadeDevedora: b, saldo }
+        : { unidadeCredora: b, unidadeDevedora: a, saldo: -saldo };
+    });
 }
 
 /**
