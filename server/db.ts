@@ -1030,11 +1030,19 @@ export async function listAdquirenteVendas(
  * `contaId`, traz todas as contas da unidade somadas (comportamento
  * padrão); com `contaId`, filtra só aquela conta.
  */
+/**
+ * `tiposConta` filtra pelas contas cujo `tipo` esteja nesse conjunto
+ * (ex.: ["conta_corrente", "caixa_fisico"] pra a visão por grupo da
+ * tela de Contas, no lugar do antigo "Consolidado" que misturava
+ * tudo). Ignorado se `contaId` for passado — uma conta específica já
+ * é mais preciso que filtrar por tipo dela.
+ */
 export async function listInterExtratos(
   unidadeId: number,
   dataInicio: string,
   dataFim: string,
   contaId?: number,
+  tiposConta?: string[],
 ) {
   const db = await getDb();
   if (!db) return [];
@@ -1043,7 +1051,14 @@ export async function listInterExtratos(
     gte(interExtratos.dataEntrada, dataInicio),
     lte(interExtratos.dataEntrada, dataFim),
   ];
-  if (contaId !== undefined) condicoes.push(eq(interExtratos.contaId, contaId));
+  if (contaId !== undefined) {
+    condicoes.push(eq(interExtratos.contaId, contaId));
+  } else if (tiposConta && tiposConta.length > 0) {
+    const contasDoGrupo = await db.select({ id: contas.id }).from(contas)
+      .where(and(eq(contas.unidadeId, unidadeId), inArray(contas.tipo, tiposConta as (typeof contas.tipo.enumValues)[number][])));
+    if (contasDoGrupo.length === 0) return [];
+    condicoes.push(inArray(interExtratos.contaId, contasDoGrupo.map((c) => c.id)));
+  }
   return db
     .select()
     .from(interExtratos)
@@ -1329,7 +1344,7 @@ export async function getOrCreateContaMercadoPago(unidadeId: number) {
     .limit(1);
   if (existente[0]) return existente[0];
 
-  const insertValues: InsertConta = { unidadeId, nome: "Mercado Pago", tipo: "manual" };
+  const insertValues: InsertConta = { unidadeId, nome: "Mercado Pago", tipo: "conta_corrente" };
   const result = await db.insert(contas).values(insertValues).$returningId();
   const novaId = result[0]?.id;
   if (!novaId) return undefined;
@@ -1347,10 +1362,11 @@ export async function getOrCreateContaMercadoPago(unidadeId: number) {
 // "Sincronizar com Sicredi" (gated em contaAtual.tipo === "sicredi_oauth")
 // nunca aparece, e só quem promove o tipo é getOrCreateContaSicredi,
 // chamado de dentro do próprio sync que o botão dispara: ovo-e-galinha.
-// "Mercado Pago" fica "manual" mesmo — o botão dela checa por nome, não tipo.
-const CONTAS_PADRAO: { nome: string; tipo: "manual" | "sicredi_oauth" }[] = [
+// "Mercado Pago" é "conta_corrente" (dinheiro líquido de verdade, só
+// não é banco tradicional) — o botão de sync dela checa por nome, não tipo.
+const CONTAS_PADRAO: { nome: string; tipo: "conta_corrente" | "sicredi_oauth" }[] = [
   { nome: "Sicredi", tipo: "sicredi_oauth" },
-  { nome: "Mercado Pago", tipo: "manual" },
+  { nome: "Mercado Pago", tipo: "conta_corrente" },
 ];
 
 export async function ensureContasPadrao(unidadeId: number) {
@@ -1368,7 +1384,7 @@ export async function ensureContasPadrao(unidadeId: number) {
 
 export interface DadosConta {
   nome: string;
-  tipo?: "manual" | "cartao_credito";
+  tipo?: "conta_corrente" | "caixa_fisico" | "cartao_credito";
   agencia?: string;
   numeroConta?: string;
   cnpj?: string;
@@ -1379,7 +1395,7 @@ export interface DadosConta {
 export async function createConta(unidadeId: number, dados: DadosConta) {
   const db = await getDb();
   if (!db) return undefined;
-  const insertValues: InsertConta = { unidadeId, tipo: "manual", ...dados };
+  const insertValues: InsertConta = { unidadeId, tipo: "conta_corrente", ...dados };
   const result = await db.insert(contas).values(insertValues).$returningId();
   return result[0]?.id;
 }
@@ -2260,7 +2276,7 @@ export async function getOrCreateContaCaixaFisico(unidadeId: number) {
     .limit(1);
   if (existente[0]) return existente[0];
 
-  const insertValues: InsertConta = { unidadeId, nome: "Caixa Físico", tipo: "manual" };
+  const insertValues: InsertConta = { unidadeId, nome: "Caixa Físico", tipo: "caixa_fisico" };
   const result = await db.insert(contas).values(insertValues).$returningId();
   const novaId = result[0]?.id;
   if (!novaId) return undefined;

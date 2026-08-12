@@ -152,7 +152,25 @@ function fileParaBase64(file: File): Promise<string> {
   });
 }
 
-const CONTA_FORM_VAZIO = { nome: "", tipo: "manual" as "manual" | "cartao_credito", agencia: "", numeroConta: "", cnpj: "", saldoInicial: "", saldoInicialEm: "" };
+const CONTA_FORM_VAZIO = { nome: "", tipo: "conta_corrente" as "conta_corrente" | "caixa_fisico" | "cartao_credito", agencia: "", numeroConta: "", cnpj: "", saldoInicial: "", saldoInicialEm: "" };
+
+type GrupoConta = "conta_corrente" | "caixa_fisico" | "cartao_credito";
+type TipoConta = "inter_oauth" | "sicredi_oauth" | "manual" | "cartao_credito" | "conta_corrente" | "caixa_fisico";
+
+// "Conta Corrente" inclui as duas contas sincronizadas por API (Inter/
+// Sicredi, tipo *_oauth) — pro usuário são a mesma coisa que uma conta
+// corrente manual (Mercado Pago), só muda como o extrato chega.
+const TIPOS_POR_GRUPO: Record<GrupoConta, TipoConta[]> = {
+  conta_corrente: ["inter_oauth", "sicredi_oauth", "conta_corrente"],
+  caixa_fisico: ["caixa_fisico"],
+  cartao_credito: ["cartao_credito"],
+};
+
+const GRUPOS_LABEL: Record<GrupoConta, string> = {
+  conta_corrente: "Conta Corrente",
+  caixa_fisico: "Caixa Físico",
+  cartao_credito: "Cartões de Crédito",
+};
 
 export default function Extratos() {
   const { unidadeSelecionada } = useUnidade();
@@ -164,6 +182,18 @@ export default function Extratos() {
   const [periodoAtivo, setPeriodoAtivo] = useState<PeriodoRapido>("mes_vigente");
   const [filtroTipoExtrato, setFiltroTipoExtrato] = useState<"todos" | "D" | "C">("todos");
   const [contaSelecionadaId, setContaSelecionadaId] = useState<string>("todas");
+  const [gruposAtivos, setGruposAtivos] = useState<Set<GrupoConta>>(new Set<GrupoConta>(["conta_corrente", "caixa_fisico"]));
+
+  function alternarGrupo(grupo: GrupoConta) {
+    setGruposAtivos((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(grupo)) novo.delete(grupo); else novo.add(grupo);
+      return novo;
+    });
+    // Interagir com os grupos sempre volta pra visão agregada — não
+    // faz sentido mexer no filtro de grupo olhando pra 1 conta só.
+    setContaSelecionadaId("todas");
+  }
   const [contaModalOpen, setContaModalOpen] = useState(false);
   const [contaEditandoId, setContaEditandoId] = useState<number | null>(null);
   const [contaForm, setContaForm] = useState(CONTA_FORM_VAZIO);
@@ -193,7 +223,7 @@ export default function Extratos() {
     setContaEditandoId(contaAtual.id);
     setContaForm({
       nome: contaAtual.nome,
-      tipo: contaAtual.tipo === "cartao_credito" ? "cartao_credito" : "manual",
+      tipo: contaAtual.tipo === "cartao_credito" ? "cartao_credito" : contaAtual.tipo === "caixa_fisico" ? "caixa_fisico" : "conta_corrente",
       agencia: contaAtual.agencia ?? "",
       numeroConta: contaAtual.numeroConta ?? "",
       cnpj: contaAtual.cnpj ?? "",
@@ -321,8 +351,13 @@ export default function Extratos() {
     { enabled: !!unidadeId && statusInterQuery.data?.configurado === true, retry: false },
   );
 
+  const tiposContaAtivos = useMemo(
+    () => Array.from(gruposAtivos).flatMap((g) => TIPOS_POR_GRUPO[g]),
+    [gruposAtivos],
+  );
+
   const extratosQuery = trpc.inter.extratos.useQuery(
-    { unidadeId: unidadeId!, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato, contaId: contaIdSelecionada },
+    { unidadeId: unidadeId!, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato, contaId: contaIdSelecionada, tiposConta: contaIdSelecionada ? undefined : tiposContaAtivos },
     { enabled: !!unidadeId },
   );
 
@@ -531,25 +566,29 @@ export default function Extratos() {
     return mapa;
   }, [transacoesExtrato, saldoNaDataQuery.data]);
 
-  // Saldo do card "Consolidado" (nenhuma conta específica selecionada) —
-  // soma o saldo do Inter (via API) com o saldoImportado (via OFX) de
-  // cada conta manual. null se nenhuma das contas tem saldo disponível
-  // ainda, pra não mostrar "R$ 0,00" enganoso.
+  // Saldo do card de grupo (nenhuma conta específica selecionada) —
+  // soma o saldo do Inter (via API) com o saldoImportado (via OFX/CSV)
+  // de cada conta do(s) grupo(s) ativo(s). Cartão de crédito nunca
+  // entra aqui (é passivo, não soma com saldo de ativo — mostra
+  // "Fatura em aberto" à parte, ver renderização do card). null se
+  // nenhuma conta do grupo tem saldo disponível ainda, pra não mostrar
+  // "R$ 0,00" enganoso.
   const saldoConsolidado = useMemo(() => {
     let total = 0;
     let temAlgum = false;
-    if (statusInterQuery.data?.configurado && saldoInterQuery.data) {
+    if (tiposContaAtivos.includes("inter_oauth") && statusInterQuery.data?.configurado && saldoInterQuery.data) {
       total += parseFloat(saldoInterQuery.data.disponivel);
       temAlgum = true;
     }
     for (const c of contas) {
-      if (c.tipo === "manual" && c.saldoImportado) {
+      if (c.tipo === "inter_oauth" || c.tipo === "cartao_credito") continue;
+      if (tiposContaAtivos.includes(c.tipo) && c.saldoImportado) {
         total += parseFloat(c.saldoImportado);
         temAlgum = true;
       }
     }
     return temAlgum ? total : null;
-  }, [contas, statusInterQuery.data, saldoInterQuery.data]);
+  }, [contas, statusInterQuery.data, saldoInterQuery.data, tiposContaAtivos]);
 
   function nomeConta(contaId: number | null) {
     if (!contaId) return "—";
@@ -598,10 +637,12 @@ export default function Extratos() {
               <CardContent className="px-4">
                 <CardDescription className="flex items-center gap-1.5 text-xs">
                   <Wallet className="h-3.5 w-3.5" />
-                  {!contaAtual ? "Saldo Consolidado" : contaAtual.tipo === "inter_oauth" ? "Saldo Disponível (Inter)" : contaAtual.tipo === "cartao_credito" ? "Fatura em aberto" : `Saldo (${contaAtual.nome})`}
+                  {!contaAtual ? (gruposAtivos.size === 1 && gruposAtivos.has("cartao_credito") ? "Fatura em aberto" : "Saldo") : contaAtual.tipo === "inter_oauth" ? "Saldo Disponível (Inter)" : contaAtual.tipo === "cartao_credito" ? "Fatura em aberto" : `Saldo (${contaAtual.nome})`}
                 </CardDescription>
                 {!contaAtual ? (
-                  saldoConsolidado !== null ? (
+                  gruposAtivos.size === 1 && gruposAtivos.has("cartao_credito") ? (
+                    <div className="text-base font-bold mt-0.5">{fmtCurrencyExtrato(totalDebitosExtrato - totalCreditosExtrato)}</div>
+                  ) : saldoConsolidado !== null ? (
                     <div className="text-base font-bold mt-0.5">{fmtCurrencyExtrato(saldoConsolidado)}</div>
                   ) : (
                     <span className="text-xs text-muted-foreground">Nenhuma conta com saldo configurado ainda</span>
@@ -629,7 +670,7 @@ export default function Extratos() {
             <Card className="border-border/50 shadow-sm py-2.5">
               <CardContent className="px-4">
                 <CardDescription className="flex items-center gap-1.5 text-xs">
-                  <TrendingUp className="h-3.5 w-3.5 text-green-600" /> Entradas no Período{contaAtual ? "" : " (consolidado)"}
+                  <TrendingUp className="h-3.5 w-3.5 text-green-600" /> Entradas no Período{contaAtual ? "" : " (grupo)"}
                 </CardDescription>
                 <div className="text-base font-bold text-green-700 mt-0.5">{fmtCurrencyExtrato(totalCreditosExtrato)}</div>
               </CardContent>
@@ -637,7 +678,7 @@ export default function Extratos() {
             <Card className="border-border/50 shadow-sm py-2.5">
               <CardContent className="px-4">
                 <CardDescription className="flex items-center gap-1.5 text-xs">
-                  <DollarSign className="h-3.5 w-3.5 text-red-500" /> Saídas no Período{contaAtual ? "" : " (consolidado)"}
+                  <DollarSign className="h-3.5 w-3.5 text-red-500" /> Saídas no Período{contaAtual ? "" : " (grupo)"}
                 </CardDescription>
                 <div className="text-base font-bold text-red-600 mt-0.5">{fmtCurrencyExtrato(totalDebitosExtrato)}</div>
               </CardContent>
@@ -646,10 +687,17 @@ export default function Extratos() {
 
           <Card className="border-border/50 shadow-sm">
             <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-center gap-4">
+                {(Object.keys(GRUPOS_LABEL) as GrupoConta[]).map((grupo) => (
+                  <label key={grupo} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <Checkbox checked={gruposAtivos.has(grupo)} onCheckedChange={() => alternarGrupo(grupo)} />
+                    {GRUPOS_LABEL[grupo]}
+                  </label>
+                ))}
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Tabs value={contaSelecionadaId} onValueChange={setContaSelecionadaId}>
                   <TabsList className="h-auto flex-wrap justify-start p-1">
-                    <TabsTrigger value="todas" className="text-sm">Consolidado</TabsTrigger>
                     {contas.map((c) => (
                       <TabsTrigger key={c.id} value={String(c.id)} className="text-sm">{c.nome}</TabsTrigger>
                     ))}
@@ -685,10 +733,11 @@ export default function Extratos() {
                       </div>
                       <div>
                         <Label className="text-xs">Tipo</Label>
-                        <Select value={contaForm.tipo} onValueChange={(v) => setContaForm({ ...contaForm, tipo: v as "manual" | "cartao_credito" })}>
+                        <Select value={contaForm.tipo} onValueChange={(v) => setContaForm({ ...contaForm, tipo: v as "conta_corrente" | "caixa_fisico" | "cartao_credito" })}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="manual">Manual</SelectItem>
+                            <SelectItem value="conta_corrente">Conta Corrente</SelectItem>
+                            <SelectItem value="caixa_fisico">Caixa Físico</SelectItem>
                             <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
                           </SelectContent>
                         </Select>
@@ -876,7 +925,7 @@ export default function Extratos() {
                   </Button>
                 )}
 
-                {contaAtual?.nome === "Caixa Físico" && (
+                {contaAtual?.tipo === "caixa_fisico" && (
                   <Button
                     size="sm"
                     onClick={() => unidadeId && sincronizarCaixaFisicoMutation.mutate({ unidadeId })}
@@ -983,7 +1032,7 @@ export default function Extratos() {
                   <Checkbox checked={soPendentes} onCheckedChange={(v) => setSoPendentes(!!v)} />
                   Só falta tratar (pendente/sugerida)
                 </label>
-                {contaAtual?.nome === "Caixa Físico" && (
+                {contaAtual?.tipo === "caixa_fisico" && (
                   <label className="flex items-center gap-2 h-8 text-sm cursor-pointer">
                     <Checkbox checked={ocultarDiasSemMovimento} onCheckedChange={(v) => setOcultarDiasSemMovimento(!!v)} />
                     Ocultar dias sem movimento
