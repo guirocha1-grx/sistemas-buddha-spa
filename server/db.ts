@@ -1852,29 +1852,31 @@ export async function categorizarTransacaoAutomaticamente(
 }
 
 /**
- * Reaplica as regras atuais em transações que ainda estão "pendente".
- * Necessário porque a categorização só roda no momento do import ou
- * quando uma regra nova é aprendida — toda vez que uma regra nova entra,
- * as linhas antigas continuam pendentes até alguém rodar isso. Não mexe
- * em linha "sugerida" ou "confirmada".
+ * Reaplica as regras atuais em toda transação ainda não confirmada
+ * ("pendente" ou "sugerida"). Necessário porque a categorização só
+ * roda no momento do import ou quando uma regra nova é aprendida —
+ * toda vez que uma regra muda (nova, editada, removida), as linhas
+ * antigas ficam com a sugestão velha até alguém rodar isso. Nunca mexe
+ * em linha "confirmada" (decisão humana).
  *
  * Resultado vira "sugerida" (não "confirmada") — é o sistema aplicando
  * uma regra, não uma decisão humana; ainda precisa de 1 clique de
- * confirmação.
+ * confirmação. Se nenhuma regra bater mais numa linha que estava
+ * "sugerida" (ex.: regra removida/alterada), volta pra "pendente" de
+ * verdade em vez de ficar com uma sugestão que não existe mais.
  */
 export async function reprocessarPendentes(unidadeId: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
 
   const regras = await listRegrasParaMatch();
-  if (regras.length === 0) return 0;
   const cnpjsContas = await listCnpjsDeContas();
 
-  const pendentes = await db.select().from(interExtratos)
-    .where(and(eq(interExtratos.unidadeId, unidadeId), eq(interExtratos.categorizacaoStatus, "pendente")));
+  const naoConfirmadas = await db.select().from(interExtratos)
+    .where(and(eq(interExtratos.unidadeId, unidadeId), ne(interExtratos.categorizacaoStatus, "confirmada")));
 
   let atualizados = 0;
-  for (const t of pendentes) {
+  for (const t of naoConfirmadas) {
     const resultado = await categorizarTransacaoAutomaticamente({
       contaId: t.contaId ?? 0,
       dataEntrada: t.dataEntrada,
@@ -1887,7 +1889,17 @@ export async function reprocessarPendentes(unidadeId: number): Promise<number> {
       origem: t.origem,
       tipoOperacao: t.tipoOperacao,
     }, regras, cnpjsContas, t.id);
-    if (!resultado.dreDescricaoId) continue;
+    if (!resultado.dreDescricaoId) {
+      if (t.categorizacaoStatus !== "pendente") {
+        await db.update(interExtratos).set({
+          dreDescricaoId: null,
+          categorizacaoStatus: "pendente",
+          alerta: null,
+        }).where(eq(interExtratos.id, t.id));
+        atualizados++;
+      }
+      continue;
+    }
     await db.update(interExtratos).set({
       dreDescricaoId: resultado.dreDescricaoId,
       categorizacaoStatus: resultado.categorizacaoStatus,

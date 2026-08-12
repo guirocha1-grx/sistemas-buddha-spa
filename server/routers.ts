@@ -1015,9 +1015,10 @@ Diretrizes:
     }),
 
     /**
-     * Reaplica as regras de categorização atuais só nas transações que
-     * ainda estão "Pendente" — usado depois que uma regra nova é
-     * adicionada, pra não deixar lançamentos já importados presos.
+     * Reaplica as regras de categorização atuais em toda transação
+     * ainda não confirmada ("Pendente" ou "Sugerida") — usado depois
+     * que uma regra é adicionada/editada/removida, pra não deixar
+     * lançamentos já importados presos numa sugestão desatualizada.
      */
     reprocessarCategorias: protectedProcedure.input(z.object({
       unidadeId: z.number(),
