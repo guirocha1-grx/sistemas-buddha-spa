@@ -112,3 +112,6 @@
 - [x] Padronizar o rótulo como "Conta Corrente Mercado Pago" em todo o fluxo global
 - [x] Publicar a correção final de isolamento e nomenclatura do Mercado Pago
 - [x] Salvar e publicar checkpoint com a correção final de isolamento do Mercado Pago
+- [x] Confirmar e enviar ao GitHub a correção Mercado Pago publicada como 2d9b21e0
+- [x] Puxar a última versão do GitHub, aplicar migrações pendentes e publicar
+- [x] Publicar o checkpoint correspondente ao merge do commit be627a9
