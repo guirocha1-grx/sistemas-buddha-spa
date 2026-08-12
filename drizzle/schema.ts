@@ -318,6 +318,14 @@ export const clientes = mysqlTable("clientes", {
   qtdServicosFinalizados: int("qtdServicosFinalizados").default(0).notNull(),
   clienteSsu: boolean("clienteSsu").default(false).notNull(),
   clienteRbs: boolean("clienteRbs").default(false).notNull(),
+  // "lead": criado manualmente pelo Inbox (botões de cliente rápido),
+  // ainda sem belleId real — usa um sintético negativo (nunca colide,
+  // Belle não usa negativo). "cliente": veio de fato da planilha do
+  // Belle. Ao reimportar, se o telefone de um "lead" bater com uma
+  // linha da planilha, esse MESMO registro é promovido pra "cliente"
+  // (belleId trocado pelo real) em vez de duplicar — ver
+  // upsertClientesImportados.
+  tipoCliente: mysqlEnum("tipoCliente", ["lead", "cliente"]).default("cliente").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({

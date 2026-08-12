@@ -36,7 +36,7 @@ function ImportarClientesCard() {
 
   const importarMutation = trpc.clientes.importarXlsx.useMutation({
     onSuccess: (data) => {
-      toast.success(`Planilha importada: ${data.inseridos} novo(s), ${data.atualizados} atualizado(s) de ${data.totalLinhas} linha(s).`);
+      toast.success(`Planilha importada: ${data.inseridos} novo(s), ${data.atualizados} atualizado(s)${data.promovidosDeLead ? `, ${data.promovidosDeLead} lead(s) do Inbox promovido(s) a cliente` : ""} de ${data.totalLinhas} linha(s).`);
       utils.clientes.resumoImportados.invalidate();
       utils.clientes.listImportados.invalidate();
     },

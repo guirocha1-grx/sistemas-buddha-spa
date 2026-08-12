@@ -6,6 +6,7 @@ import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -17,6 +18,7 @@ import {
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
   Pencil, Check, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
+  UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -95,6 +97,10 @@ export default function Mensagens() {
   const [modalUnificar, setModalUnificar] = useState(false);
   const [unificarBusca, setUnificarBusca] = useState("");
   const [unificarDestinoId, setUnificarDestinoId] = useState<number | null>(null);
+  const [nomeCriarCliente, setNomeCriarCliente] = useState("");
+  const [modalNovoCliente, setModalNovoCliente] = useState(false);
+  const [novoClienteNome, setNovoClienteNome] = useState("");
+  const [novoClienteTelefone, setNovoClienteTelefone] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
@@ -196,6 +202,27 @@ export default function Mensagens() {
     onError: (error) => toast.error(error.message),
   });
 
+  const criarClienteRapidoMutation = trpc.inbox.conversas.criarClienteRapido.useMutation({
+    onSuccess: () => {
+      toast.success("Cliente criado no CRM!");
+      utils.inbox.conversas.get.invalidate({ id: conversaSelecionadaId ?? 0 });
+      utils.inbox.conversas.list.invalidate();
+    },
+    onError: (error) => toast.error(`Erro ao criar cliente: ${error.message}`),
+  });
+
+  const iniciarConversaComClienteMutation = trpc.inbox.iniciarConversaComCliente.useMutation({
+    onSuccess: (data) => {
+      toast.success("Cliente e conversa criados!");
+      setModalNovoCliente(false);
+      setNovoClienteNome("");
+      setNovoClienteTelefone("");
+      utils.inbox.conversas.list.invalidate();
+      setConversaSelecionadaId(data.conversaId);
+    },
+    onError: (error) => toast.error(`Erro ao criar cliente: ${error.message}`),
+  });
+
   useEffect(() => {
     if (conversaIdSolicitada) {
       setBusca("");
@@ -219,7 +246,8 @@ export default function Mensagens() {
     setEditandoNome(false);
     setBuscaMensagemAtiva(false);
     setBuscaMensagem("");
-  }, [conversaSelecionadaId]);
+    setNomeCriarCliente(conversaSelecionada?.nomeContato || "");
+  }, [conversaSelecionadaId, conversaSelecionada?.nomeContato]);
 
   function toggleSom() {
     const novo = !somAtivo;
@@ -322,6 +350,15 @@ export default function Mensagens() {
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-sm">Inbox WhatsApp</h2>
               <div className="flex items-center gap-0.5">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => { setModalNovoCliente(true); setNovoClienteNome(""); setNovoClienteTelefone(""); }}
+                  title="Incluir cliente e iniciar conversa"
+                >
+                  <UserPlus size={13} />
+                </Button>
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetchConversas()} title="Atualizar">
                   <RefreshCw size={13} />
                 </Button>
@@ -656,6 +693,41 @@ export default function Mensagens() {
                   )}
                 </div>
 
+                {conversaSelecionada && !conversaSelecionada.clienteId && (
+                  <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-2">
+                    <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-500">
+                      <UserPlus size={13} />
+                      <p className="text-xs font-semibold">Criar cliente no CRM</p>
+                    </div>
+                    <p className="text-[11px] text-amber-700/80 dark:text-amber-500/80">
+                      Este contato ainda não está cadastrado. Confira/edite o nome e clique em criar.
+                    </p>
+                    <Input
+                      value={nomeCriarCliente}
+                      onChange={(e) => setNomeCriarCliente(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && nomeCriarCliente.trim() && conversaSelecionadaId) {
+                          criarClienteRapidoMutation.mutate({ conversaId: conversaSelecionadaId, nome: nomeCriarCliente.trim() });
+                        }
+                      }}
+                      placeholder="Nome do cliente"
+                      className="h-8 text-xs"
+                    />
+                    <Button
+                      size="sm"
+                      className="w-full h-7 text-xs"
+                      disabled={!nomeCriarCliente.trim() || criarClienteRapidoMutation.isPending}
+                      onClick={() => {
+                        if (nomeCriarCliente.trim() && conversaSelecionadaId) {
+                          criarClienteRapidoMutation.mutate({ conversaId: conversaSelecionadaId, nome: nomeCriarCliente.trim() });
+                        }
+                      }}
+                    >
+                      {criarClienteRapidoMutation.isPending ? "Criando..." : "Criar cliente"}
+                    </Button>
+                  </div>
+                )}
+
                 <Separator />
 
                 <div className="space-y-2">
@@ -854,6 +926,57 @@ export default function Mensagens() {
               }}
             >
               {unificarMutation.isPending ? "Unificando..." : "Unificar conversas"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Novo cliente + conversa (sem mensagem prévia) */}
+      <Dialog open={modalNovoCliente} onOpenChange={setModalNovoCliente}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus size={16} />
+              Incluir cliente
+            </DialogTitle>
+            <DialogDescription>
+              Cria o cliente e abre a conversa — útil quando alguém chega no balcão e ainda não mandou mensagem.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Nome</Label>
+              <Input
+                autoFocus
+                value={novoClienteNome}
+                onChange={(e) => setNovoClienteNome(e.target.value)}
+                placeholder="Nome do cliente"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">WhatsApp</Label>
+              <Input
+                value={novoClienteTelefone}
+                onChange={(e) => setNovoClienteTelefone(e.target.value)}
+                placeholder="(16) 99999-9999"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setModalNovoCliente(false)}>Cancelar</Button>
+            <Button
+              disabled={!novoClienteNome.trim() || !novoClienteTelefone.trim() || !unidadeSelecionada?.id || iniciarConversaComClienteMutation.isPending}
+              onClick={() => {
+                if (novoClienteNome.trim() && novoClienteTelefone.trim() && unidadeSelecionada?.id) {
+                  iniciarConversaComClienteMutation.mutate({
+                    unidadeId: unidadeSelecionada.id,
+                    nome: novoClienteNome.trim(),
+                    telefone: novoClienteTelefone.trim(),
+                  });
+                }
+              }}
+            >
+              {iniciarConversaComClienteMutation.isPending ? "Criando..." : "Criar"}
             </Button>
           </DialogFooter>
         </DialogContent>

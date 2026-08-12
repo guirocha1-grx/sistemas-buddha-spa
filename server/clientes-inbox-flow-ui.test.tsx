@@ -75,6 +75,7 @@ const state = vi.hoisted(() => {
         alterarStatus: { useMutation: () => mutation() },
         definirEtiquetas: { useMutation: () => mutation() },
         excluir: { useMutation: () => mutation() },
+        criarClienteRapido: { useMutation: () => mutation() },
       },
       mensagens: {
         list: { useQuery: () => ({ data: [{ id: 1, direcao: "recebida", tipo: "texto", conteudo: "Olá", createdAt: new Date().toISOString() }], isLoading: false }) },
@@ -82,6 +83,7 @@ const state = vi.hoisted(() => {
         enviarMidia: { useMutation: () => mutation() },
       },
       unificarConversas: { useMutation: () => mutation() },
+      iniciarConversaComCliente: { useMutation: () => mutation() },
     },
     mensageria: {
       status: { useQuery: () => ({ data: { enabled: true }, isLoading: false }) },

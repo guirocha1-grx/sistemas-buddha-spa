@@ -584,6 +584,132 @@ export async function unificarInboxConversas(idLid: number, idReal: number) {
 }
 
 /**
+ * `clientes.belleId` é NOT NULL UNIQUE — é a chave de sincronização com
+ * o Belle Software, então nunca dá pra inserir um cliente sem um valor.
+ * Clientes criados manualmente pelo Inbox (recepção/consultor) recebem
+ * um belleId sintético NEGATIVO — o Belle nunca usa números negativos,
+ * então nunca colide com um id real, e fica fácil identificar depois
+ * "este cliente ainda não veio do Belle" (belleId < 0) se precisar.
+ */
+function gerarBelleIdSintetico(): number {
+  return -(Date.now() * 1000 + Math.floor(Math.random() * 1000));
+}
+
+async function criarClienteManual(nome: string, telefoneDigitos: string, unidadeId?: number): Promise<number | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  let clienteSsu = false;
+  let clienteRbs = false;
+  if (unidadeId) {
+    const unidade = await getUnidadeById(unidadeId);
+    const ehRbs = unidade?.slug.includes("ribeirao") || unidade?.slug.includes("rbs");
+    if (ehRbs) clienteRbs = true;
+    else if (unidade) clienteSsu = true;
+  }
+  const insertValues: InsertCliente = {
+    belleId: gerarBelleIdSintetico(),
+    nome,
+    celular: telefoneDigitos,
+    tipoCliente: "lead",
+    clienteSsu,
+    clienteRbs,
+  };
+  const result = await db.insert(clientes).values(insertValues).$returningId();
+  return result[0]?.id;
+}
+
+/**
+ * Botão "+" ao lado de Atualizar no Inbox — recepção cria cliente +
+ * conversa sem precisar de mensagem prévia (ex.: cliente chegou no
+ * balcão e pediu pra mandar a tabela de preços). Se já existir cliente
+ * ou conversa pra esse telefone, reaproveita em vez de duplicar — e,
+ * se a conversa já existir com mensagens, NÃO mexe em
+ * ultimaMensagemTexto/ultimaMensagemEm (só linka clienteId/nome), pra
+ * não apagar o histórico de preview por engano.
+ */
+export async function iniciarConversaComCliente(params: {
+  unidadeId: number;
+  nome: string;
+  telefone: string;
+}): Promise<{ conversaId: number; clienteId: number } | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const digitos = params.telefone.replace(/\D/g, "");
+  const telefoneNormalizado = digitos.startsWith("55") ? digitos : `55${digitos}`;
+
+  let clienteId = await buscarClienteIdPorTelefone(telefoneNormalizado);
+  if (!clienteId) {
+    clienteId = await criarClienteManual(params.nome, telefoneNormalizado, params.unidadeId);
+  }
+  if (!clienteId) throw new Error("Falha ao criar cliente");
+
+  const existente = await db.select({
+    id: inboxConversas.id,
+    clienteId: inboxConversas.clienteId,
+    nomeContato: inboxConversas.nomeContato,
+  }).from(inboxConversas)
+    .where(and(eq(inboxConversas.telefone, telefoneNormalizado), eq(inboxConversas.canal, "zapi")))
+    .limit(1);
+
+  if (existente[0]) {
+    await db.update(inboxConversas).set({
+      clienteId: existente[0].clienteId ?? clienteId,
+      nomeContato: existente[0].nomeContato ?? params.nome,
+    }).where(eq(inboxConversas.id, existente[0].id));
+    return { conversaId: existente[0].id, clienteId };
+  }
+
+  const result = await db.insert(inboxConversas).values({
+    unidadeId: params.unidadeId,
+    canal: "zapi",
+    telefone: telefoneNormalizado,
+    nomeContato: params.nome,
+    clienteId,
+    isLidPendente: "false",
+    ultimaMensagemEm: new Date(),
+    ultimaMensagemTexto: "",
+    naoLidas: 0,
+  }).$returningId();
+  const conversaId = result[0]?.id;
+  return conversaId ? { conversaId, clienteId } : undefined;
+}
+
+/**
+ * Card "Criar cliente no CRM" no painel direito — conversa já ativa,
+ * mas o telefone não bate com nenhum cliente Belle. O consultor edita
+ * o nome (que pode vir como apelido/emoji do perfil do WhatsApp) e
+ * confirma. Se a conversa já tiver clienteId (corrida rara com o
+ * webhook linkando entre o carregamento da tela e o clique), só
+ * atualiza o nome em vez de criar um segundo cliente.
+ */
+export async function criarClienteRapidoDeConversa(
+  conversaId: number,
+  nome: string,
+): Promise<{ clienteId: number } | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select({
+    id: inboxConversas.id,
+    telefone: inboxConversas.telefone,
+    clienteId: inboxConversas.clienteId,
+    unidadeId: inboxConversas.unidadeId,
+  }).from(inboxConversas).where(eq(inboxConversas.id, conversaId)).limit(1);
+  const conversa = rows[0];
+  if (!conversa) throw new Error("Conversa não encontrada");
+
+  if (conversa.clienteId) {
+    await db.update(clientes).set({ nome }).where(eq(clientes.id, conversa.clienteId));
+    await db.update(inboxConversas).set({ nomeContato: nome }).where(eq(inboxConversas.id, conversaId));
+    return { clienteId: conversa.clienteId };
+  }
+
+  const clienteId = await criarClienteManual(nome, conversa.telefone.replace(/\D/g, ""), conversa.unidadeId ?? undefined);
+  if (!clienteId) throw new Error("Falha ao criar cliente");
+  await db.update(inboxConversas).set({ clienteId, nomeContato: nome }).where(eq(inboxConversas.id, conversaId));
+  return { clienteId };
+}
+
+/**
  * Join com atendentes só pra resolver o nome de quem realmente enviou
  * (enviadaPorAtendenteId) — enviadaPorUserId continua sendo a conta
  * Google/Manus compartilhada, não é isso que a UI mostra no balão.
@@ -2098,23 +2224,53 @@ export async function encerrarSessaoAtendente(token: string) {
  * unidade sendo importada agora, sem nunca desligar a outra — é assim
  * que um cliente das duas unidades acaba com as duas true, vindas de
  * imports em momentos diferentes.
+ *
+ * Reconciliação lead→cliente: uma linha nova (belleId nunca visto) pode
+ * na verdade ser a mesma pessoa de um "lead" já criado pelo Inbox
+ * (belleId sintético negativo). Antes de inserir como registro novo,
+ * checa o telefone contra os leads existentes — batendo, PROMOVE o
+ * mesmo registro (troca o belleId sintético pelo real, tipoCliente vira
+ * "cliente") em vez de duplicar. Preserva o `id` porque
+ * inbox_conversas.clienteId pode já apontar pra ele.
  */
 export async function upsertClientesImportados(
   unidadeSlug: "rbs" | "ssu",
   linhas: LinhaClienteImportada[],
-): Promise<{ inseridos: number; atualizados: number }> {
+): Promise<{ inseridos: number; atualizados: number; promovidosDeLead: number }> {
   const db = await getDb();
-  if (!db) return { inseridos: 0, atualizados: 0 };
-  if (linhas.length === 0) return { inseridos: 0, atualizados: 0 };
+  if (!db) return { inseridos: 0, atualizados: 0, promovidosDeLead: 0 };
+  if (linhas.length === 0) return { inseridos: 0, atualizados: 0, promovidosDeLead: 0 };
 
   const belleIds = linhas.map((l) => l.belleId);
   const existentes = await db.select({ belleId: clientes.belleId }).from(clientes).where(inArray(clientes.belleId, belleIds));
   const existentesSet = new Set(existentes.map((e) => e.belleId));
 
+  const leads = await db.select({
+    id: clientes.id,
+    celular: clientes.celular,
+    celular2: clientes.celular2,
+    telefone: clientes.telefone,
+  }).from(clientes).where(eq(clientes.tipoCliente, "lead"));
+  const digitosValidos = (v: string | null) => {
+    const d = (v ?? "").replace(/\D/g, "");
+    return d.length >= 8 ? d : null;
+  };
+  const leadPorTelefone = new Map<string, number>();
+  for (const lead of leads) {
+    for (const bruto of [lead.celular, lead.celular2, lead.telefone]) {
+      const digitos = digitosValidos(bruto);
+      if (!digitos) continue;
+      leadPorTelefone.set(digitos, lead.id);
+      leadPorTelefone.set(digitos.replace(/^55/, ""), lead.id);
+    }
+  }
+  const leadsJaPromovidos = new Set<number>();
+
   const flagUnidade = unidadeSlug === "ssu" ? { clienteSsu: true as const } : { clienteRbs: true as const };
 
   let inseridos = 0;
   let atualizados = 0;
+  let promovidosDeLead = 0;
   for (const l of linhas) {
     const dadosBase = {
       nome: l.nome,
@@ -2140,19 +2296,38 @@ export async function upsertClientesImportados(
     if (existentesSet.has(l.belleId)) {
       await db.update(clientes).set({ ...dadosBase, ...flagUnidade }).where(eq(clientes.belleId, l.belleId));
       atualizados++;
-    } else {
-      const insertValues: InsertCliente = {
-        belleId: l.belleId,
-        ...dadosBase,
-        clienteSsu: unidadeSlug === "ssu",
-        clienteRbs: unidadeSlug === "rbs",
-      };
-      await db.insert(clientes).values(insertValues);
-      inseridos++;
+      continue;
     }
+
+    const digitosImportado = [l.celular, l.celular2, l.telefone].map(digitosValidos).find((d): d is string => !!d);
+    const leadId = digitosImportado
+      ? leadPorTelefone.get(digitosImportado) ?? leadPorTelefone.get(digitosImportado.replace(/^55/, ""))
+      : undefined;
+
+    if (leadId !== undefined && !leadsJaPromovidos.has(leadId)) {
+      await db.update(clientes).set({
+        belleId: l.belleId,
+        tipoCliente: "cliente",
+        ...dadosBase,
+        ...flagUnidade,
+      }).where(eq(clientes.id, leadId));
+      leadsJaPromovidos.add(leadId);
+      promovidosDeLead++;
+      continue;
+    }
+
+    const insertValues: InsertCliente = {
+      belleId: l.belleId,
+      ...dadosBase,
+      tipoCliente: "cliente",
+      clienteSsu: unidadeSlug === "ssu",
+      clienteRbs: unidadeSlug === "rbs",
+    };
+    await db.insert(clientes).values(insertValues);
+    inseridos++;
   }
 
-  return { inseridos, atualizados };
+  return { inseridos, atualizados, promovidosDeLead };
 }
 
 export async function resumoClientesLocal() {

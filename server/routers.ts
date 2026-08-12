@@ -656,6 +656,20 @@ Diretrizes:
         return { success: true };
       }),
 
+      /**
+       * Card "Criar cliente no CRM" no painel direito — conversa já
+       * ativa cujo telefone não bate com nenhum cliente Belle. Cria o
+       * cliente (tipoCliente "lead", belleId sintético) e vincula.
+       */
+      criarClienteRapido: protectedProcedure.input(z.object({
+        conversaId: z.number(),
+        nome: z.string().min(1).max(200),
+      })).mutation(async ({ input }) => {
+        const resultado = await db.criarClienteRapidoDeConversa(input.conversaId, input.nome);
+        if (!resultado) throw new Error("Não foi possível criar o cliente");
+        return resultado;
+      }),
+
       alterarStatus: protectedProcedure.input(z.object({
         id: z.number(),
         status: z.enum(["aberta", "encerrada"]),
@@ -676,6 +690,22 @@ Diretrizes:
         await db.excluirInboxConversa(input.id);
         return { success: true };
       }),
+    }),
+
+    /**
+     * Botão "+" ao lado de Atualizar no Inbox — recepção cria cliente
+     * (tipoCliente "lead") + conversa sem precisar de mensagem prévia
+     * (ex.: cliente chegou no balcão e pediu pra mandar a tabela de
+     * preços).
+     */
+    iniciarConversaComCliente: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      nome: z.string().min(1).max(200),
+      telefone: z.string().min(8).max(20),
+    })).mutation(async ({ input }) => {
+      const resultado = await db.iniciarConversaComCliente(input);
+      if (!resultado) throw new Error("Não foi possível criar a conversa");
+      return resultado;
     }),
 
     mensagens: router({
