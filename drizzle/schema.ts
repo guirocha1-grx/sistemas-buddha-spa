@@ -749,3 +749,38 @@ export const dreRegras = mysqlTable("dre_regras", {
 export type DreRegra = typeof dreRegras.$inferSelect;
 export type InsertDreRegra = typeof dreRegras.$inferInsert;
 
+/**
+ * Biblioteca de mensagens prontas do Inbox (mesmo conceito do
+ * "Mensagens e Scripts" do mobai-crm) — agrupadas por categoriaScript
+ * livre (texto, não FK — evita precisar de uma tabela de categorias só
+ * pra isso; a lista de categorias visível na UI vem de um DISTINCT).
+ * Exclusão é soft (ativo=false) pra não quebrar scriptsUso histórico.
+ */
+export const scripts = mysqlTable("scripts", {
+  id: int("id").autoincrement().primaryKey(),
+  categoriaScript: varchar("categoriaScript", { length: 100 }).notNull(),
+  script: text("script").notNull(),
+  observacoes: text("observacoes"),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  categoriaIdx: index("scripts_categoria_idx").on(table.categoriaScript),
+}));
+
+export type Script = typeof scripts.$inferSelect;
+export type InsertScript = typeof scripts.$inferInsert;
+
+/** Registro de uso — alimenta a aba "Recentes" do seletor de scripts. */
+export const scriptsUso = mysqlTable("scripts_uso", {
+  id: int("id").autoincrement().primaryKey(),
+  scriptId: int("scriptId").notNull(),
+  userId: int("userId").notNull(),
+  usadoEm: timestamp("usadoEm").defaultNow().notNull(),
+}, (table) => ({
+  scriptIdx: index("scripts_uso_script_idx").on(table.scriptId),
+  userIdx: index("scripts_uso_user_idx").on(table.userId),
+}));
+
+export type ScriptUso = typeof scriptsUso.$inferSelect;
+export type InsertScriptUso = typeof scriptsUso.$inferInsert;
+

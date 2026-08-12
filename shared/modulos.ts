@@ -13,6 +13,7 @@ export const MODULOS = [
   { chave: "reativacao", label: "Reativação" },
   { chave: "agenda", label: "Agenda" },
   { chave: "mensagens", label: "Mensagens (Inbox)" },
+  { chave: "scripts", label: "Scripts" },
   { chave: "financeiro", label: "Financeiro" },
   { chave: "copilot", label: "Copilot" },
   { chave: "laminas", label: "Lâminas" },

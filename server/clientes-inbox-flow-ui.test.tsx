@@ -85,6 +85,12 @@ const state = vi.hoisted(() => {
       unificarConversas: { useMutation: () => mutation() },
       iniciarConversaComCliente: { useMutation: () => mutation() },
     },
+    scripts: {
+      list: { useQuery: () => ({ data: [], isLoading: false }) },
+      listCategorias: { useQuery: () => ({ data: [], isLoading: false }) },
+      listRecentes: { useQuery: () => ({ data: [], isLoading: false }) },
+      registrarUso: { useMutation: () => mutation() },
+    },
     mensageria: {
       status: { useQuery: () => ({ data: { enabled: true }, isLoading: false }) },
       setStatus: { useMutation: () => mutation() },

@@ -26,6 +26,7 @@ import { useLocation } from "wouter";
 import { telefonesCorrespondem } from "@shared/telefone";
 import { formatPhone, diasDesde } from "@/lib/utils";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
+import { ScriptPicker } from "@/components/ScriptPicker";
 
 function formatHora(data: string | Date | null | undefined) {
   if (!data) return "";
@@ -104,6 +105,7 @@ export default function Mensagens() {
   const [modalNovoCliente, setModalNovoCliente] = useState(false);
   const [novoClienteNome, setNovoClienteNome] = useState("");
   const [novoClienteTelefone, setNovoClienteTelefone] = useState("");
+  const [scriptPickerOpen, setScriptPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
@@ -607,6 +609,12 @@ export default function Mensagens() {
                 >
                   {enviarMidiaMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                 </Button>
+                <ScriptPicker
+                  open={scriptPickerOpen}
+                  onOpenChange={setScriptPickerOpen}
+                  onSelect={(s) => setTexto((prev) => (prev ? `${prev}\n${s}` : s))}
+                  disabled={!conversaSelecionadaId}
+                />
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="outline" size="icon" className="shrink-0" title="Inserir emoji">
@@ -633,6 +641,13 @@ export default function Mensagens() {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
                       handleEnviar();
+                      return;
+                    }
+                    const target = e.target as HTMLTextAreaElement;
+                    const cursorNoInicio = target.selectionStart === 0 || /\s$/.test(texto.slice(0, target.selectionStart));
+                    if (e.key === "/" && cursorNoInicio) {
+                      e.preventDefault();
+                      setScriptPickerOpen(true);
                     }
                   }}
                 />

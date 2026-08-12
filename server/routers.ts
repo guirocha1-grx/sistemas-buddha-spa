@@ -850,6 +850,54 @@ Diretrizes:
     }),
   }),
 
+  // ===== Scripts (mensagens prontas do Inbox) =====
+  scripts: router({
+    list: protectedProcedure.input(z.object({
+      busca: z.string().optional(),
+      categoria: z.string().optional(),
+    })).query(async ({ input }) => {
+      return db.listScripts(input.busca, input.categoria);
+    }),
+
+    listCategorias: protectedProcedure.query(async () => {
+      return db.listCategoriasScript();
+    }),
+
+    listRecentes: protectedProcedure.query(async () => {
+      return db.listScriptsRecentes();
+    }),
+
+    registrarUso: protectedProcedure.input(z.object({ scriptId: z.number() })).mutation(async ({ input, ctx }) => {
+      await db.registrarUsoScript(input.scriptId, ctx.user.id);
+      return { success: true };
+    }),
+
+    create: adminProcedure.input(z.object({
+      categoriaScript: z.string().min(1).max(100),
+      script: z.string().min(1),
+      observacoes: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const id = await db.createScript(input);
+      return { id };
+    }),
+
+    update: adminProcedure.input(z.object({
+      id: z.number(),
+      categoriaScript: z.string().min(1).max(100).optional(),
+      script: z.string().min(1).optional(),
+      observacoes: z.string().nullable().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...dados } = input;
+      await db.updateScript(id, dados);
+      return { success: true };
+    }),
+
+    excluir: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.excluirScript(input.id);
+      return { success: true };
+    }),
+  }),
+
   // ===== Telegram (avisos pro grupo da recepção via BotFather) =====
   telegram: router({
     status: adminProcedure.query(() => ({
