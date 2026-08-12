@@ -442,8 +442,18 @@ export default function Extratos() {
   // Todos os filtros exceto o tipo (C/D) — usado pra contar as abas
   // "Entradas/Saídas" já refletindo os outros filtros ativos.
   const transacoesAntesDoTipo = transacoesExtrato.filter((t) => {
-    // Ocultar dias sem movimento (Caixa Físico: valor 0 e ocorrência "Vendas do dia")
-    if (ocultarDiasSemMovimento && t.origem === "caixa_fisico" && parseFloat(t.valor ?? "0") === 0) return false;
+    // Ocultar dias sem movimento (Caixa Físico: valor 0 e ocorrência "Vendas do dia") —
+    // nunca esconde pendente/sugerida: o checkbox só existe na aba Caixa Físico, então em
+    // qualquer outra aba (ex.: Consolidado) uma linha que precisa de revisão ficaria
+    // escondida sem nenhum controle visível pra desligar o filtro (bug real: 10 sugeridas
+    // de dias com R$0,00 sumiam do badge/lista mesmo com "Tipo de operação: Todos").
+    if (
+      ocultarDiasSemMovimento
+      && t.origem === "caixa_fisico"
+      && parseFloat(t.valor ?? "0") === 0
+      && t.categorizacaoStatus !== "pendente"
+      && t.categorizacaoStatus !== "sugerida"
+    ) return false;
     if (soPendentes && t.categorizacaoStatus === "confirmada") return false;
     if (grupoOperacao !== "todos" && agruparOperacao(t.tipoTransacao, t.titulo) !== grupoOperacao) return false;
     if (buscaTexto.trim()) {
