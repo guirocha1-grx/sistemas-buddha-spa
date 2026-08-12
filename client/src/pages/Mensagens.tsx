@@ -19,7 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
   Pencil, Check, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
-  UserPlus, SmilePlus,
+  UserPlus, SmilePlus, Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -437,10 +437,16 @@ export default function Mensagens() {
                 }`}
               >
                 <div className="relative shrink-0">
-                  <Avatar className="h-8 w-8">
-                    {c.fotoUrl && <AvatarImage src={c.fotoUrl} alt={c.clienteNome ?? c.nomeContato ?? c.telefone} className="object-cover" />}
-                    <AvatarFallback className="text-xs">{(c.clienteNome ?? c.nomeContato ?? c.telefone).slice(0, 2).toUpperCase()}</AvatarFallback>
-                  </Avatar>
+                  {c.isGrupo === "true" ? (
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback className="text-xs bg-muted"><Users className="h-3.5 w-3.5" /></AvatarFallback>
+                    </Avatar>
+                  ) : (
+                    <Avatar className="h-8 w-8">
+                      {c.fotoUrl && <AvatarImage src={c.fotoUrl} alt={c.clienteNome ?? c.nomeContato ?? c.telefone} className="object-cover" />}
+                      <AvatarFallback className="text-xs">{(c.clienteNome ?? c.nomeContato ?? c.telefone).slice(0, 2).toUpperCase()}</AvatarFallback>
+                    </Avatar>
+                  )}
                   <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-background ${statusDotClass(c.status)}`} />
                 </div>
                 <div className="min-w-0 flex-1 overflow-hidden">
@@ -490,8 +496,12 @@ export default function Mensagens() {
                   <ArrowLeft size={18} />
                 </button>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm truncate">{conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || formatPhone(conversaSelecionada?.telefone)}</p>
-                  <p className="text-xs text-muted-foreground">{formatPhone(conversaSelecionada?.telefone)}</p>
+                  <p className="font-medium text-sm truncate">{conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || (conversaSelecionada?.isGrupo === "true" ? "Grupo" : formatPhone(conversaSelecionada?.telefone))}</p>
+                  {conversaSelecionada?.isGrupo === "true" ? (
+                    <p className="text-xs text-muted-foreground">Grupo</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">{formatPhone(conversaSelecionada?.telefone)}</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <Button
@@ -554,6 +564,9 @@ export default function Mensagens() {
                           m.direcao === "enviada" ? "bg-primary text-primary-foreground" : "bg-muted"
                         }`}
                       >
+                        {conversaSelecionada?.isGrupo === "true" && m.direcao === "recebida" && m.participanteNome && (
+                          <p className="text-[11px] font-semibold text-primary mb-0.5">{m.participanteNome}</p>
+                        )}
                         {m.tipo === "texto" && <p className="whitespace-pre-wrap">{m.conteudo}</p>}
                         {m.tipo === "imagem" && (
                           <div className="space-y-1">
@@ -670,12 +683,18 @@ export default function Mensagens() {
               <div className="p-4 space-y-4">
                 <div className="text-center">
                   <Avatar className="h-14 w-14 mx-auto mb-2">
-                    {conversaSelecionada?.fotoUrl && (
-                      <AvatarImage src={conversaSelecionada.fotoUrl} alt={conversaSelecionada.clienteNome ?? conversaSelecionada.nomeContato ?? ""} className="object-cover" />
+                    {conversaSelecionada?.isGrupo === "true" ? (
+                      <AvatarFallback className="bg-muted"><Users className="h-6 w-6" /></AvatarFallback>
+                    ) : (
+                      <>
+                        {conversaSelecionada?.fotoUrl && (
+                          <AvatarImage src={conversaSelecionada.fotoUrl} alt={conversaSelecionada.clienteNome ?? conversaSelecionada.nomeContato ?? ""} className="object-cover" />
+                        )}
+                        <AvatarFallback className="text-lg bg-primary/10 text-primary">
+                          {(conversaSelecionada?.clienteNome ?? conversaSelecionada?.nomeContato ?? conversaSelecionada?.telefone ?? "?").charAt(0).toUpperCase()}
+                        </AvatarFallback>
+                      </>
                     )}
-                    <AvatarFallback className="text-lg bg-primary/10 text-primary">
-                      {(conversaSelecionada?.clienteNome ?? conversaSelecionada?.nomeContato ?? conversaSelecionada?.telefone ?? "?").charAt(0).toUpperCase()}
-                    </AvatarFallback>
                   </Avatar>
 
                   {editandoNome ? (
@@ -707,7 +726,9 @@ export default function Mensagens() {
                     </div>
                   )}
 
-                  {conversaSelecionada?.isLidPendente === "true" ? (
+                  {conversaSelecionada?.isGrupo === "true" ? (
+                    <p className="text-xs text-muted-foreground">Grupo do WhatsApp</p>
+                  ) : conversaSelecionada?.isLidPendente === "true" ? (
                     <div className="flex items-center justify-center gap-1 mt-0.5">
                       <AlertTriangle size={11} className="text-orange-500" />
                       <p className="text-xs text-orange-500 font-medium">Número não confirmado</p>
@@ -747,7 +768,7 @@ export default function Mensagens() {
                   </div>
                 )}
 
-                {conversaSelecionada && !conversaSelecionada.clienteId && (
+                {conversaSelecionada && !conversaSelecionada.clienteId && conversaSelecionada.isGrupo !== "true" && (
                   <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-2">
                     <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-500">
                       <UserPlus size={13} />
@@ -901,7 +922,7 @@ export default function Mensagens() {
             </DialogTitle>
             <DialogDescription>
               Confirma a exclusão de todas as mensagens da conversa com{" "}
-              <span className="font-semibold text-foreground">{conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || formatPhone(conversaSelecionada?.telefone)}</span>?
+              <span className="font-semibold text-foreground">{conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || (conversaSelecionada?.isGrupo === "true" ? "este grupo" : formatPhone(conversaSelecionada?.telefone))}</span>?
               <br />
               <span className="text-destructive text-xs">Esta ação não pode ser desfeita.</span>
             </DialogDescription>
@@ -944,7 +965,7 @@ export default function Mensagens() {
             </div>
             <div className="max-h-64 overflow-y-auto space-y-1">
               {(conversas ?? [])
-                .filter((c) => c.id !== conversaSelecionadaId && c.isLidPendente !== "true" && (
+                .filter((c) => c.id !== conversaSelecionadaId && c.isLidPendente !== "true" && c.isGrupo !== "true" && (
                   unificarBusca === "" ||
                   (c.clienteNome ?? "").toLowerCase().includes(unificarBusca.toLowerCase()) ||
                   (c.nomeContato ?? "").toLowerCase().includes(unificarBusca.toLowerCase()) ||
@@ -963,7 +984,7 @@ export default function Mensagens() {
                     <div className="text-[10px] text-muted-foreground">{formatPhone(c.telefone)} · {c.ultimaMensagemTexto?.slice(0, 40)}</div>
                   </button>
                 ))}
-              {(conversas ?? []).filter((c) => c.id !== conversaSelecionadaId && c.isLidPendente !== "true").length === 0 && (
+              {(conversas ?? []).filter((c) => c.id !== conversaSelecionadaId && c.isLidPendente !== "true" && c.isGrupo !== "true").length === 0 && (
                 <p className="text-xs text-muted-foreground text-center py-4">Nenhuma conversa encontrada.</p>
               )}
             </div>

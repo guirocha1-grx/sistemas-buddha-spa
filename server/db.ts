@@ -442,6 +442,7 @@ export async function upsertInboxConversa(params: {
   telefone: string;
   chatLid?: string;
   isLidPendente?: boolean;
+  isGrupo?: boolean;
   nomeContato?: string;
   ultimaMensagemTexto: string;
   incrementarNaoLidas?: boolean;
@@ -475,6 +476,8 @@ export async function upsertInboxConversa(params: {
     // trocar o telefone de volta pro lid bruto.
     const jaResolvido = existente[0].isLidPendente === "false";
     const devePromoverTelefone = params.isLidPendente === false && params.telefone !== existente[0].telefone;
+    // isGrupo não entra no update de propósito — uma conversa não muda
+    // de tipo depois de criada, só é decidido na primeira mensagem.
     await db.update(inboxConversas).set({
       telefone: devePromoverTelefone ? params.telefone : existente[0].telefone,
       nomeContato: params.nomeContato ?? existente[0].nomeContato,
@@ -497,6 +500,7 @@ export async function upsertInboxConversa(params: {
     telefone: params.telefone,
     chatLid: params.chatLid,
     isLidPendente: params.isLidPendente ? "true" : "false",
+    isGrupo: params.isGrupo ? "true" : "false",
     nomeContato: params.nomeContato,
     clienteId: params.clienteId,
     ultimaMensagemEm: agora,
@@ -737,6 +741,8 @@ export async function listInboxMensagens(conversaId: number, limit: number = 50)
     enviadaPorUserId: inboxMensagens.enviadaPorUserId,
     enviadaPorAtendenteId: inboxMensagens.enviadaPorAtendenteId,
     enviadaPorAtendenteNome: atendentes.nome,
+    participanteTelefone: inboxMensagens.participanteTelefone,
+    participanteNome: inboxMensagens.participanteNome,
     lida: inboxMensagens.lida,
     createdAt: inboxMensagens.createdAt,
   })
