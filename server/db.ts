@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, scripts, scriptsUso, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem, type InsertScript } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, scripts, scriptsUso, lancamentoSplits, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem, type InsertScript } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import { normalizarTelefone } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
@@ -1977,6 +1977,91 @@ export async function confirmarSugestao(transacaoId: number) {
   if (!db) return;
   await db.update(interExtratos).set({ categorizacaoStatus: "confirmada" })
     .where(and(eq(interExtratos.id, transacaoId), eq(interExtratos.categorizacaoStatus, "sugerida")));
+}
+
+// ===== Split de lançamento =====
+
+export interface LinhaSplitInput {
+  dreDescricaoId: number;
+  valor: number;
+  unidadeId: number;
+  observacao?: string;
+}
+
+/**
+ * Todos os splits das transações dentro de um período/conta — mesmo
+ * escopo de `listInterExtratos`, carregado de uma vez pra tela de
+ * Extratos montar o mapa "quais linhas têm split" sem N+1 query.
+ */
+export async function listSplitsPorPeriodo(unidadeId: number, dataInicio: string, dataFim: string, contaId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const condicoes = [
+    eq(interExtratos.unidadeId, unidadeId),
+    gte(interExtratos.dataEntrada, dataInicio),
+    lte(interExtratos.dataEntrada, dataFim),
+  ];
+  if (contaId !== undefined) condicoes.push(eq(interExtratos.contaId, contaId));
+  return db.select({
+    id: lancamentoSplits.id,
+    interExtratoId: lancamentoSplits.interExtratoId,
+    dreDescricaoId: lancamentoSplits.dreDescricaoId,
+    valor: lancamentoSplits.valor,
+    unidadeId: lancamentoSplits.unidadeId,
+    observacao: lancamentoSplits.observacao,
+  })
+    .from(lancamentoSplits)
+    .innerJoin(interExtratos, eq(lancamentoSplits.interExtratoId, interExtratos.id))
+    .where(and(...condicoes));
+}
+
+/**
+ * Divide uma transação em N linhas, cada uma com sua Descrição (e
+ * unidade dona da parte). Valida que a soma bate com o valor da
+ * transação (tolerância de 1 centavo) antes de gravar — nunca salva
+ * parcial nem arredonda sobra silenciosamente. Substitui qualquer
+ * split anterior daquela transação (delete-all-insert-set, mesmo
+ * espírito do reprocessamento: o conjunto novo é sempre a verdade).
+ * Dividir é decisão humana — mesma régua de `categorizarManual`, marca
+ * direto como "confirmada".
+ */
+export async function salvarSplits(interExtratoId: number, linhas: LinhaSplitInput[]): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  if (linhas.length === 0) throw new Error("Informe ao menos 1 linha de split.");
+
+  const [transacao] = await db.select().from(interExtratos).where(eq(interExtratos.id, interExtratoId)).limit(1);
+  if (!transacao) throw new Error("Transação não encontrada.");
+
+  const somaLinhas = linhas.reduce((soma, l) => soma + l.valor, 0);
+  const valorTransacao = parseFloat(transacao.valor);
+  if (Math.abs(somaLinhas - valorTransacao) > 0.01) {
+    throw new Error(`A soma das linhas (R$${somaLinhas.toFixed(2)}) não bate com o valor da transação (R$${valorTransacao.toFixed(2)}).`);
+  }
+
+  await db.delete(lancamentoSplits).where(eq(lancamentoSplits.interExtratoId, interExtratoId));
+  await db.insert(lancamentoSplits).values(linhas.map((l) => ({
+    interExtratoId,
+    dreDescricaoId: l.dreDescricaoId,
+    valor: l.valor.toFixed(2),
+    unidadeId: l.unidadeId,
+    observacao: l.observacao?.trim() || null,
+  })));
+
+  await db.update(interExtratos).set({ dreDescricaoId: null, categorizacaoStatus: "confirmada" })
+    .where(eq(interExtratos.id, interExtratoId));
+}
+
+/**
+ * Remove o split e devolve a transação pra "Pendente" — volta a poder
+ * escolher uma Descrição única normalmente.
+ */
+export async function excluirSplits(interExtratoId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(lancamentoSplits).where(eq(lancamentoSplits.interExtratoId, interExtratoId));
+  await db.update(interExtratos).set({ dreDescricaoId: null, categorizacaoStatus: "pendente" })
+    .where(eq(interExtratos.id, interExtratoId));
 }
 
 /**

@@ -32,8 +32,9 @@ import {
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DescricaoCombobox } from "@/components/DescricaoCombobox";
+import { SplitLancamentoDialog } from "@/components/SplitLancamentoDialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Check, Pencil, Search, TriangleAlert, ChevronsUpDown, StickyNote } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, Wallet, RefreshCw, Upload, AlertCircle, Plus, Check, Pencil, Search, TriangleAlert, ChevronsUpDown, StickyNote, SplitSquareHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
 // ===== Períodos rápidos =====
@@ -324,6 +325,22 @@ export default function Extratos() {
     { unidadeId: unidadeId!, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato, contaId: contaIdSelecionada },
     { enabled: !!unidadeId },
   );
+
+  const splitsQuery = trpc.inter.splits.list.useQuery(
+    { unidadeId: unidadeId!, dataInicio: dataInicioExtrato, dataFim: dataFimExtrato, contaId: contaIdSelecionada },
+    { enabled: !!unidadeId },
+  );
+  const splitsPorTransacao = useMemo(() => {
+    const mapa = new Map<number, NonNullable<typeof splitsQuery.data>[number][]>();
+    for (const s of splitsQuery.data ?? []) {
+      const lista = mapa.get(s.interExtratoId) ?? [];
+      lista.push(s);
+      mapa.set(s.interExtratoId, lista);
+    }
+    return mapa;
+  }, [splitsQuery.data]);
+
+  const [splitDialogTransacaoId, setSplitDialogTransacaoId] = useState<number | null>(null);
 
   const sincronizarInterMutation = trpc.inter.sincronizar.useMutation({
     onSuccess: (data) => {
@@ -1006,19 +1023,31 @@ export default function Extratos() {
                               <TableCell className="max-w-0">
                                 <div className="flex items-center gap-1">
                                   <div className="min-w-0 flex-1">
-                                    <DescricaoCombobox
-                                      descricoes={descricoes}
-                                      categorias={categorias}
-                                      value={t.dreDescricaoId}
-                                      status={t.categorizacaoStatus}
-                                      onChange={(id) => categorizarMutation.mutate({
-                                        transacaoId: t.id,
-                                        dreDescricaoId: id,
-                                      })}
-                                    />
+                                    {splitsPorTransacao.has(t.id) ? (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 text-xs justify-start font-normal w-full border-purple-400 text-purple-700 hover:text-purple-700"
+                                        onClick={() => setSplitDialogTransacaoId(t.id)}
+                                      >
+                                        <SplitSquareHorizontal className="h-3 w-3 mr-1.5 shrink-0" />
+                                        Dividido em {splitsPorTransacao.get(t.id)!.length}
+                                      </Button>
+                                    ) : (
+                                      <DescricaoCombobox
+                                        descricoes={descricoes}
+                                        categorias={categorias}
+                                        value={t.dreDescricaoId}
+                                        status={t.categorizacaoStatus}
+                                        onChange={(id) => categorizarMutation.mutate({
+                                          transacaoId: t.id,
+                                          dreDescricaoId: id,
+                                        })}
+                                      />
+                                    )}
                                   </div>
                                   <div className="flex items-center shrink-0">
-                                    {t.categorizacaoStatus === "sugerida" && (
+                                    {t.categorizacaoStatus === "sugerida" && !splitsPorTransacao.has(t.id) && (
                                       <Button
                                         size="icon"
                                         variant="ghost"
@@ -1028,6 +1057,17 @@ export default function Extratos() {
                                         disabled={confirmarMutation.isPending}
                                       >
                                         <Check className="h-3.5 w-3.5" />
+                                      </Button>
+                                    )}
+                                    {!splitsPorTransacao.has(t.id) && (
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                        title="Dividir lançamento"
+                                        onClick={() => setSplitDialogTransacaoId(t.id)}
+                                      >
+                                        <SplitSquareHorizontal className="h-3.5 w-3.5" />
                                       </Button>
                                     )}
                                     <Button
@@ -1094,6 +1134,15 @@ export default function Extratos() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SplitLancamentoDialog
+        open={splitDialogTransacaoId !== null}
+        onOpenChange={(v) => { if (!v) setSplitDialogTransacaoId(null); }}
+        transacao={transacoesExtrato.find((t) => t.id === splitDialogTransacaoId) ?? null}
+        splitsExistentes={splitDialogTransacaoId ? splitsPorTransacao.get(splitDialogTransacaoId) ?? [] : []}
+        descricoes={descricoes}
+        categorias={categorias}
+      />
     </div>
   );
 }

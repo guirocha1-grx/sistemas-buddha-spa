@@ -1002,6 +1002,40 @@ Diretrizes:
     }),
 
     /**
+     * Split de lançamento: divide uma transação em N Descrições (e,
+     * opcionalmente, unidades) diferentes — pra casos como fatura de
+     * cartão paga de uma vez que na real é várias categorias.
+     */
+    splits: router({
+      list: protectedProcedure.input(z.object({
+        unidadeId: z.number(),
+        dataInicio: z.string(),
+        dataFim: z.string(),
+        contaId: z.number().optional(),
+      })).query(async ({ input }) => {
+        return db.listSplitsPorPeriodo(input.unidadeId, input.dataInicio, input.dataFim, input.contaId);
+      }),
+      salvar: protectedProcedure.input(z.object({
+        interExtratoId: z.number(),
+        linhas: z.array(z.object({
+          dreDescricaoId: z.number(),
+          valor: z.number().positive(),
+          unidadeId: z.number(),
+          observacao: z.string().optional(),
+        })).min(1),
+      })).mutation(async ({ input }) => {
+        await db.salvarSplits(input.interExtratoId, input.linhas);
+        return { success: true };
+      }),
+      excluir: protectedProcedure.input(z.object({
+        interExtratoId: z.number(),
+      })).mutation(async ({ input }) => {
+        await db.excluirSplits(input.interExtratoId);
+        return { success: true };
+      }),
+    }),
+
+    /**
      * Nota livre por transação, separada da categoria — esclarece o
      * caso específico quando a categoria sozinha agrupa vários tipos
      * de lançamento diferentes.

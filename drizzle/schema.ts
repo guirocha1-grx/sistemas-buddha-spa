@@ -750,6 +750,31 @@ export type DreRegra = typeof dreRegras.$inferSelect;
 export type InsertDreRegra = typeof dreRegras.$inferInsert;
 
 /**
+ * Split de lançamento: quando uma transação do extrato (ex.: fatura de
+ * cartão paga de uma vez, mas na real é várias categorias diferentes)
+ * é dividida em N partes, cada parte vira 1 linha aqui, com sua
+ * própria Descrição e (opcionalmente) unidade dona daquela parte —
+ * diferente da unidade do lançamento original quando o gasto é
+ * rateado entre unidades (ver `transacoesEntreUnidades`). Enquanto uma
+ * transação tem linhas aqui, `inter_extratos.dreDescricaoId` fica null
+ * (a Descrição "mora" nos splits, não na linha-mãe).
+ */
+export const lancamentoSplits = mysqlTable("lancamento_splits", {
+  id: int("id").autoincrement().primaryKey(),
+  interExtratoId: int("interExtratoId").notNull(),
+  dreDescricaoId: int("dreDescricaoId").notNull(),
+  valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
+  unidadeId: int("unidadeId").notNull(),
+  observacao: varchar("observacao", { length: 256 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  extratoIdx: index("lancamento_splits_extrato_idx").on(table.interExtratoId),
+}));
+
+export type LancamentoSplit = typeof lancamentoSplits.$inferSelect;
+export type InsertLancamentoSplit = typeof lancamentoSplits.$inferInsert;
+
+/**
  * Biblioteca de mensagens prontas do Inbox (mesmo conceito do
  * "Mensagens e Scripts" do mobai-crm) — agrupadas por categoriaScript
  * livre (texto, não FK — evita precisar de uma tabela de categorias só
