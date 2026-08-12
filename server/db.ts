@@ -1791,7 +1791,12 @@ export interface DadosParaCategorizar {
  *    duplicaria e foi a causa real do Pix inflado na Comanda Recepção;
  * 3) origem "caixa_fisico" e crédito = "Receita em Espécie" direto, sem
  *    precisar de regra de texto — toda entrada do Caixa Físico é
- *    dinheiro em espécie por definição;
+ *    dinheiro em espécie por definição. Se o valor for R$0,00 (dia sem
+ *    movimento), confirma direto — não tem julgamento contábil nenhum
+ *    a fazer aqui, é sempre a mesma coisa, então pedir 1 clique por dia
+ *    só vira trabalho manual repetitivo (confirmado pelo usuário em
+ *    2026-08-12: "se for na conta caixa e valor = 0 pode considerar
+ *    Confirmado automaticamente" — critério exato, não é heurística);
  * 4) regra de texto/valor (como sempre foi).
  * Se a regra tiver alertaSeRepetirNoMes e já existir outra transação
  * da mesma descrição na mesma conta no mesmo mês, marca um aviso (não
@@ -1802,7 +1807,7 @@ export async function categorizarTransacaoAutomaticamente(
   regras: (RegraMatch & { dreDescricaoId: number; alertaSeRepetirNoMes: boolean })[],
   cnpjsContas: string[],
   transacaoIdParaExcluirDoAlerta?: number,
-): Promise<{ dreDescricaoId: number | null; categorizacaoStatus: "sugerida" | "pendente"; alerta: string | null }> {
+): Promise<{ dreDescricaoId: number | null; categorizacaoStatus: "sugerida" | "pendente" | "confirmada"; alerta: string | null }> {
   if (ehTransferenciaEntreContas(dados.cpfCnpjOrigem, dados.cpfCnpjDestino, cnpjsContas)) {
     const excluidoId = await resolverDescricaoIdPorChave(CHAVE_EXCLUIDO);
     if (excluidoId) return { dreDescricaoId: excluidoId, categorizacaoStatus: "sugerida", alerta: null };
@@ -1815,7 +1820,9 @@ export async function categorizarTransacaoAutomaticamente(
 
   if (dados.origem === "caixa_fisico" && dados.tipoOperacao === "C") {
     const especieId = await resolverDescricaoIdPorChave(CHAVE_RECEITA_ESPECIE);
-    if (especieId) return { dreDescricaoId: especieId, categorizacaoStatus: "sugerida", alerta: null };
+    if (especieId) {
+      return { dreDescricaoId: especieId, categorizacaoStatus: dados.valor === 0 ? "confirmada" : "sugerida", alerta: null };
+    }
   }
 
   const texto = `${dados.tipoTransacao ?? ""} ${dados.titulo ?? ""} ${dados.descricao ?? ""}`;
