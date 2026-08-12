@@ -984,8 +984,9 @@ Diretrizes:
       dataInicio: z.string(),
       dataFim: z.string(),
       contaId: z.number().optional(),
+      tiposConta: z.array(z.enum(["inter_oauth", "sicredi_oauth", "manual", "cartao_credito", "conta_corrente", "caixa_fisico"])).optional(),
     })).query(async ({ input }) => {
-      return db.listInterExtratos(input.unidadeId, input.dataInicio, input.dataFim, input.contaId);
+      return db.listInterExtratos(input.unidadeId, input.dataInicio, input.dataFim, input.contaId, input.tiposConta);
     }),
 
     /**
@@ -1705,7 +1706,7 @@ Diretrizes:
     create: adminProcedure.input(z.object({
       unidadeId: z.number(),
       nome: z.string().min(1),
-      tipo: z.enum(["manual", "cartao_credito"]).optional(),
+      tipo: z.enum(["conta_corrente", "caixa_fisico", "cartao_credito"]).optional(),
       agencia: z.string().optional(),
       numeroConta: z.string().optional(),
       cnpj: z.string().optional(),
@@ -1723,7 +1724,7 @@ Diretrizes:
     atualizar: adminProcedure.input(z.object({
       id: z.number(),
       nome: z.string().min(1),
-      tipo: z.enum(["manual", "cartao_credito"]).optional(),
+      tipo: z.enum(["conta_corrente", "caixa_fisico", "cartao_credito"]).optional(),
       agencia: z.string().optional(),
       numeroConta: z.string().optional(),
       cnpj: z.string().optional(),

@@ -461,7 +461,10 @@ export const contas = mysqlTable("contas", {
   id: int("id").autoincrement().primaryKey(),
   unidadeId: int("unidadeId").notNull(),
   nome: varchar("nome", { length: 128 }).notNull(),
-  tipo: mysqlEnum("tipo", ["inter_oauth", "sicredi_oauth", "manual", "cartao_credito"]).default("manual").notNull(),
+  // "manual" fica só de legado (linhas antigas já reclassificadas na
+  // migração 2026-08-12-contas-grupos.sql) — toda conta nova usa um
+  // dos tipos específicos, nunca mais "manual" genérico.
+  tipo: mysqlEnum("tipo", ["inter_oauth", "sicredi_oauth", "manual", "cartao_credito", "conta_corrente", "caixa_fisico"]).default("conta_corrente").notNull(),
   // Ag/conta/CNPJ — identifica a conta pra bater contra
   // cpfCnpjOrigem/cpfCnpjDestino do extrato e detectar transferência
   // entre contas próprias automaticamente (sem depender de texto).
