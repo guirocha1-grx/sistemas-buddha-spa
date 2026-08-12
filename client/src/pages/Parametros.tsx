@@ -34,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, Plus, ListTree, Tags, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Loader2, Plus, ListTree, Tags, Trash2, ArrowUp, ArrowDown, ArrowUpDown, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 type ColunaDescricao = "nome" | "categoriaNome";
@@ -242,6 +242,10 @@ export default function Parametros() {
     ? regras.filter((r) => r.dreDescricaoId === descricaoEditandoId)
     : [];
 
+  const descricaoEditando = descricaoEditandoId
+    ? descricoes.find((d) => d.id === descricaoEditandoId)
+    : undefined;
+
   // ===== Ordenação da tabela de Descrições =====
   const [ordenarPor, setOrdenarPor] = useState<ColunaDescricao>("nome");
   const [ordemAsc, setOrdemAsc] = useState(true);
@@ -310,6 +314,19 @@ export default function Parametros() {
                   <DialogDescription>Toda Descrição pertence a 1 Categoria.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">
+                  {descricaoEditando?.chave && (
+                    <div className="flex gap-2 rounded-md border border-amber-400/50 bg-amber-50 dark:bg-amber-950/30 p-2.5 text-xs text-amber-800 dark:text-amber-300">
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <span>
+                        Esta descrição tem um papel especial no sistema: é atribuída
+                        automaticamente sempre que aparece uma transferência entre contas
+                        próprias ou uma liquidação do Mercado Pago — <strong>independente
+                        dos padrões abaixo</strong>. Dá pra renomear à vontade, mas não
+                        reaproveite pra rastrear outro tipo de lançamento (ex.: aporte de
+                        sócio); crie uma descrição nova pra isso.
+                      </span>
+                    </div>
+                  )}
                   <div>
                     <Label className="text-xs">Nome da descrição</Label>
                     <Input

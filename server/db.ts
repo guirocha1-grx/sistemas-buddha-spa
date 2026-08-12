@@ -7,7 +7,7 @@ import { normalizarTelefone } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
-import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, extrairPadraoContraparte, ehTransferenciaEntreContas, CHAVE_EXCLUIDO, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, type RegraMatch } from "./dreCategorizacao";
+import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, extrairPadraoContraparte, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, type RegraMatch } from "./dreCategorizacao";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -1527,6 +1527,7 @@ export async function listDreDescricoes() {
     nome: dreDescricoes.nome,
     dreCategoriaId: dreDescricoes.dreCategoriaId,
     categoriaNome: dreCategorias.nome,
+    chave: dreDescricoes.chave,
   })
     .from(dreDescricoes)
     .innerJoin(dreCategorias, eq(dreDescricoes.dreCategoriaId, dreCategorias.id))
@@ -1783,13 +1784,7 @@ export interface DadosParaCategorizar {
  * Ponto único de categorização automática — usado no import (sync,
  * CSV, PDF, OFX) e no reprocessamento de pendentes. Ordem de
  * prioridade:
- * 1) CNPJ batendo com conta própria = transferência, sempre excluída
- *    do DRE, sem exceção;
- * 2) origem "mercadopago" (liquidação da adquirente) = Excluído do DRE
- *    — esse dinheiro já foi contado como receita via adquirente_vendas
- *    (ver classificarDescricaoAdquirente); contar de novo aqui
- *    duplicaria e foi a causa real do Pix inflado na Comanda Recepção;
- * 3) origem "caixa_fisico" e crédito = "Receita em Espécie" direto, sem
+ * 1) origem "caixa_fisico" e crédito = "Receita em Espécie" direto, sem
  *    precisar de regra de texto — toda entrada do Caixa Físico é
  *    dinheiro em espécie por definição. Se o valor for R$0,00 (dia sem
  *    movimento), confirma direto — não tem julgamento contábil nenhum
@@ -1797,10 +1792,22 @@ export interface DadosParaCategorizar {
  *    só vira trabalho manual repetitivo (confirmado pelo usuário em
  *    2026-08-12: "se for na conta caixa e valor = 0 pode considerar
  *    Confirmado automaticamente" — critério exato, não é heurística);
- * 4) regra de texto/valor (como sempre foi).
+ * 2) regra de texto/valor (como sempre foi).
  * Se a regra tiver alertaSeRepetirNoMes e já existir outra transação
  * da mesma descrição na mesma conta no mesmo mês, marca um aviso (não
  * bloqueia, só avisa).
+ *
+ * Removidas em 2026-08-12 (a pedido do usuário, "vamos testar só com
+ * padrões"): a exclusão automática por CNPJ de conta própria
+ * (transferência entre contas) e a exclusão automática de origem
+ * "mercadopago" — essa última porque o Mercado Pago deixou de ser só
+ * liquidação de adquirente (hoje recebe outros tipos de entrada
+ * também), então excluir tudo incondicionalmente virou incorreto. Sem
+ * padrão correspondente, essas transações agora ficam "Pendente" (não
+ * mais um Excluído do DRE automático) — decisão explícita do usuário
+ * mesmo sabendo que isso pode reabrir o bug de contaminação do Pix na
+ * Comanda Recepção que essa exclusão automática tinha corrigido, até
+ * que os padrões de texto cubram os casos do Mercado Pago.
  */
 export async function categorizarTransacaoAutomaticamente(
   dados: DadosParaCategorizar,
@@ -1808,16 +1815,6 @@ export async function categorizarTransacaoAutomaticamente(
   cnpjsContas: string[],
   transacaoIdParaExcluirDoAlerta?: number,
 ): Promise<{ dreDescricaoId: number | null; categorizacaoStatus: "sugerida" | "pendente" | "confirmada"; alerta: string | null }> {
-  if (ehTransferenciaEntreContas(dados.cpfCnpjOrigem, dados.cpfCnpjDestino, cnpjsContas)) {
-    const excluidoId = await resolverDescricaoIdPorChave(CHAVE_EXCLUIDO);
-    if (excluidoId) return { dreDescricaoId: excluidoId, categorizacaoStatus: "sugerida", alerta: null };
-  }
-
-  if (dados.origem === "mercadopago") {
-    const excluidoId = await resolverDescricaoIdPorChave(CHAVE_EXCLUIDO);
-    if (excluidoId) return { dreDescricaoId: excluidoId, categorizacaoStatus: "sugerida", alerta: null };
-  }
-
   if (dados.origem === "caixa_fisico" && dados.tipoOperacao === "C") {
     const especieId = await resolverDescricaoIdPorChave(CHAVE_RECEITA_ESPECIE);
     if (especieId) {
