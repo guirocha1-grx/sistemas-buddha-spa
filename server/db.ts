@@ -3,7 +3,7 @@ import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTab
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem, type InsertScript } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
-import { normalizarTelefone } from "@shared/telefone";
+import { normalizarTelefone, variantesTelefone } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
@@ -476,21 +476,37 @@ export async function definirEtiquetasInbox(id: number, etiquetas: string[]) {
  * achismo. `clientes` não tem unidadeId (cadastro é global, com flags
  * clienteSsu/clienteRbs), então não filtra por unidade aqui.
  */
-export async function buscarClienteIdPorTelefone(telefoneWhatsapp: string): Promise<number | undefined> {
+export interface ClienteCandidato {
+  id: number;
+  nome: string;
+}
+
+/**
+ * Todos os clientes cujo telefone bate com o do WhatsApp, considerando
+ * as variantes com/sem DDI e com/sem o 9 do celular (ver
+ * variantesTelefone em shared/telefone.ts — cadastro antigo do Belle
+ * às vezes não tem o 9, o WhatsApp sempre manda com). Base pra
+ * vincular automaticamente (1 match só) e pra perguntar antes de
+ * duplicar (2+ matches, ou 1 match com nome diferente do que a
+ * recepção está tentando cadastrar).
+ */
+export async function buscarClientesPorTelefone(telefoneWhatsapp: string): Promise<ClienteCandidato[]> {
   const db = await getDb();
-  if (!db) return undefined;
-  const digitos = telefoneWhatsapp.replace(/\D/g, "");
-  if (digitos.length < 8) return undefined; // curto demais pra confiar (ex.: @lid não resolvido)
-  const semDDI = digitos.replace(/^55/, "");
+  if (!db) return [];
+  const variantes = variantesTelefone(telefoneWhatsapp).filter((v) => v.length >= 8);
+  if (variantes.length === 0) return [];
   const normalizar = (coluna: any) => sql`REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${coluna}, '+', ''), '-', ''), ' ', ''), '(', ''), ')', ''), '.', '')`;
   const colunas = [clientes.celular, clientes.celular2, clientes.telefone];
-  const condicoes = colunas.flatMap((coluna) => [
-    sql`${normalizar(coluna)} = ${digitos}`,
-    sql`${normalizar(coluna)} = ${semDDI}`,
-  ]);
-  const resultado = await db.select({ id: clientes.id }).from(clientes).where(or(...condicoes)).limit(2);
-  if (resultado.length !== 1) return undefined;
-  return resultado[0].id;
+  const condicoes = colunas.flatMap((coluna) => variantes.map((v) => sql`${normalizar(coluna)} = ${v}`));
+  const resultado = await db.select({ id: clientes.id, nome: clientes.nome }).from(clientes).where(or(...condicoes));
+  const vistos = new Map<number, string>();
+  for (const r of resultado) if (!vistos.has(r.id)) vistos.set(r.id, r.nome);
+  return Array.from(vistos, ([id, nome]) => ({ id, nome }));
+}
+
+export async function buscarClienteIdPorTelefone(telefoneWhatsapp: string): Promise<number | undefined> {
+  const candidatos = await buscarClientesPorTelefone(telefoneWhatsapp);
+  return candidatos.length === 1 ? candidatos[0].id : undefined;
 }
 
 /**
@@ -701,6 +717,24 @@ async function criarClienteManual(nome: string, telefoneDigitos: string, unidade
 }
 
 /**
+ * Compara dois nomes de forma tolerante (recepção às vezes digita
+ * apelido/nome curto, o cadastro do Belle tem o nome completo) — só
+ * pra decidir se um match de telefone é "claramente a mesma pessoa"
+ * (vincula direto, sem perguntar) ou "duvidoso" (pergunta antes de
+ * criar um 2º cliente com o mesmo celular).
+ */
+function provavelmenteMesmaPessoa(nomeA: string, nomeB: string): boolean {
+  const a = nomeA.trim().toLowerCase();
+  const b = nomeB.trim().toLowerCase();
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
+export type ResultadoCriarCliente =
+  | { status: "ok"; clienteId: number }
+  | { status: "conflito"; candidatos: ClienteCandidato[] };
+
+/**
  * Botão "+" ao lado de Atualizar no Inbox — recepção cria cliente +
  * conversa sem precisar de mensagem prévia (ex.: cliente chegou no
  * balcão e pediu pra mandar a tabela de preços). Se já existir cliente
@@ -708,18 +742,32 @@ async function criarClienteManual(nome: string, telefoneDigitos: string, unidade
  * se a conversa já existir com mensagens, NÃO mexe em
  * ultimaMensagemTexto/ultimaMensagemEm (só linka clienteId/nome), pra
  * não apagar o histórico de preview por engano.
+ *
+ * `forcarDuplicata`: quando true, ignora o achado de telefone já
+ * cadastrado e cria mesmo assim — só usado depois que a recepção
+ * confirma explicitamente na tela ("tem certeza que quer usar o mesmo
+ * número pra dois clientes distintos?").
  */
 export async function iniciarConversaComCliente(params: {
   unidadeId: number;
   nome: string;
   telefone: string;
-}): Promise<{ conversaId: number; clienteId: number } | undefined> {
+  forcarDuplicata?: boolean;
+}): Promise<{ status: "ok"; conversaId: number; clienteId: number } | { status: "conflito"; candidatos: ClienteCandidato[] }> {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) throw new Error("Banco indisponível");
   const digitos = params.telefone.replace(/\D/g, "");
   const telefoneNormalizado = digitos.startsWith("55") ? digitos : `55${digitos}`;
 
-  let clienteId = await buscarClienteIdPorTelefone(telefoneNormalizado);
+  let clienteId: number | undefined;
+  if (!params.forcarDuplicata) {
+    const candidatos = await buscarClientesPorTelefone(telefoneNormalizado);
+    if (candidatos.length === 1 && provavelmenteMesmaPessoa(candidatos[0].nome, params.nome)) {
+      clienteId = candidatos[0].id;
+    } else if (candidatos.length > 0) {
+      return { status: "conflito", candidatos };
+    }
+  }
   if (!clienteId) {
     clienteId = await criarClienteManual(params.nome, telefoneNormalizado, params.unidadeId);
   }
@@ -738,7 +786,7 @@ export async function iniciarConversaComCliente(params: {
       clienteId: existente[0].clienteId ?? clienteId,
       nomeContato: existente[0].nomeContato ?? params.nome,
     }).where(eq(inboxConversas.id, existente[0].id));
-    return { conversaId: existente[0].id, clienteId };
+    return { status: "ok", conversaId: existente[0].id, clienteId };
   }
 
   const result = await db.insert(inboxConversas).values({
@@ -753,7 +801,8 @@ export async function iniciarConversaComCliente(params: {
     naoLidas: 0,
   }).$returningId();
   const conversaId = result[0]?.id;
-  return conversaId ? { conversaId, clienteId } : undefined;
+  if (!conversaId) throw new Error("Falha ao criar conversa");
+  return { status: "ok", conversaId, clienteId };
 }
 
 /**
@@ -763,13 +812,20 @@ export async function iniciarConversaComCliente(params: {
  * confirma. Se a conversa já tiver clienteId (corrida rara com o
  * webhook linkando entre o carregamento da tela e o clique), só
  * atualiza o nome em vez de criar um segundo cliente.
+ *
+ * Antes de criar, checa se esse telefone já pertence a algum cliente
+ * (considerando as variantes de 9-dígito) — match único com nome
+ * parecido vincula direto; qualquer outro caso (0 significa cliente
+ * novo de verdade, 2+ ou nome muito diferente) só cria de fato com
+ * `forcarDuplicata: true`, depois que a recepção confirma na tela.
  */
 export async function criarClienteRapidoDeConversa(
   conversaId: number,
   nome: string,
-): Promise<{ clienteId: number } | undefined> {
+  forcarDuplicata: boolean = false,
+): Promise<ResultadoCriarCliente> {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) throw new Error("Banco indisponível");
   const rows = await db.select({
     id: inboxConversas.id,
     telefone: inboxConversas.telefone,
@@ -782,13 +838,24 @@ export async function criarClienteRapidoDeConversa(
   if (conversa.clienteId) {
     await db.update(clientes).set({ nome }).where(eq(clientes.id, conversa.clienteId));
     await db.update(inboxConversas).set({ nomeContato: nome }).where(eq(inboxConversas.id, conversaId));
-    return { clienteId: conversa.clienteId };
+    return { status: "ok", clienteId: conversa.clienteId };
   }
 
-  const clienteId = await criarClienteManual(nome, conversa.telefone.replace(/\D/g, ""), conversa.unidadeId ?? undefined);
+  let clienteId: number | undefined;
+  if (!forcarDuplicata) {
+    const candidatos = await buscarClientesPorTelefone(conversa.telefone);
+    if (candidatos.length === 1 && provavelmenteMesmaPessoa(candidatos[0].nome, nome)) {
+      clienteId = candidatos[0].id;
+    } else if (candidatos.length > 0) {
+      return { status: "conflito", candidatos };
+    }
+  }
+  if (!clienteId) {
+    clienteId = await criarClienteManual(nome, conversa.telefone.replace(/\D/g, ""), conversa.unidadeId ?? undefined);
+  }
   if (!clienteId) throw new Error("Falha ao criar cliente");
   await db.update(inboxConversas).set({ clienteId, nomeContato: nome }).where(eq(inboxConversas.id, conversaId));
-  return { clienteId };
+  return { status: "ok", clienteId };
 }
 
 /**

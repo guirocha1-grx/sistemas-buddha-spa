@@ -683,10 +683,11 @@ Diretrizes:
       criarClienteRapido: protectedProcedure.input(z.object({
         conversaId: z.number(),
         nome: z.string().min(1).max(200),
+        // Confirmado pela recepção depois de ver o aviso de celular já
+        // cadastrado noutro cliente — ver ResultadoCriarCliente em db.ts.
+        forcarDuplicata: z.boolean().optional(),
       })).mutation(async ({ input }) => {
-        const resultado = await db.criarClienteRapidoDeConversa(input.conversaId, input.nome);
-        if (!resultado) throw new Error("Não foi possível criar o cliente");
-        return resultado;
+        return db.criarClienteRapidoDeConversa(input.conversaId, input.nome, input.forcarDuplicata);
       }),
 
       alterarStatus: protectedProcedure.input(z.object({
@@ -744,10 +745,9 @@ Diretrizes:
       unidadeId: z.number(),
       nome: z.string().min(1).max(200),
       telefone: z.string().min(8).max(20),
+      forcarDuplicata: z.boolean().optional(),
     })).mutation(async ({ input }) => {
-      const resultado = await db.iniciarConversaComCliente(input);
-      if (!resultado) throw new Error("Não foi possível criar a conversa");
-      return resultado;
+      return db.iniciarConversaComCliente(input);
     }),
 
     mensagens: router({

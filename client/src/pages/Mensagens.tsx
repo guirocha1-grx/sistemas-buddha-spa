@@ -222,9 +222,19 @@ export default function Mensagens() {
     onError: (error) => toast.error(error.message),
   });
 
+  // Aviso de celular já cadastrado noutro cliente — ver ResultadoCriarCliente
+  // em server/db.ts. `origem` diz qual fluxo disparou, pra "Criar mesmo
+  // assim" saber qual mutation re-chamar com forcarDuplicata: true.
+  const [conflitoDuplicata, setConflitoDuplicata] = useState<{ origem: "rapido" | "novo"; candidatos: { id: number; nome: string }[] } | null>(null);
+
   const criarClienteRapidoMutation = trpc.inbox.conversas.criarClienteRapido.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data.status === "conflito") {
+        setConflitoDuplicata({ origem: "rapido", candidatos: data.candidatos });
+        return;
+      }
       toast.success("Cliente criado no CRM!");
+      setConflitoDuplicata(null);
       utils.inbox.conversas.get.invalidate({ id: conversaSelecionadaId ?? 0 });
       utils.inbox.conversas.list.invalidate();
     },
@@ -233,7 +243,12 @@ export default function Mensagens() {
 
   const iniciarConversaComClienteMutation = trpc.inbox.iniciarConversaComCliente.useMutation({
     onSuccess: (data) => {
+      if (data.status === "conflito") {
+        setConflitoDuplicata({ origem: "novo", candidatos: data.candidatos });
+        return;
+      }
       toast.success("Cliente e conversa criados!");
+      setConflitoDuplicata(null);
       setModalNovoCliente(false);
       setNovoClienteNome("");
       setNovoClienteTelefone("");
@@ -242,6 +257,22 @@ export default function Mensagens() {
     },
     onError: (error) => toast.error(`Erro ao criar cliente: ${error.message}`),
   });
+
+  function confirmarDuplicata() {
+    if (!conflitoDuplicata) return;
+    if (conflitoDuplicata.origem === "rapido") {
+      if (!conversaSelecionadaId) return;
+      criarClienteRapidoMutation.mutate({ conversaId: conversaSelecionadaId, nome: nomeCriarCliente.trim(), forcarDuplicata: true });
+    } else {
+      if (!unidadeSelecionada?.id) return;
+      iniciarConversaComClienteMutation.mutate({
+        unidadeId: unidadeSelecionada.id,
+        nome: novoClienteNome.trim(),
+        telefone: novoClienteTelefone.trim(),
+        forcarDuplicata: true,
+      });
+    }
+  }
 
   useEffect(() => {
     if (conversaIdSolicitada) {
@@ -1207,6 +1238,39 @@ export default function Mensagens() {
               }}
             >
               {iniciarConversaComClienteMutation.isPending ? "Criando..." : "Criar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Aviso de celular já cadastrado noutro cliente — não deixa
+          duplicar sem confirmação explícita (ver ResultadoCriarCliente
+          em server/db.ts). */}
+      <Dialog open={!!conflitoDuplicata} onOpenChange={(open) => !open && setConflitoDuplicata(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle size={16} />
+              Celular já cadastrado
+            </DialogTitle>
+            <DialogDescription>
+              {conflitoDuplicata?.candidatos.length === 1 ? (
+                <>Cliente <span className="font-medium text-foreground">{conflitoDuplicata.candidatos[0].nome}</span> já usa esse número.</>
+              ) : (
+                <>Os clientes <span className="font-medium text-foreground">{conflitoDuplicata?.candidatos.map((c) => c.nome).join(", ")}</span> já usam esse número.</>
+              )}
+              {" "}Tem certeza que deseja usar o mesmo número para dois clientes distintos?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConflitoDuplicata(null)}>Cancelar</Button>
+            <Button
+              variant="outline"
+              className="border-amber-300 text-amber-700 hover:bg-amber-50"
+              disabled={criarClienteRapidoMutation.isPending || iniciarConversaComClienteMutation.isPending}
+              onClick={confirmarDuplicata}
+            >
+              Criar mesmo assim
             </Button>
           </DialogFooter>
         </DialogContent>
