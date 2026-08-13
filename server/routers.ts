@@ -761,6 +761,14 @@ Diretrizes:
         const conversa = await db.getInboxConversaById(input.conversaId);
         if (!conversa) throw new Error("Conversa não encontrada");
 
+        // Assina a mensagem com quem está atendendo (PIN da recepção),
+        // igual mobai-crm (client/src/pages/Inbox.tsx: `*Nome:*\ntexto`)
+        // — sem isso o cliente não sabe quem está falando num terminal
+        // compartilhado por várias atendentes. Admin sem PIN selecionado
+        // cai no nome da conta Google.
+        const nomeRemetente = ctx.atendente?.nome ?? ctx.user.name;
+        const textoFinal = nomeRemetente?.trim() ? `*${nomeRemetente.trim()}:*\n${input.texto}` : input.texto;
+
         let zapiMessageId: string | undefined;
         if (conversa.canal === "zapi") {
           if (!conversa.unidadeId) throw new Error("Conversa sem unidade associada");
@@ -769,14 +777,14 @@ Diretrizes:
             throw new Error("Z-API não configurado para esta unidade");
           }
           try {
-            const resultado = await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, input.texto, input.mentioned);
+            const resultado = await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, textoFinal, input.mentioned);
             zapiMessageId = resultado.messageId;
           } catch (error) {
             console.error("[Inbox] Falha ao enviar via Z-API:", error);
           }
         } else {
           try {
-            await buddhaMktApi.sendText(conversa.telefone, input.texto);
+            await buddhaMktApi.sendText(conversa.telefone, textoFinal);
           } catch (error) {
             console.error("[Inbox] Falha ao enviar via Buddha Mkt:", error);
           }
@@ -786,7 +794,7 @@ Diretrizes:
           conversaId: input.conversaId,
           direcao: "enviada",
           tipo: "texto",
-          conteudo: input.texto,
+          conteudo: textoFinal,
           enviadaPorUserId: ctx.user.id,
           enviadaPorAtendenteId: ctx.atendente?.id ?? null,
           zapiMessageId: zapiMessageId ?? null,
@@ -796,7 +804,7 @@ Diretrizes:
           canal: conversa.canal,
           telefone: conversa.telefone,
           nomeContato: conversa.nomeContato ?? undefined,
-          ultimaMensagemTexto: input.texto,
+          ultimaMensagemTexto: textoFinal,
         });
 
         return { success: true };
@@ -920,7 +928,9 @@ Diretrizes:
       return { success: true };
     }),
 
-    create: adminProcedure.input(z.object({
+    // Não é adminProcedure — recepção também mantém os scripts prontos
+    // do dia a dia (2026-08-13).
+    create: protectedProcedure.input(z.object({
       categoriaScript: z.string().min(1).max(100),
       script: z.string().min(1),
       observacoes: z.string().optional(),
@@ -929,7 +939,7 @@ Diretrizes:
       return { id };
     }),
 
-    update: adminProcedure.input(z.object({
+    update: protectedProcedure.input(z.object({
       id: z.number(),
       categoriaScript: z.string().min(1).max(100).optional(),
       script: z.string().min(1).optional(),
@@ -940,7 +950,7 @@ Diretrizes:
       return { success: true };
     }),
 
-    excluir: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    excluir: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await db.excluirScript(input.id);
       return { success: true };
     }),

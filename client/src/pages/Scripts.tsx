@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,8 +25,6 @@ interface ScriptForm {
 const FORM_VAZIO: ScriptForm = { categoriaScript: "", script: "", observacoes: "" };
 
 export default function Scripts() {
-  const { user } = useAuth();
-  const admin = user?.role === "admin";
   const utils = trpc.useUtils();
 
   const [busca, setBusca] = useState("");
@@ -97,11 +94,9 @@ export default function Scripts() {
             Mensagens prontas pra usar no Inbox (botão de raio ou digite "/" na caixa de texto).
           </p>
         </div>
-        {admin && (
-          <Button size="sm" onClick={abrirNovo}>
-            <Plus className="h-4 w-4 mr-1.5" /> Novo script
-          </Button>
-        )}
+        <Button size="sm" onClick={abrirNovo}>
+          <Plus className="h-4 w-4 mr-1.5" /> Novo script
+        </Button>
       </div>
 
       <Card className="border-border/50 shadow-sm">
@@ -153,16 +148,12 @@ export default function Scripts() {
                   <Button variant="ghost" size="icon" className="h-7 w-7" title="Copiar" onClick={() => copiar(s.script)}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
-                  {admin && (
-                    <>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Editar" onClick={() => abrirEdicao(s)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title="Excluir" onClick={() => setExcluirId(s.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </>
-                  )}
+                  <Button variant="ghost" size="icon" className="h-7 w-7" title="Editar" onClick={() => abrirEdicao(s)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title="Excluir" onClick={() => setExcluirId(s.id)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               </div>
             ))

@@ -7,9 +7,12 @@ export const NOT_ADMIN_ERR_MSG = 'You do not have required permission (10002)';
 // Sessão do atendente (identidade por PIN, ver drizzle/schema.ts
 // atendentes/atendenteSessoes) — separada da sessão de login acima:
 // o login (Google/Manus) autentica a máquina/conta compartilhada, essa
-// aqui identifica QUEM da recepção está atendendo agora. Dura um turno.
+// aqui identifica QUEM da recepção está atendendo agora. Expira de hora
+// em hora de propósito — terminal compartilhado troca de mão ao longo
+// do turno, e sem reconfirmar periodicamente uma mensagem podia sair
+// assinada com o nome de quem não está mais na recepção.
 export const ATENDENTE_COOKIE_NAME = "atendente_session_id";
-export const ATENDENTE_SESSION_MS = 1000 * 60 * 60 * 12; // 12h
+export const ATENDENTE_SESSION_MS = 1000 * 60 * 60; // 1h
 
 // One-time nonce cookie that binds an OAuth login to the browser that started
 // it. The `__Host-` prefix forces the cookie host-only (Secure, Path=/, no

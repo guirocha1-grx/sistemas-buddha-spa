@@ -14,7 +14,11 @@ import UnidadeSelector from "@/components/UnidadeSelector";
  * `loading === false` significa que o gate (abaixo) deve aparecer.
  */
 export function useAtendenteAtual() {
-  const query = trpc.atendentes.atual.useQuery();
+  // Sessão do atendente expira de hora em hora (ver ATENDENTE_SESSION_MS)
+  // — sem refetchInterval, uma aba aberta o turno inteiro só percebia a
+  // expiração ao trocar de página, deixando mensagens saírem assinadas
+  // com quem não está mais atendendo.
+  const query = trpc.atendentes.atual.useQuery(undefined, { refetchInterval: 5 * 60 * 1000 });
   return { atendente: query.data ?? null, loading: query.isLoading };
 }
 
