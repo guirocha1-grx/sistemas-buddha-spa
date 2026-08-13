@@ -404,7 +404,16 @@ export default function Mensagens() {
 
   async function handleEnviarAnexo() {
     if (!anexoPendente || !conversaSelecionadaId) return;
-    const arquivoBase64 = await fileToBase64(anexoPendente.file);
+    let arquivoBase64: string;
+    try {
+      arquivoBase64 = await fileToBase64(anexoPendente.file);
+    } catch {
+      // FileReader falhando aqui não passava pelo onError da mutation (nem
+      // chegava a existir mutation) — ficava sem nenhum aviso, exatamente
+      // como um envio "que não vai".
+      toast.error("Não foi possível ler esse arquivo.");
+      return;
+    }
     enviarMidiaMutation.mutate({
       conversaId: conversaSelecionadaId,
       tipo: anexoPendente.tipo,

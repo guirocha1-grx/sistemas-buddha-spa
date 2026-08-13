@@ -780,13 +780,20 @@ Diretrizes:
             const resultado = await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, textoFinal, input.mentioned);
             zapiMessageId = resultado.messageId;
           } catch (error) {
+            // Mesmo motivo do enviarMidia logo abaixo: engolir aqui fazia a
+            // mensagem "sumir" da caixa de texto sem nunca chegar no
+            // WhatsApp, sem nenhum aviso pra quem enviou.
             console.error("[Inbox] Falha ao enviar via Z-API:", error);
+            const detalhe = error instanceof Error ? error.message : "erro desconhecido";
+            throw new Error(`Falha ao enviar mensagem pelo WhatsApp: ${detalhe}`);
           }
         } else {
           try {
             await buddhaMktApi.sendText(conversa.telefone, textoFinal);
           } catch (error) {
             console.error("[Inbox] Falha ao enviar via Buddha Mkt:", error);
+            const detalhe = error instanceof Error ? error.message : "erro desconhecido";
+            throw new Error(`Falha ao enviar mensagem: ${detalhe}`);
           }
         }
 
@@ -850,7 +857,13 @@ Diretrizes:
             }
             zapiMessageId = resultado?.messageId;
           } catch (error) {
+            // Antes engolia o erro aqui e seguia como se tivesse dado certo
+            // — a caixa de legenda fechava (sucesso na UI) mas a mídia
+            // nunca chegava no WhatsApp (ex.: Z-API rejeita formato/URL),
+            // sem nenhum aviso. Agora propaga pro usuário tentar de novo.
             console.error("[Inbox] Falha ao enviar mídia via Z-API:", error);
+            const detalhe = error instanceof Error ? error.message : "erro desconhecido";
+            throw new Error(`Falha ao enviar mídia pelo WhatsApp: ${detalhe}`);
           }
         }
         // Buddha Mkt: envio de mídia via Cloud API exige upload prévio pra

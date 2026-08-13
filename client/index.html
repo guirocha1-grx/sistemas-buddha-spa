@@ -1,11 +1,19 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR" translate="no">
 
   <head>
     <meta charset="UTF-8" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <!-- lang errado (en) + tradução automática do navegador reescrevendo o
+         DOM foi a causa real da unidade fantasma "Compras em Ribeirão" (era
+         "Ribeirão Shopping" traduzido) e do crash NotFoundError ao clicar —
+         o Google Translate mexe nos nós de texto por baixo do React, que
+         depois tenta atualizar/remover um nó que não é mais o que ele
+         esperava. notranslate + lang correto impede o navegador de oferecer
+         tradução nessa página. -->
+    <meta name="google" content="notranslate" />
     <title>Sistemas Buddha Spa CRM</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
