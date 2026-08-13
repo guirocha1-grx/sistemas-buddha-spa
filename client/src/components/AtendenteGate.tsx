@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import UnidadeSelector from "@/components/UnidadeSelector";
 
 /**
  * Identidade de quem está atendendo (ver drizzle/schema.ts atendentes/
@@ -65,6 +66,12 @@ export function AtendenteGate() {
             Selecione seu nome e digite seu PIN pra continuar.
           </p>
         </div>
+
+        {/* Essa tela substitui a página inteira (ver DashboardLayout), então
+            o seletor de unidade do cabeçalho normal não aparece em lugar
+            nenhum — sem isso, uma conta que abre errado na unidade sem
+            atendentes cadastrados fica travada aqui sem conseguir trocar. */}
+        <UnidadeSelector />
 
         {atendentes.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center">
