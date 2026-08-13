@@ -172,11 +172,14 @@
 - [x] Publicar o checkpoint correspondente ao commit 37bf0c6
 - [x] Sincronizar o GitHub após a publicação do commit 37bf0c6
 - [x] Investigar a origem da unidade “Compras em Ribeirão” no seletor de unidades
-- [ ] Identificar o endereço e a versão do ambiente que exibiu “Compras em Ribeirão”
+- [x] Identificar o endereço e a versão do ambiente que exibiu “Compras em Ribeirão” — encerrado a pedido do usuário, sem alteração
 - [x] Baixar a última versão do GitHub preservando o diagnóstico pendente
 - [x] Sincronizar a última versão do GitHub, validar e publicar preservando o diagnóstico pendente
 - [x] Publicar o checkpoint correspondente ao commit 3d4a999
 - [x] Sincronizar o GitHub após a publicação do commit 3d4a999
 - [x] Verificar e sincronizar a última versão do GitHub preservando o diagnóstico pendente
 - [x] Publicar o checkpoint correspondente ao commit 4a5d835
-- [ ] Sincronizar o GitHub após a publicação do commit 4a5d835
+- [x] Sincronizar o GitHub após a publicação do commit 4a5d835
+- [x] Sincronizar a última versão do GitHub, validar e publicar
+- [x] Publicar o checkpoint correspondente ao commit e073c6a
+- [ ] Sincronizar o GitHub após a publicação do commit e073c6a
