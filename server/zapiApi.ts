@@ -190,6 +190,35 @@ export const zapiApi = {
     return null;
   },
 
+  /**
+   * Foto de grupo — /profile-picture é voltado a contato individual e não
+   * devolve nada pra ID de grupo (sufixo "-group"). O endpoint de metadata
+   * de chat (GET /chats/{phone}, confirmado em developer.z-api.io/en/chats/
+   * get-metadata-chat) devolve profileThumbnail pra qualquer chat, grupo
+   * incluso — é o que usamos aqui em vez de getProfilePicture.
+   */
+  async getGroupPhoto(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    groupPhone: string,
+  ): Promise<string | null> {
+    const response = await fetch(buildUrl(instanceId, token, `/chats/${groupPhone}`), {
+      method: "GET",
+      headers: { "Client-Token": clientToken },
+    });
+    if (!response.ok) {
+      const corpo = await response.text().catch(() => "");
+      console.warn(`[Z-API getGroupPhoto] ${groupPhone} → HTTP ${response.status}: ${corpo.slice(0, 300)}`);
+      return null;
+    }
+    const data = await response.json() as any;
+    const url = data?.profileThumbnail || null;
+    if (typeof url === "string" && url.startsWith("http")) return url;
+    console.warn(`[Z-API getGroupPhoto] ${groupPhone} → resposta sem profileThumbnail: ${JSON.stringify(data).slice(0, 300)}`);
+    return null;
+  },
+
   async getQrCodeImage(
     instanceId: string,
     token: string,
