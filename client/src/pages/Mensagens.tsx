@@ -107,8 +107,15 @@ export default function Mensagens() {
   const [novoClienteTelefone, setNovoClienteTelefone] = useState("");
   const [scriptPickerOpen, setScriptPickerOpen] = useState(false);
   const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
+  // Autocomplete de @menção em grupo — mentionInicio é o índice do "@" no
+  // texto (null = não está em meio a uma menção); mentionados guarda os
+  // telefones já inseridos nesta digitação, pra mandar no campo
+  // "mentioned" da Z-API junto com o envio.
+  const [mentionInicio, setMentionInicio] = useState<number | null>(null);
+  const [mentionados, setMentionados] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const utils = trpc.useUtils();
 
   const { data: conversas, isLoading: carregandoConversas, refetch: refetchConversas } = trpc.inbox.conversas.list.useQuery(
@@ -124,6 +131,12 @@ export default function Mensagens() {
   const { data: mensagens, isLoading: carregandoMensagens } = trpc.inbox.mensagens.list.useQuery(
     { conversaId: conversaSelecionadaId ?? 0 },
     { enabled: !!conversaSelecionadaId, refetchInterval: 8000 },
+  );
+
+  const ehGrupo = conversaSelecionada?.isGrupo === "true";
+  const { data: membrosGrupo } = trpc.inbox.conversas.membrosGrupo.useQuery(
+    { conversaId: conversaSelecionadaId ?? 0 },
+    { enabled: !!conversaSelecionadaId && ehGrupo },
   );
 
   const conversaIdSolicitada = useMemo(() => {
@@ -149,6 +162,7 @@ export default function Mensagens() {
   const enviarMutation = trpc.inbox.mensagens.enviar.useMutation({
     onSuccess: () => {
       setTexto("");
+      setMentionados(new Set());
       utils.inbox.mensagens.list.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
       utils.inbox.conversas.list.invalidate();
     },
@@ -253,6 +267,8 @@ export default function Mensagens() {
     setBuscaMensagemAtiva(false);
     setBuscaMensagem("");
     setNomeCriarCliente(conversaSelecionada?.nomeContato || "");
+    setMentionInicio(null);
+    setMentionados(new Set());
   }, [conversaSelecionadaId, conversaSelecionada?.nomeContato]);
 
   function toggleSom() {
@@ -278,8 +294,50 @@ export default function Mensagens() {
 
   function handleEnviar() {
     if (!texto.trim() || !conversaSelecionadaId) return;
-    enviarMutation.mutate({ conversaId: conversaSelecionadaId, texto: texto.trim() });
+    enviarMutation.mutate({
+      conversaId: conversaSelecionadaId,
+      texto: texto.trim(),
+      mentioned: ehGrupo && mentionados.size > 0 ? Array.from(mentionados) : undefined,
+    });
   }
+
+  /**
+   * Detecta se o cursor está em meio a uma @menção (só em grupo) —
+   * procura o último "@" antes do cursor sem espaço entre os dois.
+   * Chamado a cada tecla no composer pra abrir/fechar o autocomplete.
+   */
+  function detectarMencao(valor: string, cursor: number) {
+    if (!ehGrupo) { setMentionInicio(null); return; }
+    const antesDoCursor = valor.slice(0, cursor);
+    const arroba = antesDoCursor.lastIndexOf("@");
+    if (arroba === -1 || /\s/.test(antesDoCursor.slice(arroba + 1))) {
+      setMentionInicio(null);
+      return;
+    }
+    setMentionInicio(arroba);
+  }
+
+  function selecionarMencao(membro: { telefone: string; nome: string | null }) {
+    if (mentionInicio === null) return;
+    const cursor = textareaRef.current?.selectionStart ?? texto.length;
+    const rotulo = membro.nome || membro.telefone;
+    const novoTexto = `${texto.slice(0, mentionInicio)}@${rotulo} ${texto.slice(cursor)}`;
+    setTexto(novoTexto);
+    setMentionados((prev) => new Set(prev).add(membro.telefone));
+    setMentionInicio(null);
+    // Foco de volta no textarea, cursor logo depois do espaço inserido —
+    // sem isso, o clique no item do autocomplete tira o foco da caixa.
+    requestAnimationFrame(() => {
+      const novaPos = mentionInicio + rotulo.length + 2;
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(novaPos, novaPos);
+    });
+  }
+
+  const mentionQuery = mentionInicio !== null ? texto.slice(mentionInicio + 1, textareaRef.current?.selectionStart ?? texto.length).toLowerCase() : "";
+  const mentionSugestoes = mentionInicio !== null
+    ? (membrosGrupo ?? []).filter((m) => (m.nome ?? m.telefone).toLowerCase().includes(mentionQuery)).slice(0, 8)
+    : [];
 
   async function handleAnexo(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -652,25 +710,56 @@ export default function Mensagens() {
                     />
                   </PopoverContent>
                 </Popover>
-                <Textarea
-                  placeholder="Digite uma mensagem..."
-                  className="min-h-9 max-h-32 resize-none"
-                  value={texto}
-                  onChange={(e) => setTexto(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleEnviar();
-                      return;
-                    }
-                    const target = e.target as HTMLTextAreaElement;
-                    const cursorNoInicio = target.selectionStart === 0 || /\s$/.test(texto.slice(0, target.selectionStart));
-                    if (e.key === "/" && cursorNoInicio) {
-                      e.preventDefault();
-                      setScriptPickerOpen(true);
-                    }
-                  }}
-                />
+                <div className="relative flex-1">
+                  {mentionInicio !== null && mentionSugestoes.length > 0 && (
+                    <div className="absolute bottom-full left-0 mb-1 w-64 max-h-48 overflow-y-auto rounded-lg border bg-popover shadow-md z-10">
+                      {mentionSugestoes.map((m) => (
+                        <button
+                          key={m.telefone}
+                          type="button"
+                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent flex items-center justify-between gap-2"
+                          onMouseDown={(e) => { e.preventDefault(); selecionarMencao(m); }}
+                        >
+                          <span className="truncate">{m.nome || formatPhone(m.telefone)}</span>
+                          {m.isAdmin && <span className="text-[10px] text-muted-foreground shrink-0">admin</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <Textarea
+                    ref={textareaRef}
+                    placeholder={ehGrupo ? "Digite uma mensagem... (@ pra mencionar)" : "Digite uma mensagem..."}
+                    className="min-h-9 max-h-32 resize-none"
+                    value={texto}
+                    onChange={(e) => {
+                      setTexto(e.target.value);
+                      detectarMencao(e.target.value, e.target.selectionStart);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape" && mentionInicio !== null) {
+                        e.preventDefault();
+                        setMentionInicio(null);
+                        return;
+                      }
+                      if (e.key === "Enter" && !e.shiftKey && mentionInicio !== null && mentionSugestoes.length > 0) {
+                        e.preventDefault();
+                        selecionarMencao(mentionSugestoes[0]);
+                        return;
+                      }
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleEnviar();
+                        return;
+                      }
+                      const target = e.target as HTMLTextAreaElement;
+                      const cursorNoInicio = target.selectionStart === 0 || /\s$/.test(texto.slice(0, target.selectionStart));
+                      if (e.key === "/" && cursorNoInicio) {
+                        e.preventDefault();
+                        setScriptPickerOpen(true);
+                      }
+                    }}
+                  />
+                </div>
                 <Button size="icon" className="shrink-0" disabled={enviarMutation.isPending || !texto.trim()} onClick={handleEnviar}>
                   {enviarMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </Button>
@@ -764,6 +853,28 @@ export default function Mensagens() {
                     </Button>
                   )}
                 </div>
+
+                {ehGrupo && (
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                      <Users size={11} /> Membros {membrosGrupo && membrosGrupo.length > 0 ? `(${membrosGrupo.length})` : ""}
+                    </p>
+                    {!membrosGrupo ? (
+                      <p className="text-xs text-muted-foreground">Carregando...</p>
+                    ) : membrosGrupo.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Não foi possível carregar os membros.</p>
+                    ) : (
+                      <div className="max-h-40 overflow-y-auto space-y-1 rounded-lg border p-1.5">
+                        {membrosGrupo.map((m) => (
+                          <div key={m.telefone} className="flex items-center justify-between gap-2 text-xs px-1 py-0.5">
+                            <span className="truncate">{m.nome || formatPhone(m.telefone)}</span>
+                            {m.isAdmin && <span className="text-[9px] text-muted-foreground shrink-0">admin</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {conversaSelecionada?.clienteId && (
                   <div className="rounded-lg border bg-muted/30 p-2.5 flex items-center justify-around text-center">

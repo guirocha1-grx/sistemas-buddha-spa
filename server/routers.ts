@@ -709,6 +709,29 @@ Diretrizes:
         await db.excluirInboxConversa(input.id);
         return { success: true };
       }),
+
+      /**
+       * Lista de participantes do grupo (painel direito + autocomplete de
+       * @menção no composer) — GET /group-metadata da Z-API, reforçado
+       * pelo nome já visto no histórico de mensagens quando a Z-API não
+       * devolve "name" (WhatsApp nem sempre expõe isso).
+       */
+      membrosGrupo: protectedProcedure.input(z.object({ conversaId: z.number() })).query(async ({ input }) => {
+        const conversa = await db.getInboxConversaById(input.conversaId);
+        if (!conversa || conversa.isGrupo !== "true" || !conversa.unidadeId) return [];
+        const unidade = await db.getUnidadeById(conversa.unidadeId);
+        if (!unidade?.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) return [];
+        const [participantes, nomesConhecidos] = await Promise.all([
+          zapiApi.getGroupMetadata(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone),
+          db.listNomesConhecidosPorTelefone(input.conversaId),
+        ]);
+        if (!participantes) return [];
+        return participantes.map((p) => ({
+          telefone: p.phone,
+          nome: p.name || p.short || nomesConhecidos.get(p.phone) || null,
+          isAdmin: p.isAdmin || p.isSuperAdmin,
+        }));
+      }),
     }),
 
     /**
@@ -738,6 +761,9 @@ Diretrizes:
       enviar: protectedProcedure.input(z.object({
         conversaId: z.number(),
         texto: z.string().min(1),
+        // Telefones marcados com @menção no texto (só faz sentido em
+        // grupo — ver Mensagens.tsx, autocomplete de @).
+        mentioned: z.array(z.string()).optional(),
       })).mutation(async ({ input, ctx }) => {
         if (!(await db.mensageriaEstaAtiva())) {
           throw new Error("Envio de mensagens pausado — kill switch de mensageria ativado por um administrador");
@@ -753,7 +779,7 @@ Diretrizes:
             throw new Error("Z-API não configurado para esta unidade");
           }
           try {
-            const resultado = await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, input.texto);
+            const resultado = await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, input.texto, input.mentioned);
             zapiMessageId = resultado.messageId;
           } catch (error) {
             console.error("[Inbox] Falha ao enviar via Z-API:", error);

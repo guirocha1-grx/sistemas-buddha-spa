@@ -77,6 +77,7 @@ const state = vi.hoisted(() => {
         definirEtiquetas: { useMutation: () => mutation() },
         excluir: { useMutation: () => mutation() },
         criarClienteRapido: { useMutation: () => mutation() },
+        membrosGrupo: { useQuery: () => ({ data: [], isLoading: false }) },
       },
       mensagens: {
         list: { useQuery: () => ({ data: [{ id: 1, direcao: "recebida", tipo: "texto", conteudo: "Olá", createdAt: new Date().toISOString() }], isLoading: false }) },

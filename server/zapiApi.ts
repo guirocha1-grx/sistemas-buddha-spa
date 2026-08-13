@@ -56,16 +56,24 @@ export interface ZapiSendResult {
 }
 
 export const zapiApi = {
+  /**
+   * `mentioned`: telefones (dígitos, sem "-group") pra marcar como @menção
+   * num grupo — confirmado em developer.z-api.io/en/group/mention-participant:
+   * é o mesmo endpoint de texto simples, só com esse array a mais; o texto
+   * em si precisa conter "@<telefone>" pra cada um.
+   */
   async sendText(
     instanceId: string,
     token: string,
     clientToken: string,
     phone: string,
     message: string,
+    mentioned?: string[],
   ): Promise<ZapiSendResult> {
     return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-text", {
       phone,
       message,
+      ...(mentioned && mentioned.length > 0 ? { mentioned } : {}),
     });
   },
 
@@ -217,6 +225,42 @@ export const zapiApi = {
     if (typeof url === "string" && url.startsWith("http")) return url;
     console.warn(`[Z-API getGroupPhoto] ${groupPhone} → resposta sem profileThumbnail: ${JSON.stringify(data).slice(0, 300)}`);
     return null;
+  },
+
+  /**
+   * Metadata do grupo — GET /group-metadata/{phone}, confirmado em
+   * developer.z-api.io/en/group/metadata-group. `participants[].name`
+   * só vem preenchido quando o WhatsApp expõe isso (nem sempre); telefone
+   * é o único campo garantido.
+   */
+  async getGroupMetadata(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    groupPhone: string,
+  ): Promise<{ phone: string; isAdmin: boolean; isSuperAdmin: boolean; name?: string; short?: string }[] | null> {
+    const response = await fetch(buildUrl(instanceId, token, `/group-metadata/${groupPhone}`), {
+      method: "GET",
+      headers: { "Client-Token": clientToken },
+    });
+    if (!response.ok) {
+      const corpo = await response.text().catch(() => "");
+      console.warn(`[Z-API getGroupMetadata] ${groupPhone} → HTTP ${response.status}: ${corpo.slice(0, 300)}`);
+      return null;
+    }
+    const data = await response.json() as any;
+    const participantes = data?.participants;
+    if (!Array.isArray(participantes)) {
+      console.warn(`[Z-API getGroupMetadata] ${groupPhone} → resposta sem participants: ${JSON.stringify(data).slice(0, 300)}`);
+      return null;
+    }
+    return participantes.map((p: any) => ({
+      phone: String(p.phone ?? ""),
+      isAdmin: !!p.isAdmin,
+      isSuperAdmin: !!p.isSuperAdmin,
+      name: typeof p.name === "string" ? p.name : undefined,
+      short: typeof p.short === "string" ? p.short : undefined,
+    })).filter((p) => p.phone);
   },
 
   async getQrCodeImage(

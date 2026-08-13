@@ -205,7 +205,18 @@ function registerZapiWebhook(app: Express) {
         // "pendente" mesmo quando a Z-API conseguia resolver. Só cai pro
         // fallback "pendente" (usando o próprio chatLid como identificador
         // estável) se a resolução falhar de verdade.
-        const ehLidBruto = payload.phone.includes("@lid") || (!payload.phone.match(/^\d+$/) && !!payload.chatLid);
+        //
+        // Checagem estrita — só pelo literal "@lid" em payload.phone,
+        // igual ao mobai-crm (webhooks.ts:1066 lá). Chegou a existir aqui
+        // uma condição extra (`!phone.match(/^\d+$/) && chatLid`) achando
+        // que "não é dígito puro + tem chatLid" também era sinal de @lid —
+        // mobai-crm prova que não é: chatLid vem preenchido MESMO quando
+        // phone já é o número real (webhooks.ts:1107-1109 lá, "Phone é
+        // número real mas chatLid também veio"), então aquela condição
+        // extra classificava contato com número real como pendente à toa
+        // (foi exatamente o que aconteceu com um cliente novo — o número
+        // real já tinha chegado no payload e foi escondido sem necessidade).
+        const ehLidBruto = payload.phone.includes("@lid");
         identificadorContato = ehLidBruto ? (payload.chatLid ?? payload.phone) : payload.phone;
         ehLid = ehLidBruto;
 

@@ -823,6 +823,34 @@ export async function listInboxMensagens(conversaId: number, limit: number = 50)
   return mensagens.reverse();
 }
 
+/**
+ * Nome mais recente visto por telefone dentro de um grupo, a partir do
+ * próprio histórico de mensagens (participanteTelefone/participanteNome
+ * — preenchidos a cada mensagem recebida de grupo). Usado como reforço
+ * quando GET /group-metadata da Z-API não devolve "name" pro
+ * participante (WhatsApp nem sempre expõe isso) — se essa pessoa já
+ * mandou mensagem alguma vez, a gente já tem o nome de exibição dela.
+ */
+export async function listNomesConhecidosPorTelefone(conversaId: number): Promise<Map<string, string>> {
+  const db = await getDb();
+  const mapa = new Map<string, string>();
+  if (!db) return mapa;
+  const rows = await db.select({
+    telefone: inboxMensagens.participanteTelefone,
+    nome: inboxMensagens.participanteNome,
+  })
+    .from(inboxMensagens)
+    .where(eq(inboxMensagens.conversaId, conversaId))
+    .orderBy(desc(inboxMensagens.createdAt))
+    .limit(500);
+  for (const row of rows) {
+    if (row.telefone && row.nome && !mapa.has(row.telefone)) {
+      mapa.set(row.telefone, row.nome);
+    }
+  }
+  return mapa;
+}
+
 export async function insertInboxMensagem(mensagem: InsertInboxMensagem) {
   const db = await getDb();
   if (!db) return undefined;
