@@ -161,4 +161,7 @@
 - [x] Sincronizar o GitHub após a publicação
 - [x] Sincronizar a última versão do GitHub, validar e publicar
 - [x] Publicar o checkpoint correspondente ao commit 3c71abf
-- [ ] Sincronizar o GitHub após a publicação do commit 3c71abf
+- [x] Sincronizar o GitHub após a publicação do commit 3c71abf
+- [x] Sincronizar a última versão do GitHub, validar e publicar
+- [x] Publicar o checkpoint correspondente ao commit 6cabb31
+- [ ] Sincronizar o GitHub após a publicação do commit 6cabb31
