@@ -256,14 +256,14 @@ export default function Clientes() {
                 <TableHeader>
                   <TableRow>
                     <SortTh col="nome" label="Cliente" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
-                    <SortTh col="celular" label="Contato" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
-                    <TableHead className="w-12 text-center" aria-label="WhatsApp">
-                      <MessageCircle className="mx-auto h-4 w-4 text-emerald-600" />
-                    </TableHead>
+                    <SortTh col="celular" label="Contato" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} className="max-w-[150px]" />
                     <SortTh col="cpf" label="CPF" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
                     <SortTh col="dataNascimento" label="Nascimento" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
                     <SortTh col="qtdAtendimentosFinalizados" label="Visitas" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} className="text-right" />
                     <SortTh col="ultimoAtendimento" label="Última visita" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
+                    <TableHead className="w-12 text-center" aria-label="WhatsApp">
+                      <MessageCircle className="mx-auto h-4 w-4 text-emerald-600" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -281,26 +281,19 @@ export default function Clientes() {
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="py-2">
+                          <TableCell className="py-2 max-w-[150px]">
                             <div className="space-y-0.5">
                               {cliente.celular && (
-                                <p className="text-xs text-muted-foreground flex items-center gap-1 whitespace-nowrap">
-                                  <Phone className="h-3 w-3" /> {cliente.celular}
+                                <p className="text-xs text-muted-foreground flex items-center gap-1 truncate" title={cliente.celular}>
+                                  <Phone className="h-3 w-3 shrink-0" /> <span className="truncate">{cliente.celular}</span>
                                 </p>
                               )}
                               {cliente.email && (
-                                <p className="text-xs text-muted-foreground flex items-center gap-1 whitespace-nowrap">
-                                  <Mail className="h-3 w-3" /> {cliente.email}
+                                <p className="text-xs text-muted-foreground flex items-center gap-1 truncate" title={cliente.email}>
+                                  <Mail className="h-3 w-3 shrink-0" /> <span className="truncate">{cliente.email}</span>
                                 </p>
                               )}
                             </div>
-                          </TableCell>
-                          <TableCell className="py-2 text-center">
-                              <ClienteWhatsAppButton
-                                cliente={cliente}
-                                unidadeId={unidadeSelecionada?.id}
-                                onOpenInbox={(conversaId) => setLocation(rotaInboxConversa(conversaId))}
-                              />
                           </TableCell>
                           <TableCell className="py-2 text-xs whitespace-nowrap">{cliente.cpf || "—"}</TableCell>
                           <TableCell className="py-2 text-xs whitespace-nowrap">{fmtDataBr(cliente.dataNascimento)}</TableCell>
@@ -310,6 +303,13 @@ export default function Clientes() {
                             {diasDesde(cliente.ultimoAtendimento) !== null && (
                               <span className="text-muted-foreground"> ({diasDesde(cliente.ultimoAtendimento)}d)</span>
                             )}
+                          </TableCell>
+                          <TableCell className="py-2 text-center">
+                              <ClienteWhatsAppButton
+                                cliente={cliente}
+                                unidadeId={unidadeSelecionada?.id}
+                                onOpenInbox={(conversaId) => setLocation(rotaInboxConversa(conversaId))}
+                              />
                           </TableCell>
                         </TableRow>
                       </DialogTrigger>
