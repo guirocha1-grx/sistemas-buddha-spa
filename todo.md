@@ -144,3 +144,5 @@
 - [x] Publicar o checkpoint correspondente ao merge do commit 4bcdb47
 - [x] Puxar o commit 446fa53, verificar migrações e publicar
 - [x] Publicar o checkpoint correspondente ao merge do commit 446fa53
+- [x] Puxar o commit f98803e do Claude antes de retomar ajustes locais
+- [x] Publicar o checkpoint correspondente ao commit f98803e
