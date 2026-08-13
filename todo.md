@@ -152,6 +152,7 @@
 - [x] Diagnosticar a foto ausente por banco, storage e renderização da interface do Inbox
 - [x] Exibir foto de grupos já persistida na lista e no painel do Inbox
 - [x] Publicar a correção de exibição de avatar de grupos no Inbox
+<<<<<<< Updated upstream
 - [x] Executar a suíte completa de testes após o merge do commit 8c654a3
 - [x] Confirmar a ausência de migrações pendentes no merge do commit 8c654a3
 - [x] Publicar o checkpoint correspondente ao merge do commit 8c654a3
@@ -197,4 +198,7 @@
 - [x] Sincronizar o GitHub após a publicação da prévia aberta
 - [x] Corrigir a falha persistente que mantém imagens anexadas como cartão no Inbox
 - [x] Publicar a rota estável de prévia de imagens no Inbox
-- [ ] Sincronizar o GitHub após publicar a rota estável de prévia
+- [x] Sincronizar o GitHub após publicar a rota estável de prévia
+- [x] Enviar ao GitHub a correção de avatar publicada como 1d061467
+- [x] Publicar a versão de URL que evita o cache HTML da prévia de imagens
+- [ ] Sincronizar o GitHub após publicar a correção de cache da prévia

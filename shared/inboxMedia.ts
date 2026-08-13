@@ -19,7 +19,9 @@ function inboxMediaUrl(key: string): string {
       }
     })
     .join("/");
-  return `/api/inbox-media/${encodedKey}`;
+  // O domínio personalizado já armazenou a rota antiga no CDN como HTML.
+  // A versão na query força uma chave de cache nova para a mídia inline.
+  return `/api/inbox-media/${encodedKey}?preview=v2`;
 }
 
 /**
