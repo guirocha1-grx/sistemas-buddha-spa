@@ -37,7 +37,7 @@ const state = vi.hoisted(() => {
     naoLidas: 0,
     ultimaMensagemTexto: "Olá",
     ultimaMensagemEm: new Date().toISOString(),
-    fotoUrl: null,
+    fotoUrl: null as string | null,
     isGrupo: "false",
     isLidPendente: "false",
     etiquetas: null,
