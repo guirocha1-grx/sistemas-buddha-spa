@@ -155,3 +155,7 @@
 - [x] Executar a suíte completa de testes após o merge do commit 8c654a3
 - [x] Confirmar a ausência de migrações pendentes no merge do commit 8c654a3
 - [x] Publicar o checkpoint correspondente ao merge do commit 8c654a3
+- [x] Sincronizar a última versão do GitHub, validar e publicar
+- [x] Salvar o checkpoint do commit 448cacf com controle de acesso por unidade
+- [x] Confirmar no checkpoint a migração aplicada e os 37 testes aprovados
+- [ ] Sincronizar o GitHub após a publicação
