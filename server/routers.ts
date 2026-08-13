@@ -22,6 +22,7 @@ import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet } from "./googleSheets";
+import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTelegramParaRecepcao } from "./telegramApi";
 
 function fmtDateIso(d: Date): string {
@@ -113,7 +114,9 @@ export const appRouter = router({
     }),
   }),
 
-  // ===== Clientes (Belle API) =====
+  // ===== Clientes (Belle API desativada por enquanto — acesso negado
+  // pelo franqueador; a base de clientes real vem só da planilha
+  // importada, ver importarXlsx/listImportados/buscarLocal abaixo) =====
   clientes: router({
     list: protectedProcedure.input(z.object({
       unidadeId: z.number(),
@@ -122,15 +125,8 @@ export const appRouter = router({
       dt_ultima_presenca: z.string().optional(),
       sexo: z.string().optional(),
       dt_cadastro: z.string().optional(),
-    })).query(async ({ input }) => {
-      const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.belleToken) throw new Error("Token Belle não configurado para esta unidade");
-      return belleApi.listarClientes(unidade.belleToken, unidade.codEstab, input.pagina, {
-        dt_ultima_compra: input.dt_ultima_compra,
-        dt_ultima_presenca: input.dt_ultima_presenca,
-        sexo: input.sexo,
-        dt_cadastro: input.dt_cadastro,
-      });
+    })).query(async () => {
+      throw new Error("Acesso à API de clientes do Belle está desativado por enquanto — use a base local (planilha importada).");
     }),
 
     buscar: protectedProcedure.input(z.object({
@@ -139,44 +135,38 @@ export const appRouter = router({
       email: z.string().optional(),
       celular: z.string().optional(),
       id: z.number().optional(),
+    })).query(async () => {
+      throw new Error("Acesso à API de clientes do Belle está desativado por enquanto — use a base local (planilha importada).");
+    }),
+
+    // Busca por CPF na base local — usado pelo Copilot desde que
+    // clientes.buscar (Belle) foi desativado.
+    buscarLocal: protectedProcedure.input(z.object({
+      cpf: z.string().min(3),
     })).query(async ({ input }) => {
-      const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
-      const { unidadeId, ...busca } = input;
-      return belleApi.buscarCliente(unidade.belleToken, unidade.codEstab, busca);
+      return db.buscarClienteLocalPorCpf(input.cpf);
     }),
 
     planos: protectedProcedure.input(z.object({
       unidadeId: z.number(),
       codCliente: z.number(),
-    })).query(async ({ input }) => {
-      const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
-      return belleApi.planosCliente(unidade.belleToken, input.codCliente, unidade.codEstab);
+    })).query(async () => {
+      throw new Error("Acesso à API de clientes do Belle está desativado por enquanto — use a base local (planilha importada).");
     }),
 
     atualizar: adminProcedure.input(z.object({
       unidadeId: z.number(),
       codCliente: z.number(),
       dados: z.record(z.string(), z.unknown()),
-    })).mutation(async ({ input }) => {
-      const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
-      await belleApi.alterarCliente(unidade.belleToken, input.codCliente, input.dados as any);
-      return { success: true };
+    })).mutation(async () => {
+      throw new Error("Acesso à API de clientes do Belle está desativado por enquanto — use a base local (planilha importada).");
     }),
 
     historico: protectedProcedure.input(z.object({
       unidadeId: z.number(),
       codCliente: z.number(),
-    })).query(async ({ input }) => {
-      const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
-      // Buscar vendas do cliente via relatório de vendas filtrado
-      const vendas = await belleApi.relatorioVendas(unidade.belleToken, unidade.codEstab).catch(() => null);
-      if (!vendas?.vendas) return [];
-      // Filtrar vendas do cliente específico
-      return vendas.vendas.filter((v: any) => v.cliente === input.codCliente || v.codCliente === input.codCliente);
+    })).query(async () => {
+      throw new Error("Acesso à API de clientes do Belle está desativado por enquanto — use a base local (planilha importada).");
     }),
 
     /**
@@ -859,7 +849,7 @@ Diretrizes:
         // biblioteca de mídia da Meta — fica pra quando o canal estiver
         // configurado de verdade.
 
-        await db.insertInboxMensagem({
+        const mensagemId = await db.insertInboxMensagem({
           conversaId: input.conversaId,
           direcao: "enviada",
           tipo: input.tipo,
@@ -869,6 +859,19 @@ Diretrizes:
           enviadaPorAtendenteId: ctx.atendente?.id ?? null,
           zapiMessageId: zapiMessageId ?? null,
         });
+
+        // Transcrição de áudio enviado pelo CRM — mesmo padrão do áudio
+        // recebido (ver webhooks.ts), assíncrono pra não segurar a
+        // resposta do envio.
+        if (input.tipo === "audio" && mensagemId) {
+          transcribeAudio({ audioUrl: url, language: "pt" })
+            .then((result) => {
+              if ("text" in result) {
+                return db.updateInboxMensagemTranscricao(mensagemId, result.text);
+              }
+            })
+            .catch((error) => console.error("[Inbox] Falha na transcrição do áudio enviado:", error));
+        }
 
         return { success: true, url };
       }),

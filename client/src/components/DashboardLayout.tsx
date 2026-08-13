@@ -48,7 +48,7 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
   { icon: Users, label: "Clientes", path: "/clientes", modulo: "clientes" },
   { icon: KanbanSquare, label: "Reativação", path: "/reativacao", modulo: "reativacao" },
   { icon: Calendar, label: "Agenda", path: "/agenda", modulo: "agenda" },
-  { icon: MessageCircle, label: "Mensagens", path: "/mensagens", modulo: "mensagens" },
+  { icon: MessageCircle, label: "WhatsApp", path: "/mensagens", modulo: "mensagens" },
   { icon: ScrollText, label: "Scripts", path: "/scripts", modulo: "scripts" },
   {
     icon: DollarSign, label: "Financeiro", path: "/financeiro", modulo: "financeiro",

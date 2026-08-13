@@ -2879,6 +2879,23 @@ export async function listClientesLocal() {
   return db.select().from(clientes).orderBy(clientes.nome).limit(20000);
 }
 
+/**
+ * Busca por CPF na base local — usada pelo Copilot (server/routers.ts
+ * copilot router) desde que a API do Belle foi desativada pra
+ * clientes (acesso negado pelo franqueador, ver clientes.list/buscar
+ * em routers.ts). Compara só dígitos, então funciona com ou sem
+ * pontuação no CPF cadastrado.
+ */
+export async function buscarClienteLocalPorCpf(cpf: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const digitos = cpf.replace(/\D/g, "");
+  if (digitos.length < 3) return undefined;
+  const normalizar = (coluna: any) => sql`REPLACE(REPLACE(${coluna}, '.', ''), '-', '')`;
+  const resultado = await db.select().from(clientes).where(sql`${normalizar(clientes.cpf)} = ${digitos}`).limit(1);
+  return resultado[0];
+}
+
 // ===== Comanda virtual (item a item — auditoria da Comanda Recepção) =====
 
 const LOTE_INSERT_COMANDA_ITENS = 500;

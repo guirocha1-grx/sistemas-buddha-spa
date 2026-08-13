@@ -113,6 +113,9 @@ export default function Mensagens() {
   // "mentioned" da Z-API junto com o envio.
   const [mentionInicio, setMentionInicio] = useState<number | null>(null);
   const [mentionados, setMentionados] = useState<Set<string>>(new Set());
+  // Anexo escolhido, ainda não enviado — dá chance de escrever legenda
+  // (imagem) antes, igual mobai-crm.
+  const [anexoPendente, setAnexoPendente] = useState<{ file: File; tipo: "imagem" | "audio" | "documento"; previewUrl?: string; legenda: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -171,6 +174,7 @@ export default function Mensagens() {
 
   const enviarMidiaMutation = trpc.inbox.mensagens.enviarMidia.useMutation({
     onSuccess: () => {
+      cancelarAnexo();
       utils.inbox.mensagens.list.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
       utils.inbox.conversas.list.invalidate();
     },
@@ -370,19 +374,37 @@ export default function Mensagens() {
     ? (membrosGrupo ?? []).filter((m) => (m.nome ?? m.telefone).toLowerCase().includes(mentionQuery)).slice(0, 8)
     : [];
 
-  async function handleAnexo(e: React.ChangeEvent<HTMLInputElement>) {
+  // Anexo fica "em espera" pra dar chance de escrever legenda (imagem)
+  // antes de enviar, igual mobai-crm — não sobe/envia no instante em
+  // que o arquivo é escolhido.
+  function handleAnexo(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file || !conversaSelecionadaId) return;
+    e.target.value = "";
+    if (!file) return;
     const tipo = file.type.startsWith("image/") ? "imagem" : file.type.startsWith("audio/") ? "audio" : "documento";
-    const arquivoBase64 = await fileToBase64(file);
+    const previewUrl = tipo === "imagem" ? URL.createObjectURL(file) : undefined;
+    setAnexoPendente((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      return { file, tipo, previewUrl, legenda: "" };
+    });
+  }
+
+  async function handleEnviarAnexo() {
+    if (!anexoPendente || !conversaSelecionadaId) return;
+    const arquivoBase64 = await fileToBase64(anexoPendente.file);
     enviarMidiaMutation.mutate({
       conversaId: conversaSelecionadaId,
-      tipo,
+      tipo: anexoPendente.tipo,
       arquivoBase64,
-      contentType: file.type || "application/octet-stream",
-      fileName: file.name,
+      contentType: anexoPendente.file.type || "application/octet-stream",
+      fileName: anexoPendente.file.name,
+      legenda: anexoPendente.legenda.trim() || undefined,
     });
-    e.target.value = "";
+  }
+
+  function cancelarAnexo() {
+    if (anexoPendente?.previewUrl) URL.revokeObjectURL(anexoPendente.previewUrl);
+    setAnexoPendente(null);
   }
 
   function abrirEdicaoNome() {
@@ -417,11 +439,8 @@ export default function Mensagens() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-            Mensagens
+            WhatsApp
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Conversas de WhatsApp.
-          </p>
         </div>
         <UnidadeSelector />
       </div>
@@ -707,13 +726,47 @@ export default function Mensagens() {
                 </div>
               </div>
 
-              <div className="p-3 border-t flex items-end gap-2">
+              <div className="border-t">
+              {anexoPendente && (
+                <div className="px-3 pt-3 flex items-start gap-2">
+                  {anexoPendente.tipo === "imagem" && anexoPendente.previewUrl ? (
+                    <img src={anexoPendente.previewUrl} alt={anexoPendente.file.name} className="h-16 w-16 rounded object-cover shrink-0" />
+                  ) : (
+                    <div className="h-16 w-16 rounded bg-muted flex items-center justify-center shrink-0">
+                      {anexoPendente.tipo === "audio" ? <Volume2 className="h-5 w-5 text-muted-foreground" /> : <Paperclip className="h-5 w-5 text-muted-foreground" />}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <p className="text-xs text-muted-foreground truncate">{anexoPendente.file.name}</p>
+                    <Input
+                      autoFocus
+                      placeholder="Adicionar legenda (opcional)..."
+                      className="h-8 text-sm"
+                      value={anexoPendente.legenda}
+                      onChange={(e) => setAnexoPendente((prev) => (prev ? { ...prev, legenda: e.target.value } : prev))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); handleEnviarAnexo(); }
+                        if (e.key === "Escape") { e.preventDefault(); cancelarAnexo(); }
+                      }}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Button size="icon" className="h-8 w-8" disabled={enviarMidiaMutation.isPending} onClick={handleEnviarAnexo} title="Enviar">
+                      {enviarMidiaMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-8 w-8" disabled={enviarMidiaMutation.isPending} onClick={cancelarAnexo} title="Cancelar">
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+              <div className="p-3 flex items-end gap-2">
                 <input ref={fileInputRef} type="file" accept="image/*,audio/*,application/pdf" className="hidden" onChange={handleAnexo} />
                 <Button
                   variant="outline"
                   size="icon"
                   className="shrink-0"
-                  disabled={enviarMidiaMutation.isPending}
+                  disabled={enviarMidiaMutation.isPending || !!anexoPendente}
                   onClick={() => fileInputRef.current?.click()}
                 >
                   {enviarMidiaMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
@@ -760,7 +813,7 @@ export default function Mensagens() {
                   <Textarea
                     ref={textareaRef}
                     placeholder={ehGrupo ? "Digite uma mensagem... (@ pra mencionar)" : "Digite uma mensagem..."}
-                    className="min-h-9 max-h-32 resize-none"
+                    className="min-h-[60px] max-h-32 resize-none"
                     value={texto}
                     onChange={(e) => {
                       setTexto(e.target.value);
@@ -794,6 +847,7 @@ export default function Mensagens() {
                 <Button size="icon" className="shrink-0" disabled={enviarMutation.isPending || !texto.trim()} onClick={handleEnviar}>
                   {enviarMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </Button>
+              </div>
               </div>
             </>
           )}
@@ -918,7 +972,7 @@ export default function Mensagens() {
                       <p className="text-sm font-semibold">
                         {(() => {
                           const dias = diasDesde(conversaSelecionada.clienteUltimoAtendimento);
-                          return dias === null ? "—" : dias === 0 ? "Hoje" : `${dias}d`;
+                          return dias === null ? "—" : dias === 0 ? "Hoje" : `${dias} dias`;
                         })()}
                       </p>
                       <p className="text-[10px] text-muted-foreground">desde a última visita</p>

@@ -22,8 +22,10 @@ export default function Copilot() {
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { refetch } = trpc.clientes.buscar.useQuery(
-    { unidadeId: unidadeSelecionada?.id ?? 0, cpf: searchCpf.replace(/\D/g, "") },
+  // API de clientes do Belle está desativada (acesso negado pelo
+  // franqueador) — busca na base local, importada da planilha.
+  const { refetch } = trpc.clientes.buscarLocal.useQuery(
+    { cpf: searchCpf.replace(/\D/g, "") },
     { enabled: false }
   );
 
@@ -51,13 +53,13 @@ export default function Copilot() {
         setCliente(result.data);
         setMessages([{
           role: "assistant",
-          content: `Cliente encontrado: **${result.data.nome}**.\n\nTemperatura: ${result.data.temperatura || "Não definida"}\nRating: ${result.data.rating || 0} estrelas\nTags: ${result.data.tags?.map((t: any) => t.nome).join(", ") || "nenhuma"}\n\nComo posso ajudar com este atendimento?`,
+          content: `Cliente encontrado: **${result.data.nome}**.\n\nCelular: ${result.data.celular || "—"}\nServiços já realizados: ${result.data.qtdServicosFinalizados ?? 0}\n\nComo posso ajudar com este atendimento?`,
         }]);
       } else {
-        setMessages([{ role: "assistant", content: "Cliente não encontrado no Belle Software." }]);
+        setMessages([{ role: "assistant", content: "Cliente não encontrado na base local." }]);
       }
     } catch {
-      setMessages([{ role: "assistant", content: "Erro ao buscar cliente. Verifique o token do Belle." }]);
+      setMessages([{ role: "assistant", content: "Erro ao buscar cliente." }]);
     }
     setLoading(false);
   };
