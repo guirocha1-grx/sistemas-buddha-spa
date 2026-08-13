@@ -38,6 +38,7 @@ const state = vi.hoisted(() => {
     ultimaMensagemTexto: "Olá",
     ultimaMensagemEm: new Date().toISOString(),
     fotoUrl: null,
+    isGrupo: "false",
     isLidPendente: "false",
     etiquetas: null,
     resumoConversa: null,
@@ -107,6 +108,11 @@ vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: 1, role:
 vi.mock("@/components/UnidadeSelector", () => ({ default: () => <div data-testid="unidade-selector" /> }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock("wouter", () => ({ useLocation: () => [state.page.location, state.page.setLocation] }));
+vi.mock("@/components/ui/avatar", () => ({
+  Avatar: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+  AvatarImage: ({ src, alt, ...props }: any) => <img src={src} alt={alt} {...props} />,
+  AvatarFallback: ({ children, ...props }: any) => <span {...props}>{children}</span>,
+}));
 
 import Clientes from "@/pages/Clientes";
 import Mensagens from "@/pages/Mensagens";
@@ -115,6 +121,10 @@ beforeEach(() => {
   state.page.location = "/clientes";
   state.page.setLocation.mockReset();
   state.page.openMutation.mockReset();
+  state.conversa.clienteNome = "Cliente Existente";
+  state.conversa.nomeContato = "Cliente Existente";
+  state.conversa.fotoUrl = null;
+  state.conversa.isGrupo = "false";
   Element.prototype.scrollIntoView = vi.fn();
 });
 
@@ -136,5 +146,19 @@ describe("fluxo completo Clientes → Inbox", () => {
       expect(screen.getAllByText("Cliente Existente").length).toBeGreaterThan(0);
     });
     expect(screen.getAllByText("Olá").length).toBeGreaterThan(0);
+  });
+
+  it("exibe a imagem persistida quando a conversa selecionada é um grupo", async () => {
+    state.page.location = "/mensagens?conversaId=41";
+    state.conversa.clienteNome = null as any;
+    state.conversa.nomeContato = "Grupo Recepção";
+    state.conversa.isGrupo = "true";
+    state.conversa.fotoUrl = "/manus-storage/inbox-fotos-perfil/grupo.jpg";
+    render(<Mensagens />);
+
+    await waitFor(() => {
+      const imagens = screen.getAllByAltText("Grupo Recepção");
+      expect(imagens.some((imagem) => imagem.getAttribute("src") === "/manus-storage/inbox-fotos-perfil/grupo.jpg")).toBe(true);
+    });
   });
 });

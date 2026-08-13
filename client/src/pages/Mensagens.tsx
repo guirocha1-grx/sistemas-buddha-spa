@@ -440,6 +440,7 @@ export default function Mensagens() {
                 <div className="relative shrink-0">
                   {c.isGrupo === "true" ? (
                     <Avatar className="h-8 w-8">
+                      {c.fotoUrl && <AvatarImage src={c.fotoUrl} alt={c.nomeContato ?? c.telefone} className="object-cover" />}
                       <AvatarFallback className="text-xs bg-muted"><Users className="h-3.5 w-3.5" /></AvatarFallback>
                     </Avatar>
                   ) : (
@@ -694,7 +695,12 @@ export default function Mensagens() {
                     title={conversaSelecionada?.fotoUrl ? "Ver foto ampliada" : undefined}
                   >
                     {conversaSelecionada?.isGrupo === "true" ? (
-                      <AvatarFallback className="bg-muted"><Users className="h-6 w-6" /></AvatarFallback>
+                      <>
+                        {conversaSelecionada?.fotoUrl && (
+                          <AvatarImage src={conversaSelecionada.fotoUrl} alt={conversaSelecionada.nomeContato ?? conversaSelecionada.telefone} className="object-cover" />
+                        )}
+                        <AvatarFallback className="bg-muted"><Users className="h-6 w-6" /></AvatarFallback>
+                      </>
                     ) : (
                       <>
                         {conversaSelecionada?.fotoUrl && (

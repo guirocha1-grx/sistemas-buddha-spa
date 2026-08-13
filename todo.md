@@ -148,3 +148,6 @@
 - [x] Publicar o checkpoint correspondente ao commit f98803e
 - [x] Puxar a última versão do GitHub, verificar migrações e publicar
 - [x] Publicar o checkpoint correspondente ao merge do commit 47ff1a8
+- [x] Diagnosticar a foto ausente por banco, storage e renderização da interface do Inbox
+- [x] Exibir foto de grupos já persistida na lista e no painel do Inbox
+- [x] Publicar a correção de exibição de avatar de grupos no Inbox
