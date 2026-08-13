@@ -191,4 +191,7 @@
 - [x] Sincronizar o GitHub após a publicação da correção de anexos
 - [x] Exibir imagens e documentos anexados corretamente no histórico do Inbox
 - [x] Publicar o ajuste visual de anexos do Inbox
-- [ ] Sincronizar o GitHub após a publicação do ajuste visual
+- [x] Sincronizar o GitHub após a publicação do ajuste visual
+- [x] Exibir imagens anexadas abertas dentro da conversa do Inbox, como no Mobai CRM
+- [x] Publicar a prévia aberta de imagens no Inbox
+- [ ] Sincronizar o GitHub após a publicação da prévia aberta
