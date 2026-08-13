@@ -907,6 +907,7 @@ Diretrizes:
               if ("text" in result) {
                 return db.updateInboxMensagemTranscricao(mensagemId, result.text.trim() || "(sem fala identificada)");
               }
+              console.error("[Inbox] Transcrição do áudio enviado recusada:", result.code, result.details ?? result.error);
             })
             .catch((error) => console.error("[Inbox] Falha na transcrição do áudio enviado:", error));
         }

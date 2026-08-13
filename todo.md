@@ -201,4 +201,7 @@
 - [x] Sincronizar o GitHub após publicar a rota estável de prévia
 - [x] Enviar ao GitHub a correção de avatar publicada como 1d061467
 - [x] Publicar a versão de URL que evita o cache HTML da prévia de imagens
-- [ ] Sincronizar o GitHub após publicar a correção de cache da prévia
+- [x] Sincronizar o GitHub após publicar a correção de cache da prévia
+- [x] Corrigir a transcrição de áudios no Inbox WhatsApp
+- [x] Publicar a correção de transcrição de áudio do Inbox
+- [ ] Sincronizar o GitHub após publicar a correção de transcrição

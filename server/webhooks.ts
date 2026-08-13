@@ -370,6 +370,7 @@ function registerZapiWebhook(app: Express) {
               // renderiza quando transcricao é truthy).
               return db.updateInboxMensagemTranscricao(mensagemId, result.text.trim() || "(sem fala identificada)");
             }
+            console.error("[Webhook Z-API] Transcrição recusada:", result.code, result.details ?? result.error);
           })
           .catch((error) => console.error("[Webhook Z-API] Falha na transcrição:", error));
       }
