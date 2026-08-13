@@ -204,4 +204,9 @@
 - [x] Sincronizar o GitHub após publicar a correção de cache da prévia
 - [x] Corrigir a transcrição de áudios no Inbox WhatsApp
 - [x] Publicar a correção de transcrição de áudio do Inbox
-- [ ] Sincronizar o GitHub após publicar a correção de transcrição
+- [x] Sincronizar o GitHub após publicar a correção de transcrição
+- [ ] Definir e executar a normalização de telefones entre WhatsApp, clientes e conversas do Inbox — pausado a pedido do usuário, sem alterações estruturais
+- [x] Criar sugestão de mensagem por IA no Inbox com aceite ou descarte
+- [x] Criar área editável de prompt de mensagem por IA em Configurações
+- [x] Publicar a sugestão de mensagem por IA e a configuração de prompt
+- [ ] Sincronizar o GitHub após publicar a sugestão de IA

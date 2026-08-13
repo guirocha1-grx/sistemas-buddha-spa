@@ -24,6 +24,7 @@ import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet } from "./googleSheets";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTelegramParaRecepcao } from "./telegramApi";
+import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY, montarPedidoSugestaoMensagem } from "@shared/inboxAi";
 
 function fmtDateIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -746,6 +747,34 @@ Diretrizes:
         limit: z.number().default(50),
       })).query(async ({ input }) => {
         return db.listInboxMensagens(input.conversaId, input.limit);
+      }),
+
+      sugerir: protectedProcedure.input(z.object({
+        conversaId: z.number(),
+        rascunho: z.string().trim().min(1).max(4000),
+      })).mutation(async ({ input }) => {
+        const conversa = await db.getInboxConversaById(input.conversaId);
+        if (!conversa) throw new Error("Conversa não encontrada");
+
+        const promptConfigurado = await db.getConfig(INBOX_AI_PROMPT_KEY);
+        const systemPrompt = promptConfigurado?.valor?.trim() || DEFAULT_INBOX_AI_MESSAGE_PROMPT;
+        try {
+          const response = await invokeLLM({
+            model: "gpt-5-mini",
+            maxTokens: 500,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: montarPedidoSugestaoMensagem(input.rascunho) },
+            ],
+          });
+          const content = response.choices[0]?.message.content;
+          const sugestao = typeof content === "string" ? content.trim() : "";
+          if (!sugestao) throw new Error("A IA não retornou uma sugestão de mensagem");
+          return { sugestao: sugestao.slice(0, 4000) };
+        } catch (error) {
+          console.error("[Inbox IA] Falha ao gerar sugestão:", error);
+          throw new Error("Não foi possível gerar a sugestão de mensagem agora. Tente novamente.");
+        }
       }),
 
       enviar: protectedProcedure.input(z.object({

@@ -107,6 +107,8 @@ export default function Mensagens() {
   const [novoClienteNome, setNovoClienteNome] = useState("");
   const [novoClienteTelefone, setNovoClienteTelefone] = useState("");
   const [scriptPickerOpen, setScriptPickerOpen] = useState(false);
+  const [modalSugestaoIa, setModalSugestaoIa] = useState(false);
+  const [sugestaoIa, setSugestaoIa] = useState("");
   const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
   const [midiasComFalha, setMidiasComFalha] = useState<Set<number>>(() => new Set());
   // Autocomplete de @menção em grupo — mentionInicio é o índice do "@" no
@@ -172,6 +174,14 @@ export default function Mensagens() {
       utils.inbox.conversas.list.invalidate();
     },
     onError: (error) => toast.error(error.message),
+  });
+
+  const sugerirMensagemIaMutation = trpc.inbox.mensagens.sugerir.useMutation({
+    onSuccess: ({ sugestao }) => setSugestaoIa(sugestao),
+    onError: (error) => {
+      setModalSugestaoIa(false);
+      toast.error(error.message);
+    },
   });
 
   const enviarMidiaMutation = trpc.inbox.mensagens.enviarMidia.useMutation({
@@ -336,6 +346,22 @@ export default function Mensagens() {
       texto: texto.trim(),
       mentioned: ehGrupo && mentionados.size > 0 ? Array.from(mentionados) : undefined,
     });
+  }
+
+  function abrirSugestaoIa() {
+    if (!conversaSelecionadaId || !texto.trim()) {
+      toast.error("Escreva uma mensagem antes de pedir uma sugestão.");
+      return;
+    }
+    setSugestaoIa("");
+    setModalSugestaoIa(true);
+    sugerirMensagemIaMutation.mutate({ conversaId: conversaSelecionadaId, rascunho: texto.trim() });
+  }
+
+  function aceitarSugestaoIa() {
+    if (!conversaSelecionadaId || !sugestaoIa.trim()) return;
+    setModalSugestaoIa(false);
+    enviarMutation.mutate({ conversaId: conversaSelecionadaId, texto: sugestaoIa.trim() });
   }
 
   /**
@@ -850,6 +876,17 @@ export default function Mensagens() {
                   onSelect={(s) => setTexto((prev) => (prev ? `${prev}\n${s}` : s))}
                   disabled={!conversaSelecionadaId}
                 />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0 text-amber-700 hover:text-amber-800 hover:bg-amber-50"
+                  disabled={!conversaSelecionadaId || !texto.trim() || enviarMutation.isPending || sugerirMensagemIaMutation.isPending}
+                  onClick={abrirSugestaoIa}
+                  title="Sugestão de mensagem com IA"
+                  aria-label="Sugestão de mensagem com IA"
+                >
+                  {sugerirMensagemIaMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                </Button>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="outline" size="icon" className="shrink-0" title="Inserir emoji">
@@ -1196,6 +1233,38 @@ export default function Mensagens() {
           </div>
         </div>
       )}
+
+      <Dialog open={modalSugestaoIa} onOpenChange={(open) => !open && setModalSugestaoIa(false)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+              <Sparkles className="h-5 w-5 text-amber-600" /> Sugestão de mensagem
+            </DialogTitle>
+            <DialogDescription>
+              A IA ajustou seu rascunho para uma comunicação calorosa, acolhedora e profissional.
+            </DialogDescription>
+          </DialogHeader>
+          {sugerirMensagemIaMutation.isPending ? (
+            <div className="py-10 flex flex-col items-center gap-3 text-sm text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin text-amber-700" />
+              Preparando a sugestão...
+            </div>
+          ) : (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 whitespace-pre-wrap text-sm leading-6 text-foreground">
+              {sugestaoIa}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalSugestaoIa(false)} disabled={sugerirMensagemIaMutation.isPending || enviarMutation.isPending}>
+              Descartar
+            </Button>
+            <Button onClick={aceitarSugestaoIa} disabled={!sugestaoIa.trim() || enviarMutation.isPending}>
+              {enviarMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
+              Aceitar e enviar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Kill switch */}
       <Dialog open={modalKillSwitch} onOpenChange={setModalKillSwitch}>

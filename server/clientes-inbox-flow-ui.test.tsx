@@ -82,6 +82,10 @@ const state = vi.hoisted(() => {
       mensagens: {
         list: { useQuery: () => ({ data: [{ id: 1, direcao: "recebida", tipo: "texto", conteudo: "Olá", createdAt: new Date().toISOString() }], isLoading: false }) },
         enviar: { useMutation: () => mutation() },
+        sugerir: { useMutation: (options: any) => ({
+          mutate: () => options.onSuccess?.({ sugestao: "Olá! Será um prazer ajudar você. Como posso seguir?" }),
+          isPending: false,
+        }) },
         enviarMidia: { useMutation: () => mutation() },
       },
       unificarConversas: { useMutation: () => mutation() },
@@ -162,4 +166,5 @@ describe("fluxo completo Clientes → Inbox", () => {
       expect(imagens.some((imagem) => imagem.getAttribute("src") === "/manus-storage/inbox-fotos-perfil/grupo.jpg")).toBe(true);
     });
   });
+
 });

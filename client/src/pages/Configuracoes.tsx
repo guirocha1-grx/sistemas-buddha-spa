@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megaphone, Landmark, CreditCard } from "lucide-react";
+import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megaphone, Landmark, CreditCard, Sparkles, RotateCcw } from "lucide-react";
 import { AtendentesSection } from "@/components/AtendentesSection";
+import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY } from "@shared/inboxAi";
 
 interface InterForm {
   interClientId?: string;
@@ -53,6 +54,7 @@ const SECOES = [
   { chave: "sicredi", label: "Sicredi", escopo: "unidade" },
   { chave: "atendentes", label: "Atendentes", escopo: "unidade" },
   { chave: "buddha_mkt", label: "Buddha Mkt", escopo: "global" },
+  { chave: "prompts_ia", label: "Prompts de IA", escopo: "global" },
   { chave: "tecnico", label: "Info Técnica", escopo: "global" },
 ] as const;
 type SecaoChave = typeof SECOES[number]["chave"] | "todas";
@@ -73,6 +75,8 @@ export default function Configuracoes() {
   const [mpSaved, setMpSaved] = useState<number | null>(null);
   const [sicrediForms, setSicrediForms] = useState<Record<number, SicrediForm>>({});
   const [sicrediSaved, setSicrediSaved] = useState<number | null>(null);
+  const [promptMensagem, setPromptMensagem] = useState<string | undefined>(undefined);
+  const [promptSaved, setPromptSaved] = useState(false);
 
   const updateUnidade = trpc.unidades.update.useMutation({
     onSuccess: (_data, vars) => {
@@ -103,12 +107,20 @@ export default function Configuracoes() {
   const mktConfigQueries = trpc.useQueries((t) =>
     BUDDHA_MKT_CHAVES.map((sufixo) => t.configuracoes.get({ chave: `buddha_mkt_${sufixo}` })),
   );
+  const promptMensagemQuery = trpc.configuracoes.get.useQuery({ chave: INBOX_AI_PROMPT_KEY });
 
   const setConfig = trpc.configuracoes.set.useMutation({
     onSuccess: () => {
       setMktSaved(true);
       utils.configuracoes.get.invalidate();
       setTimeout(() => setMktSaved(false), 3000);
+    },
+  });
+  const setPromptConfig = trpc.configuracoes.set.useMutation({
+    onSuccess: () => {
+      setPromptSaved(true);
+      utils.configuracoes.get.invalidate({ chave: INBOX_AI_PROMPT_KEY });
+      setTimeout(() => setPromptSaved(false), 3000);
     },
   });
 
@@ -120,6 +132,7 @@ export default function Configuracoes() {
   }
 
   const mktConfigurado = BUDDHA_MKT_CHAVES.every((sufixo, i) => mktConfigQueries[i]?.data);
+  const promptAtual = promptMensagem ?? promptMensagemQuery.data ?? DEFAULT_INBOX_AI_MESSAGE_PROMPT;
 
   return (
     <div className="space-y-6">
@@ -622,6 +635,38 @@ export default function Configuracoes() {
           <p className="text-xs text-muted-foreground">
             Webhook de verificação: <span className="font-mono">/api/webhooks/buddha-mkt</span>
           </p>
+        </CardContent>
+      </Card>
+      )}
+
+      {(filtroSecao === "todas" || filtroSecao === "prompts_ia") && (
+      <Card className="border-amber-200 bg-amber-50/40 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+            <Sparkles className="h-4 w-4 text-amber-700" /> Prompts de IA
+          </CardTitle>
+          <CardDescription>
+            Personalize o tom aplicado ao botão “Sugestão de mensagem com IA” no Inbox. A atendente sempre aceita ou descarta a sugestão antes do envio.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <Label>Prompt de mensagem para o Spa</Label>
+            <Textarea
+              className="mt-1 min-h-56 text-sm leading-6"
+              value={promptAtual}
+              onChange={(e) => setPromptMensagem(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => setPromptConfig.mutate({ chave: INBOX_AI_PROMPT_KEY, valor: promptAtual.trim() })} disabled={!promptAtual.trim() || setPromptConfig.isPending}>
+              {setPromptConfig.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : promptSaved ? <CheckCircle className="h-4 w-4 mr-2 text-green-600" /> : <Save className="h-4 w-4 mr-2" />}
+              {promptSaved ? "Salvo!" : "Salvar prompt"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setPromptMensagem(DEFAULT_INBOX_AI_MESSAGE_PROMPT)} disabled={setPromptConfig.isPending}>
+              <RotateCcw className="h-4 w-4 mr-2" /> Restaurar padrão
+            </Button>
+          </div>
         </CardContent>
       </Card>
       )}
