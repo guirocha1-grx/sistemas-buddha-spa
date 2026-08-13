@@ -146,3 +146,5 @@
 - [x] Publicar o checkpoint correspondente ao merge do commit 446fa53
 - [x] Puxar o commit f98803e do Claude antes de retomar ajustes locais
 - [x] Publicar o checkpoint correspondente ao commit f98803e
+- [x] Puxar a última versão do GitHub, verificar migrações e publicar
+- [x] Publicar o checkpoint correspondente ao merge do commit 47ff1a8
