@@ -158,15 +158,36 @@ export const zapiApi = {
     return { phone: rawPhone, name: data.name || data.short || "", imgUrl: data.imgUrl };
   },
 
+  /**
+   * Não usa zapiGet aqui de propósito, mesmo motivo do resolveLid: precisa
+   * do corpo da resposta em caso de erro pra diagnosticar (rate limit,
+   * credencial errada, endpoint fora do plano contratado etc.), coisa que
+   * zapiGet engole silenciosamente.
+   */
   async getProfilePicture(
     instanceId: string,
     token: string,
     clientToken: string,
     phone: string,
   ): Promise<string | null> {
-    const data = await zapiGet<any>(instanceId, token, clientToken, `/profile-picture?phone=${phone}`);
-    const url = data?.value || data?.profilePictureUrl || null;
-    return typeof url === "string" && url.startsWith("http") ? url : null;
+    const response = await fetch(buildUrl(instanceId, token, `/profile-picture?phone=${phone}`), {
+      method: "GET",
+      headers: { "Client-Token": clientToken },
+    });
+    if (!response.ok) {
+      const corpo = await response.text().catch(() => "");
+      console.warn(`[Z-API getProfilePicture] ${phone} → HTTP ${response.status}: ${corpo.slice(0, 300)}`);
+      return null;
+    }
+    const data = await response.json() as any;
+    // Z-API retorna { value: "..." }, { profilePictureUrl: "..." } ou só
+    // { link: "..." } — confirmado em produção no mobai-crm que a resposta
+    // às vezes só tem "link", e checar só as outras duas chaves faz a foto
+    // nunca ser encontrada mesmo com a consulta funcionando.
+    const url = data?.value || data?.profilePictureUrl || data?.link || null;
+    if (typeof url === "string" && url.startsWith("http")) return url;
+    console.warn(`[Z-API getProfilePicture] ${phone} → resposta sem URL válida: ${JSON.stringify(data).slice(0, 300)}`);
+    return null;
   },
 
   async getQrCodeImage(
