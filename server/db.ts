@@ -347,6 +347,22 @@ async function resolverFotosUrlAssinadas(rows: Array<{ fotoUrl?: string | null }
 }
 
 /**
+ * Checagem rápida (sem side-effects) se a conversa desse telefone já tem
+ * fotoUrl salva — usado no webhook pra não rechamar a Z-API a cada
+ * mensagem recebida, só quando a foto ainda estiver faltando. Só conta
+ * como "tem foto" quando é um link do nosso próprio storage — link
+ * direto do WhatsApp é temporário e expira.
+ */
+export async function inboxConversaTemFoto(telefone: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const rows = await db.select({ fotoUrl: inboxConversas.fotoUrl }).from(inboxConversas)
+    .where(eq(inboxConversas.telefone, telefone)).limit(1);
+  const foto = rows[0]?.fotoUrl;
+  return !!foto && foto.startsWith("/manus-storage/");
+}
+
+/**
  * LEFT JOIN com clientes (mesmo espírito do mobai-crm): o Inbox não
  * deve mostrar só o que o WhatsApp manda como nome — quando a conversa
  * já está vinculada a um cliente Belle (clienteId), o nome do cadastro
@@ -471,6 +487,7 @@ export async function upsertInboxConversa(params: {
   isLidPendente?: boolean;
   isGrupo?: boolean;
   nomeContato?: string;
+  fotoUrl?: string;
   ultimaMensagemTexto: string;
   incrementarNaoLidas?: boolean;
   clienteId?: number;
@@ -503,11 +520,17 @@ export async function upsertInboxConversa(params: {
     // trocar o telefone de volta pro lid bruto.
     const jaResolvido = existente[0].isLidPendente === "false";
     const devePromoverTelefone = params.isLidPendente === false && params.telefone !== existente[0].telefone;
+    // Só considera "já tem foto" quando é um link do nosso storage — link
+    // externo do WhatsApp (pps.whatsapp.net) expira e passa a responder
+    // 403, então uma conversa presa com esse link antigo deve poder
+    // receber a foto nova (já baixada e armazenada) na próxima mensagem.
+    const hasFoto = !!existente[0].fotoUrl && existente[0].fotoUrl.startsWith("/manus-storage/");
     // isGrupo não entra no update de propósito — uma conversa não muda
     // de tipo depois de criada, só é decidido na primeira mensagem.
     await db.update(inboxConversas).set({
       telefone: devePromoverTelefone ? params.telefone : existente[0].telefone,
       nomeContato: params.nomeContato ?? existente[0].nomeContato,
+      fotoUrl: (params.fotoUrl && !hasFoto) ? params.fotoUrl : existente[0].fotoUrl,
       chatLid: params.chatLid ?? existente[0].chatLid,
       clienteId: existente[0].clienteId ?? params.clienteId,
       isLidPendente: jaResolvido
@@ -529,6 +552,7 @@ export async function upsertInboxConversa(params: {
     isLidPendente: params.isLidPendente ? "true" : "false",
     isGrupo: params.isGrupo ? "true" : "false",
     nomeContato: params.nomeContato,
+    fotoUrl: params.fotoUrl,
     clienteId: params.clienteId,
     ultimaMensagemEm: agora,
     ultimaMensagemTexto: params.ultimaMensagemTexto,

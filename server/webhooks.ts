@@ -7,6 +7,7 @@ import { mysqlTable, int, varchar, text, timestamp, boolean } from "drizzle-orm/
 import { eq } from "drizzle-orm";
 import { sendTelegramParaRecepcao } from "./telegramApi";
 import { zapiApi } from "./zapiApi";
+import { storagePut } from "./storage";
 
 // Tabela deploy_pending para comunicação entre webhook (sandbox) e cron (produção)
 const deployPending = mysqlTable("deploy_pending", {
@@ -191,6 +192,7 @@ function registerZapiWebhook(app: Express) {
       let identificadorContato = payload.phone;
       let ehLid = false;
       let nomeResolvidoPorLid: string | undefined;
+      let fotoUrlResolvidaPorLid: string | undefined;
 
       // Grupo nunca vem como "@lid" (o ID do grupo, sufixo "-group", já
       // é o identificador definitivo) — pula toda a resolução abaixo,
@@ -217,6 +219,7 @@ function registerZapiWebhook(app: Express) {
               identificadorContato = resolvido.phone;
               ehLid = false;
               nomeResolvidoPorLid = resolvido.name || undefined;
+              fotoUrlResolvidaPorLid = resolvido.imgUrl || undefined;
             }
           } catch (error) {
             console.error("[Webhook Z-API] Falha ao resolver @lid:", error);
@@ -249,6 +252,40 @@ function registerZapiWebhook(app: Express) {
       // bater telefone).
       const clienteId = (ehLid || payload.isGroup) ? undefined : await db.buscarClienteIdPorTelefone(identificadorContato);
 
+      // Busca foto de perfil se não veio do LID e não é fromMe. Só chama a
+      // Z-API quando a conversa ainda não tem fotoUrl salva — evita
+      // rechamar em toda mensagem recebida, candidato real a rate limit
+      // silencioso. Tenta também em grupo — a Z-API pode devolver a foto
+      // do grupo pelo mesmo endpoint; se não devolver, fica undefined e a
+      // UI cai no ícone genérico. A URL que a Z-API devolve é um link
+      // temporário do WhatsApp (expira e passa a responder 403) — baixa a
+      // imagem uma vez e guarda no storage do próprio CRM, mesmo padrão já
+      // usado pra mídia de mensagens do Inbox, pra nunca depender desse
+      // link expirar.
+      let fotoUrlContato: string | undefined = fotoUrlResolvidaPorLid;
+      if (!payload.fromMe && !fotoUrlContato && unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken) {
+        try {
+          const jaTemFoto = await db.inboxConversaTemFoto(identificadorContato);
+          if (!jaTemFoto) {
+            const fotoWhatsappUrl = await zapiApi.getProfilePicture(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, identificadorContato);
+            if (fotoWhatsappUrl) {
+              const imgResp = await fetch(fotoWhatsappUrl);
+              if (imgResp.ok) {
+                const buffer = Buffer.from(await imgResp.arrayBuffer());
+                const contentType = imgResp.headers.get("content-type") || "image/jpeg";
+                const chaveSegura = identificadorContato.replace(/[^a-zA-Z0-9_-]/g, "_");
+                const { url: storedUrl } = await storagePut(`inbox-fotos-perfil/${chaveSegura}.jpg`, buffer, contentType);
+                fotoUrlContato = storedUrl;
+              } else {
+                console.warn(`[Webhook Z-API] profile-picture ${identificadorContato} → link do WhatsApp expirado/inválido (HTTP ${imgResp.status})`);
+              }
+            }
+          }
+        } catch (error) {
+          console.error("[Webhook Z-API] Falha ao buscar/armazenar foto de perfil:", error);
+        }
+      }
+
       const conversaId = await db.upsertInboxConversa({
         unidadeId,
         canal: "zapi",
@@ -257,6 +294,7 @@ function registerZapiWebhook(app: Express) {
         isLidPendente: ehLid,
         isGrupo: payload.isGroup,
         clienteId,
+        fotoUrl: fotoUrlContato,
         // "senderName" nesse payload é o nome de quem mandou — só faz
         // sentido atualizar o nome do contato quando é ele mandando
         // (recebida); num fromMe não teria como significar "nome do
