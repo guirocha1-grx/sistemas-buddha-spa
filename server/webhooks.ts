@@ -255,19 +255,22 @@ function registerZapiWebhook(app: Express) {
       // Busca foto de perfil se não veio do LID e não é fromMe. Só chama a
       // Z-API quando a conversa ainda não tem fotoUrl salva — evita
       // rechamar em toda mensagem recebida, candidato real a rate limit
-      // silencioso. Tenta também em grupo — a Z-API pode devolver a foto
-      // do grupo pelo mesmo endpoint; se não devolver, fica undefined e a
-      // UI cai no ícone genérico. A URL que a Z-API devolve é um link
-      // temporário do WhatsApp (expira e passa a responder 403) — baixa a
-      // imagem uma vez e guarda no storage do próprio CRM, mesmo padrão já
-      // usado pra mídia de mensagens do Inbox, pra nunca depender desse
-      // link expirar.
+      // silencioso. Grupo usa um endpoint diferente: /profile-picture é
+      // voltado a contato individual e não devolve nada pra ID de grupo
+      // (confirmado testando em produção) — /chats/{phone} (getGroupPhoto)
+      // devolve profileThumbnail pra qualquer chat, grupo incluso. A URL
+      // que a Z-API devolve é um link temporário do WhatsApp (expira e
+      // passa a responder 403) — baixa a imagem uma vez e guarda no
+      // storage do próprio CRM, mesmo padrão já usado pra mídia de
+      // mensagens do Inbox, pra nunca depender desse link expirar.
       let fotoUrlContato: string | undefined = fotoUrlResolvidaPorLid;
       if (!payload.fromMe && !fotoUrlContato && unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken) {
         try {
           const jaTemFoto = await db.inboxConversaTemFoto(identificadorContato);
           if (!jaTemFoto) {
-            const fotoWhatsappUrl = await zapiApi.getProfilePicture(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, identificadorContato);
+            const fotoWhatsappUrl = payload.isGroup
+              ? await zapiApi.getGroupPhoto(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, identificadorContato)
+              : await zapiApi.getProfilePicture(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, identificadorContato);
             if (fotoWhatsappUrl) {
               const imgResp = await fetch(fotoWhatsappUrl);
               if (imgResp.ok) {
