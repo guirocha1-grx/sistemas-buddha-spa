@@ -17,13 +17,16 @@ function getForgeConfig() {
   return { forgeUrl: forgeUrl.replace(/\/+$/, ""), forgeKey };
 }
 
-function normalizeKey(relKey: string): string {
+export function normalizeStorageKey(relKey: string): string {
   const semBarraInicial = relKey.replace(/^\/+/, "");
-  // Presign do Forge exige path ASCII — remove acentos e troca qualquer
-  // caractere não-ASCII restante (emoji, etc.) por "_".
+  // Presign do Forge exige path ASCII. Espaços precisam virar hífen, pois
+  // a reencodificação de espaços em uma URL assinada invalida a assinatura
+  // quando o CDN é acessado por navegadores ou pela Z-API.
   const combiningMarks = new RegExp("[\\u0300-\\u036f]", "g");
   const semAcentos = semBarraInicial.normalize("NFD").replace(combiningMarks, "");
-  return semAcentos.replace(/[^\x00-\x7F]/g, "_");
+  return semAcentos
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Za-z0-9._/-]/g, "_");
 }
 
 function appendHashSuffix(relKey: string): string {
@@ -39,7 +42,7 @@ export async function storagePut(
   contentType = "application/octet-stream",
 ): Promise<{ key: string; url: string }> {
   const { forgeUrl, forgeKey } = getForgeConfig();
-  const key = appendHashSuffix(normalizeKey(relKey));
+  const key = appendHashSuffix(normalizeStorageKey(relKey));
 
   // 1. Get presigned PUT URL from Forge
   const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
@@ -77,13 +80,13 @@ export async function storagePut(
 }
 
 export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
-  const key = normalizeKey(relKey);
+  const key = normalizeStorageKey(relKey);
   return { key, url: `/manus-storage/${key}` };
 }
 
 export async function storageGetSignedUrl(relKey: string): Promise<string> {
   const { forgeUrl, forgeKey } = getForgeConfig();
-  const key = normalizeKey(relKey);
+  const key = normalizeStorageKey(relKey);
 
   const getUrl = new URL("v1/storage/presign/get", forgeUrl + "/");
   getUrl.searchParams.set("path", key);

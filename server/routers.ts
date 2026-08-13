@@ -892,7 +892,7 @@ Diretrizes:
           direcao: "enviada",
           tipo: input.tipo,
           conteudo: input.legenda ?? "",
-          metadados: JSON.stringify({ url, legenda: input.legenda, fileName: input.fileName }),
+          metadados: JSON.stringify({ url, storageKey: key, legenda: input.legenda, fileName: input.fileName }),
           enviadaPorUserId: ctx.user.id,
           enviadaPorAtendenteId: ctx.atendente?.id ?? null,
           zapiMessageId: zapiMessageId ?? null,

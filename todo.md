@@ -188,4 +188,7 @@
 - [x] Sincronizar o GitHub após a publicação do commit c8f8856
 - [x] Corrigir o envio de documentos e imagens anexados pelo Inbox WhatsApp
 - [x] Publicar a correção de envio de anexos em Base64 pela Z-API
-- [ ] Sincronizar o GitHub após a publicação da correção de anexos
+- [x] Sincronizar o GitHub após a publicação da correção de anexos
+- [x] Exibir imagens e documentos anexados corretamente no histórico do Inbox
+- [x] Publicar o ajuste visual de anexos do Inbox
+- [ ] Sincronizar o GitHub após a publicação do ajuste visual

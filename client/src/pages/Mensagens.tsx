@@ -19,11 +19,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
   Pencil, Check, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
-  UserPlus, SmilePlus, Users, Download, ZoomIn,
+  UserPlus, SmilePlus, Users, Download, ZoomIn, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { telefonesCorrespondem } from "@shared/telefone";
+import { getInboxAttachmentUrl, type InboxAttachmentMetadata } from "@shared/inboxMedia";
 import { formatPhone, diasDesde } from "@/lib/utils";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { ScriptPicker } from "@/components/ScriptPicker";
@@ -51,7 +52,7 @@ function statusLabel(status: string) {
   return "Aberta";
 }
 
-function parseMetadados(metadados: string | null): { url?: string; legenda?: string; fileName?: string } {
+function parseMetadados(metadados: string | null): InboxAttachmentMetadata {
   if (!metadados) return {};
   try {
     return JSON.parse(metadados);
@@ -107,6 +108,7 @@ export default function Mensagens() {
   const [novoClienteTelefone, setNovoClienteTelefone] = useState("");
   const [scriptPickerOpen, setScriptPickerOpen] = useState(false);
   const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
+  const [midiasComFalha, setMidiasComFalha] = useState<Set<number>>(() => new Set());
   // Autocomplete de @menção em grupo — mentionInicio é o índice do "@" no
   // texto (null = não está em meio a uma menção); mentionados guarda os
   // telefones já inseridos nesta digitação, pra mandar no campo
@@ -429,6 +431,15 @@ export default function Mensagens() {
     setAnexoPendente(null);
   }
 
+  function marcarMidiaComFalha(mensagemId: number) {
+    setMidiasComFalha((atuais) => {
+      if (atuais.has(mensagemId)) return atuais;
+      const proximas = new Set(atuais);
+      proximas.add(mensagemId);
+      return proximas;
+    });
+  }
+
   function abrirEdicaoNome() {
     setNomeEditavel(conversaSelecionada?.nomeContato || "");
     setEditandoNome(true);
@@ -689,6 +700,8 @@ export default function Mensagens() {
                 <div className="space-y-3">
                   {mensagensFiltradas.map((m) => {
                     const meta = parseMetadados(m.metadados);
+                    const attachmentUrl = getInboxAttachmentUrl(meta);
+                    const imagemComFalha = midiasComFalha.has(m.id);
                     return (
                     <div key={m.id} className={`flex ${m.direcao === "enviada" ? "justify-end" : "justify-start"}`}>
                       <div
@@ -702,23 +715,38 @@ export default function Mensagens() {
                         {m.tipo === "texto" && <p className="whitespace-pre-wrap">{m.conteudo}</p>}
                         {m.tipo === "imagem" && (
                           <div className="space-y-1">
-                            {meta.url ? (
+                            {attachmentUrl && !imagemComFalha ? (
                               <img
-                                src={meta.url}
+                                src={attachmentUrl}
                                 alt={meta.legenda || "imagem"}
-                                className="rounded max-w-full max-h-64 object-contain cursor-pointer hover:opacity-90 transition-opacity"
-                                onClick={() => setPreviewModalUrl(meta.url ?? null)}
+                                className="rounded-md max-w-full max-h-64 min-w-40 bg-black/10 object-contain cursor-pointer hover:opacity-90 transition-opacity"
+                                onClick={() => setPreviewModalUrl(attachmentUrl)}
+                                onError={() => marcarMidiaComFalha(m.id)}
                               />
                             ) : (
-                              <span className="text-xs opacity-70">[imagem indisponível]</span>
+                              <a
+                                href={attachmentUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex min-w-52 items-center gap-2 rounded-md bg-black/10 px-2.5 py-2 text-left transition-colors hover:bg-black/20"
+                              >
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-background/20">
+                                  <FileText className="h-4 w-4" />
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-xs font-medium">{meta.fileName || "Imagem anexada"}</span>
+                                  <span className="block text-[10px] opacity-70">Imagem anexada</span>
+                                </span>
+                                <Download className="h-3.5 w-3.5 shrink-0 opacity-80" />
+                              </a>
                             )}
                             {(meta.legenda || m.conteudo) && <p>{meta.legenda || m.conteudo}</p>}
                           </div>
                         )}
                         {m.tipo === "audio" && (
                           <div className="space-y-1">
-                            {meta.url ? (
-                              <audio controls src={meta.url} className="max-w-full h-9" />
+                            {attachmentUrl ? (
+                              <audio controls src={attachmentUrl} className="max-w-full h-9" />
                             ) : (
                               <span className="text-xs opacity-70">[áudio indisponível]</span>
                             )}
@@ -726,9 +754,22 @@ export default function Mensagens() {
                           </div>
                         )}
                         {m.tipo === "documento" && (
-                          meta.url ? (
-                            <a href={meta.url} target="_blank" rel="noreferrer" className="text-xs underline opacity-90">
-                              {meta.fileName || "documento"}
+                          attachmentUrl ? (
+                            <a
+                              href={attachmentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex min-w-52 items-center gap-2 rounded-md bg-black/10 px-2.5 py-2 text-left transition-colors hover:bg-black/20"
+                              title="Abrir documento"
+                            >
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-background/20">
+                                <FileText className="h-4 w-4" />
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-xs font-medium">{meta.fileName || "Documento"}</span>
+                                <span className="block text-[10px] opacity-70">Documento anexado</span>
+                              </span>
+                              <Download className="h-3.5 w-3.5 shrink-0 opacity-80" />
                             </a>
                           ) : (
                             <span className="text-xs opacity-70">[documento indisponível]</span>
