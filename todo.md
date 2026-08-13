@@ -158,4 +158,7 @@
 - [x] Sincronizar a última versão do GitHub, validar e publicar
 - [x] Salvar o checkpoint do commit 448cacf com controle de acesso por unidade
 - [x] Confirmar no checkpoint a migração aplicada e os 37 testes aprovados
-- [ ] Sincronizar o GitHub após a publicação
+- [x] Sincronizar o GitHub após a publicação
+- [x] Sincronizar a última versão do GitHub, validar e publicar
+- [x] Publicar o checkpoint correspondente ao commit 3c71abf
+- [ ] Sincronizar o GitHub após a publicação do commit 3c71abf
