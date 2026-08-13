@@ -176,4 +176,7 @@
 - [x] Baixar a última versão do GitHub preservando o diagnóstico pendente
 - [x] Sincronizar a última versão do GitHub, validar e publicar preservando o diagnóstico pendente
 - [x] Publicar o checkpoint correspondente ao commit 3d4a999
-- [ ] Sincronizar o GitHub após a publicação do commit 3d4a999
+- [x] Sincronizar o GitHub após a publicação do commit 3d4a999
+- [x] Verificar e sincronizar a última versão do GitHub preservando o diagnóstico pendente
+- [x] Publicar o checkpoint correspondente ao commit 4a5d835
+- [ ] Sincronizar o GitHub após a publicação do commit 4a5d835
