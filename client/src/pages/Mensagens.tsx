@@ -19,7 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
   Pencil, Check, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
-  UserPlus, SmilePlus, Users,
+  UserPlus, SmilePlus, Users, Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -106,6 +106,7 @@ export default function Mensagens() {
   const [novoClienteNome, setNovoClienteNome] = useState("");
   const [novoClienteTelefone, setNovoClienteTelefone] = useState("");
   const [scriptPickerOpen, setScriptPickerOpen] = useState(false);
+  const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
@@ -571,7 +572,12 @@ export default function Mensagens() {
                         {m.tipo === "imagem" && (
                           <div className="space-y-1">
                             {meta.url ? (
-                              <img src={meta.url} alt={meta.legenda || "imagem"} className="rounded max-w-full max-h-64 object-contain" />
+                              <img
+                                src={meta.url}
+                                alt={meta.legenda || "imagem"}
+                                className="rounded max-w-full max-h-64 object-contain cursor-pointer hover:opacity-90 transition-opacity"
+                                onClick={() => setPreviewModalUrl(meta.url ?? null)}
+                              />
                             ) : (
                               <span className="text-xs opacity-70">[imagem indisponível]</span>
                             )}
@@ -682,7 +688,11 @@ export default function Mensagens() {
             <div className="flex-1 min-h-0 overflow-y-auto">
               <div className="p-4 space-y-4">
                 <div className="text-center">
-                  <Avatar className="h-14 w-14 mx-auto mb-2">
+                  <Avatar
+                    className={`h-14 w-14 mx-auto mb-2 ${conversaSelecionada?.fotoUrl ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
+                    onClick={() => conversaSelecionada?.fotoUrl && setPreviewModalUrl(conversaSelecionada.fotoUrl)}
+                    title={conversaSelecionada?.fotoUrl ? "Ver foto ampliada" : undefined}
+                  >
                     {conversaSelecionada?.isGrupo === "true" ? (
                       <AvatarFallback className="bg-muted"><Users className="h-6 w-6" /></AvatarFallback>
                     ) : (
@@ -882,6 +892,34 @@ export default function Mensagens() {
           )}
         </div>
       </Card>
+
+      {/* Modal de preview ampliado (imagens do chat e foto do contato) */}
+      {previewModalUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"
+          onClick={() => setPreviewModalUrl(null)}
+        >
+          <div className="relative max-w-[90vw] max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <img src={previewModalUrl} alt="Preview" className="max-w-[90vw] max-h-[85vh] rounded-lg object-contain shadow-2xl" />
+            <a
+              href={previewModalUrl}
+              download
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Baixar imagem"
+              className="absolute top-2 right-12 bg-black/60 hover:bg-black/80 text-white rounded-full w-8 h-8 flex items-center justify-center transition-colors"
+            >
+              <Download size={16} />
+            </a>
+            <button
+              className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white rounded-full w-8 h-8 flex items-center justify-center transition-colors"
+              onClick={() => setPreviewModalUrl(null)}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Kill switch */}
       <Dialog open={modalKillSwitch} onOpenChange={setModalKillSwitch}>
