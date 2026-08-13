@@ -8,6 +8,7 @@ import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, extrairPadraoContraparte, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
+import { storageGetSignedUrl } from "./storage";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -322,6 +323,30 @@ export async function mensageriaEstaAtiva(): Promise<boolean> {
 // ===== Inbox (Mensagens) =====
 
 /**
+ * Troca fotoUrl (caminho relativo /manus-storage/{key}) por uma URL
+ * absoluta assinada do S3, mutando as linhas in-place. O domínio próprio
+ * (buddhaspa-4g2wufs4.manus.space) não implementa de forma confiável o
+ * redirecionamento 307 de /manus-storage/* — servir o caminho relativo
+ * direto quebra a imagem. URL assinada vai direto pro S3, contornando
+ * esse proxy. O valor salvo no banco continua sendo o caminho
+ * permanente; a resolução é refeita a cada leitura (mesma estratégia do
+ * mobai-crm).
+ */
+async function resolverFotosUrlAssinadas(rows: Array<{ fotoUrl?: string | null }>): Promise<void> {
+  const comFoto = rows.filter((r) => r.fotoUrl && r.fotoUrl.startsWith("/manus-storage/"));
+  if (comFoto.length === 0) return;
+  await Promise.all(
+    comFoto.map(async (row) => {
+      try {
+        row.fotoUrl = await storageGetSignedUrl(row.fotoUrl!.replace("/manus-storage/", ""));
+      } catch (e) {
+        console.error("[Inbox] Falha ao assinar fotoUrl:", e);
+      }
+    })
+  );
+}
+
+/**
  * LEFT JOIN com clientes (mesmo espírito do mobai-crm): o Inbox não
  * deve mostrar só o que o WhatsApp manda como nome — quando a conversa
  * já está vinculada a um cliente Belle (clienteId), o nome do cadastro
@@ -339,8 +364,9 @@ export async function listInboxConversas(filtros: { unidadeId?: number; canal?: 
     .from(inboxConversas)
     .leftJoin(clientes, eq(inboxConversas.clienteId, clientes.id))
     .orderBy(desc(inboxConversas.ultimaMensagemEm));
-  if (condicoes.length === 0) return query;
-  return query.where(and(...condicoes));
+  const rows = condicoes.length === 0 ? await query : await query.where(and(...condicoes));
+  await resolverFotosUrlAssinadas(rows);
+  return rows;
 }
 
 export async function getInboxConversaById(id: number) {
@@ -349,6 +375,7 @@ export async function getInboxConversaById(id: number) {
   const result = await db.select().from(inboxConversas).where(eq(inboxConversas.id, id)).limit(1);
   const conversa = result[0];
   if (!conversa) return undefined;
+  await resolverFotosUrlAssinadas([conversa]);
 
   // Linka com Clientes agora, se ainda não tinha (conversa criada antes
   // desse recurso, ou o match não bateu na hora da mensagem original).
