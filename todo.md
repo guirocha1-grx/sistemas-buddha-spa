@@ -209,4 +209,5 @@
 - [x] Criar sugestão de mensagem por IA no Inbox com aceite ou descarte
 - [x] Criar área editável de prompt de mensagem por IA em Configurações
 - [x] Publicar a sugestão de mensagem por IA e a configuração de prompt
-- [ ] Sincronizar o GitHub após publicar a sugestão de IA
+- [x] Sincronizar o GitHub após publicar a sugestão de IA
+- [x] Verificar e enviar ao GitHub qualquer alteração local pendente
