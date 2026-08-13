@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import { MODULOS, type ModuloChave } from "@shared/modulos";
 import { SUBSECOES } from "@shared/subsecoes";
@@ -25,6 +26,7 @@ import { toast } from "sonner";
 
 export default function Usuarios() {
   const { user } = useAuth();
+  const { unidades } = useUnidade();
   const utils = trpc.useUtils();
   const { data: usuarios, isLoading } = trpc.permissoes.listUsuarios.useQuery(undefined, { enabled: user?.role === "admin" });
 
@@ -32,6 +34,12 @@ export default function Usuarios() {
   const [restringir, setRestringir] = useState(false);
   const [selecionados, setSelecionados] = useState<Set<ModuloChave>>(new Set());
   const [selecionadosSub, setSelecionadosSub] = useState<Set<string>>(new Set());
+  // Eixo independente de módulo — "quais unidades essa conta vê", não
+  // aninhado dentro de "restringir" acima (ver Configuracoes/pergunta
+  // do usuário: sócia com acesso total a módulos, mas só nas 2
+  // unidades da empresa).
+  const [restringirUnidade, setRestringirUnidade] = useState(false);
+  const [unidadesSelecionadas, setUnidadesSelecionadas] = useState<Set<number>>(new Set());
   const [clonarDe, setClonarDe] = useState<string>("");
   const [convidarAberto, setConvidarAberto] = useState(false);
   const [novoEmail, setNovoEmail] = useState("");
@@ -47,24 +55,20 @@ export default function Usuarios() {
       setRestringir(permissoesQuery.data.restrito);
       setSelecionados(new Set(permissoesQuery.data.modulos as ModuloChave[]));
       setSelecionadosSub(new Set(permissoesQuery.data.subsecoes ?? []));
+      setRestringirUnidade(permissoesQuery.data.unidadesRestrito);
+      setUnidadesSelecionadas(new Set(permissoesQuery.data.unidadeIds));
     }
   }, [permissoesQuery.data]);
 
   const salvarMutation = trpc.permissoes.salvar.useMutation({
-    onSuccess: () => {
-      toast.success("Permissões salvas.");
-      utils.permissoes.listUsuarios.invalidate();
-      setEditandoId(null);
-    },
     onError: (e) => toast.error(e.message),
   });
 
   const removerRestricaoMutation = trpc.permissoes.removerRestricao.useMutation({
-    onSuccess: () => {
-      toast.success("Restrição removida — acesso total.");
-      utils.permissoes.listUsuarios.invalidate();
-      setEditandoId(null);
-    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const salvarUnidadesMutation = trpc.permissoes.salvarUnidades.useMutation({
     onError: (e) => toast.error(e.message),
   });
 
@@ -127,6 +131,15 @@ export default function Usuarios() {
     });
   }
 
+  function toggleUnidade(id: number) {
+    setUnidadesSelecionadas((prev) => {
+      const novo = new Set(prev);
+      if (novo.has(id)) novo.delete(id);
+      else novo.add(id);
+      return novo;
+    });
+  }
+
   async function handleClonar(sourceIdStr: string) {
     setClonarDe(sourceIdStr);
     const sourceId = Number(sourceIdStr);
@@ -135,18 +148,28 @@ export default function Usuarios() {
     setRestringir(dados.restrito);
     setSelecionados(new Set(dados.modulos as ModuloChave[]));
     setSelecionadosSub(new Set(dados.subsecoes ?? []));
+    setRestringirUnidade(dados.unidadesRestrito);
+    setUnidadesSelecionadas(new Set(dados.unidadeIds));
   }
 
-  function handleSalvar() {
+  async function handleSalvar() {
     if (!editandoId) return;
-    if (restringir) {
-      salvarMutation.mutate({ userId: editandoId, modulos: Array.from(selecionados), subsecoes: Array.from(selecionadosSub) });
-    } else {
-      removerRestricaoMutation.mutate({ userId: editandoId });
+    try {
+      if (restringir) {
+        await salvarMutation.mutateAsync({ userId: editandoId, modulos: Array.from(selecionados), subsecoes: Array.from(selecionadosSub) });
+      } else {
+        await removerRestricaoMutation.mutateAsync({ userId: editandoId });
+      }
+      await salvarUnidadesMutation.mutateAsync({ userId: editandoId, restrito: restringirUnidade, unidadeIds: Array.from(unidadesSelecionadas) });
+      toast.success("Permissões salvas.");
+      utils.permissoes.listUsuarios.invalidate();
+      setEditandoId(null);
+    } catch {
+      // erro já reportado via onError de cada mutation
     }
   }
 
-  const salvando = salvarMutation.isPending || removerRestricaoMutation.isPending;
+  const salvando = salvarMutation.isPending || removerRestricaoMutation.isPending || salvarUnidadesMutation.isPending;
 
   return (
     <div className="space-y-6">
@@ -156,8 +179,8 @@ export default function Usuarios() {
             Usuários
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Controle de acesso por módulo — por padrão toda conta vê tudo; restrinja individualmente quando
-            precisar. Convide por e-mail pra já deixar as permissões prontas antes do primeiro login.
+            Controle de acesso por módulo e por unidade — por padrão toda conta vê tudo; restrinja individualmente
+            quando precisar. Convide por e-mail pra já deixar as permissões prontas antes do primeiro login.
           </p>
         </div>
         <Button size="sm" onClick={() => setConvidarAberto(true)}>
@@ -251,7 +274,7 @@ export default function Usuarios() {
           <DialogHeader>
             <DialogTitle>Permissões de {usuarioEditando?.name || usuarioEditando?.email}</DialogTitle>
             <DialogDescription>
-              Escolha exatamente quais módulos essa conta pode acessar.
+              Escolha exatamente quais módulos e unidades essa conta pode acessar.
             </DialogDescription>
           </DialogHeader>
 
@@ -273,6 +296,31 @@ export default function Usuarios() {
                 </div>
                 <Switch checked={restringir} onCheckedChange={setRestringir} />
               </div>
+
+              <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                <div>
+                  <Label className="text-sm">Restringir por unidade</Label>
+                  <p className="text-xs text-muted-foreground">Desligado = acesso a todas as unidades.</p>
+                </div>
+                <Switch checked={restringirUnidade} onCheckedChange={setRestringirUnidade} />
+              </div>
+
+              {restringirUnidade && (
+                <div className="grid grid-cols-2 gap-2">
+                  {unidades.map((u) => (
+                    <label
+                      key={u.id}
+                      className="flex items-center gap-2 text-sm rounded-lg border px-3 py-2 cursor-pointer hover:bg-accent"
+                    >
+                      <Checkbox
+                        checked={unidadesSelecionadas.has(u.id)}
+                        onCheckedChange={() => toggleUnidade(u.id)}
+                      />
+                      {u.nome}
+                    </label>
+                  ))}
+                </div>
+              )}
 
               {restringir && (
                 <>

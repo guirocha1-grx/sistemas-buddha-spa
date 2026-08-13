@@ -17,6 +17,12 @@ export const users = mysqlTable("users", {
   // permissoesModulo (pode ser zero — bloqueado por completo, sem
   // precisar excluir a conta). admin nunca é afetado por isso.
   permissoesCustomizadas: boolean("permissoesCustomizadas").default(false).notNull(),
+  // Mesma ideia de permissoesCustomizadas, mas pro eixo "quais
+  // unidades essa conta vê" — eixo independente do módulo/sub-seção
+  // acima (ex.: sócia com acesso total a módulos, mas só nas 2
+  // unidades; recepção de 1 unidade só, mas sem restrição de módulo).
+  // false (padrão) = vê todas as unidades, igual sempre foi.
+  unidadesCustomizadas: boolean("unidadesCustomizadas").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -63,6 +69,25 @@ export const permissoesSubsecao = mysqlTable("permissoes_subsecao", {
 
 export type PermissaoModulo = typeof permissoesModulo.$inferSelect;
 export type InsertPermissaoModulo = typeof permissoesModulo.$inferInsert;
+
+/**
+ * Unidades liberadas pra uma conta com unidadesCustomizadas=true (ver
+ * users acima) — mesmo molde de permissoesModulo, um nível ortogonal
+ * (não aninhado): não depende de permissoesCustomizadas/módulo estar
+ * ligado. `unidadeId` é FK "solta" (sem constraint) pro id real de
+ * `unidades`, mesmo padrão de fk-sem-constraint já usado no projeto.
+ */
+export const permissoesUnidade = mysqlTable("permissoes_unidade", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  unidadeId: int("unidadeId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  userIdx: index("permissoes_unidade_user_idx").on(table.userId),
+}));
+
+export type PermissaoUnidade = typeof permissoesUnidade.$inferSelect;
+export type InsertPermissaoUnidade = typeof permissoesUnidade.$inferInsert;
 
 /**
  * Unidades do Buddha Spa — Shopping Santa Úrsula e Ribeirão Shopping.

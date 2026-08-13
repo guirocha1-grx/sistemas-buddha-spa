@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem, type InsertScript } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem, type InsertScript } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import { normalizarTelefone } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
@@ -173,6 +173,24 @@ export async function getUnidades() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(unidades);
+}
+
+/**
+ * Mesma lista de getUnidades, mas já filtrada pelas unidades que essa
+ * conta pode ver (ver getUnidadesPermitidasUsuario, controle de acesso
+ * por unidade). Admin nunca é afetado — mesma regra do controle por
+ * módulo. É o ÚNICO ponto de filtro: UnidadeSelector, Dashboard,
+ * Configurações etc. todos herdam a lista já filtrada porque todos
+ * consomem unidades.list (que chama esta função), não getUnidades
+ * direto.
+ */
+export async function getUnidadesParaUsuario(userId: number, role: "user" | "admin") {
+  const todas = await getUnidades();
+  if (role === "admin") return todas;
+  const { restrito, unidadeIds } = await getUnidadesPermitidasUsuario(userId);
+  if (!restrito || unidadeIds.length === 0) return todas;
+  const permitidas = new Set(unidadeIds);
+  return todas.filter((u) => permitidas.has(u.id));
 }
 
 export async function getUnidadeById(id: number) {
@@ -2494,6 +2512,41 @@ export async function removerRestricaoUsuario(userId: number) {
   await db.update(users).set({ permissoesCustomizadas: false }).where(eq(users.id, userId));
   await db.delete(permissoesModulo).where(eq(permissoesModulo.userId, userId));
   await db.delete(permissoesSubsecao).where(eq(permissoesSubsecao.userId, userId));
+}
+
+// ===== Controle de acesso por unidade (eixo independente do módulo acima) =====
+
+export interface UnidadesPermitidas {
+  restrito: boolean;
+  unidadeIds: number[];
+}
+
+/**
+ * `restrito: false` (unidadesCustomizadas=false) = vê todas as
+ * unidades, igual sempre foi. `restrito: true` com `unidadeIds: []` é
+ * bloqueio total deliberado, mesma convenção de getPermissoesUsuario.
+ */
+export async function getUnidadesPermitidasUsuario(userId: number): Promise<UnidadesPermitidas> {
+  const db = await getDb();
+  if (!db) return { restrito: false, unidadeIds: [] };
+
+  const userRows = await db.select({ unidadesCustomizadas: users.unidadesCustomizadas })
+    .from(users).where(eq(users.id, userId)).limit(1);
+  if (!userRows[0]?.unidadesCustomizadas) return { restrito: false, unidadeIds: [] };
+
+  const rows = await db.select({ unidadeId: permissoesUnidade.unidadeId }).from(permissoesUnidade).where(eq(permissoesUnidade.userId, userId));
+  return { restrito: true, unidadeIds: rows.map((r) => r.unidadeId) };
+}
+
+/** Substitui o conjunto inteiro de unidades liberadas pra essa conta (pode ser vazio — bloqueio total). */
+export async function salvarUnidadesUsuario(userId: number, restrito: boolean, unidadeIds: number[]) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ unidadesCustomizadas: restrito }).where(eq(users.id, userId));
+  await db.delete(permissoesUnidade).where(eq(permissoesUnidade.userId, userId));
+  if (restrito && unidadeIds.length > 0) {
+    await db.insert(permissoesUnidade).values(unidadeIds.map((unidadeId) => ({ userId, unidadeId })));
+  }
 }
 
 // ===== Atendentes (identidade por PIN — ver server/atendenteAuth.ts) =====

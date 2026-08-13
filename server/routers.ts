@@ -72,8 +72,12 @@ export const appRouter = router({
 
   // ===== Unidades =====
   unidades: router({
-    list: protectedProcedure.query(async () => {
-      return db.getUnidades();
+    // Filtrado pelo controle de acesso por unidade (ver Usuários →
+    // permissões) — único ponto de filtro: todo o resto da UI
+    // (UnidadeSelector, Dashboard, Configurações etc.) consome esta
+    // query via useUnidade(), então herda o filtro automaticamente.
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return db.getUnidadesParaUsuario(ctx.user.id, ctx.user.role);
     }),
     get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
       return db.getUnidadeById(input.id);
@@ -2676,7 +2680,11 @@ Diretrizes:
     }),
 
     obter: adminProcedure.input(z.object({ userId: z.number() })).query(async ({ input }) => {
-      return db.getPermissoesUsuario(input.userId);
+      const [permissoes, unidades] = await Promise.all([
+        db.getPermissoesUsuario(input.userId),
+        db.getUnidadesPermitidasUsuario(input.userId),
+      ]);
+      return { ...permissoes, unidadesRestrito: unidades.restrito, unidadeIds: unidades.unidadeIds };
     }),
 
     salvar: adminProcedure.input(z.object({
@@ -2690,6 +2698,17 @@ Diretrizes:
 
     removerRestricao: adminProcedure.input(z.object({ userId: z.number() })).mutation(async ({ input }) => {
       await db.removerRestricaoUsuario(input.userId);
+      return { success: true };
+    }),
+
+    // Eixo independente de módulo/sub-seção — ver drizzle/schema.ts
+    // users.unidadesCustomizadas.
+    salvarUnidades: adminProcedure.input(z.object({
+      userId: z.number(),
+      restrito: z.boolean(),
+      unidadeIds: z.array(z.number()),
+    })).mutation(async ({ input }) => {
+      await db.salvarUnidadesUsuario(input.userId, input.restrito, input.unidadeIds);
       return { success: true };
     }),
   }),
