@@ -36,12 +36,15 @@ import GlobalSyncCenter from "./GlobalSyncCenter";
 import type { ModuloChave } from "@shared/modulos";
 
 // `modulo` liga cada item ao controle de acesso (shared/modulos.ts) —
-// item sem `modulo` fica sempre visível (Dashboard, a página de
-// pouso). "Config. Inbox" usa o mesmo módulo de "Mensagens": as duas
-// telas mexem com o mesmo backend (conexão/atendimento WhatsApp), não
-// faz sentido liberar uma sem a outra.
+// item sem `modulo` fica sempre visível. "Config. Inbox" usa o mesmo
+// módulo de "Mensagens": as duas telas mexem com o mesmo backend
+// (conexão/atendimento WhatsApp), não faz sentido liberar uma sem a
+// outra. "Dashboard" também é opt-in desde 2026-08-13 (antes era
+// sempre visível por ser a página de pouso) — conta restrita sem
+// "dashboard" marcado é redirecionada pro primeiro módulo liberado ao
+// cair em "/", ver o useEffect logo abaixo em DashboardLayoutContent.
 const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; modulo?: ModuloChave; adminOnly?: boolean; children?: { label: string; path: string; subsecao?: string }[] }[] = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  { icon: LayoutDashboard, label: "Dashboard", path: "/", modulo: "dashboard" },
   { icon: Users, label: "Clientes", path: "/clientes", modulo: "clientes" },
   { icon: KanbanSquare, label: "Reativação", path: "/reativacao", modulo: "reativacao" },
   { icon: Calendar, label: "Agenda", path: "/agenda", modulo: "agenda" },
@@ -184,12 +187,30 @@ function DashboardLayoutContent({
     onSuccess: () => utils.atendentes.atual.invalidate(),
   });
   const { data: minhasPermissoes } = trpc.permissoes.minhas.useQuery();
+  // Enquanto minhasPermissoes ainda carrega, assume liberado (mesmo
+  // comportamento "não decide nada ainda" do filtro de menu abaixo) —
+  // evita um flash de redirect antes da resposta chegar.
+  const podeVerDashboard = user?.role === "admin" || !minhasPermissoes?.restrito || minhasPermissoes.modulos.includes("dashboard");
 
   useEffect(() => {
     if (isCollapsed) {
       setIsResizing(false);
     }
   }, [isCollapsed]);
+
+  // Conta restrita sem "dashboard" liberado não pode ficar parada em
+  // "/" (página de pouso padrão no login) — manda pro primeiro módulo
+  // que ela realmente tem acesso.
+  useEffect(() => {
+    if (location !== "/" || podeVerDashboard) return;
+    const primeiroLiberado = menuItems.find((item) => {
+      if (item.path === "/") return false;
+      if (item.adminOnly && user?.role !== "admin") return false;
+      if (item.modulo && user?.role !== "admin" && minhasPermissoes?.restrito && !minhasPermissoes.modulos.includes(item.modulo)) return false;
+      return true;
+    });
+    if (primeiroLiberado) setLocation(primeiroLiberado.path);
+  }, [location, podeVerDashboard, minhasPermissoes, user, setLocation]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {

@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -136,6 +137,7 @@ function SortTh({ col, label, orderBy, orderDir, onSort, className }: {
 }
 
 export default function Clientes() {
+  const { user } = useAuth();
   const { unidadeSelecionada } = useUnidade();
   const [, setLocation] = useLocation();
   const [searchValue, setSearchValue] = useState("");
@@ -204,7 +206,11 @@ export default function Clientes() {
         <UnidadeSelector />
       </div>
 
-      <ImportarClientesCard />
+      {/* Importar planilha é ação de back-office (popula a base das 2
+          unidades de uma vez) — os badges também expõem contagem da
+          outra unidade, que uma conta restrita a 1 unidade não deveria
+          ver. Só admin. */}
+      {user?.role === "admin" && <ImportarClientesCard />}
 
       {/* Search bar */}
       <div className="relative max-w-md">
