@@ -194,4 +194,7 @@
 - [x] Sincronizar o GitHub após a publicação do ajuste visual
 - [x] Exibir imagens anexadas abertas dentro da conversa do Inbox, como no Mobai CRM
 - [x] Publicar a prévia aberta de imagens no Inbox
-- [ ] Sincronizar o GitHub após a publicação da prévia aberta
+- [x] Sincronizar o GitHub após a publicação da prévia aberta
+- [x] Corrigir a falha persistente que mantém imagens anexadas como cartão no Inbox
+- [x] Publicar a rota estável de prévia de imagens no Inbox
+- [ ] Sincronizar o GitHub após publicar a rota estável de prévia

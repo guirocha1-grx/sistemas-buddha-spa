@@ -7,7 +7,8 @@ import { mysqlTable, int, varchar, text, timestamp, boolean } from "drizzle-orm/
 import { eq } from "drizzle-orm";
 import { sendTelegramParaRecepcao } from "./telegramApi";
 import { zapiApi } from "./zapiApi";
-import { storagePut } from "./storage";
+import { storagePut, storageGetSignedUrl } from "./storage";
+import { pipeInboxMedia } from "./inboxMediaProxy";
 
 // Tabela deploy_pending para comunicação entre webhook (sandbox) e cron (produção)
 const deployPending = mysqlTable("deploy_pending", {
@@ -29,10 +30,23 @@ async function getDb() {
  * Cloud API da Meta chamam direto, sem tRPC.
  */
 export function registerWhatsappWebhookRoutes(app: Express) {
+  registerInboxMediaRoute(app);
   registerZapiWebhook(app);
   registerBuddhaMktWebhook(app);
   registerDeployWebhook(app);
   registerTelegramTestRoute(app);
+}
+
+function registerInboxMediaRoute(app: Express) {
+  app.get("/api/inbox-media/*", async (req: Request, res: Response) => {
+    const key = (req.params as Record<string, string>)[0];
+    try {
+      await pipeInboxMedia(key, res, storageGetSignedUrl);
+    } catch (error) {
+      console.error("[InboxMediaProxy] failed:", error);
+      if (!res.headersSent) res.status(502).send("Inbox media unavailable");
+    }
+  });
 }
 
 /**

@@ -5,7 +5,7 @@ export interface InboxAttachmentMetadata {
   fileName?: string;
 }
 
-function storageProxyUrl(key: string): string {
+function inboxMediaUrl(key: string): string {
   const encodedKey = key
     .replace(/^\/+/, "")
     .split("/")
@@ -19,7 +19,7 @@ function storageProxyUrl(key: string): string {
       }
     })
     .join("/");
-  return `/manus-storage/${encodedKey}`;
+  return `/api/inbox-media/${encodedKey}`;
 }
 
 /**
@@ -29,13 +29,13 @@ function storageProxyUrl(key: string): string {
  * quebradas quando a assinatura gravada no histórico já não é reutilizável.
  */
 export function getInboxAttachmentUrl(meta: InboxAttachmentMetadata): string | undefined {
-  if (meta.storageKey) return storageProxyUrl(meta.storageKey);
+  if (meta.storageKey) return inboxMediaUrl(meta.storageKey);
   if (!meta.url) return undefined;
 
   try {
     const path = new URL(meta.url).pathname;
     const inboxIndex = path.indexOf("/inbox/");
-    if (inboxIndex >= 0) return storageProxyUrl(path.slice(inboxIndex + 1));
+    if (inboxIndex >= 0) return inboxMediaUrl(path.slice(inboxIndex + 1));
   } catch {
     // URLs relativas e URLs legadas que não seguem o formato do CloudFront
     // continuam disponíveis pelo valor que já estava no histórico.
