@@ -142,3 +142,5 @@
 - [x] Publicar o checkpoint correspondente ao merge do commit 190f338
 - [x] Puxar a última versão do GitHub, verificar migrações e publicar
 - [x] Publicar o checkpoint correspondente ao merge do commit 4bcdb47
+- [x] Puxar o commit 446fa53, verificar migrações e publicar
+- [x] Publicar o checkpoint correspondente ao merge do commit 446fa53
