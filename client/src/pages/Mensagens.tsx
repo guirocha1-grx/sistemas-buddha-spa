@@ -19,7 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
   Pencil, Check, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
-  UserPlus, SmilePlus, Users, Download,
+  UserPlus, SmilePlus, Users, Download, ZoomIn,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -377,16 +377,29 @@ export default function Mensagens() {
   // Anexo fica "em espera" pra dar chance de escrever legenda (imagem)
   // antes de enviar, igual mobai-crm — não sobe/envia no instante em
   // que o arquivo é escolhido.
-  function handleAnexo(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  function stageFile(file: File) {
     const tipo = file.type.startsWith("image/") ? "imagem" : file.type.startsWith("audio/") ? "audio" : "documento";
     const previewUrl = tipo === "imagem" ? URL.createObjectURL(file) : undefined;
     setAnexoPendente((prev) => {
       if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
       return { file, tipo, previewUrl, legenda: "" };
     });
+  }
+
+  function handleAnexo(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    stageFile(file);
+  }
+
+  function handlePasteTextarea(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const item = Array.from(e.clipboardData.items).find((i) => i.type.startsWith("image/"));
+    if (!item) return;
+    const file = item.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    stageFile(file);
   }
 
   async function handleEnviarAnexo() {
@@ -730,7 +743,17 @@ export default function Mensagens() {
               {anexoPendente && (
                 <div className="px-3 pt-3 flex items-start gap-2">
                   {anexoPendente.tipo === "imagem" && anexoPendente.previewUrl ? (
-                    <img src={anexoPendente.previewUrl} alt={anexoPendente.file.name} className="h-16 w-16 rounded object-cover shrink-0" />
+                    <button
+                      type="button"
+                      className="relative h-16 w-16 rounded shrink-0 group"
+                      onClick={() => setPreviewModalUrl(anexoPendente.previewUrl!)}
+                      title="Ampliar imagem"
+                    >
+                      <img src={anexoPendente.previewUrl} alt={anexoPendente.file.name} className="h-16 w-16 rounded object-cover" />
+                      <span className="absolute inset-0 rounded bg-black/0 group-hover:bg-black/30 flex items-center justify-center transition-colors">
+                        <ZoomIn className="h-4 w-4 text-white opacity-0 group-hover:opacity-100" />
+                      </span>
+                    </button>
                   ) : (
                     <div className="h-16 w-16 rounded bg-muted flex items-center justify-center shrink-0">
                       {anexoPendente.tipo === "audio" ? <Volume2 className="h-5 w-5 text-muted-foreground" /> : <Paperclip className="h-5 w-5 text-muted-foreground" />}
@@ -815,6 +838,7 @@ export default function Mensagens() {
                     placeholder={ehGrupo ? "Digite uma mensagem... (@ pra mencionar)" : "Digite uma mensagem..."}
                     className="min-h-[60px] max-h-32 resize-none"
                     value={texto}
+                    onPaste={handlePasteTextarea}
                     onChange={(e) => {
                       setTexto(e.target.value);
                       detectarMencao(e.target.value, e.target.selectionStart);

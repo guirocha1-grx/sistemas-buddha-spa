@@ -867,7 +867,7 @@ Diretrizes:
           transcribeAudio({ audioUrl: url, language: "pt" })
             .then((result) => {
               if ("text" in result) {
-                return db.updateInboxMensagemTranscricao(mensagemId, result.text);
+                return db.updateInboxMensagemTranscricao(mensagemId, result.text.trim() || "(sem fala identificada)");
               }
             })
             .catch((error) => console.error("[Inbox] Falha na transcrição do áudio enviado:", error));

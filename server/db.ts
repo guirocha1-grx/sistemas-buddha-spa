@@ -619,13 +619,12 @@ export async function abrirInboxPorCliente(params: { clienteId: number; unidadeI
   const telefone = normalizarTelefone(telefoneOrigem);
   if (telefone.length < 8) throw new Error("Este cliente não possui telefone ou celular válido");
 
-  const semDdi = telefone.replace(/^55/, "");
+  // Mesmas variantes usadas em buscarClientesPorTelefone — sem isso,
+  // cadastro em formato antigo (10 dígitos, sem o "9") não batia com o
+  // WhatsApp (11 dígitos, com "9") e ficava sempre criando conversa nova.
+  const variantes = variantesTelefone(telefone).filter((v) => v.length >= 8);
   const normalizar = (coluna: any) => sql`REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${coluna}, '+', ''), '-', ''), ' ', ''), '(', ''), ')', ''), '.', '')`;
-  const telefoneCondicao = or(
-    sql`${normalizar(inboxConversas.telefone)} = ${telefone}`,
-    sql`${normalizar(inboxConversas.telefone)} = ${semDdi}`,
-    sql`${normalizar(inboxConversas.telefone)} = ${`55${semDdi}`}`,
-  );
+  const telefoneCondicao = or(...variantes.map((v) => sql`${normalizar(inboxConversas.telefone)} = ${v}`));
   const existente = await database.select({ id: inboxConversas.id }).from(inboxConversas)
     .where(and(
       eq(inboxConversas.canal, "zapi"),

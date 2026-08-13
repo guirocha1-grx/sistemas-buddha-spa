@@ -350,7 +350,11 @@ function registerZapiWebhook(app: Express) {
         transcribeAudio({ audioUrl: payload.audio.audioUrl, language: "pt" })
           .then((result) => {
             if ("text" in result) {
-              return db.updateInboxMensagemTranscricao(mensagemId, result.text);
+              // Whisper retorna string vazia pra áudio curto/sem fala — sem
+              // esse fallback o resultado "com sucesso, mas vazio" fica
+              // indistinguível de "ainda não transcreveu" na tela (a UI só
+              // renderiza quando transcricao é truthy).
+              return db.updateInboxMensagemTranscricao(mensagemId, result.text.trim() || "(sem fala identificada)");
             }
           })
           .catch((error) => console.error("[Webhook Z-API] Falha na transcrição:", error));

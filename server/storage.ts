@@ -18,7 +18,12 @@ function getForgeConfig() {
 }
 
 function normalizeKey(relKey: string): string {
-  return relKey.replace(/^\/+/, "");
+  const semBarraInicial = relKey.replace(/^\/+/, "");
+  // Presign do Forge exige path ASCII — remove acentos e troca qualquer
+  // caractere não-ASCII restante (emoji, etc.) por "_".
+  const combiningMarks = new RegExp("[\\u0300-\\u036f]", "g");
+  const semAcentos = semBarraInicial.normalize("NFD").replace(combiningMarks, "");
+  return semAcentos.replace(/[^\x00-\x7F]/g, "_");
 }
 
 function appendHashSuffix(relKey: string): string {
