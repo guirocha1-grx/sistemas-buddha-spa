@@ -260,7 +260,12 @@ export default function Usuarios() {
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className="space-y-4">
+            // key={editandoId} força um remount limpo ao trocar de usuário —
+            // sem isso, o Select de "clonar de" (Radix, renderiza via portal
+            // fora dessa árvore) pode ficar com estado preso de um usuário
+            // pro outro e causar erro de DOM ao tentar remover um nó que o
+            // Radix já tinha removido sozinho (NotFoundError: removeChild).
+            <div key={editandoId} className="space-y-4">
               <div className="flex items-center justify-between rounded-lg border px-3 py-2">
                 <div>
                   <Label className="text-sm">Restringir acesso</Label>

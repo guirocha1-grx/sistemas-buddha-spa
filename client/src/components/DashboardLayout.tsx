@@ -26,7 +26,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { startGoogleLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText, Repeat, Users2 } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText, Repeat, Users2, Loader2 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -407,7 +407,22 @@ function DashboardLayoutContent({
           </div>
         )}
         <main className="flex-1 p-4">
-          {!atendenteLoading && !atendente && user?.role !== "admin" ? <AtendenteGate /> : children}
+          {atendenteLoading && user?.role !== "admin" ? (
+            // Enquanto não sabemos se essa conta já tem atendente selecionado,
+            // não monta a página real (children) — evita montar e desmontar
+            // em seguida algo pesado como o Dashboard (gráfico Recharts) assim
+            // que atendenteLoading resolve pra "sem atendente", troca essa
+            // brusca de árvore que já causou um NotFoundError de removeChild
+            // (ResizeObserver do Recharts atualizando um nó que o React já
+            // tinha removido no unmount).
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : !atendente && user?.role !== "admin" ? (
+            <AtendenteGate />
+          ) : (
+            children
+          )}
         </main>
       </SidebarInset>
       <GlobalSyncCenter />
