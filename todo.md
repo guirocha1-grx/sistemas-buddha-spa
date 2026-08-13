@@ -185,4 +185,7 @@
 - [x] Sincronizar o GitHub após a publicação do commit e073c6a
 - [x] Sincronizar a última versão do GitHub, validar e publicar
 - [x] Publicar o checkpoint correspondente ao commit c8f8856
-- [ ] Sincronizar o GitHub após a publicação do commit c8f8856
+- [x] Sincronizar o GitHub após a publicação do commit c8f8856
+- [x] Corrigir o envio de documentos e imagens anexados pelo Inbox WhatsApp
+- [x] Publicar a correção de envio de anexos em Base64 pela Z-API
+- [ ] Sincronizar o GitHub após a publicação da correção de anexos

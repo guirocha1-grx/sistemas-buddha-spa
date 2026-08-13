@@ -33,7 +33,28 @@ async function zapiRequest<T>(
     throw new Error(`Z-API error ${response.status}: ${errorBody || response.statusText}`);
   }
 
-  return response.json() as Promise<T>;
+  const result = await response.json().catch(() => null) as T | null;
+  // A Z-API documenta messageId/zaapId como confirmação de envio. Uma
+  // resposta 2xx sem nenhum dos dois não pode ser tratada como sucesso:
+  // alguns erros assíncronos chegam nesse formato e antes acabavam
+  // registrados no Inbox como se a mídia tivesse sido entregue.
+  if (!result || typeof result !== "object" || (!("messageId" in result) && !("zaapId" in result))) {
+    throw new Error(`Z-API respondeu sem confirmação de envio: ${JSON.stringify(result)}`);
+  }
+
+  return result;
+}
+
+function toDataUrl(base64: string, contentType: string): string {
+  if (base64.startsWith("data:")) return base64;
+  return `data:${contentType || "application/octet-stream"};base64,${base64}`;
+}
+
+function getDocumentExtension(fileName: string | undefined, contentType: string): string {
+  const byName = fileName?.split(".").pop()?.trim().toLowerCase();
+  if (byName && /^[a-z0-9]{1,12}$/.test(byName)) return byName;
+  if (contentType === "application/pdf") return "pdf";
+  return "bin";
 }
 
 async function zapiGet<T>(
@@ -92,6 +113,27 @@ export const zapiApi = {
     });
   },
 
+  /**
+   * Arquivos escolhidos no computador são enviados em Base64. Isso evita a
+   * busca posterior da Z-API em uma URL assinada do storage, que pode ser
+   * recusada pelo CDN apesar de a Z-API retornar 2xx para a solicitação.
+   */
+  async sendImageBase64(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    base64: string,
+    contentType: string,
+    caption?: string,
+  ): Promise<ZapiSendResult> {
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-image", {
+      phone,
+      image: toDataUrl(base64, contentType),
+      ...(caption ? { caption } : {}),
+    });
+  },
+
   async sendAudio(
     instanceId: string,
     token: string,
@@ -117,6 +159,25 @@ export const zapiApi = {
       phone,
       document: documentUrl,
       ...(fileName ? { fileName } : {}),
+    });
+  },
+
+  async sendDocumentBase64(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    base64: string,
+    contentType: string,
+    fileName?: string,
+    caption?: string,
+  ): Promise<ZapiSendResult> {
+    const extension = getDocumentExtension(fileName, contentType);
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, `/send-document/${extension}`, {
+      phone,
+      document: toDataUrl(base64, contentType),
+      ...(fileName ? { fileName } : {}),
+      ...(caption ? { caption } : {}),
     });
   },
 

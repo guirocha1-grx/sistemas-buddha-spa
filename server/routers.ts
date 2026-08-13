@@ -849,11 +849,28 @@ Diretrizes:
           try {
             let resultado;
             if (input.tipo === "imagem") {
-              resultado = await zapiApi.sendImage(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url, input.legenda);
+              resultado = await zapiApi.sendImageBase64(
+                unidade.zapiInstanceId,
+                unidade.zapiToken,
+                unidade.zapiClientToken,
+                conversa.telefone,
+                input.arquivoBase64,
+                input.contentType,
+                input.legenda,
+              );
             } else if (input.tipo === "audio") {
               resultado = await zapiApi.sendAudio(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url);
             } else if (input.tipo === "documento") {
-              resultado = await zapiApi.sendDocument(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, url, input.fileName);
+              resultado = await zapiApi.sendDocumentBase64(
+                unidade.zapiInstanceId,
+                unidade.zapiToken,
+                unidade.zapiClientToken,
+                conversa.telefone,
+                input.arquivoBase64,
+                input.contentType,
+                input.fileName,
+                input.legenda,
+              );
             }
             zapiMessageId = resultado?.messageId;
           } catch (error) {
