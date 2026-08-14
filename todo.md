@@ -239,4 +239,7 @@
 - [x] Sincronizar o GitHub após publicar a correção da recepção
 - [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
 - [x] Publicar o suporte a variáveis nos templates Buddha Mkt
-- [ ] Sincronizar o GitHub após publicar as variáveis de templates
+- [x] Sincronizar o GitHub após publicar as variáveis de templates
+- [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
+- [x] Publicar a validação de cabeçalho e o filtro de templates rejeitados
+- [ ] Sincronizar o GitHub após publicar a melhoria de templates
