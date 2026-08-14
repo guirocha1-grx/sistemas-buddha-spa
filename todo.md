@@ -236,4 +236,7 @@
 - [x] Sincronizar o GitHub após publicar a Política de Privacidade
 - [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
 - [x] Publicar a correção que libera scripts de fluxo para a recepção
-- [ ] Sincronizar o GitHub após publicar a correção da recepção
+- [x] Sincronizar o GitHub após publicar a correção da recepção
+- [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
+- [x] Publicar o suporte a variáveis nos templates Buddha Mkt
+- [ ] Sincronizar o GitHub após publicar as variáveis de templates
