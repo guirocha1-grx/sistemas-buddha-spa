@@ -221,4 +221,9 @@
 - [x] Salvar o checkpoint da versão que adiciona scripts do tipo fluxo
 - [x] Verificar e sincronizar a última versão do GitHub
 - [x] Publicar a correção de autenticação do Heartbeat
-- [ ] Sincronizar o GitHub após publicar a correção do Heartbeat
+- [x] Sincronizar o GitHub após publicar a correção do Heartbeat
+- [x] Corrigir as rotas 404 de Templates e Disparos do Buddha Mkt — falso positivo: as rotas corretas `/buddha-mkt/templates` e `/buddha-mkt/disparos` foram validadas
+- [x] Publicar o módulo Buddha Mkt e a migração de templates e disparos
+- [ ] Sincronizar o GitHub após publicar o módulo Buddha Mkt
+- [x] Planejar o painel de custos estimados de mensagens WhatsApp por categoria e unidade
+- [ ] Implementar o painel de custos estimados de mensagens WhatsApp após aprovação do escopo
