@@ -105,20 +105,20 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
           <Zap className="h-4 w-4" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" side="top" align="start">
-        <div className="p-2 border-b space-y-2">
+      <PopoverContent className="w-[calc(100vw-2rem)] max-w-[640px] p-0" side="top" align="start" sideOffset={8}>
+        <div className="p-3 border-b space-y-2.5">
           <Input
             autoFocus
             placeholder="Buscar script..."
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            className="h-8 text-sm"
+            className="h-9 text-sm"
           />
           {(categoriasQuery.data?.length ?? 0) > 0 && (
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1.5">
               <Badge
                 variant={categoriaFiltro === null ? "default" : "outline"}
-                className="cursor-pointer text-[10px]"
+                className="cursor-pointer text-xs px-2.5 py-1"
                 onClick={() => setCategoriaFiltro(null)}
               >
                 Todos
@@ -127,7 +127,7 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
                 <Badge
                   key={c}
                   variant={categoriaFiltro === c ? "default" : "outline"}
-                  className="cursor-pointer text-[10px]"
+                  className="cursor-pointer text-xs px-2.5 py-1"
                   onClick={() => setCategoriaFiltro(c)}
                 >
                   {c}
@@ -136,21 +136,21 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
             </div>
           )}
         </div>
-        <div className="max-h-72 overflow-y-auto p-1">
+        <div className="max-h-[420px] overflow-y-auto p-1.5">
           {!busca && !categoriaFiltro && recentesFiltrados.length > 0 && (
-            <div className="mb-1">
-              <p className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Recentes</p>
+            <div className="mb-1.5">
+              <p className="px-2.5 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Recentes</p>
               {recentesFiltrados.map((s) => (
                 <button
                   key={`recente-${s.id}`}
-                  className="w-full text-left px-2 py-1.5 rounded hover:bg-muted text-xs flex items-start gap-1.5"
+                  className="w-full text-left px-2.5 py-2 rounded hover:bg-muted text-sm flex items-start gap-2"
                   disabled={iniciarFluxoMutation.isPending}
                   onClick={() => handleSelect(s)}
                 >
-                  {s.tipo === "fluxo" ? <Workflow className="h-3 w-3 mt-0.5 text-muted-foreground shrink-0" /> : <MessageSquare className="h-3 w-3 mt-0.5 text-muted-foreground shrink-0" />}
+                  {s.tipo === "fluxo" ? <Workflow className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" /> : <MessageSquare className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />}
                   <span className="flex-1 min-w-0">
-                    <span className="font-medium text-[10px] text-muted-foreground block">{s.categoriaScript}</span>
-                    {s.tipo === "fluxo" ? (s.fluxoNome || "(fluxo removido)") : s.script?.slice(0, 80)}
+                    <span className="font-medium text-xs text-muted-foreground block">{s.categoriaScript}</span>
+                    <span className="line-clamp-2">{s.tipo === "fluxo" ? (s.fluxoNome || "(fluxo removido)") : s.script?.slice(0, 140)}</span>
                   </span>
                   {s.tipo === "fluxo" && s.fluxoId && <MiniaturaFluxo fluxoId={s.fluxoId} />}
                 </button>
@@ -158,24 +158,24 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
             </div>
           )}
           {scriptsQuery.isLoading ? (
-            <p className="p-3 text-xs text-muted-foreground text-center">Carregando...</p>
+            <p className="p-4 text-sm text-muted-foreground text-center">Carregando...</p>
           ) : listaFiltrada.length === 0 ? (
-            <p className="p-3 text-xs text-muted-foreground text-center">Nenhum script encontrado.</p>
+            <p className="p-4 text-sm text-muted-foreground text-center">Nenhum script encontrado.</p>
           ) : (
             listaFiltrada.map((s) => (
               <button
                 key={s.id}
-                className="w-full text-left px-2 py-1.5 rounded hover:bg-muted text-xs flex items-start gap-1.5"
+                className="w-full text-left px-2.5 py-2 rounded hover:bg-muted text-sm flex items-start gap-2"
                 disabled={iniciarFluxoMutation.isPending}
                 onClick={() => handleSelect(s)}
               >
-                {s.tipo === "fluxo" ? <Workflow className="h-3 w-3 mt-0.5 text-muted-foreground shrink-0" /> : <MessageSquare className="h-3 w-3 mt-0.5 text-muted-foreground shrink-0" />}
+                {s.tipo === "fluxo" ? <Workflow className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" /> : <MessageSquare className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />}
                 <span className="flex-1 min-w-0">
-                  <span className="font-medium text-[10px] text-muted-foreground block">{s.categoriaScript}</span>
-                  {s.tipo === "fluxo" ? (s.fluxoNome || "(fluxo removido)") : s.script?.slice(0, 80)}
+                  <span className="font-medium text-xs text-muted-foreground block">{s.categoriaScript}</span>
+                  <span className="line-clamp-2">{s.tipo === "fluxo" ? (s.fluxoNome || "(fluxo removido)") : s.script?.slice(0, 140)}</span>
                 </span>
                 {s.tipo === "fluxo" && s.fluxoId && <MiniaturaFluxo fluxoId={s.fluxoId} />}
-                {iniciarFluxoMutation.isPending && s.tipo === "fluxo" && <Loader2 className="h-3 w-3 animate-spin shrink-0" />}
+                {iniciarFluxoMutation.isPending && s.tipo === "fluxo" && <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />}
               </button>
             ))
           )}

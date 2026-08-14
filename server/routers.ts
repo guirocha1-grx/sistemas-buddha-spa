@@ -1074,6 +1074,13 @@ Diretrizes:
       message: "Script de texto precisa de mensagem; script de fluxo precisa de um fluxo selecionado",
     })).mutation(async ({ input }) => {
       const id = await db.createScript({ ...input, script: input.script ?? undefined, fluxoId: input.fluxoId ?? undefined });
+      // Vincular um Fluxo a um Script SÓ faz sentido pra disparar via
+      // Inbox — liga visivelNoInbox automaticamente, senão o fluxo
+      // fica escolhível aqui mas falha ao clicar ("não está liberado
+      // pra execução manual"), sem nenhum aviso na hora de montar.
+      if (input.tipo === "fluxo" && input.fluxoId) {
+        await db.updateFluxo(input.fluxoId, { visivelNoInbox: true });
+      }
       return { id };
     }),
 
@@ -1087,6 +1094,9 @@ Diretrizes:
     })).mutation(async ({ input }) => {
       const { id, ...dados } = input;
       await db.updateScript(id, dados);
+      if (dados.tipo === "fluxo" && dados.fluxoId) {
+        await db.updateFluxo(dados.fluxoId, { visivelNoInbox: true });
+      }
       return { success: true };
     }),
 
