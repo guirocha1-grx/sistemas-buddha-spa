@@ -1039,9 +1039,19 @@ export const buddhaMktTemplates = mysqlTable("buddha_mkt_templates", {
   idioma: varchar("idioma", { length: 10 }).notNull().default("pt_BR"),
   categoria: mysqlEnum("categoria", ["MARKETING", "UTILITY"]).default("MARKETING").notNull(),
   corpo: text("corpo").notNull(),
+  // Valor de exemplo pra cada {{N}} do corpo, na ordem (índice 0 =
+  // {{1}}) — a Meta exige um exemplo por variável pra sequer aceitar o
+  // template pra revisão (2026-08-14, ver server/metaTemplatesApi.ts).
+  corpoExemplos: json("corpoExemplos").$type<string[]>(),
   cabecalho: varchar("cabecalho", { length: 60 }),
+  // Só existe se `cabecalho` tiver {{1}} — a Meta permite no máximo 1
+  // variável no cabeçalho.
+  cabecalhoExemplo: varchar("cabecalhoExemplo", { length: 60 }),
   rodape: varchar("rodape", { length: 60 }),
-  botoes: json("botoes").$type<Array<{ tipo: "QUICK_REPLY"; texto: string }>>(),
+  botoes: json("botoes").$type<Array<
+    | { tipo: "QUICK_REPLY"; texto: string }
+    | { tipo: "URL"; texto: string; url: string; exemploVariavel?: string }
+  >>(),
   metaTemplateId: varchar("metaTemplateId", { length: 64 }), // id devolvido pela Meta ao criar
   status: mysqlEnum("status", ["rascunho", "pendente", "aprovado", "rejeitado"]).default("rascunho").notNull(),
   motivoRejeicao: text("motivoRejeicao"),
@@ -1063,6 +1073,11 @@ export const disparos = mysqlTable("disparos", {
   nome: varchar("nome", { length: 150 }).notNull(),
   templateId: int("templateId").notNull(),
   fluxoRespostaId: int("fluxoRespostaId"),
+  // Origem de cada variável {{N}} do template pro envio em massa, na
+  // ordem — "nome_cliente" personaliza por destinatário (puxa da base
+  // de clientes), "fixo" usa o mesmo texto pra todo mundo (ex.: nome
+  // da promoção). Índice 0 = {{1}} do corpo.
+  variaveisConfig: json("variaveisConfig").$type<Array<{ fonte: "nome_cliente" | "fixo"; valor?: string }>>(),
   status: mysqlEnum("status", ["rascunho", "enviando", "concluido", "erro"]).default("rascunho").notNull(),
   totalDestinatarios: int("totalDestinatarios").default(0).notNull(),
   totalEnviados: int("totalEnviados").default(0).notNull(),

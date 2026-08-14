@@ -3436,7 +3436,11 @@ export async function getBuddhaMktTemplateById(id: number) {
 
 export async function createBuddhaMktTemplate(dados: {
   nome: string; idioma: string; categoria: "MARKETING" | "UTILITY"; corpo: string;
-  cabecalho?: string; rodape?: string; botoes?: Array<{ tipo: "QUICK_REPLY"; texto: string }>;
+  corpoExemplos?: string[]; cabecalho?: string; cabecalhoExemplo?: string; rodape?: string;
+  botoes?: Array<
+    | { tipo: "QUICK_REPLY"; texto: string }
+    | { tipo: "URL"; texto: string; url: string; exemploVariavel?: string }
+  >;
 }): Promise<number | undefined> {
   const db = await getDb();
   if (!db) return undefined;
@@ -3470,12 +3474,14 @@ export async function getDisparoById(id: number) {
 
 export async function createDisparo(dados: {
   nome: string; templateId: number; fluxoRespostaId?: number;
+  variaveisConfig?: Array<{ fonte: "nome_cliente" | "fixo"; valor?: string }>;
   destinatarios: Array<{ clienteId: number; telefone: string }>;
 }): Promise<number | undefined> {
   const db = await getDb();
   if (!db) return undefined;
   const insertValues: InsertDisparo = {
     nome: dados.nome, templateId: dados.templateId, fluxoRespostaId: dados.fluxoRespostaId ?? null,
+    variaveisConfig: dados.variaveisConfig ?? null,
     totalDestinatarios: dados.destinatarios.length,
   };
   const result = await db.insert(disparos).values(insertValues).$returningId();

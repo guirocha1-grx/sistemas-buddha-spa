@@ -10,6 +10,7 @@ import { belleApi } from "./belleApi";
 import { zapiApi } from "./zapiApi";
 import { buddhaMktApi } from "./buddhaMktApi";
 import { metaTemplatesApi } from "./metaTemplatesApi";
+import { validarCorpo, validarCabecalho, extrairVariaveis } from "@shared/templateVariaveis";
 import { storagePut, storageGetSignedUrl, normalizeStorageKey } from "./storage";
 import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
@@ -1285,10 +1286,30 @@ Diretrizes:
       idioma: z.string().min(1).default("pt_BR"),
       categoria: z.enum(["MARKETING", "UTILITY"]).default("MARKETING"),
       corpo: z.string().min(1),
+      corpoExemplos: z.array(z.string().min(1)).optional(),
       cabecalho: z.string().max(60).optional(),
+      cabecalhoExemplo: z.string().max(60).optional(),
       rodape: z.string().max(60).optional(),
-      botoes: z.array(z.object({ tipo: z.literal("QUICK_REPLY"), texto: z.string().min(1) })).max(3).optional(),
+      botoes: z.array(z.union([
+        z.object({ tipo: z.literal("QUICK_REPLY"), texto: z.string().min(1) }).strict(),
+        z.object({ tipo: z.literal("URL"), texto: z.string().min(1), url: z.string().min(1), exemploVariavel: z.string().optional() }).strict(),
+      ])).max(3).optional(),
     })).mutation(async ({ input }) => {
+      // Regras de conteúdo da Meta (variável solta no início/fim,
+      // sequência com buraco, variáveis coladas) — ver
+      // shared/templateVariaveis.ts. Falha aqui é bem mais rápido pro
+      // admin corrigir do que esperar a Meta rejeitar.
+      const problemas = [
+        ...validarCorpo(input.corpo),
+        ...(input.cabecalho ? validarCabecalho(input.cabecalho) : []),
+      ];
+      if (problemas.length > 0) throw new Error(problemas.join(" | "));
+
+      const variaveisCorpo = extrairVariaveis(input.corpo);
+      if (variaveisCorpo.length > 0 && (input.corpoExemplos?.length ?? 0) !== variaveisCorpo.length) {
+        throw new Error(`O corpo tem ${variaveisCorpo.length} variável(is) — informe um exemplo pra cada uma`);
+      }
+
       const id = await db.createBuddhaMktTemplate(input);
       if (!id) throw new Error("Falha ao gravar template localmente");
       try {
@@ -1339,6 +1360,10 @@ Diretrizes:
       nome: z.string().min(1),
       templateId: z.number(),
       fluxoRespostaId: z.number().optional(),
+      variaveisConfig: z.array(z.object({
+        fonte: z.enum(["nome_cliente", "fixo"]),
+        valor: z.string().optional(),
+      }).strict()).optional(),
       clienteIds: z.array(z.number()).min(1),
     })).mutation(async ({ input }) => {
       const clientesResolvidos = await db.getClientesPorIds(input.clienteIds);
@@ -1347,7 +1372,8 @@ Diretrizes:
         .filter((d) => d.telefone);
       if (destinatarios.length === 0) throw new Error("Nenhum dos clientes selecionados tem celular cadastrado");
       const id = await db.createDisparo({
-        nome: input.nome, templateId: input.templateId, fluxoRespostaId: input.fluxoRespostaId, destinatarios,
+        nome: input.nome, templateId: input.templateId, fluxoRespostaId: input.fluxoRespostaId,
+        variaveisConfig: input.variaveisConfig, destinatarios,
       });
       return { id };
     }),
@@ -1364,11 +1390,18 @@ Diretrizes:
 
       await db.atualizarDisparo(disparo.id, { status: "enviando", iniciadoEm: new Date() });
       const pendentes = await db.listDisparoDestinatariosPendentes(disparo.id);
+      const variaveisConfig = (disparo.variaveisConfig as Array<{ fonte: "nome_cliente" | "fixo"; valor?: string }> | null) ?? [];
+      const clientesPorId = new Map(
+        (await db.getClientesPorIds(pendentes.map((d) => d.clienteId))).map((c) => [c.id, c.nome]),
+      );
       let enviados = 0;
       let erros = 0;
       for (const destinatario of pendentes) {
+        const variaveis = variaveisConfig.map((v) =>
+          v.fonte === "nome_cliente" ? (clientesPorId.get(destinatario.clienteId) ?? "") : (v.valor ?? ""),
+        );
         try {
-          await buddhaMktApi.sendTemplate(destinatario.telefone, templateRow.nome, templateRow.idioma, []);
+          await buddhaMktApi.sendTemplate(destinatario.telefone, templateRow.nome, templateRow.idioma, variaveis);
           await db.atualizarDisparoDestinatario(destinatario.id, { status: "enviado", enviadoEm: new Date() });
           await db.incrementarDisparoContadores(disparo.id, { totalEnviados: 1 });
           enviados++;

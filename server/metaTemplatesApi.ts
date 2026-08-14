@@ -2,9 +2,11 @@
  * Message Templates da Meta (WhatsApp Cloud API) — criar e consultar
  * status de aprovação. Mesma conta/credenciais do Buddha Mkt
  * (`getBuddhaMktConfig`, server/buddhaMktApi.ts) — token + WABA ID.
- * Só os campos que a tela de Templates (client/src/pages/Templates.tsx)
- * usa: corpo com variável {{1}}, cabeçalho/rodapé opcionais, até 3
- * botões de resposta rápida.
+ * Suporta variável {{1}}, {{2}}... no corpo (N variáveis), 1 variável
+ * no cabeçalho, botões de resposta rápida ou de URL dinâmica (a URL
+ * pode terminar em {{1}}) — cada variável precisa de um valor de
+ * exemplo, exigência da Meta pra sequer aceitar o template pra
+ * revisão (ver shared/templateVariaveis.ts pras regras de conteúdo).
  */
 import { getBuddhaMktConfig } from "./buddhaMktApi";
 
@@ -15,9 +17,14 @@ export interface CriarTemplateInput {
   idioma: string;
   categoria: "MARKETING" | "UTILITY";
   corpo: string;
+  corpoExemplos?: string[];
   cabecalho?: string;
+  cabecalhoExemplo?: string;
   rodape?: string;
-  botoes?: Array<{ tipo: "QUICK_REPLY"; texto: string }>;
+  botoes?: Array<
+    | { tipo: "QUICK_REPLY"; texto: string }
+    | { tipo: "URL"; texto: string; url: string; exemploVariavel?: string }
+  >;
 }
 
 export interface CriarTemplateResultado {
@@ -39,13 +46,28 @@ export const metaTemplatesApi = {
     if (!config.wabaId) throw new Error("WABA ID não configurado (Configurações → Buddha Mkt)");
 
     const components: Record<string, unknown>[] = [];
-    if (input.cabecalho) components.push({ type: "HEADER", format: "TEXT", text: input.cabecalho });
-    components.push({ type: "BODY", text: input.corpo });
+    if (input.cabecalho) {
+      const header: Record<string, unknown> = { type: "HEADER", format: "TEXT", text: input.cabecalho };
+      if (input.cabecalhoExemplo) header.example = { header_text: [input.cabecalhoExemplo] };
+      components.push(header);
+    }
+    const body: Record<string, unknown> = { type: "BODY", text: input.corpo };
+    if (input.corpoExemplos && input.corpoExemplos.length > 0) {
+      body.example = { body_text: [input.corpoExemplos] };
+    }
+    components.push(body);
     if (input.rodape) components.push({ type: "FOOTER", text: input.rodape });
     if (input.botoes && input.botoes.length > 0) {
       components.push({
         type: "BUTTONS",
-        buttons: input.botoes.map((b) => ({ type: b.tipo, text: b.texto })),
+        buttons: input.botoes.map((b) => {
+          if (b.tipo === "URL") {
+            const botao: Record<string, unknown> = { type: "URL", text: b.texto, url: b.url };
+            if (b.exemploVariavel) botao.example = [b.exemploVariavel];
+            return botao;
+          }
+          return { type: b.tipo, text: b.texto };
+        }),
       });
     }
 

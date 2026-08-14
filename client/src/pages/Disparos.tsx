@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { extrairVariaveis } from "@shared/templateVariaveis";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,10 +46,23 @@ export default function Disparos() {
   const [nome, setNome] = useState("");
   const [templateId, setTemplateId] = useState<string>("");
   const [fluxoRespostaId, setFluxoRespostaId] = useState<string>("");
+  const [variaveisConfig, setVariaveisConfig] = useState<Array<{ fonte: "nome_cliente" | "fixo"; valor: string }>>([]);
   const [busca, setBusca] = useState("");
   const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
 
   const templatesAprovados = (templatesQuery.data ?? []).filter((t) => t.status === "aprovado");
+  const templateSelecionado = templatesAprovados.find((t) => String(t.id) === templateId);
+  const variaveisDoTemplate = useMemo(
+    () => (templateSelecionado ? extrairVariaveis(templateSelecionado.corpo) : []),
+    [templateSelecionado],
+  );
+
+  const selecionarTemplate = (novoId: string) => {
+    setTemplateId(novoId);
+    const template = templatesAprovados.find((t) => String(t.id) === novoId);
+    const qtd = template ? extrairVariaveis(template.corpo).length : 0;
+    setVariaveisConfig(Array.from({ length: qtd }, () => ({ fonte: "nome_cliente" as const, valor: "" })));
+  };
 
   const termoBusca = busca.trim().toLowerCase();
   const clientesFiltrados = useMemo(() => {
@@ -60,7 +74,7 @@ export default function Disparos() {
   }, [clientesQuery.data, termoBusca]);
 
   const resetForm = () => {
-    setNome(""); setTemplateId(""); setFluxoRespostaId(""); setBusca(""); setSelecionados(new Set());
+    setNome(""); setTemplateId(""); setFluxoRespostaId(""); setVariaveisConfig([]); setBusca(""); setSelecionados(new Set());
   };
 
   const createMut = trpc.disparos.create.useMutation({
@@ -115,6 +129,7 @@ export default function Disparos() {
       nome: nome.trim(),
       templateId: Number(templateId),
       fluxoRespostaId: fluxoRespostaId ? Number(fluxoRespostaId) : undefined,
+      variaveisConfig: variaveisConfig.length > 0 ? variaveisConfig : undefined,
       clienteIds: Array.from(selecionados),
     });
   };
@@ -213,7 +228,7 @@ export default function Disparos() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs text-muted-foreground mb-1 block">Template (aprovado) *</Label>
-                <Select value={templateId} onValueChange={setTemplateId}>
+                <Select value={templateId} onValueChange={selecionarTemplate}>
                   <SelectTrigger><SelectValue placeholder="Escolha um template" /></SelectTrigger>
                   <SelectContent>
                     {templatesAprovados.length === 0 ? (
@@ -236,6 +251,35 @@ export default function Disparos() {
                 </Select>
               </div>
             </div>
+
+            {variaveisDoTemplate.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Variáveis do template</Label>
+                {variaveisDoTemplate.map((n, i) => (
+                  <div key={n} className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-10 shrink-0">{"{{"}{n}{"}}"}</span>
+                    <Select
+                      value={variaveisConfig[i]?.fonte ?? "nome_cliente"}
+                      onValueChange={(v) => setVariaveisConfig(variaveisConfig.map((vc, idx) => idx === i ? { ...vc, fonte: v as "nome_cliente" | "fixo" } : vc))}
+                    >
+                      <SelectTrigger className="h-8 w-44 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="nome_cliente">Nome do cliente</SelectItem>
+                        <SelectItem value="fixo">Valor fixo</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {variaveisConfig[i]?.fonte === "fixo" && (
+                      <Input
+                        className="h-8 text-xs flex-1"
+                        value={variaveisConfig[i]?.valor ?? ""}
+                        onChange={(e) => setVariaveisConfig(variaveisConfig.map((vc, idx) => idx === i ? { ...vc, valor: e.target.value } : vc))}
+                        placeholder="Mesmo valor pra todos os destinatários"
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="pt-2">
               <div className="flex items-center justify-between mb-2 gap-2">
