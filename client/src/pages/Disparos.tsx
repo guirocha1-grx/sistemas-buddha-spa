@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Megaphone, Plus, Search, Send } from "lucide-react";
+import { Clock, Loader2, Megaphone, Plus, Search, Send } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -29,6 +30,7 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 };
 
 export default function Disparos() {
+  const { user } = useAuth();
   const utils = trpc.useUtils();
   const disparosQuery = trpc.disparos.list.useQuery();
   const templatesQuery = trpc.templates.list.useQuery();
@@ -76,6 +78,11 @@ export default function Disparos() {
       utils.disparos.list.invalidate();
       toast.success(`Envio concluído: ${r.enviados} enviado(s), ${r.erros} erro(s)`);
     },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const registrarHeartbeatMut = trpc.fluxos.registrarHeartbeatBuddhaMktAlerta.useMutation({
+    onSuccess: () => toast.success('Aviso de "10min sem retorno" registrado — o cron passa a rodar a cada 1min'),
     onError: (e) => toast.error(e.message),
   });
 
@@ -128,9 +135,23 @@ export default function Disparos() {
             </p>
           </div>
         </div>
-        <Button size="sm" onClick={() => setShowNew(true)}>
-          <Plus className="h-3.5 w-3.5 mr-1.5" /> Novo disparo
-        </Button>
+        <div className="flex items-center gap-2">
+          {user?.role === "admin" && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => registrarHeartbeatMut.mutate()}
+              disabled={registrarHeartbeatMut.isPending}
+              title='Registra o cron que avisa a recepção no Telegram quando o cliente não escolhe unidade em 10min — só precisa clicar uma vez'
+            >
+              {registrarHeartbeatMut.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Clock className="h-3.5 w-3.5 mr-1.5" />}
+              Ativar aviso 10min
+            </Button>
+          )}
+          <Button size="sm" onClick={() => setShowNew(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" /> Novo disparo
+          </Button>
+        </div>
       </div>
 
       {disparosQuery.isLoading ? (
