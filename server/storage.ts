@@ -103,3 +103,19 @@ export async function storageGetSignedUrl(relKey: string): Promise<string> {
   const { url } = (await resp.json()) as { url: string };
   return url;
 }
+
+/**
+ * Baixa os bytes de um objeto do storage e devolve em Base64 — usado
+ * pelo nó "midia" dos Fluxos pra reenviar um arquivo já guardado direto
+ * pra Z-API (URL assinada direto pra Z-API se mostrou não-confiável
+ * nesse projeto, ver zapiApi.sendImageBase64/sendDocumentBase64).
+ */
+export async function storageGetBase64(relKey: string): Promise<string> {
+  const signedUrl = await storageGetSignedUrl(relKey);
+  const resp = await fetch(signedUrl);
+  if (!resp.ok) {
+    throw new Error(`Storage download failed (${resp.status}) for ${relKey}`);
+  }
+  const buffer = Buffer.from(await resp.arrayBuffer());
+  return buffer.toString("base64");
+}

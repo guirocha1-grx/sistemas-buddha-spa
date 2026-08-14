@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, json, decimal, datetime, index, bigint, boolean } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, json, decimal, datetime, index, bigint, boolean, uniqueIndex } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -877,4 +877,136 @@ export const scriptsUso = mysqlTable("scripts_uso", {
 
 export type ScriptUso = typeof scriptsUso.$inferSelect;
 export type InsertScriptUso = typeof scriptsUso.$inferInsert;
+
+/**
+ * Fluxos de automação de WhatsApp (porte do mobai-crm, 2026-08-13) —
+ * sequências configuráveis de nó em nó (mensagem/aguardar/condicional/
+ * etc.), estilo BotConversa/n8n, em vez de cada automação exigir código
+ * novo. Escopado por unidade (mobai-crm não tem esse conceito — lá é
+ * uma agência só). Só os 9 tipos de nó "mecânicos" por enquanto — os
+ * nós de IA multi-turno do mobai (agente/assistente) ficam de fora
+ * porque o prompt/escalonamento deles é hard-coded pro contexto de
+ * agência de viagens e precisa de decisão de produto própria pro spa.
+ * Gatilho "mudanca_fase" do mobai também não existe aqui — buddha-spa
+ * não tem funil de vendas (clientes não tem fase/etapa).
+ */
+export type FluxoGatilhoConfig =
+  | Record<string, never> // manual
+  | Record<string, never> // mensagem_recebida (v1 sem filtro extra)
+  | { dias: number } // dias_sem_contato
+  | { canalCaptacao?: string }; // cliente_novo (filtro opcional, mantido por paridade)
+
+export const fluxos = mysqlTable("fluxos", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  nome: varchar("nome", { length: 150 }).notNull(),
+  descricao: text("descricao"),
+  ativo: boolean("ativo").default(true).notNull(),
+  entradaNoOrdem: int("entradaNoOrdem"), // soft-reference a fluxo_nos.ordem — null = usa o nó de menor ordem
+  gatilhoTipo: mysqlEnum("gatilhoTipo", ["manual", "mensagem_recebida", "dias_sem_contato", "cliente_novo"]).default("manual").notNull(),
+  gatilhoConfig: json("gatilhoConfig").$type<FluxoGatilhoConfig>(),
+  // Menu "Executar fluxo" no Inbox — oculto por padrão, admin decide
+  // quais fluxos qualquer atendente pode disparar manualmente pro
+  // cliente da conversa aberta. O botão "Testar com um cliente" no
+  // editor continua admin-only e não depende desse campo.
+  visivelNoInbox: boolean("visivelNoInbox").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeIdx: index("fluxos_unidade_idx").on(table.unidadeId),
+}));
+
+export type Fluxo = typeof fluxos.$inferSelect;
+export type InsertFluxo = typeof fluxos.$inferInsert;
+
+export type FluxoNoConfig =
+  | { texto: string } // mensagem
+  | { valor: number; unidade: "segundos" | "minutos" | "horas" | "dias" } // aguardar
+  | {
+      logica: "E" | "OU";
+      condicoes: Array<{
+        variavel: string;
+        operador: "igual" | "diferente" | "contem" | "existe" | "nao_existe";
+        valor?: string;
+      }>;
+      ordemSeVerdadeiro: number | null;
+      ordemSeFalso: number | null;
+    } // condicional
+  | { nome: string; origem: "fixo" | "ia"; valorFixo?: string; promptIa?: string } // salvar_variavel
+  | Record<string, never> // fim
+  | { ramos: Array<{ pesoPercentual: number; ordemDestino: number | null }> } // randomizador
+  | {
+      url: string;
+      variavelResposta?: string;
+      campoResposta?: string; // path simples tipo "data.status"
+      ordemSeErro: number | null;
+    } // webhook
+  | {
+      // midia: envia imagem/áudio/documento — sem vídeo (Z-API não tem
+      // endpoint de vídeo). Upload acontece uma vez ao configurar o nó
+      // (nos.uploadMidia), não por execução; no envio, o motor baixa o
+      // arquivo do storage e manda em Base64 direto pra Z-API (mesmo
+      // caminho que inbox.mensagens.enviarMidia já usa pra imagem/
+      // documento — URL assinada direto pra Z-API se mostrou não-
+      // confiável nesse projeto).
+      tipoMidia: "imagem" | "audio" | "documento";
+      storageKey: string;
+      nomeArquivo?: string;
+      legenda?: string;
+    } // midia
+  | {
+      // menu: manda o texto + opções e espera a resposta do cliente pra
+      // ramificar. `estilo` ausente = "texto" (opções numeradas no
+      // corpo da mensagem); "botoes"/"lista" usam os formatos nativos
+      // do WhatsApp (zapiApi.sendButtonList/sendOptionList) —
+      // `descricao` só é usada em "lista".
+      texto: string;
+      opcoes: Array<{ label: string; ordemDestino: number | null; descricao?: string }>;
+      ordemSeNaoEntendeu: number | null;
+      diasTimeoutSemResposta?: number;
+      estilo?: "texto" | "botoes" | "lista";
+    }; // menu
+
+export const fluxoNos = mysqlTable("fluxo_nos", {
+  id: int("id").autoincrement().primaryKey(),
+  fluxoId: int("fluxoId").notNull(),
+  tipo: mysqlEnum("tipo", ["mensagem", "aguardar", "condicional", "salvar_variavel", "fim", "randomizador", "webhook", "midia", "menu"]).notNull(),
+  ordem: int("ordem").notNull(), // chave interna do motor — identidade visual/canvas usa o `id`
+  config: json("config").$type<FluxoNoConfig>().notNull(),
+  proximoNoOrdem: int("proximoNoOrdem"), // próximo passo padrão — null = encerra o fluxo (exceto condicional/fim)
+  posX: int("posX"), // posição no canvas — null = ainda não posicionado, roda auto-layout
+  posY: int("posY"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  fluxoOrdemUnique: uniqueIndex("fluxo_nos_fluxo_ordem_unique").on(table.fluxoId, table.ordem),
+}));
+
+export type FluxoNo = typeof fluxoNos.$inferSelect;
+export type InsertFluxoNo = typeof fluxoNos.$inferInsert;
+
+export const fluxoExecucoes = mysqlTable("fluxo_execucoes", {
+  id: int("id").autoincrement().primaryKey(),
+  fluxoId: int("fluxoId").notNull(),
+  // Âncora é a conversa, não o cliente (diferente do mobai-crm) — o
+  // Inbox do buddha-spa trata conversa como identidade primária, muita
+  // conversa não tem clienteId ainda (lead novo, ver
+  // criarClienteRapidoDeConversa em db.ts).
+  conversaId: int("conversaId").notNull(),
+  clienteId: int("clienteId"),
+  status: mysqlEnum("status", ["ativo", "pausado", "concluido", "cancelado", "erro", "aguardando_resposta"]).default("ativo").notNull(),
+  noAtualOrdem: int("noAtualOrdem").notNull(),
+  variaveis: json("variaveis").$type<Record<string, string>>().default({}).notNull(),
+  proximaExecucaoEm: timestamp("proximaExecucaoEm"), // quando o cron deve retomar (nó "aguardar")
+  erroMsg: text("erroMsg"),
+  iniciadoEm: timestamp("iniciadoEm").defaultNow().notNull(),
+  atualizadoEm: timestamp("atualizadoEm").defaultNow().onUpdateNow().notNull(),
+  concluidoEm: timestamp("concluidoEm"),
+}, (table) => ({
+  fluxoIdx: index("fluxo_execucoes_fluxo_idx").on(table.fluxoId),
+  conversaIdx: index("fluxo_execucoes_conversa_idx").on(table.conversaId),
+  statusIdx: index("fluxo_execucoes_status_idx").on(table.status),
+}));
+
+export type FluxoExecucao = typeof fluxoExecucoes.$inferSelect;
+export type InsertFluxoExecucao = typeof fluxoExecucoes.$inferInsert;
 

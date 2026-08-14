@@ -359,6 +359,29 @@ function registerZapiWebhook(app: Express) {
         zapiMessageId: payload.fromMe ? (payload.messageId ?? null) : null,
       });
 
+      // Fluxos de automação — só mensagem 1:1 de verdade vinda do
+      // cliente (não fromMe, não grupo). Se já existe uma execução
+      // esperando resposta (nó menu) retoma ela; senão dispara o
+      // gatilho "mensagem_recebida" pra possivelmente começar um fluxo
+      // novo. Nunca bloqueia a resposta do webhook.
+      if (!payload.isGroup && !payload.fromMe) {
+        (async () => {
+          try {
+            const { getFluxoExecucaoAguardandoRespostaPorConversa } = await import("./db");
+            const execucaoAguardando = await getFluxoExecucaoAguardandoRespostaPorConversa(conversaId);
+            if (execucaoAguardando) {
+              const { retomarNoAguardandoResposta } = await import("./fluxos");
+              await retomarNoAguardandoResposta(execucaoAguardando.id);
+            } else {
+              const { dispararGatilhosFluxo } = await import("./fluxosGatilhos");
+              await dispararGatilhosFluxo(unidadeId, "mensagem_recebida", { conversaId, clienteId });
+            }
+          } catch (error) {
+            console.error("[Webhook Z-API] Falha ao processar Fluxos:", error);
+          }
+        })();
+      }
+
       if (tipo === "audio" && payload.audio?.audioUrl && mensagemId) {
         // Assíncrono — não bloqueia a resposta ao webhook.
         transcribeAudio({ audioUrl: payload.audio.audioUrl, language: "pt" })

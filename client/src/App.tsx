@@ -11,6 +11,8 @@ import Reativacao from "./pages/Reativacao";
 import Agenda from "./pages/Agenda";
 import Mensagens from "./pages/Mensagens";
 import Scripts from "./pages/Scripts";
+import Fluxos from "./pages/Fluxos";
+import FluxoDetalhe from "./pages/FluxoDetalhe";
 import Financeiro from "./pages/Financeiro";
 import Extratos from "./pages/Extratos";
 import ComandaRecepcao from "./pages/ComandaRecepcao";
@@ -35,6 +37,8 @@ function Router() {
         <Route path="/agenda" component={Agenda} />
         <Route path="/mensagens" component={Mensagens} />
         <Route path="/scripts" component={Scripts} />
+        <Route path="/fluxos" component={Fluxos} />
+        <Route path="/fluxos/:id" component={FluxoDetalhe} />
         <Route path="/financeiro" component={Financeiro} />
         <Route path="/financeiro/extratos" component={Extratos} />
         <Route path="/financeiro/comanda-recepcao" component={ComandaRecepcao} />

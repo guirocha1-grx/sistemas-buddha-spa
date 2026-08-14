@@ -26,7 +26,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { startGoogleLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText, Repeat, Users2, Loader2 } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText, Repeat, Users2, Loader2, Workflow } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -50,6 +50,7 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
   { icon: Calendar, label: "Agenda", path: "/agenda", modulo: "agenda" },
   { icon: MessageCircle, label: "WhatsApp", path: "/mensagens", modulo: "mensagens" },
   { icon: ScrollText, label: "Scripts", path: "/scripts", modulo: "scripts" },
+  { icon: Workflow, label: "Fluxos", path: "/fluxos", modulo: "fluxos", adminOnly: true },
   {
     icon: DollarSign, label: "Financeiro", path: "/financeiro", modulo: "financeiro",
     children: [

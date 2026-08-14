@@ -26,6 +26,7 @@ export const MODULOS = [
   { chave: "copilot", label: "Copilot" },
   { chave: "laminas", label: "Lâminas" },
   { chave: "leads", label: "Leads" },
+  { chave: "fluxos", label: "Fluxos" },
   { chave: "configuracoes", label: "Configurações" },
   { chave: "sincronizacao", label: "Sincronização Global" },
 ] as const;

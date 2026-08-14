@@ -181,6 +181,40 @@ export const zapiApi = {
     });
   },
 
+  /** Botões nativos do WhatsApp (até 3) — usado pelo nó "menu" dos Fluxos. */
+  async sendButtonList(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    message: string,
+    buttons: Array<{ id: string; label: string }>,
+  ): Promise<ZapiSendResult> {
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-button-list", {
+      phone,
+      message,
+      buttonList: { buttons },
+    });
+  },
+
+  /** Lista nativa do WhatsApp (até 10 opções) — usado pelo nó "menu" dos Fluxos. */
+  async sendOptionList(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    message: string,
+    tituloLista: string,
+    buttonLabel: string,
+    options: Array<{ id: string; title: string; description?: string }>,
+  ): Promise<ZapiSendResult> {
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-option-list", {
+      phone,
+      message,
+      optionList: { title: tituloLista, buttonLabel, options },
+    });
+  },
+
   /**
    * Resolve um identificador "@lid" (contato via anúncio "clique para
    * WhatsApp", que chega sem o telefone real) para o número de verdade.

@@ -9,7 +9,7 @@ import { hashPin, verifyPin } from "./atendenteAuth";
 import { belleApi } from "./belleApi";
 import { zapiApi } from "./zapiApi";
 import { buddhaMktApi } from "./buddhaMktApi";
-import { storagePut, storageGetSignedUrl } from "./storage";
+import { storagePut, storageGetSignedUrl, normalizeStorageKey } from "./storage";
 import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
 import { sicrediApi, getSicrediAccessToken, isSicrediTokenValid } from "./sicrediApi";
@@ -25,10 +25,81 @@ import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConso
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTelegramParaRecepcao } from "./telegramApi";
 import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY, montarPedidoSugestaoMensagem } from "@shared/inboxAi";
+import { upsertHeartbeatJob } from "./_core/heartbeat";
+import { iniciarExecucaoFluxo } from "./fluxos";
 
 function fmtDateIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
+// ===== Zod dos Fluxos de automação =====
+//
+// z.union() testa cada opção NA ORDEM e usa a primeira que casar. Sem
+// `.strict()` em cada branch, o Zod por padrão descarta silenciosamente
+// chaves desconhecidas em vez de rejeitar — então um config de "menu"
+// (que também tem `texto`) validava com sucesso contra o schema de
+// "mensagem" (que só exige `texto`) e todas as outras chaves (opcoes,
+// ordemSeNaoEntendeu etc.) eram descartadas antes de chegar no banco.
+// `.strict()` faz o Zod rejeitar chave extra em vez de descartar, daí
+// cai pro próximo branch do union até achar o formato exato. Isso já
+// mordeu o mobai-crm de origem (menu perdia as opções salvas) — todo
+// branch novo aqui PRECISA de `.strict()`, sem exceção.
+const fluxoGatilhoConfigSchema = z.union([
+  z.object({}).strict(), // manual
+  z.object({}).strict(), // mensagem_recebida
+  z.object({ dias: z.number() }).strict(), // dias_sem_contato
+  z.object({ canalCaptacao: z.string().optional() }).strict(), // cliente_novo
+]);
+
+const fluxoNoTipoSchema = z.enum(["mensagem", "aguardar", "condicional", "salvar_variavel", "fim", "randomizador", "webhook", "midia", "menu"]);
+
+const fluxoNoConfigSchema = z.union([
+  z.object({ texto: z.string() }).strict(), // mensagem
+  z.object({ valor: z.number(), unidade: z.enum(["segundos", "minutos", "horas", "dias"]) }).strict(), // aguardar
+  z.object({
+    logica: z.enum(["E", "OU"]),
+    condicoes: z.array(z.object({
+      variavel: z.string(),
+      operador: z.enum(["igual", "diferente", "contem", "existe", "nao_existe"]),
+      valor: z.string().optional(),
+    })),
+    ordemSeVerdadeiro: z.number().nullable(),
+    ordemSeFalso: z.number().nullable(),
+  }).strict(), // condicional
+  z.object({
+    nome: z.string(),
+    origem: z.enum(["fixo", "ia"]),
+    valorFixo: z.string().optional(),
+    promptIa: z.string().optional(),
+  }).strict(), // salvar_variavel
+  z.object({}).strict(), // fim
+  z.object({
+    ramos: z.array(z.object({ pesoPercentual: z.number(), ordemDestino: z.number().nullable() })),
+  }).strict(), // randomizador
+  z.object({
+    url: z.string(),
+    variavelResposta: z.string().optional(),
+    campoResposta: z.string().optional(),
+    ordemSeErro: z.number().nullable(),
+  }).strict(), // webhook
+  z.object({
+    tipoMidia: z.enum(["imagem", "audio", "documento"]),
+    storageKey: z.string(),
+    nomeArquivo: z.string().optional(),
+    legenda: z.string().optional(),
+  }).strict(), // midia
+  z.object({
+    texto: z.string(),
+    opcoes: z.array(z.object({
+      label: z.string(),
+      ordemDestino: z.number().nullable(),
+      descricao: z.string().optional(),
+    })),
+    ordemSeNaoEntendeu: z.number().nullable(),
+    diasTimeoutSemResposta: z.number().optional(),
+    estilo: z.enum(["texto", "botoes", "lista"]).optional(),
+  }).strict(), // menu
+]);
 
 /**
  * Identifica quem emitiu a fatura de cartão (Inter ou Sicredi) pelo
@@ -1012,6 +1083,152 @@ Diretrizes:
 
     excluir: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await db.excluirScript(input.id);
+      return { success: true };
+    }),
+  }),
+
+  // ===== Fluxos de automação de WhatsApp (porte do mobai-crm, 2026-08-13) =====
+  fluxos: router({
+    list: adminProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      return db.listFluxos(input.unidadeId);
+    }),
+
+    get: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const [fluxo, nos] = await Promise.all([db.getFluxoById(input.id), db.listFluxoNos(input.id)]);
+      if (!fluxo) return null;
+      return { fluxo, nos };
+    }),
+
+    create: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      nome: z.string().min(1),
+      descricao: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const id = await db.createFluxo(input);
+      return { id };
+    }),
+
+    update: adminProcedure.input(z.object({
+      id: z.number(),
+      nome: z.string().min(1).optional(),
+      descricao: z.string().nullable().optional(),
+      ativo: z.boolean().optional(),
+      entradaNoOrdem: z.number().nullable().optional(),
+      gatilhoTipo: z.enum(["manual", "mensagem_recebida", "dias_sem_contato", "cliente_novo"]).optional(),
+      gatilhoConfig: fluxoGatilhoConfigSchema.optional(),
+      visivelNoInbox: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...dados } = input;
+      await db.updateFluxo(id, dados);
+      return { success: true };
+    }),
+
+    excluir: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.excluirFluxo(input.id);
+      return { success: true };
+    }),
+
+    nos: router({
+      list: adminProcedure.input(z.object({ fluxoId: z.number() })).query(async ({ input }) => {
+        return db.listFluxoNos(input.fluxoId);
+      }),
+
+      create: adminProcedure.input(z.object({
+        fluxoId: z.number(),
+        tipo: fluxoNoTipoSchema,
+        ordem: z.number(),
+        config: fluxoNoConfigSchema,
+        proximoNoOrdem: z.number().nullable().optional(),
+        posX: z.number().nullable().optional(),
+        posY: z.number().nullable().optional(),
+      })).mutation(async ({ input }) => {
+        const id = await db.createFluxoNo(input as any);
+        return { id };
+      }),
+
+      update: adminProcedure.input(z.object({
+        id: z.number(),
+        config: fluxoNoConfigSchema.optional(),
+        proximoNoOrdem: z.number().nullable().optional(),
+        posX: z.number().nullable().optional(),
+        posY: z.number().nullable().optional(),
+      })).mutation(async ({ input }) => {
+        const { id, ...dados } = input;
+        await db.updateFluxoNo(id, dados as any);
+        return { success: true };
+      }),
+
+      excluir: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+        await db.excluirFluxoNo(input.id);
+        return { success: true };
+      }),
+
+      // Só armazena — não envia nada. O envio de verdade acontece na
+      // execução do fluxo (server/fluxos.ts, nó midia), que baixa esse
+      // arquivo do storage e manda em Base64 pra Z-API.
+      uploadMidia: adminProcedure.input(z.object({
+        nomeArquivo: z.string(),
+        conteudoBase64: z.string(),
+        mimeType: z.string(),
+      })).mutation(async ({ input, ctx }) => {
+        const buffer = Buffer.from(input.conteudoBase64, "base64");
+        const nomeLimpo = normalizeStorageKey(input.nomeArquivo);
+        const key = `fluxos/${ctx.user.id}/${Date.now()}-${nomeLimpo}`;
+        const { key: storageKey } = await storagePut(key, buffer, input.mimeType);
+        return { storageKey };
+      }),
+    }),
+
+    // "Testar com um cliente" no editor — admin only.
+    iniciar: adminProcedure.input(z.object({
+      fluxoId: z.number(),
+      conversaId: z.number(),
+      clienteId: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      const execucaoId = await iniciarExecucaoFluxo(input.fluxoId, input.conversaId, input.clienteId);
+      return { execucaoId };
+    }),
+
+    // Menu "Executar fluxo" no Inbox — qualquer atendente, só se
+    // fluxos.visivelNoInbox estiver ligado pra esse fluxo.
+    iniciarVisivel: protectedProcedure.input(z.object({
+      fluxoId: z.number(),
+      conversaId: z.number(),
+      clienteId: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      const fluxo = await db.getFluxoById(input.fluxoId);
+      if (!fluxo?.visivelNoInbox) throw new Error("Esse fluxo não está liberado pra execução manual no Inbox");
+      const execucaoId = await iniciarExecucaoFluxo(input.fluxoId, input.conversaId, input.clienteId);
+      return { execucaoId };
+    }),
+
+    execucoes: router({
+      list: adminProcedure.input(z.object({ fluxoId: z.number() })).query(async ({ input }) => {
+        return db.listFluxoExecucoesPorFluxo(input.fluxoId);
+      }),
+    }),
+
+    registrarHeartbeat: adminProcedure.mutation(async ({ ctx }) => {
+      const userSession = parseCookieHeader(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
+      await upsertHeartbeatJob({
+        name: "cron-retomar-fluxos",
+        cron: "0 * * * * *",
+        path: "/api/scheduled/retomar-fluxos",
+        method: "POST",
+        description: "Fluxos: retoma execuções pausadas (nó aguardar) e trata timeout de menu aguardando resposta.",
+      }, userSession);
+      return { success: true };
+    }),
+
+    registrarHeartbeatGatilhosAgendados: adminProcedure.mutation(async ({ ctx }) => {
+      const userSession = parseCookieHeader(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
+      await upsertHeartbeatJob({
+        name: "cron-disparar-fluxos-agendados",
+        cron: "0 0 6 * * *",
+        path: "/api/scheduled/disparar-fluxos-agendados",
+        method: "POST",
+        description: "Fluxos: varredura diária do gatilho dias_sem_contato.",
+      }, userSession);
       return { success: true };
     }),
   }),

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem, type InsertScript } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import { normalizarTelefone, variantesTelefone } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
@@ -759,6 +759,7 @@ export async function iniciarConversaComCliente(params: {
   const telefoneNormalizado = digitos.startsWith("55") ? digitos : `55${digitos}`;
 
   let clienteId: number | undefined;
+  let clienteCriadoAgora = false;
   if (!params.forcarDuplicata) {
     const candidatos = await buscarClientesPorTelefone(telefoneNormalizado);
     if (candidatos.length === 1 && provavelmenteMesmaPessoa(candidatos[0].nome, params.nome)) {
@@ -769,6 +770,7 @@ export async function iniciarConversaComCliente(params: {
   }
   if (!clienteId) {
     clienteId = await criarClienteManual(params.nome, telefoneNormalizado, params.unidadeId);
+    clienteCriadoAgora = true;
   }
   if (!clienteId) throw new Error("Falha ao criar cliente");
 
@@ -785,6 +787,7 @@ export async function iniciarConversaComCliente(params: {
       clienteId: existente[0].clienteId ?? clienteId,
       nomeContato: existente[0].nomeContato ?? params.nome,
     }).where(eq(inboxConversas.id, existente[0].id));
+    if (clienteCriadoAgora) dispararGatilhoClienteNovo(params.unidadeId, existente[0].id, clienteId);
     return { status: "ok", conversaId: existente[0].id, clienteId };
   }
 
@@ -801,7 +804,19 @@ export async function iniciarConversaComCliente(params: {
   }).$returningId();
   const conversaId = result[0]?.id;
   if (!conversaId) throw new Error("Falha ao criar conversa");
+  if (clienteCriadoAgora) dispararGatilhoClienteNovo(params.unidadeId, conversaId, clienteId);
   return { status: "ok", conversaId, clienteId };
+}
+
+/**
+ * Best-effort, nunca bloqueia o fluxo de criação de cliente que
+ * disparou — ver server/fluxosGatilhos.ts. Import dinâmico evita ciclo
+ * (fluxosGatilhos.ts também importa de db.ts).
+ */
+function dispararGatilhoClienteNovo(unidadeId: number, conversaId: number, clienteId: number): void {
+  import("./fluxosGatilhos")
+    .then(({ dispararGatilhosFluxo }) => dispararGatilhosFluxo(unidadeId, "cliente_novo", { conversaId, clienteId }))
+    .catch((e) => console.error("[Fluxos] Erro ao disparar gatilho cliente_novo:", e));
 }
 
 /**
@@ -841,6 +856,7 @@ export async function criarClienteRapidoDeConversa(
   }
 
   let clienteId: number | undefined;
+  let clienteCriadoAgora = false;
   if (!forcarDuplicata) {
     const candidatos = await buscarClientesPorTelefone(conversa.telefone);
     if (candidatos.length === 1 && provavelmenteMesmaPessoa(candidatos[0].nome, nome)) {
@@ -851,9 +867,11 @@ export async function criarClienteRapidoDeConversa(
   }
   if (!clienteId) {
     clienteId = await criarClienteManual(nome, conversa.telefone.replace(/\D/g, ""), conversa.unidadeId ?? undefined);
+    clienteCriadoAgora = true;
   }
   if (!clienteId) throw new Error("Falha ao criar cliente");
   await db.update(inboxConversas).set({ clienteId, nomeContato: nome }).where(eq(inboxConversas.id, conversaId));
+  if (clienteCriadoAgora && conversa.unidadeId) dispararGatilhoClienteNovo(conversa.unidadeId, conversaId, clienteId);
   return { status: "ok", clienteId };
 }
 
@@ -3161,4 +3179,187 @@ export async function excluirScript(id: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.update(scripts).set({ ativo: false }).where(eq(scripts.id, id));
+}
+
+// ===== Fluxos de automação de WhatsApp (porte do mobai-crm, 2026-08-13) =====
+
+export async function listFluxos(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(fluxos).where(eq(fluxos.unidadeId, unidadeId)).orderBy(desc(fluxos.updatedAt));
+}
+
+export async function getFluxoById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(fluxos).where(eq(fluxos.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createFluxo(dados: { unidadeId: number; nome: string; descricao?: string }): Promise<number | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const insertValues: InsertFluxo = { unidadeId: dados.unidadeId, nome: dados.nome, descricao: dados.descricao ?? null };
+  const result = await db.insert(fluxos).values(insertValues).$returningId();
+  return result[0]?.id;
+}
+
+export async function updateFluxo(id: number, dados: {
+  nome?: string; descricao?: string | null; ativo?: boolean; entradaNoOrdem?: number | null;
+  gatilhoTipo?: "manual" | "mensagem_recebida" | "dias_sem_contato" | "cliente_novo";
+  gatilhoConfig?: FluxoGatilhoConfig | null; visivelNoInbox?: boolean;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(fluxos).set(dados).where(eq(fluxos.id, id));
+}
+
+/** Hard delete — cascata manual pra nós e execuções, não é dado de cliente. */
+export async function excluirFluxo(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(fluxoExecucoes).where(eq(fluxoExecucoes.fluxoId, id));
+  await db.delete(fluxoNos).where(eq(fluxoNos.fluxoId, id));
+  await db.delete(fluxos).where(eq(fluxos.id, id));
+}
+
+export async function listFluxoNos(fluxoId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(fluxoNos).where(eq(fluxoNos.fluxoId, fluxoId)).orderBy(fluxoNos.ordem);
+}
+
+export async function getFluxoNoByOrdem(fluxoId: number, ordem: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(fluxoNos).where(and(eq(fluxoNos.fluxoId, fluxoId), eq(fluxoNos.ordem, ordem))).limit(1);
+  return result[0];
+}
+
+export async function createFluxoNo(dados: InsertFluxoNo): Promise<number | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.insert(fluxoNos).values(dados).$returningId();
+  return result[0]?.id;
+}
+
+export async function updateFluxoNo(id: number, dados: {
+  config?: FluxoNoConfig; proximoNoOrdem?: number | null; posX?: number | null; posY?: number | null;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(fluxoNos).set(dados).where(eq(fluxoNos.id, id));
+}
+
+export async function excluirFluxoNo(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(fluxoNos).where(eq(fluxoNos.id, id));
+}
+
+export async function createFluxoExecucao(dados: {
+  fluxoId: number; conversaId: number; clienteId?: number | null; noAtualOrdem: number;
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco indisponível");
+  const insertValues: InsertFluxoExecucao = {
+    fluxoId: dados.fluxoId, conversaId: dados.conversaId, clienteId: dados.clienteId ?? null, noAtualOrdem: dados.noAtualOrdem,
+    variaveis: {},
+  };
+  const result = await db.insert(fluxoExecucoes).values(insertValues).$returningId();
+  if (!result[0]?.id) throw new Error("Falha ao criar execução do fluxo");
+  return result[0].id;
+}
+
+export async function getFluxoExecucaoById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(fluxoExecucoes).where(eq(fluxoExecucoes.id, id)).limit(1);
+  return result[0];
+}
+
+export async function updateFluxoExecucao(id: number, dados: Partial<InsertFluxoExecucao>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(fluxoExecucoes).set(dados).where(eq(fluxoExecucoes.id, id));
+}
+
+export async function listFluxoExecucoesPorFluxo(fluxoId: number, limit: number = 100) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    ...getTableColumns(fluxoExecucoes),
+    conversaNome: inboxConversas.nomeContato,
+    conversaTelefone: inboxConversas.telefone,
+    clienteNome: clientes.nome,
+  }).from(fluxoExecucoes)
+    .leftJoin(inboxConversas, eq(fluxoExecucoes.conversaId, inboxConversas.id))
+    .leftJoin(clientes, eq(fluxoExecucoes.clienteId, clientes.id))
+    .where(eq(fluxoExecucoes.fluxoId, fluxoId))
+    .orderBy(desc(fluxoExecucoes.iniciadoEm)).limit(limit);
+}
+
+/** Já existe uma execução ativa/pausada/aguardando desse fluxo pra essa conversa — evita iniciar duplicada. */
+export async function existeFluxoExecucaoEmAndamento(fluxoId: number, conversaId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const result = await db.select({ id: fluxoExecucoes.id }).from(fluxoExecucoes)
+    .where(and(
+      eq(fluxoExecucoes.fluxoId, fluxoId),
+      eq(fluxoExecucoes.conversaId, conversaId),
+      inArray(fluxoExecucoes.status, ["ativo", "pausado", "aguardando_resposta"]),
+    )).limit(1);
+  return result.length > 0;
+}
+
+/** Execução "aguardando_resposta" (nó menu) já aberta pra essa conversa — usado pro webhook decidir entre retomar ou disparar um gatilho novo. */
+export async function getFluxoExecucaoAguardandoRespostaPorConversa(conversaId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(fluxoExecucoes)
+    .where(and(eq(fluxoExecucoes.conversaId, conversaId), eq(fluxoExecucoes.status, "aguardando_resposta")))
+    .orderBy(desc(fluxoExecucoes.atualizadoEm)).limit(1);
+  return result[0];
+}
+
+export async function listFluxoExecucoesPausadasVencidas(limit: number = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(fluxoExecucoes)
+    .where(and(eq(fluxoExecucoes.status, "pausado"), lte(fluxoExecucoes.proximaExecucaoEm, new Date())))
+    .limit(limit);
+}
+
+/** Execuções "aguardando_resposta" (só nó menu, v1) cujo diasTimeoutSemResposta do nó já venceu — comparado em JS, o timeout mora no config do nó, não na execução. */
+export async function listFluxoExecucoesAguardandoRespostaVencidas(limit: number = 20): Promise<Array<{ execucao: typeof fluxoExecucoes.$inferSelect; noTipo: string }>> {
+  const db = await getDb();
+  if (!db) return [];
+  const candidatas = await db.select().from(fluxoExecucoes).where(eq(fluxoExecucoes.status, "aguardando_resposta")).limit(limit * 3);
+  const resultado: Array<{ execucao: typeof fluxoExecucoes.$inferSelect; noTipo: string }> = [];
+  for (const execucao of candidatas) {
+    if (resultado.length >= limit) break;
+    const no = await getFluxoNoByOrdem(execucao.fluxoId, execucao.noAtualOrdem);
+    if (!no || no.tipo !== "menu") continue;
+    const config = no.config as { diasTimeoutSemResposta?: number };
+    const diasTimeout = config.diasTimeoutSemResposta ?? 3;
+    const vencidoEm = execucao.atualizadoEm.getTime() + diasTimeout * 86_400_000;
+    if (Date.now() >= vencidoEm) resultado.push({ execucao, noTipo: no.tipo });
+  }
+  return resultado;
+}
+
+export async function listFluxosPorGatilho(unidadeId: number, gatilhoTipo: "mensagem_recebida" | "dias_sem_contato" | "cliente_novo") {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(fluxos).where(and(eq(fluxos.unidadeId, unidadeId), eq(fluxos.ativo, true), eq(fluxos.gatilhoTipo, gatilhoTipo)));
+}
+
+/** Sweep diário do gatilho "dias_sem_contato" — conversas de uma unidade sem mensagem há N dias. */
+export async function listConversasSemContatoHaDias(unidadeId: number, dias: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const limite = new Date(Date.now() - dias * 86_400_000);
+  return db.select({ id: inboxConversas.id, clienteId: inboxConversas.clienteId })
+    .from(inboxConversas)
+    .where(and(eq(inboxConversas.unidadeId, unidadeId), lte(inboxConversas.ultimaMensagemEm, limite)));
 }

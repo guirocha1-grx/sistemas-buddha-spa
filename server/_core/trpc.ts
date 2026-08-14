@@ -58,6 +58,7 @@ const ROUTER_MODULO: Record<string, string> = {
   laminas: "laminas",
   leads: "leads",
   configuracoes: "configuracoes",
+  fluxos: "fluxos",
 };
 
 /**
