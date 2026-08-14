@@ -101,6 +101,13 @@ const state = vi.hoisted(() => {
       status: { useQuery: () => ({ data: { enabled: true }, isLoading: false }) },
       setStatus: { useMutation: () => mutation() },
     },
+    atendentes: {
+      atual: { useQuery: () => ({ data: null, isLoading: false }) },
+    },
+    fluxos: {
+      iniciarVisivel: { useMutation: () => mutation() },
+      get: { useQuery: () => ({ data: undefined, isLoading: false }) },
+    },
   };
   return { cliente, conversa, page, trpc };
 });

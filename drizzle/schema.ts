@@ -853,10 +853,17 @@ export type InsertTransacaoEntreUnidades = typeof transacoesEntreUnidades.$infer
 export const scripts = mysqlTable("scripts", {
   id: int("id").autoincrement().primaryKey(),
   categoriaScript: varchar("categoriaScript", { length: 100 }).notNull(),
-  script: text("script").notNull(),
+  // Null quando tipo="fluxo" — o conteúdo vem do fluxo referenciado,
+  // não de texto próprio.
+  script: text("script"),
   observacoes: text("observacoes"),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  // "fluxo" dispara um Fluxo pronto (server/fluxos.ts) em vez de
+  // inserir texto na caixa — permite script com imagem/áudio sem
+  // duplicar upload de mídia aqui (2026-08-13, ver ScriptPicker.tsx).
+  tipo: mysqlEnum("tipo", ["texto", "fluxo"]).default("texto").notNull(),
+  fluxoId: int("fluxoId"), // soft-ref a fluxos.id, só usado quando tipo="fluxo"
 }, (table) => ({
   categoriaIdx: index("scripts_categoria_idx").on(table.categoriaScript),
 }));

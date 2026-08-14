@@ -10,8 +10,11 @@ export async function pipeInboxMedia(
   getSignedUrl: SignedUrlGetter,
   fetchFn: typeof fetch = fetch,
 ): Promise<void> {
-  if (!key.startsWith("inbox/")) {
-    res.status(400).send("Invalid inbox media key");
+  // "fluxos/" também passa por aqui — miniatura de mídia de Fluxo
+  // (preview em Scripts.tsx/ScriptPicker.tsx, 2026-08-13), mesma rota
+  // em vez de duplicar o proxy só pra esse caso.
+  if (!key.startsWith("inbox/") && !key.startsWith("fluxos/")) {
+    res.status(400).send("Invalid media key");
     return;
   }
 

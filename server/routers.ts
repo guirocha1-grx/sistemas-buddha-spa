@@ -1060,11 +1060,17 @@ Diretrizes:
     }),
 
     // Não é adminProcedure — recepção também mantém os scripts prontos
-    // do dia a dia (2026-08-13).
+    // do dia a dia (2026-08-13). tipo="fluxo" só referencia um Fluxo
+    // já pronto (montado por um admin em /fluxos) — quem cria/edita
+    // script não constrói fluxo nenhum aqui.
     create: protectedProcedure.input(z.object({
       categoriaScript: z.string().min(1).max(100),
-      script: z.string().min(1),
+      tipo: z.enum(["texto", "fluxo"]).default("texto"),
+      script: z.string().min(1).optional(),
+      fluxoId: z.number().optional(),
       observacoes: z.string().optional(),
+    }).refine((v) => v.tipo === "texto" ? !!v.script?.trim() : !!v.fluxoId, {
+      message: "Script de texto precisa de mensagem; script de fluxo precisa de um fluxo selecionado",
     })).mutation(async ({ input }) => {
       const id = await db.createScript(input);
       return { id };
@@ -1073,7 +1079,9 @@ Diretrizes:
     update: protectedProcedure.input(z.object({
       id: z.number(),
       categoriaScript: z.string().min(1).max(100).optional(),
-      script: z.string().min(1).optional(),
+      tipo: z.enum(["texto", "fluxo"]).optional(),
+      script: z.string().nullable().optional(),
+      fluxoId: z.number().nullable().optional(),
       observacoes: z.string().nullable().optional(),
     })).mutation(async ({ input }) => {
       const { id, ...dados } = input;
@@ -1195,10 +1203,14 @@ Diretrizes:
       fluxoId: z.number(),
       conversaId: z.number(),
       clienteId: z.number().optional(),
-    })).mutation(async ({ input }) => {
+    })).mutation(async ({ input, ctx }) => {
       const fluxo = await db.getFluxoById(input.fluxoId);
       if (!fluxo?.visivelNoInbox) throw new Error("Esse fluxo não está liberado pra execução manual no Inbox");
-      const execucaoId = await iniciarExecucaoFluxo(input.fluxoId, input.conversaId, input.clienteId);
+      const nomeAtendente = ctx.atendente?.nome ?? ctx.user.name ?? "";
+      const execucaoId = await iniciarExecucaoFluxo(
+        input.fluxoId, input.conversaId, input.clienteId,
+        nomeAtendente ? { nome_atendente: nomeAtendente } : undefined,
+      );
       return { execucaoId };
     }),
 

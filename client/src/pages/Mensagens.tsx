@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useAtendenteAtual } from "@/components/AtendenteGate";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card } from "@/components/ui/card";
@@ -86,6 +87,7 @@ function fileToBase64(file: File): Promise<string> {
 export default function Mensagens() {
   const { unidadeSelecionada } = useUnidade();
   const { user } = useAuth();
+  const { atendente } = useAtendenteAtual();
   const [location] = useLocation();
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState<"todos" | "aberta" | "encerrada">("todos");
@@ -875,6 +877,14 @@ export default function Mensagens() {
                   onOpenChange={setScriptPickerOpen}
                   onSelect={(s) => setTexto((prev) => (prev ? `${prev}\n${s}` : s))}
                   disabled={!conversaSelecionadaId}
+                  conversaId={conversaSelecionadaId ?? undefined}
+                  clienteId={conversaSelecionada?.clienteId ?? undefined}
+                  unidadeId={unidadeSelecionada?.id}
+                  variaveis={{
+                    nome_atendente: atendente?.nome ?? user?.name ?? "",
+                    unidade: unidadeSelecionada?.nome ?? "",
+                    nome_cliente: conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || "",
+                  }}
                 />
                 <Button
                   variant="outline"

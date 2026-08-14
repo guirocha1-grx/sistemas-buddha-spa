@@ -3,23 +3,58 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Zap } from "lucide-react";
+import { Zap, MessageSquare, Workflow, Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
+
+interface ScriptRow {
+  id: number;
+  categoriaScript: string;
+  tipo: "texto" | "fluxo";
+  script: string | null;
+  fluxoId: number | null;
+  fluxoUnidadeId: number | null;
+  fluxoNome: string | null;
+}
 
 interface ScriptPickerProps {
   onSelect: (texto: string) => void;
   disabled?: boolean;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  /** Conversa/cliente/unidade abertos no Inbox — necessários pra disparar script tipo "fluxo" e pra filtrar por unidade. */
+  conversaId?: number;
+  clienteId?: number;
+  unidadeId?: number;
+  /** {{nome_atendente}}, {{unidade}}, {{nome_cliente}} — resolvidos aqui (fora do componente) porque script tipo "texto" nunca passa pelo motor de Fluxos. */
+  variaveis?: Record<string, string>;
+}
+
+function interpolarVariaveis(texto: string, variaveis: Record<string, string>): string {
+  return texto.replace(/\{\{(\w+)\}\}/g, (match, nome) => variaveis[nome] ?? match);
+}
+
+/** Miniatura pro item "fluxo" da lista — só busca se o nó de entrada for mídia com imagem (thumbnail vale a pena); resto some sem miniatura. */
+function MiniaturaFluxo({ fluxoId }: { fluxoId: number }) {
+  const query = trpc.fluxos.get.useQuery({ id: fluxoId });
+  const nos = query.data?.nos ?? [];
+  const fluxo = query.data?.fluxo;
+  if (!fluxo || nos.length === 0) return null;
+  const noEntrada = [...nos].sort((a, b) => a.ordem - b.ordem).find((n) => n.ordem === fluxo.entradaNoOrdem) ?? nos[0];
+  if (noEntrada.tipo !== "midia") return null;
+  const config = noEntrada.config as { tipoMidia?: string; storageKey?: string };
+  if (config.tipoMidia !== "imagem" || !config.storageKey) return null;
+  return <img src={`/api/inbox-media/${config.storageKey}`} alt="" className="h-6 w-6 rounded object-cover shrink-0" />;
 }
 
 /**
  * Popover de scripts prontos — mesmo conceito do mobai-crm (busca +
  * filtro de categoria + recentes). `open`/`onOpenChange` controlados
  * pelo componente pai pra que o atalho "/" na caixa de texto também
- * consiga abrir.
+ * consiga abrir. Script tipo "fluxo" (2026-08-13) não insere texto —
+ * dispara o fluxo direto pra conversa aberta.
  */
-export function ScriptPicker({ onSelect, disabled, open, onOpenChange }: ScriptPickerProps) {
+export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaId, clienteId, unidadeId, variaveis }: ScriptPickerProps) {
   const [busca, setBusca] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState<string | null>(null);
 
@@ -30,6 +65,15 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange }: ScriptP
   );
   const recentesQuery = trpc.scripts.listRecentes.useQuery(undefined, { enabled: open });
   const registrarUsoMutation = trpc.scripts.registrarUso.useMutation();
+  const iniciarFluxoMutation = trpc.fluxos.iniciarVisivel.useMutation({
+    onSuccess: () => toast.success("Fluxo iniciado."),
+    onError: (e) => toast.error(e.message),
+  });
+
+  // Script "fluxo" cujo fluxo é de outra unidade não aparece — evita
+  // disparar via credencial Z-API de uma unidade diferente da conversa
+  // aberta. Script "texto" continua aparecendo sempre.
+  const visivelNaUnidade = (s: ScriptRow) => s.tipo === "texto" || s.fluxoUnidadeId === unidadeId;
 
   const fechar = () => {
     onOpenChange(false);
@@ -37,11 +81,22 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange }: ScriptP
     setCategoriaFiltro(null);
   };
 
-  const handleSelect = (script: { id: number; script: string }) => {
-    onSelect(script.script);
+  const handleSelect = (script: ScriptRow) => {
+    if (script.tipo === "fluxo") {
+      if (!script.fluxoId || !conversaId) return;
+      iniciarFluxoMutation.mutate({ fluxoId: script.fluxoId, conversaId, clienteId });
+      registrarUsoMutation.mutate({ scriptId: script.id });
+      fechar();
+      return;
+    }
+    const texto = variaveis ? interpolarVariaveis(script.script ?? "", variaveis) : (script.script ?? "");
+    onSelect(texto);
     registrarUsoMutation.mutate({ scriptId: script.id });
     fechar();
   };
+
+  const listaFiltrada = (scriptsQuery.data ?? []).filter(visivelNaUnidade) as ScriptRow[];
+  const recentesFiltrados = (recentesQuery.data ?? []).filter(visivelNaUnidade) as ScriptRow[];
 
   return (
     <Popover open={open} onOpenChange={(v) => (v ? onOpenChange(true) : fechar())}>
@@ -82,34 +137,45 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange }: ScriptP
           )}
         </div>
         <div className="max-h-72 overflow-y-auto p-1">
-          {!busca && !categoriaFiltro && (recentesQuery.data?.length ?? 0) > 0 && (
+          {!busca && !categoriaFiltro && recentesFiltrados.length > 0 && (
             <div className="mb-1">
               <p className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Recentes</p>
-              {recentesQuery.data!.map((s) => (
+              {recentesFiltrados.map((s) => (
                 <button
                   key={`recente-${s.id}`}
-                  className="w-full text-left px-2 py-1.5 rounded hover:bg-muted text-xs"
+                  className="w-full text-left px-2 py-1.5 rounded hover:bg-muted text-xs flex items-start gap-1.5"
+                  disabled={iniciarFluxoMutation.isPending}
                   onClick={() => handleSelect(s)}
                 >
-                  <span className="font-medium text-[10px] text-muted-foreground block">{s.categoriaScript}</span>
-                  {s.script.slice(0, 80)}
+                  {s.tipo === "fluxo" ? <Workflow className="h-3 w-3 mt-0.5 text-muted-foreground shrink-0" /> : <MessageSquare className="h-3 w-3 mt-0.5 text-muted-foreground shrink-0" />}
+                  <span className="flex-1 min-w-0">
+                    <span className="font-medium text-[10px] text-muted-foreground block">{s.categoriaScript}</span>
+                    {s.tipo === "fluxo" ? (s.fluxoNome || "(fluxo removido)") : s.script?.slice(0, 80)}
+                  </span>
+                  {s.tipo === "fluxo" && s.fluxoId && <MiniaturaFluxo fluxoId={s.fluxoId} />}
                 </button>
               ))}
             </div>
           )}
           {scriptsQuery.isLoading ? (
             <p className="p-3 text-xs text-muted-foreground text-center">Carregando...</p>
-          ) : (scriptsQuery.data?.length ?? 0) === 0 ? (
+          ) : listaFiltrada.length === 0 ? (
             <p className="p-3 text-xs text-muted-foreground text-center">Nenhum script encontrado.</p>
           ) : (
-            scriptsQuery.data!.map((s) => (
+            listaFiltrada.map((s) => (
               <button
                 key={s.id}
-                className="w-full text-left px-2 py-1.5 rounded hover:bg-muted text-xs"
+                className="w-full text-left px-2 py-1.5 rounded hover:bg-muted text-xs flex items-start gap-1.5"
+                disabled={iniciarFluxoMutation.isPending}
                 onClick={() => handleSelect(s)}
               >
-                <span className="font-medium text-[10px] text-muted-foreground block">{s.categoriaScript}</span>
-                {s.script.slice(0, 80)}
+                {s.tipo === "fluxo" ? <Workflow className="h-3 w-3 mt-0.5 text-muted-foreground shrink-0" /> : <MessageSquare className="h-3 w-3 mt-0.5 text-muted-foreground shrink-0" />}
+                <span className="flex-1 min-w-0">
+                  <span className="font-medium text-[10px] text-muted-foreground block">{s.categoriaScript}</span>
+                  {s.tipo === "fluxo" ? (s.fluxoNome || "(fluxo removido)") : s.script?.slice(0, 80)}
+                </span>
+                {s.tipo === "fluxo" && s.fluxoId && <MiniaturaFluxo fluxoId={s.fluxoId} />}
+                {iniciarFluxoMutation.isPending && s.tipo === "fluxo" && <Loader2 className="h-3 w-3 animate-spin shrink-0" />}
               </button>
             ))
           )}

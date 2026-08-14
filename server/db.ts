@@ -3118,13 +3118,21 @@ export async function marcarRelatorioRecepcaoEnviadoHoje(unidadeId: number): Pro
 
 // ===== Scripts (mensagens prontas do Inbox) =====
 
+// fluxoUnidadeId (via LEFT JOIN) diz de qual unidade é o fluxo de um
+// script tipo="fluxo" — ScriptPicker.tsx usa isso pra só mostrar esses
+// scripts quando a conversa aberta é da mesma unidade (evita disparar
+// um fluxo com credencial Z-API de outra unidade).
 export async function listScripts(busca?: string, categoria?: string) {
   const db = await getDb();
   if (!db) return [];
   const condicoes = [eq(scripts.ativo, true)];
   if (categoria) condicoes.push(eq(scripts.categoriaScript, categoria));
   if (busca) condicoes.push(like(scripts.script, `%${busca}%`));
-  return db.select().from(scripts).where(and(...condicoes)).orderBy(scripts.categoriaScript, scripts.id);
+  return db.select({ ...getTableColumns(scripts), fluxoUnidadeId: fluxos.unidadeId, fluxoNome: fluxos.nome })
+    .from(scripts)
+    .leftJoin(fluxos, eq(scripts.fluxoId, fluxos.id))
+    .where(and(...condicoes))
+    .orderBy(scripts.categoriaScript, scripts.id);
 }
 
 export async function listCategoriasScript(): Promise<string[]> {
@@ -3149,7 +3157,10 @@ export async function listScriptsRecentes(limit: number = 8) {
     if (idsOrdenados.length >= limit) break;
   }
   if (idsOrdenados.length === 0) return [];
-  const linhas = await db.select().from(scripts).where(and(inArray(scripts.id, idsOrdenados), eq(scripts.ativo, true)));
+  const linhas = await db.select({ ...getTableColumns(scripts), fluxoUnidadeId: fluxos.unidadeId, fluxoNome: fluxos.nome })
+    .from(scripts)
+    .leftJoin(fluxos, eq(scripts.fluxoId, fluxos.id))
+    .where(and(inArray(scripts.id, idsOrdenados), eq(scripts.ativo, true)));
   const porId = new Map(linhas.map((l) => [l.id, l]));
   return idsOrdenados.map((id) => porId.get(id)).filter((s): s is NonNullable<typeof s> => !!s);
 }
@@ -3160,15 +3171,25 @@ export async function registrarUsoScript(scriptId: number, userId: number): Prom
   await db.insert(scriptsUso).values({ scriptId, userId });
 }
 
-export async function createScript(dados: { categoriaScript: string; script: string; observacoes?: string }): Promise<number | undefined> {
+export async function createScript(dados: {
+  categoriaScript: string; tipo?: "texto" | "fluxo"; script?: string; fluxoId?: number; observacoes?: string;
+}): Promise<number | undefined> {
   const db = await getDb();
   if (!db) return undefined;
-  const insertValues: InsertScript = { categoriaScript: dados.categoriaScript, script: dados.script, observacoes: dados.observacoes };
+  const insertValues: InsertScript = {
+    categoriaScript: dados.categoriaScript,
+    tipo: dados.tipo ?? "texto",
+    script: dados.script ?? null,
+    fluxoId: dados.fluxoId ?? null,
+    observacoes: dados.observacoes,
+  };
   const result = await db.insert(scripts).values(insertValues).$returningId();
   return result[0]?.id;
 }
 
-export async function updateScript(id: number, dados: { categoriaScript?: string; script?: string; observacoes?: string | null }): Promise<void> {
+export async function updateScript(id: number, dados: {
+  categoriaScript?: string; tipo?: "texto" | "fluxo"; script?: string | null; fluxoId?: number | null; observacoes?: string | null;
+}): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.update(scripts).set(dados).where(eq(scripts.id, id));
@@ -3258,13 +3279,13 @@ export async function excluirFluxoNo(id: number): Promise<void> {
 }
 
 export async function createFluxoExecucao(dados: {
-  fluxoId: number; conversaId: number; clienteId?: number | null; noAtualOrdem: number;
+  fluxoId: number; conversaId: number; clienteId?: number | null; noAtualOrdem: number; variaveis?: Record<string, string>;
 }): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Banco indisponível");
   const insertValues: InsertFluxoExecucao = {
     fluxoId: dados.fluxoId, conversaId: dados.conversaId, clienteId: dados.clienteId ?? null, noAtualOrdem: dados.noAtualOrdem,
-    variaveis: {},
+    variaveis: dados.variaveis ?? {},
   };
   const result = await db.insert(fluxoExecucoes).values(insertValues).$returningId();
   if (!result[0]?.id) throw new Error("Falha ao criar execução do fluxo");

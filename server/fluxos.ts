@@ -11,7 +11,7 @@
  * sem QStash (aguardar fica só com o piso de ~1min do cron), e a
  * âncora da execução é a conversa do Inbox, não o cliente.
  */
-import type { FluxoExecucao, FluxoNoConfig } from "../drizzle/schema";
+import type { Fluxo, FluxoExecucao, FluxoNoConfig } from "../drizzle/schema";
 import {
   createFluxoExecucao,
   getFluxoById,
@@ -61,20 +61,30 @@ function avaliarCondicoes(
 }
 
 /**
- * Variáveis calculadas na hora — nome/telefone/email do cliente ou
- * contato da conversa — disponíveis em qualquer nó que interpola texto
- * (mensagem, menu, salvar_variavel) ou avalia condição, junto das
- * variáveis normais do fluxo. Nunca persistidas em
+ * Variáveis calculadas na hora — nome/telefone/email/unidade do
+ * cliente ou contato da conversa — disponíveis em qualquer nó que
+ * interpola texto (mensagem, menu, salvar_variavel) ou avalia
+ * condição, junto das variáveis normais do fluxo. Nunca persistidas em
  * fluxo_execucoes.variaveis, recalculadas a cada passo. v1 não inclui
  * _horario_comercial/_cliente_novo do mobai-crm (fora de escopo por
  * enquanto — não existe config de horário por unidade aqui).
+ *
+ * `nome_cliente` é alias de `nome` (mesmo valor) — Scripts (2026-08-13,
+ * ver ScriptPicker.tsx) usa esse nome pra variável de cliente; mantém
+ * `nome` também pra não quebrar fluxo já montado antes dessa mudança.
  */
-export async function computarVariaveisSistema(execucao: FluxoExecucao): Promise<Record<string, string>> {
-  const conversa = await getInboxConversaById(execucao.conversaId);
+export async function computarVariaveisSistema(execucao: FluxoExecucao, fluxo: Fluxo): Promise<Record<string, string>> {
+  const [conversa, unidade] = await Promise.all([
+    getInboxConversaById(execucao.conversaId),
+    getUnidadeById(fluxo.unidadeId),
+  ]);
+  const nomeCliente = conversa?.clienteNome || conversa?.nomeContato || "";
   return {
-    nome: conversa?.clienteNome || conversa?.nomeContato || "",
+    nome: nomeCliente,
+    nome_cliente: nomeCliente,
     telefone: conversa?.telefone || "",
     email: "",
+    unidade: unidade?.nome || "",
   };
 }
 
@@ -195,12 +205,27 @@ async function getCredenciaisZapi(unidadeId: number) {
   return { instanceId: unidade.zapiInstanceId, token: unidade.zapiToken, clientToken: unidade.zapiClientToken };
 }
 
-/** Cria a execução no nó de entrada do fluxo (fluxos.entradaNoOrdem, ou o de menor `ordem` se não definido) e a processa imediatamente. */
-export async function iniciarExecucaoFluxo(fluxoId: number, conversaId: number, clienteId?: number | null): Promise<number> {
+/**
+ * Cria a execução no nó de entrada do fluxo (fluxos.entradaNoOrdem, ou
+ * o de menor `ordem` se não definido) e a processa imediatamente.
+ * `variaveisIniciais` semeia a execução (ex.: `nome_atendente`, quando
+ * quem disparou foi uma pessoa de verdade — um Script tipo "fluxo" ou
+ * o "Executar fluxo" do Inbox — e não um gatilho automático, que não
+ * tem ninguém "atendendo").
+ */
+export async function iniciarExecucaoFluxo(
+  fluxoId: number,
+  conversaId: number,
+  clienteId?: number | null,
+  variaveisIniciais?: Record<string, string>,
+): Promise<number> {
   const [fluxo, nos] = await Promise.all([getFluxoById(fluxoId), listFluxoNos(fluxoId)]);
   if (nos.length === 0) throw new Error("Fluxo sem nenhum passo configurado");
   const ordemInicial = fluxo?.entradaNoOrdem ?? nos[0].ordem; // nos[0] = menor ordem (listFluxoNos ordena asc)
-  const execucaoId = await createFluxoExecucao({ fluxoId, conversaId, clienteId: clienteId ?? null, noAtualOrdem: ordemInicial });
+  const execucaoId = await createFluxoExecucao({
+    fluxoId, conversaId, clienteId: clienteId ?? null, noAtualOrdem: ordemInicial,
+    variaveis: variaveisIniciais,
+  });
   await processarNo(execucaoId);
   return execucaoId;
 }
@@ -245,7 +270,7 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
       case "mensagem": {
         const config = no.config as Extract<FluxoNoConfig, { texto: string }>;
         const conversa = await getInboxConversaById(execucao.conversaId);
-        const variaveisComSistema = { ...variaveis, ...(await computarVariaveisSistema(execucao)) };
+        const variaveisComSistema = { ...variaveis, ...(await computarVariaveisSistema(execucao, fluxo)) };
         const texto = interpolarVariaveis(config.texto, variaveisComSistema);
         if (conversa?.telefone) {
           const creds = await getCredenciaisZapi(fluxo.unidadeId);
@@ -284,7 +309,7 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
 
       case "condicional": {
         const config = no.config as Extract<FluxoNoConfig, { logica: "E" | "OU" }>;
-        const variaveisComSistema = { ...variaveis, ...(await computarVariaveisSistema(execucao)) };
+        const variaveisComSistema = { ...variaveis, ...(await computarVariaveisSistema(execucao, fluxo)) };
         const verdadeiro = avaliarCondicoes(config, variaveisComSistema);
         const proximaOrdem = verdadeiro ? config.ordemSeVerdadeiro : config.ordemSeFalso;
         await avancar(execucaoId, proximaOrdem, profundidade);
@@ -294,7 +319,7 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
       case "salvar_variavel": {
         const config = no.config as Extract<FluxoNoConfig, { nome: string; origem: "fixo" | "ia" }>;
         const valor = config.origem === "fixo"
-          ? interpolarVariaveis((config as any).valorFixo ?? "", { ...variaveis, ...(await computarVariaveisSistema(execucao)) })
+          ? interpolarVariaveis((config as any).valorFixo ?? "", { ...variaveis, ...(await computarVariaveisSistema(execucao, fluxo)) })
           : await extrairVariavelViaIa(execucao.conversaId, (config as any).promptIa ?? "", config.nome);
         await updateFluxoExecucao(execucaoId, { variaveis: { ...variaveis, [config.nome]: valor } });
         await avancar(execucaoId, no.proximoNoOrdem, profundidade);

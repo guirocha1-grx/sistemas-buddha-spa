@@ -53,7 +53,7 @@ export async function processarNoMenu(execucaoId: number): Promise<void> {
   }
 
   const { computarVariaveisSistema } = await import("./fluxos");
-  const variaveisComSistema = { ...variaveis, ...(await computarVariaveisSistema(execucao)) };
+  const variaveisComSistema = { ...variaveis, ...(await computarVariaveisSistema(execucao, fluxo)) };
   const textoBase = interpolarVariaveis(config.texto, variaveisComSistema);
   const estilo = config.estilo ?? "texto";
 
