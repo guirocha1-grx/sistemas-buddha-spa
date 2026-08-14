@@ -215,3 +215,8 @@
 - [x] Instalar a dependência @xyflow/react ausente e validar a tela de Fluxos
 - [x] Publicar o módulo de Fluxos e a migração aplicada
 - [x] Sincronizar o GitHub após publicar o módulo de Fluxos
+- [x] Pesquisar BotConversa versus fluxos internos para disparos oficiais de WhatsApp
+- [x] Sincronizar a última versão do GitHub, validar e publicar
+- [x] Publicar scripts que iniciam fluxos automatizados
+- [ ] Sincronizar o GitHub após publicar scripts de fluxo
+- [x] Salvar o checkpoint da versão que adiciona scripts do tipo fluxo
