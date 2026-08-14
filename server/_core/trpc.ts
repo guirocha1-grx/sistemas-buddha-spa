@@ -83,6 +83,17 @@ const ROUTER_SUBSECAO: Record<string, string> = {
 };
 
 /**
+ * Procedures que ficam de fora do gate de módulo mesmo pertencendo a
+ * um router admin-only — hoje só fluxos.iniciarVisivel: "fluxos" é
+ * módulo admin-only na navegação (montar/editar fluxo), mas disparar
+ * um fluxo já pronto pelo Script do Inbox é justamente a
+ * funcionalidade que a recepção (conta restrita, sem módulo "fluxos")
+ * precisa usar — é por isso que esse procedure já é protectedProcedure
+ * e não adminProcedure (ver server/routers.ts).
+ */
+const PROCEDURES_EXENTAS_DO_MODULO = new Set(["fluxos.iniciarVisivel"]);
+
+/**
  * Barra o acesso quando a conta tem permissoesCustomizadas=true (ver
  * users/permissoesModulo no schema) e o módulo dessa procedure não
  * está entre os liberados. `ctx.permissoesModulos === null` (conta sem
@@ -97,7 +108,7 @@ const ROUTER_SUBSECAO: Record<string, string> = {
 const moduloMiddleware = t.middleware(async (opts) => {
   const { ctx, path, next } = opts;
   const permissoes = (ctx as TrpcContext).permissoesModulos;
-  if (permissoes) {
+  if (permissoes && !PROCEDURES_EXENTAS_DO_MODULO.has(path)) {
     const router = path.split(".")[0];
     const modulo = ROUTER_MODULO[router];
     if (modulo && !permissoes.has(modulo)) {
