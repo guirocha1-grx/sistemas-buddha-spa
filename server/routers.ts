@@ -1066,13 +1066,13 @@ Diretrizes:
     create: protectedProcedure.input(z.object({
       categoriaScript: z.string().min(1).max(100),
       tipo: z.enum(["texto", "fluxo"]).default("texto"),
-      script: z.string().min(1).optional(),
-      fluxoId: z.number().optional(),
+      script: z.string().min(1).nullable().optional(),
+      fluxoId: z.number().nullable().optional(),
       observacoes: z.string().optional(),
     }).refine((v) => v.tipo === "texto" ? !!v.script?.trim() : !!v.fluxoId, {
       message: "Script de texto precisa de mensagem; script de fluxo precisa de um fluxo selecionado",
     })).mutation(async ({ input }) => {
-      const id = await db.createScript(input);
+      const id = await db.createScript({ ...input, script: input.script ?? undefined, fluxoId: input.fluxoId ?? undefined });
       return { id };
     }),
 
