@@ -242,4 +242,7 @@
 - [x] Sincronizar o GitHub após publicar as variáveis de templates
 - [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
 - [x] Publicar a validação de cabeçalho e o filtro de templates rejeitados
-- [ ] Sincronizar o GitHub após publicar a melhoria de templates
+- [x] Sincronizar o GitHub após publicar a melhoria de templates
+- [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
+- [x] Publicar a correção de variantes de telefone brasileiras
+- [ ] Sincronizar o GitHub após publicar a correção de telefone
