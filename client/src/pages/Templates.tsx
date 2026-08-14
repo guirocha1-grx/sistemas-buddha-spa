@@ -224,7 +224,7 @@ export default function Templates() {
 
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">Cabeçalho (opcional, até 60 caracteres, no máx. 1 variável {"{{1}}"})</Label>
-              <Input value={cabecalho} onChange={(e) => setCabecalho(e.target.value.slice(0, 60))} placeholder="Ex: Olá, {{1}}!" />
+              <Input value={cabecalho} onChange={(e) => setCabecalho(e.target.value.replace(/[\r\n]/g, "").slice(0, 60))} placeholder="Ex: Olá, {{1}}!" />
               <div className="flex items-center justify-between mt-0.5">
                 {problemasCabecalho.length > 0 ? (
                   <p className="text-xs text-destructive">{problemasCabecalho[0]}</p>

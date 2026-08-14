@@ -46,7 +46,41 @@ export function validarCorpo(corpo: string): string[] {
   return problemas;
 }
 
-/** Cabeçalho da Meta só aceita no máximo 1 variável, e precisa ser {{1}}. */
+// Faixas Unicode (plano básico) que cobrem símbolos/emoji comuns — a
+// Meta rejeita qualquer emoji no cabeçalho (diferente do corpo, que
+// aceita). Comparação por código de caractere em vez de regex com
+// literal Unicode no source (mais robusto contra corrupção de
+// caractere invisível no arquivo). Um par substituto (0xD800-0xDBFF
+// seguido de 0xDC00-0xDFFF) sozinho já indica caractere do plano
+// astral — cobre o bloco de emoji "carinha"/objeto (1F300-1FAFF) sem
+// precisar decodificar o code point completo.
+const FAIXAS_EMOJI_BMP: Array<[number, number]> = [
+  [0x2600, 0x27bf], // símbolos diversos + dingbats (☀-➿)
+  [0x2190, 0x21ff], // setas (←-⇿)
+  [0x2b00, 0x2bff], // setas/formas diversas (⬀-⯿)
+  [0xfe0f, 0xfe0f], // variation selector (emoji presentation)
+];
+
+function contemEmoji(texto: string): boolean {
+  for (let i = 0; i < texto.length; i++) {
+    const code = texto.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const low = texto.charCodeAt(i + 1);
+      if (low >= 0xdc00 && low <= 0xdfff) return true;
+    }
+    if (FAIXAS_EMOJI_BMP.some(([inicio, fim]) => code >= inicio && code <= fim)) return true;
+  }
+  return false;
+}
+
+/**
+ * Cabeçalho da Meta é bem mais restrito que o corpo: no máximo 1
+ * variável (precisa ser {{1}}), sem quebra de linha, sem marcação de
+ * formatação do WhatsApp (*negrito*, _itálico_, ~riscado~, `mono`) e
+ * sem emoji — confirmado pelo erro real da Graph API (error_subcode
+ * 2388072, "O cabeçalho da mensagem não pode ter novas linhas,
+ * caracteres de formatação, emojis ou asteriscos").
+ */
 export function validarCabecalho(cabecalho: string): string[] {
   const problemas: string[] = [];
   const texto = cabecalho.trim();
@@ -58,5 +92,18 @@ export function validarCabecalho(cabecalho: string): string[] {
   } else if (indices.length === 1 && indices[0] !== 1) {
     problemas.push("A variável do cabeçalho precisa ser {{1}}");
   }
+
+  if (/[\n\r]/.test(texto)) {
+    problemas.push("O cabeçalho não pode ter quebra de linha");
+  }
+  // Ignora os "{{" "}}" da própria variável na checagem de asterisco/underline/etc.
+  const semVariaveis = texto.replace(/\{\{\d+\}\}/g, "");
+  if (/[*_~`]/.test(semVariaveis)) {
+    problemas.push("O cabeçalho não pode ter marcação de formatação (*negrito*, _itálico_, ~riscado~, `mono`)");
+  }
+  if (contemEmoji(texto)) {
+    problemas.push("O cabeçalho não pode ter emoji");
+  }
+
   return problemas;
 }
