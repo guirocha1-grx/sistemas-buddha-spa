@@ -152,7 +152,6 @@
 - [x] Diagnosticar a foto ausente por banco, storage e renderização da interface do Inbox
 - [x] Exibir foto de grupos já persistida na lista e no painel do Inbox
 - [x] Publicar a correção de exibição de avatar de grupos no Inbox
-<<<<<<< Updated upstream
 - [x] Executar a suíte completa de testes após o merge do commit 8c654a3
 - [x] Confirmar a ausência de migrações pendentes no merge do commit 8c654a3
 - [x] Publicar o checkpoint correspondente ao merge do commit 8c654a3
@@ -218,5 +217,8 @@
 - [x] Pesquisar BotConversa versus fluxos internos para disparos oficiais de WhatsApp
 - [x] Sincronizar a última versão do GitHub, validar e publicar
 - [x] Publicar scripts que iniciam fluxos automatizados
-- [ ] Sincronizar o GitHub após publicar scripts de fluxo
+- [x] Sincronizar o GitHub após publicar scripts de fluxo
 - [x] Salvar o checkpoint da versão que adiciona scripts do tipo fluxo
+- [x] Verificar e sincronizar a última versão do GitHub
+- [x] Publicar a correção de autenticação do Heartbeat
+- [ ] Sincronizar o GitHub após publicar a correção do Heartbeat
