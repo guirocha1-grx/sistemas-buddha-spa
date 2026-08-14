@@ -137,6 +137,10 @@ export default function Scripts() {
     { unidadeId: unidadeSelecionada?.id ?? 0 },
     { enabled: !!unidadeSelecionada && modalAberto && form.tipo === "fluxo" },
   );
+  // Só fluxos marcados "Visível para criação de script" — fluxos
+  // automáticos (gatilho de recepção, menu, bot etc.) não devem
+  // aparecer aqui, o único jeito de disparar um fluxo numa conversa.
+  const fluxosVisiveis = (fluxosQuery.data ?? []).filter((f) => f.visivelNoInbox);
 
   const invalidar = () => {
     utils.scripts.list.invalidate();
@@ -338,18 +342,21 @@ export default function Scripts() {
                   <Select value={form.fluxoId ? String(form.fluxoId) : ""} onValueChange={(v) => setForm({ ...form, fluxoId: Number(v) })}>
                     <SelectTrigger><SelectValue placeholder="Escolha um fluxo já montado..." /></SelectTrigger>
                     <SelectContent>
-                      {(fluxosQuery.data ?? []).map((f) => (
+                      {fluxosVisiveis.map((f) => (
                         <SelectItem key={f.id} value={String(f.id)}>{f.nome}</SelectItem>
                       ))}
-                      {fluxosQuery.data?.length === 0 && (
-                        <div className="px-3 py-2 text-xs text-muted-foreground">Nenhum fluxo criado nessa unidade ainda — crie um em Fluxos.</div>
+                      {fluxosQuery.data && fluxosVisiveis.length === 0 && (
+                        <div className="px-3 py-2 text-xs text-muted-foreground">
+                          Nenhum fluxo liberado pra script nessa unidade — marque "Visível para criação de script" no fluxo desejado, em Fluxos.
+                        </div>
                       )}
                     </SelectContent>
                   </Select>
                 )}
                 {form.fluxoId && <PreviewFluxo fluxoId={form.fluxoId} />}
                 <p className="text-[11px] text-muted-foreground">
-                  Fluxos são montados só por admin, em Fluxos. Aqui você só escolhe qual disparar.
+                  Fluxos são montados só por admin, em Fluxos. Só aparecem aqui os marcados como "Visível para
+                  criação de script" — fluxos automáticos (gatilho de recepção, menu, bot etc.) ficam de fora.
                 </p>
               </div>
             )}

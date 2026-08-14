@@ -1063,7 +1063,11 @@ Diretrizes:
     // Não é adminProcedure — recepção também mantém os scripts prontos
     // do dia a dia (2026-08-13). tipo="fluxo" só referencia um Fluxo
     // já pronto (montado por um admin em /fluxos) — quem cria/edita
-    // script não constrói fluxo nenhum aqui.
+    // script não constrói fluxo nenhum aqui. Só fluxo marcado
+    // "Visível para criação de script" (fluxo.visivelNoInbox) pode ser
+    // referenciado — é o admin quem decide, na tela de Fluxos, quais
+    // ficam disponíveis (fluxos automáticos de gatilho/menu/bot ficam
+    // de fora de propósito).
     create: protectedProcedure.input(z.object({
       categoriaScript: z.string().min(1).max(100),
       tipo: z.enum(["texto", "fluxo"]).default("texto"),
@@ -1073,14 +1077,11 @@ Diretrizes:
     }).refine((v) => v.tipo === "texto" ? !!v.script?.trim() : !!v.fluxoId, {
       message: "Script de texto precisa de mensagem; script de fluxo precisa de um fluxo selecionado",
     })).mutation(async ({ input }) => {
-      const id = await db.createScript({ ...input, script: input.script ?? undefined, fluxoId: input.fluxoId ?? undefined });
-      // Vincular um Fluxo a um Script SÓ faz sentido pra disparar via
-      // Inbox — liga visivelNoInbox automaticamente, senão o fluxo
-      // fica escolhível aqui mas falha ao clicar ("não está liberado
-      // pra execução manual"), sem nenhum aviso na hora de montar.
       if (input.tipo === "fluxo" && input.fluxoId) {
-        await db.updateFluxo(input.fluxoId, { visivelNoInbox: true });
+        const fluxo = await db.getFluxoById(input.fluxoId);
+        if (!fluxo?.visivelNoInbox) throw new Error('Esse fluxo não está marcado como "Visível para criação de script" — libere em Fluxos primeiro.');
       }
+      const id = await db.createScript({ ...input, script: input.script ?? undefined, fluxoId: input.fluxoId ?? undefined });
       return { id };
     }),
 
@@ -1093,10 +1094,11 @@ Diretrizes:
       observacoes: z.string().nullable().optional(),
     })).mutation(async ({ input }) => {
       const { id, ...dados } = input;
-      await db.updateScript(id, dados);
       if (dados.tipo === "fluxo" && dados.fluxoId) {
-        await db.updateFluxo(dados.fluxoId, { visivelNoInbox: true });
+        const fluxo = await db.getFluxoById(dados.fluxoId);
+        if (!fluxo?.visivelNoInbox) throw new Error('Esse fluxo não está marcado como "Visível para criação de script" — libere em Fluxos primeiro.');
       }
+      await db.updateScript(id, dados);
       return { success: true };
     }),
 

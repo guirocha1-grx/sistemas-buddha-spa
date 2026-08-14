@@ -379,12 +379,12 @@ export default function FluxoDetalhe() {
           <h1 className="text-xl font-semibold truncate" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{fluxo.nome}</h1>
           {fluxo.descricao && <p className="text-sm text-muted-foreground truncate">{fluxo.descricao}</p>}
         </div>
-        <div className="flex items-center gap-2 shrink-0" title="Se ligado, qualquer atendente pode disparar esse fluxo pelo menu 'Executar fluxo' no Inbox">
+        <div className="flex items-center gap-2 shrink-0" title="Se ligado, esse fluxo aparece como opção ao criar um Script tipo 'Executar fluxo' — é o único jeito de disparar um fluxo numa conversa. Deixe desligado pra fluxos automáticos (gatilho de recepção, menu, bot etc.), que não devem ser disparados manualmente.">
           <Switch
             checked={!!fluxo.visivelNoInbox}
             onCheckedChange={(v) => updateFluxoMut.mutate({ id: fluxo.id, visivelNoInbox: v })}
           />
-          <span className="text-xs text-muted-foreground">Visível no Inbox</span>
+          <span className="text-xs text-muted-foreground">Visível para criação de script</span>
         </div>
         <Popover>
           <PopoverTrigger asChild>
