@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -41,6 +42,8 @@ const BOTAO_VAZIO = (): FormBotao => ({ tipo: "QUICK_REPLY", texto: "", url: "",
 export default function Templates() {
   const utils = trpc.useUtils();
   const templatesQuery = trpc.templates.list.useQuery();
+
+  const [mostrarRejeitados, setMostrarRejeitados] = useState(false);
 
   const [showNew, setShowNew] = useState(false);
   const [nome, setNome] = useState("");
@@ -114,7 +117,9 @@ export default function Templates() {
     });
   };
 
-  const templates = templatesQuery.data ?? [];
+  const todosTemplates = templatesQuery.data ?? [];
+  const templates = mostrarRejeitados ? todosTemplates : todosTemplates.filter((t) => t.status !== "rejeitado");
+  const qtdRejeitados = todosTemplates.filter((t) => t.status === "rejeitado").length;
 
   return (
     <div className="space-y-6">
@@ -130,7 +135,11 @@ export default function Templates() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+            <Checkbox checked={mostrarRejeitados} onCheckedChange={(v) => setMostrarRejeitados(!!v)} />
+            Mostrar rejeitados{qtdRejeitados > 0 ? ` (${qtdRejeitados})` : ""}
+          </label>
           <Button size="sm" variant="outline" onClick={() => sincronizarMut.mutate()} disabled={sincronizarMut.isPending}>
             {sincronizarMut.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
             Sincronizar status
@@ -150,7 +159,9 @@ export default function Templates() {
           <CardContent className="pt-6">
             <div className="flex flex-col items-center gap-3 text-center py-6">
               <FileCheck2 className="h-12 w-12 text-muted-foreground/50" />
-              <p className="text-sm text-muted-foreground">Nenhum template criado ainda.</p>
+              <p className="text-sm text-muted-foreground">
+                {todosTemplates.length > 0 ? "Nenhum template pendente/aprovado — marque \"Mostrar rejeitados\" pra ver." : "Nenhum template criado ainda."}
+              </p>
             </div>
           </CardContent>
         </Card>
