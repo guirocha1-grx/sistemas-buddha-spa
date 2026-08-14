@@ -229,4 +229,8 @@
 - [ ] Implementar o painel de custos estimados de mensagens WhatsApp após aprovação do escopo
 - [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
 - [x] Publicar a correção de scripts vinculados a fluxos
-- [ ] Sincronizar o GitHub após publicar a correção de scripts de fluxo
+- [x] Sincronizar o GitHub após publicar a correção de scripts de fluxo
+- [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
+- [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
+- [x] Publicar a página pública de Política de Privacidade
+- [ ] Sincronizar o GitHub após publicar a Política de Privacidade
