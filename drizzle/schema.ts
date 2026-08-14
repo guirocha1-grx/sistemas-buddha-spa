@@ -97,7 +97,14 @@ export const unidades = mysqlTable("unidades", {
   id: int("id").autoincrement().primaryKey(),
   nome: varchar("nome", { length: 128 }).notNull(),
   slug: varchar("slug", { length: 64 }).notNull().unique(),
-  codEstab: int("codEstab").notNull(),
+  // Nullable pra unidade sintética do Buddha Mkt (2026-08-14) — não
+  // tem estabelecimento no Belle, não é uma unidade física.
+  codEstab: int("codEstab"),
+  // "buddha_mkt" = a unidade sintética do número oficial de marketing
+  // (WhatsApp Cloud API) — não tem credencial Z-API própria, quem
+  // resolve o canal de envio é server/fluxos.ts (enviarPelaUnidade)
+  // olhando esse campo. Ver getOrCreateUnidadeBuddhaMkt em db.ts.
+  canal: mysqlEnum("canal", ["zapi", "buddha_mkt"]).default("zapi").notNull(),
   belleToken: text("belleToken"),
   zapiInstanceId: text("zapiInstanceId"),
   zapiToken: text("zapiToken"),
@@ -435,6 +442,11 @@ export const inboxConversas = mysqlTable("inbox_conversas", {
   // sufixo "-group"; nomeContato = nome do grupo). Nunca regride depois
   // de criada — mesmo espírito de isLidPendente.
   isGrupo: mysqlEnum("isGrupo", ["true", "false"]).default("false").notNull(),
+  // Guarda de dedup do aviso "10min sem retorno" do roteador do Buddha
+  // Mkt (2026-08-14, ver server/fluxosScheduled.ts) — evita repetir o
+  // aviso no Telegram a cada tick do cron pra mesma rodada de
+  // roteamento.
+  buddhaMktAlertadoEm: timestamp("buddhaMktAlertadoEm"),
 }, (table) => ({
   telefoneCanalIdx: index("inbox_conversas_telefone_canal_idx").on(table.telefone, table.canal),
   unidadeIdx: index("inbox_conversas_unidade_idx").on(table.unidadeId),
@@ -983,6 +995,10 @@ export const fluxoNos = mysqlTable("fluxo_nos", {
   proximoNoOrdem: int("proximoNoOrdem"), // próximo passo padrão — null = encerra o fluxo (exceto condicional/fim)
   posX: int("posX"), // posição no canvas — null = ainda não posicionado, roda auto-layout
   posY: int("posY"),
+  // Contador de disparo do nó "menu" (2026-08-14) — quantas vezes esse
+  // passo foi enviado, pra calcular CTR por opção junto de
+  // fluxoNoOpcaoCliques abaixo. Sempre 0 pros outros tipos de nó.
+  enviados: int("enviados").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({
   fluxoOrdemUnique: uniqueIndex("fluxo_nos_fluxo_ordem_unique").on(table.fluxoId, table.ordem),
@@ -990,6 +1006,90 @@ export const fluxoNos = mysqlTable("fluxo_nos", {
 
 export type FluxoNo = typeof fluxoNos.$inferSelect;
 export type InsertFluxoNo = typeof fluxoNos.$inferInsert;
+
+/**
+ * Clique por opção do nó "menu" (2026-08-14) — CTR pra campanha de
+ * disparo, mesma métrica que o BotConversa já mostrava (enviado/
+ * clicado por opção). `opcaoIndex` é o índice dentro de
+ * FluxoNoConfig.opcoes — aceitável pra v1, campanha em andamento não
+ * costuma reordenar opção de um nó já disparando.
+ */
+export const fluxoNoOpcaoCliques = mysqlTable("fluxo_no_opcao_cliques", {
+  id: int("id").autoincrement().primaryKey(),
+  fluxoNoId: int("fluxoNoId").notNull(),
+  opcaoIndex: int("opcaoIndex").notNull(),
+  cliques: int("cliques").default(0).notNull(),
+}, (table) => ({
+  unico: uniqueIndex("fluxo_no_opcao_cliques_unico").on(table.fluxoNoId, table.opcaoIndex),
+}));
+
+export type FluxoNoOpcaoClique = typeof fluxoNoOpcaoCliques.$inferSelect;
+export type InsertFluxoNoOpcaoClique = typeof fluxoNoOpcaoCliques.$inferInsert;
+
+/**
+ * Espelho local dos Message Templates da Meta (2026-08-14) — evita
+ * round-trip na Graph API toda vez que a tela de Disparos precisa
+ * listar templates aprovados. `status` é sincronizado sob demanda
+ * (botão "Sincronizar status", ver server/metaTemplatesApi.ts) porque
+ * a revisão da Meta é assíncrona (minutos a horas).
+ */
+export const buddhaMktTemplates = mysqlTable("buddha_mkt_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  nome: varchar("nome", { length: 512 }).notNull(), // nome técnico exigido pela Meta (snake_case, único por WABA+idioma)
+  idioma: varchar("idioma", { length: 10 }).notNull().default("pt_BR"),
+  categoria: mysqlEnum("categoria", ["MARKETING", "UTILITY"]).default("MARKETING").notNull(),
+  corpo: text("corpo").notNull(),
+  cabecalho: varchar("cabecalho", { length: 60 }),
+  rodape: varchar("rodape", { length: 60 }),
+  botoes: json("botoes").$type<Array<{ tipo: "QUICK_REPLY"; texto: string }>>(),
+  metaTemplateId: varchar("metaTemplateId", { length: 64 }), // id devolvido pela Meta ao criar
+  status: mysqlEnum("status", ["rascunho", "pendente", "aprovado", "rejeitado"]).default("rascunho").notNull(),
+  motivoRejeicao: text("motivoRejeicao"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type BuddhaMktTemplate = typeof buddhaMktTemplates.$inferSelect;
+export type InsertBuddhaMktTemplate = typeof buddhaMktTemplates.$inferInsert;
+
+/**
+ * Disparo em massa (2026-08-14) — dispara um Template aprovado pra
+ * lista de clientes selecionada; `fluxoRespostaId` é o fluxo-roteador
+ * fixo que trata quem responder (v1: um só pra todo disparo, não
+ * por-campanha — decisão já confirmada com o usuário).
+ */
+export const disparos = mysqlTable("disparos", {
+  id: int("id").autoincrement().primaryKey(),
+  nome: varchar("nome", { length: 150 }).notNull(),
+  templateId: int("templateId").notNull(),
+  fluxoRespostaId: int("fluxoRespostaId"),
+  status: mysqlEnum("status", ["rascunho", "enviando", "concluido", "erro"]).default("rascunho").notNull(),
+  totalDestinatarios: int("totalDestinatarios").default(0).notNull(),
+  totalEnviados: int("totalEnviados").default(0).notNull(),
+  totalErros: int("totalErros").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  iniciadoEm: timestamp("iniciadoEm"),
+  concluidoEm: timestamp("concluidoEm"),
+});
+
+export type Disparo = typeof disparos.$inferSelect;
+export type InsertDisparo = typeof disparos.$inferInsert;
+
+export const disparoDestinatarios = mysqlTable("disparo_destinatarios", {
+  id: int("id").autoincrement().primaryKey(),
+  disparoId: int("disparoId").notNull(),
+  clienteId: int("clienteId").notNull(),
+  telefone: varchar("telefone", { length: 20 }).notNull(),
+  status: mysqlEnum("status", ["pendente", "enviado", "erro"]).default("pendente").notNull(),
+  erroMsg: text("erroMsg"),
+  enviadoEm: timestamp("enviadoEm"),
+}, (table) => ({
+  disparoIdx: index("disparo_destinatarios_disparo_idx").on(table.disparoId),
+}));
+
+export type DisparoDestinatario = typeof disparoDestinatarios.$inferSelect;
+export type InsertDisparoDestinatario = typeof disparoDestinatarios.$inferInsert;
 
 export const fluxoExecucoes = mysqlTable("fluxo_execucoes", {
   id: int("id").autoincrement().primaryKey(),

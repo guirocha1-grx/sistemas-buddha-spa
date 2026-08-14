@@ -13,6 +13,8 @@ import Mensagens from "./pages/Mensagens";
 import Scripts from "./pages/Scripts";
 import Fluxos from "./pages/Fluxos";
 import FluxoDetalhe from "./pages/FluxoDetalhe";
+import Templates from "./pages/Templates";
+import Disparos from "./pages/Disparos";
 import Financeiro from "./pages/Financeiro";
 import Extratos from "./pages/Extratos";
 import ComandaRecepcao from "./pages/ComandaRecepcao";
@@ -39,6 +41,8 @@ function Router() {
         <Route path="/scripts" component={Scripts} />
         <Route path="/fluxos" component={Fluxos} />
         <Route path="/fluxos/:id" component={FluxoDetalhe} />
+        <Route path="/buddha-mkt/templates" component={Templates} />
+        <Route path="/buddha-mkt/disparos" component={Disparos} />
         <Route path="/financeiro" component={Financeiro} />
         <Route path="/financeiro/extratos" component={Extratos} />
         <Route path="/financeiro/comanda-recepcao" component={ComandaRecepcao} />

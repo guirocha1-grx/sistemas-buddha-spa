@@ -11,11 +11,14 @@ import {
   getFluxoNoByOrdem,
   getInboxConversaById,
   getUnidadeById,
+  incrementarFluxoNoEnviados,
+  incrementarFluxoNoOpcaoClique,
   insertInboxMensagem,
   listInboxMensagens,
   updateFluxoExecucao,
 } from "./db";
 import { zapiApi } from "./zapiApi";
+import { enviarPelaUnidade } from "./fluxos";
 
 type MenuConfig = Extract<FluxoNoConfig, { texto: string; opcoes: Array<{ label: string; ordemDestino: number | null }> }>;
 
@@ -47,7 +50,11 @@ export async function processarNoMenu(execucaoId: number): Promise<void> {
   }
 
   const unidade = await getUnidadeById(fluxo.unidadeId);
-  if (!unidade?.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) {
+  if (!unidade) {
+    await updateFluxoExecucao(execucaoId, { status: "erro", erroMsg: "Unidade do fluxo não encontrada" });
+    return;
+  }
+  if (unidade.canal !== "buddha_mkt" && (!unidade.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken)) {
     await updateFluxoExecucao(execucaoId, { status: "erro", erroMsg: "Z-API não configurado para a unidade do fluxo" });
     return;
   }
@@ -55,7 +62,11 @@ export async function processarNoMenu(execucaoId: number): Promise<void> {
   const { computarVariaveisSistema } = await import("./fluxos");
   const variaveisComSistema = { ...variaveis, ...(await computarVariaveisSistema(execucao, fluxo)) };
   const textoBase = interpolarVariaveis(config.texto, variaveisComSistema);
-  const estilo = config.estilo ?? "texto";
+  // Estilo "botões"/"lista" nativos do WhatsApp são exclusivos do
+  // caminho Z-API — a Cloud API oficial (Buddha Mkt) sempre usa texto
+  // numerado, igual ao "Menu" do BotConversa mandava por fora da janela
+  // de template.
+  const estilo = unidade.canal === "buddha_mkt" ? "texto" : (config.estilo ?? "texto");
 
   // Texto gravado no histórico do Inbox — o WhatsApp só renderiza os
   // botões/lista no aparelho do cliente, não reconstruímos isso na tela.
@@ -64,21 +75,22 @@ export async function processarNoMenu(execucaoId: number): Promise<void> {
     : textoBase;
 
   try {
-    if (estilo === "botoes") {
+    if (estilo === "botoes" && unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken) {
       await zapiApi.sendButtonList(
         unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken,
         conversa.telefone, textoBase,
         config.opcoes.slice(0, 3).map((o, i) => ({ id: String(i + 1), label: o.label })),
       );
-    } else if (estilo === "lista") {
+    } else if (estilo === "lista" && unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken) {
       await zapiApi.sendOptionList(
         unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken,
         conversa.telefone, textoBase, "Opções", "Ver opções",
         config.opcoes.slice(0, 10).map((o, i) => ({ id: String(i + 1), title: o.label, description: o.descricao })),
       );
     } else {
-      await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, textoRegistrado);
+      await enviarPelaUnidade(unidade, conversa.telefone, textoRegistrado);
     }
+    await incrementarFluxoNoEnviados(no.id);
   } catch (e) {
     console.error(`[FluxosMenu] Erro ao enviar menu (execução ${execucaoId}):`, e);
   }
@@ -107,12 +119,19 @@ export async function processarRespostaMenu(execucaoId: number): Promise<void> {
   const resposta = (ultimaDoCliente?.conteudo ?? "").trim().toLowerCase();
 
   let ordemDestino: number | null = null;
+  let opcaoIndex: number | null = null;
   const porNumero = parseInt(resposta, 10);
   if (!isNaN(porNumero) && opcoes[porNumero - 1]) {
+    opcaoIndex = porNumero - 1;
     ordemDestino = opcoes[porNumero - 1].ordemDestino;
   } else {
-    const porLabel = opcoes.find((o) => resposta.includes(o.label.toLowerCase()) || o.label.toLowerCase().includes(resposta));
-    ordemDestino = porLabel?.ordemDestino ?? config.ordemSeNaoEntendeu;
+    const idxPorLabel = opcoes.findIndex((o) => resposta.includes(o.label.toLowerCase()) || o.label.toLowerCase().includes(resposta));
+    opcaoIndex = idxPorLabel >= 0 ? idxPorLabel : null;
+    ordemDestino = idxPorLabel >= 0 ? opcoes[idxPorLabel].ordemDestino : config.ordemSeNaoEntendeu;
+  }
+
+  if (opcaoIndex !== null) {
+    await incrementarFluxoNoOpcaoClique(no.id, opcaoIndex);
   }
 
   await avancarMenu(execucaoId, ordemDestino);

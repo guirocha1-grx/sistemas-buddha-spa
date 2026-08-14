@@ -454,12 +454,14 @@ function registerBuddhaMktWebhook(app: Express) {
       tipo = "documento";
     }
 
-    // unidadeId fica null aqui — resolver a unidade certa (cruzando o
-    // telefone com o cliente correspondente em cada unidade no Belle)
-    // é trabalho de uma fase futura, quando o canal for ativado de
-    // verdade (ver "Fora de escopo" no plano).
+    // Toda mensagem recebida nesse número cai sob a unidade sintética
+    // "Buddha Mkt" (canal="buddha_mkt" em unidades) — é assim que essa
+    // conversa passa a aparecer no Inbox normal, sob o mesmo seletor de
+    // unidade do resto do app (ver plano "Buddha Mkt").
+    const unidadeBuddhaMkt = await db.getOrCreateUnidadeBuddhaMkt();
+
     const conversaId = await db.upsertInboxConversa({
-      unidadeId: null,
+      unidadeId: unidadeBuddhaMkt?.id ?? null,
       canal: "buddha_mkt",
       telefone,
       nomeContato,
@@ -468,6 +470,7 @@ function registerBuddhaMktWebhook(app: Express) {
     });
 
     if (conversaId) {
+      const clienteId = await db.buscarClienteIdPorTelefone(telefone);
       await db.insertInboxMensagem({
         conversaId,
         direcao: "recebida",
@@ -475,6 +478,29 @@ function registerBuddhaMktWebhook(app: Express) {
         conteudo,
         metadados: null,
       });
+
+      // Mesmo hook de Fluxos do webhook Z-API (ver registerZapiWebhook
+      // acima) — retoma um nó "menu" aguardando resposta, ou dispara o
+      // gatilho "mensagem_recebida" pra possivelmente iniciar um fluxo
+      // novo (ex.: o cliente respondeu ao Template de marketing e caiu
+      // no roteador de unidade). Nunca bloqueia a resposta do webhook.
+      if (unidadeBuddhaMkt) {
+        (async () => {
+          try {
+            const { getFluxoExecucaoAguardandoRespostaPorConversa } = await import("./db");
+            const execucaoAguardando = await getFluxoExecucaoAguardandoRespostaPorConversa(conversaId);
+            if (execucaoAguardando) {
+              const { retomarNoAguardandoResposta } = await import("./fluxos");
+              await retomarNoAguardandoResposta(execucaoAguardando.id);
+            } else {
+              const { dispararGatilhosFluxo } = await import("./fluxosGatilhos");
+              await dispararGatilhosFluxo(unidadeBuddhaMkt.id, "mensagem_recebida", { conversaId, clienteId });
+            }
+          } catch (error) {
+            console.error("[Webhook Buddha Mkt] Falha ao processar Fluxos:", error);
+          }
+        })();
+      }
     }
 
     res.status(200).json({ success: true });

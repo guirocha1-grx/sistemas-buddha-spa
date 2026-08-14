@@ -9,6 +9,7 @@ import { hashPin, verifyPin } from "./atendenteAuth";
 import { belleApi } from "./belleApi";
 import { zapiApi } from "./zapiApi";
 import { buddhaMktApi } from "./buddhaMktApi";
+import { metaTemplatesApi } from "./metaTemplatesApi";
 import { storagePut, storageGetSignedUrl, normalizeStorageKey } from "./storage";
 import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
@@ -282,7 +283,7 @@ export const appRouter = router({
       // Buscar todos os clientes (até 500 = 5 páginas)
       const allClientes: any[] = [];
       for (let p = 0; p < 5; p++) {
-        const batch = await belleApi.listarClientes(unidade.belleToken, unidade.codEstab, p);
+        const batch = await belleApi.listarClientes(unidade.belleToken, unidade.codEstab!, p);
         if (!batch || batch.length === 0) break;
         allClientes.push(...batch);
         if (batch.length < 100) break;
@@ -304,7 +305,7 @@ export const appRouter = router({
     })).query(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
       if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
-      return belleApi.listarAgendamentos(unidade.belleToken, unidade.codEstab, {
+      return belleApi.listarAgendamentos(unidade.belleToken, unidade.codEstab!, {
         data_inicio: input.data_inicio,
         data_fim: input.data_fim,
       });
@@ -316,7 +317,7 @@ export const appRouter = router({
     list: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
       if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
-      return belleApi.listarServicos(unidade.belleToken, unidade.codEstab);
+      return belleApi.listarServicos(unidade.belleToken, unidade.codEstab!);
     }),
   }),
 
@@ -325,7 +326,7 @@ export const appRouter = router({
     list: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
       if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
-      return belleApi.listarPlanos(unidade.belleToken, unidade.codEstab);
+      return belleApi.listarPlanos(unidade.belleToken, unidade.codEstab!);
     }),
   }),
 
@@ -338,7 +339,7 @@ export const appRouter = router({
     })).query(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
       if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
-      return belleApi.relatorioVendas(unidade.belleToken, unidade.codEstab, {
+      return belleApi.relatorioVendas(unidade.belleToken, unidade.codEstab!, {
         data_inicio: input.data_inicio,
         data_fim: input.data_fim,
       });
@@ -351,7 +352,7 @@ export const appRouter = router({
     })).query(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
       if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
-      return belleApi.listarRecebimentos(unidade.belleToken, unidade.codEstab, {
+      return belleApi.listarRecebimentos(unidade.belleToken, unidade.codEstab!, {
         data_inicio: input.data_inicio,
         data_fim: input.data_fim,
       });
@@ -391,12 +392,12 @@ export const appRouter = router({
       const fmtDate = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 
       const [vendas, recebimentosMes, agendamentos] = await Promise.all([
-        belleApi.relatorioVendas(unidade.belleToken, unidade.codEstab, {
+        belleApi.relatorioVendas(unidade.belleToken, unidade.codEstab!, {
           data_inicio: fmtDate(dataInicio),
           data_fim: fmtDate(hoje),
         }).catch(() => null),
         totalContasBancariasNoPeriodo(input.unidadeId, fmtDateIso(dataInicio), fmtDateIso(hoje)).catch(() => 0),
-        belleApi.listarAgendamentos(unidade.belleToken, unidade.codEstab).catch(() => null),
+        belleApi.listarAgendamentos(unidade.belleToken, unidade.codEstab!).catch(() => null),
       ]);
 
       return {
@@ -441,11 +442,11 @@ export const appRouter = router({
           }
           try {
             const [vendas, agendamentos] = await Promise.all([
-              belleApi.relatorioVendas(unidade.belleToken, unidade.codEstab, {
+              belleApi.relatorioVendas(unidade.belleToken, unidade.codEstab!, {
                 data_inicio: fmtDate(dataInicio),
                 data_fim: fmtDate(hoje),
               }).catch(() => null),
-              belleApi.listarAgendamentos(unidade.belleToken, unidade.codEstab).catch(() => null),
+              belleApi.listarAgendamentos(unidade.belleToken, unidade.codEstab!).catch(() => null),
             ]);
 
             return {
@@ -508,7 +509,7 @@ export const appRouter = router({
           const { unidadeId, ...leadData } = input;
           const result = await belleApi.gravarLead(unidade.belleToken, {
             ...leadData,
-            codEstab: unidade.codEstab,
+            codEstab: unidade.codEstab!,
           });
           // Atualizar status
           const leads = await db.getLeads(input.unidadeId);
@@ -616,10 +617,10 @@ export const appRouter = router({
 
       if (input.clienteCpf && unidade?.belleToken) {
         try {
-          const cliente = await belleApi.buscarCliente(unidade.belleToken, unidade.codEstab, {
+          const cliente = await belleApi.buscarCliente(unidade.belleToken, unidade.codEstab!, {
             cpf: input.clienteCpf,
           });
-          const planos = await belleApi.planosCliente(unidade.belleToken, cliente.codigo, unidade.codEstab).catch(() => []);
+          const planos = await belleApi.planosCliente(unidade.belleToken, cliente.codigo, unidade.codEstab!).catch(() => []);
 
           contextoCliente = `DADOS DO CLIENTE:
 Nome: ${cliente.nome}
@@ -1104,7 +1105,8 @@ Diretrizes:
     get: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
       const [fluxo, nos] = await Promise.all([db.getFluxoById(input.id), db.listFluxoNos(input.id)]);
       if (!fluxo) return null;
-      return { fluxo, nos };
+      const cliques = await db.listFluxoNoOpcaoCliques([input.id]);
+      return { fluxo, nos, cliques };
     }),
 
     create: adminProcedure.input(z.object({
@@ -1248,6 +1250,125 @@ Diretrizes:
         description: "Fluxos: varredura diária do gatilho dias_sem_contato.",
       }, "");
       return { success: true };
+    }),
+
+    registrarHeartbeatBuddhaMktAlerta: adminProcedure.mutation(async () => {
+      await upsertHeartbeatJob({
+        name: "cron-alertar-buddha-mkt-sem-retorno",
+        cron: "0 * * * * *",
+        path: "/api/scheduled/alertar-buddha-mkt-sem-retorno",
+        method: "POST",
+        description: "Buddha Mkt: avisa a recepção no Telegram quando o cliente não segue o link de unidade em 10min.",
+      }, "");
+      return { success: true };
+    }),
+  }),
+
+  // ===== Buddha Mkt: Templates (Message Templates da Meta) =====
+  templates: router({
+    list: adminProcedure.query(async () => db.listBuddhaMktTemplates()),
+
+    create: adminProcedure.input(z.object({
+      nome: z.string().min(1),
+      idioma: z.string().min(1).default("pt_BR"),
+      categoria: z.enum(["MARKETING", "UTILITY"]).default("MARKETING"),
+      corpo: z.string().min(1),
+      cabecalho: z.string().max(60).optional(),
+      rodape: z.string().max(60).optional(),
+      botoes: z.array(z.object({ tipo: z.literal("QUICK_REPLY"), texto: z.string().min(1) })).max(3).optional(),
+    })).mutation(async ({ input }) => {
+      const id = await db.createBuddhaMktTemplate(input);
+      if (!id) throw new Error("Falha ao gravar template localmente");
+      try {
+        const resultado = await metaTemplatesApi.criarTemplate(input);
+        await db.atualizarBuddhaMktTemplateStatus(id, { status: "pendente", metaTemplateId: resultado.metaTemplateId });
+      } catch (error: any) {
+        await db.atualizarBuddhaMktTemplateStatus(id, { status: "rejeitado", motivoRejeicao: error.message });
+        throw error;
+      }
+      return { id };
+    }),
+
+    // Revisão da Meta é assíncrona — sem webhook de status configurado
+    // ainda, então a sincronização é sob demanda (botão na tela).
+    sincronizarStatus: adminProcedure.mutation(async () => {
+      const [locais, remotos] = await Promise.all([db.listBuddhaMktTemplates(), metaTemplatesApi.listarTemplatesMeta()]);
+      let atualizados = 0;
+      for (const local of locais) {
+        if (local.status === "aprovado" || local.status === "rejeitado") continue;
+        const remoto = remotos.find((r) => r.nome === local.nome && r.idioma === local.idioma);
+        if (!remoto) continue;
+        const statusNormalizado = remoto.status === "APPROVED" ? "aprovado" : remoto.status === "REJECTED" ? "rejeitado" : "pendente";
+        if (statusNormalizado === local.status) continue;
+        await db.atualizarBuddhaMktTemplateStatus(local.id, { status: statusNormalizado, motivoRejeicao: remoto.motivoRejeicao ?? null });
+        atualizados++;
+      }
+      return { atualizados };
+    }),
+  }),
+
+  // ===== Buddha Mkt: Disparos (campanhas de marketing) =====
+  disparos: router({
+    list: adminProcedure.query(async () => db.listDisparos()),
+
+    // Garante que a unidade sintética "Buddha Mkt" exista — normalmente
+    // já foi criada pelo webhook na primeira mensagem recebida, mas a
+    // tela de Disparos precisa dela mesmo antes disso (pra listar os
+    // fluxos-resposta já montados nessa unidade).
+    unidadeBuddhaMkt: adminProcedure.query(async () => db.getOrCreateUnidadeBuddhaMkt()),
+
+    get: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const [disparo, destinatarios] = await Promise.all([db.getDisparoById(input.id), db.listDisparoDestinatarios(input.id)]);
+      if (!disparo) return null;
+      return { disparo, destinatarios };
+    }),
+
+    create: adminProcedure.input(z.object({
+      nome: z.string().min(1),
+      templateId: z.number(),
+      fluxoRespostaId: z.number().optional(),
+      clienteIds: z.array(z.number()).min(1),
+    })).mutation(async ({ input }) => {
+      const clientesResolvidos = await db.getClientesPorIds(input.clienteIds);
+      const destinatarios = clientesResolvidos
+        .map((c) => ({ clienteId: c.id, telefone: c.celular || c.telefone || "" }))
+        .filter((d) => d.telefone);
+      if (destinatarios.length === 0) throw new Error("Nenhum dos clientes selecionados tem celular cadastrado");
+      const id = await db.createDisparo({
+        nome: input.nome, templateId: input.templateId, fluxoRespostaId: input.fluxoRespostaId, destinatarios,
+      });
+      return { id };
+    }),
+
+    // Loop sequencial simples (sem fila/retry — v1, ver plano "Fora de
+    // escopo"). Pequeno intervalo entre envios pra não estourar rate
+    // limit da Cloud API.
+    enviar: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      const disparo = await db.getDisparoById(input.id);
+      if (!disparo) throw new Error("Disparo não encontrado");
+      const templateRow = await db.getBuddhaMktTemplateById(disparo.templateId);
+      if (!templateRow) throw new Error("Template do disparo não encontrado");
+      if (templateRow.status !== "aprovado") throw new Error("Template ainda não foi aprovado pela Meta");
+
+      await db.atualizarDisparo(disparo.id, { status: "enviando", iniciadoEm: new Date() });
+      const pendentes = await db.listDisparoDestinatariosPendentes(disparo.id);
+      let enviados = 0;
+      let erros = 0;
+      for (const destinatario of pendentes) {
+        try {
+          await buddhaMktApi.sendTemplate(destinatario.telefone, templateRow.nome, templateRow.idioma, []);
+          await db.atualizarDisparoDestinatario(destinatario.id, { status: "enviado", enviadoEm: new Date() });
+          await db.incrementarDisparoContadores(disparo.id, { totalEnviados: 1 });
+          enviados++;
+        } catch (error: any) {
+          await db.atualizarDisparoDestinatario(destinatario.id, { status: "erro", erroMsg: error.message });
+          await db.incrementarDisparoContadores(disparo.id, { totalErros: 1 });
+          erros++;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      await db.atualizarDisparo(disparo.id, { status: erros > 0 && enviados === 0 ? "erro" : "concluido", concluidoEm: new Date() });
+      return { enviados, erros };
     }),
   }),
 

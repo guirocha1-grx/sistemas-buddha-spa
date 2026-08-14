@@ -73,4 +73,42 @@ export const buddhaMktApi = {
     const data = (await response.json()) as { messages?: { id: string }[] };
     return { messageId: data.messages?.[0]?.id ?? "" };
   },
+
+  /** Mensagem fria (fora da janela de 24h) — só funciona com Template já aprovado pela Meta. */
+  async sendTemplate(phone: string, templateNome: string, idioma: string, variaveis: string[]): Promise<BuddhaMktSendResult> {
+    const config = await requireBuddhaMktConfig();
+
+    const components = variaveis.length > 0
+      ? [{ type: "body", parameters: variaveis.map((v) => ({ type: "text", text: v })) }]
+      : undefined;
+
+    const response = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${config.phoneNumberId}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: phone,
+          type: "template",
+          template: {
+            name: templateNome,
+            language: { code: idioma },
+            ...(components ? { components } : {}),
+          },
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => "");
+      throw new Error(`Buddha Mkt (WhatsApp Cloud API) error ${response.status}: ${errorBody || response.statusText}`);
+    }
+
+    const data = (await response.json()) as { messages?: { id: string }[] };
+    return { messageId: data.messages?.[0]?.id ?? "" };
+  },
 };

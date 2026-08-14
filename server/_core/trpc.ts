@@ -59,6 +59,8 @@ const ROUTER_MODULO: Record<string, string> = {
   leads: "leads",
   configuracoes: "configuracoes",
   fluxos: "fluxos",
+  templates: "disparos",
+  disparos: "disparos",
 };
 
 /**

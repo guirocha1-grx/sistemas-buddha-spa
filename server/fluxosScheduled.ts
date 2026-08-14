@@ -6,7 +6,19 @@
 import type { Express, Request, Response } from "express";
 import { sdk } from "./_core/sdk";
 import { retomarExecucoesPendentes, iniciarExecucaoFluxo } from "./fluxos";
-import { existeFluxoExecucaoEmAndamento, getUnidades, listConversasSemContatoHaDias, listFluxosPorGatilho } from "./db";
+import {
+  existeConversaZapiComMensagemApos,
+  existeFluxoExecucaoEmAndamento,
+  getUltimaMensagemEnviadaEm,
+  getUnidades,
+  listConversasBuddhaMktSemAlerta,
+  listConversasSemContatoHaDias,
+  listFluxosPorGatilho,
+  marcarBuddhaMktAlertado,
+} from "./db";
+import { sendTelegramParaRecepcao } from "./telegramApi";
+
+const AVISO_10MIN_MS = 10 * 60 * 1000;
 
 export function registerFluxosScheduledRoutes(app: Express) {
   app.post("/api/scheduled/retomar-fluxos", async (req: Request, res: Response) => {
@@ -60,6 +72,47 @@ export function registerFluxosScheduledRoutes(app: Express) {
       res.json({ ok: true, disparados });
     } catch (error) {
       console.error("[Fluxos] Erro no cron de gatilhos agendados:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "erro desconhecido" });
+    }
+  });
+
+  app.post("/api/scheduled/alertar-buddha-mkt-sem-retorno", async (req: Request, res: Response) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      if (!user.isCron) {
+        return res.status(403).json({ error: "cron-only" });
+      }
+      // Varre conversas do roteador Buddha Mkt ainda não alertadas: se
+      // passaram 10min desde o último envio nosso e o cliente não
+      // seguiu o link pro WhatsApp real da unidade (nenhuma mensagem
+      // nova na conversa Z-API do mesmo telefone desde então), avisa a
+      // recepção pelo Telegram pra ligar. buddhaMktAlertadoEm marca a
+      // conversa como já tratada — não repete o aviso a cada tick.
+      const conversas = await listConversasBuddhaMktSemAlerta();
+      let alertados = 0;
+      for (const conversa of conversas) {
+        try {
+          const ultimoEnvio = await getUltimaMensagemEnviadaEm(conversa.id);
+          if (!ultimoEnvio) continue;
+          if (Date.now() - ultimoEnvio.getTime() < AVISO_10MIN_MS) continue;
+          const seguiuOLink = await existeConversaZapiComMensagemApos(conversa.telefone, ultimoEnvio);
+          if (seguiuOLink) {
+            await marcarBuddhaMktAlertado(conversa.id);
+            continue;
+          }
+          const nome = conversa.nomeContato || conversa.telefone;
+          await sendTelegramParaRecepcao(
+            `⚠️ Buddha Mkt: ${nome} (${conversa.telefone}) recebeu o disparo há mais de 10min e não escolheu unidade. Ligar pra atender.`,
+          );
+          await marcarBuddhaMktAlertado(conversa.id);
+          alertados++;
+        } catch (e) {
+          console.error(`[Fluxos] Erro ao avaliar aviso Buddha Mkt (conversa ${conversa.id}):`, e);
+        }
+      }
+      res.json({ ok: true, alertados });
+    } catch (error) {
+      console.error("[Fluxos] Erro no cron de aviso Buddha Mkt:", error);
       res.status(500).json({ error: error instanceof Error ? error.message : "erro desconhecido" });
     }
   });

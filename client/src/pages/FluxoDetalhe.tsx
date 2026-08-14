@@ -47,6 +47,7 @@ type FluxoNo = {
   proximoNoOrdem: number | null;
   posX: number | null;
   posY: number | null;
+  enviados?: number;
 };
 
 const TIPO_INFO: Record<NoTipo, { label: string; icon: any; cor: string }> = {
@@ -222,6 +223,7 @@ function autoLayout(nos: FluxoNo[], entradaOrdem: number): Record<number, { x: n
 function FluxoNoCard({ data, selected }: NodeProps) {
   const no = (data as any).no as FluxoNo;
   const isEntrada = (data as any).isEntrada as boolean;
+  const cliques = (data as any).cliques as Record<number, number> | undefined;
   const info = TIPO_INFO[no.tipo];
   const Icon = info.icon;
   return (
@@ -255,10 +257,26 @@ function FluxoNoCard({ data, selected }: NodeProps) {
         </div>
       )}
       {no.tipo === "menu" && (
-        <div className="flex justify-between px-3 pb-1.5 text-[10px] font-medium text-indigo-600">
-          {(no.config?.opcoes ?? []).map((o: any, i: number) => <span key={i} className="truncate max-w-[4rem]">{o.label}</span>)}
-          <span className="text-red-600">?</span>
-        </div>
+        <>
+          <div className="flex justify-between px-3 pb-1.5 text-[10px] font-medium text-indigo-600">
+            {(no.config?.opcoes ?? []).map((o: any, i: number) => <span key={i} className="truncate max-w-[4rem]">{o.label}</span>)}
+            <span className="text-red-600">?</span>
+          </div>
+          {!!no.enviados && (
+            <div className="px-3 pb-1.5 space-y-0.5 border-t border-border/50 pt-1.5">
+              <p className="text-[10px] text-muted-foreground">{no.enviados} enviado(s)</p>
+              {(no.config?.opcoes ?? []).map((o: any, i: number) => {
+                const n = cliques?.[i] ?? 0;
+                const pct = no.enviados ? Math.round((n / no.enviados) * 100) : 0;
+                return (
+                  <p key={i} className="text-[10px] text-muted-foreground truncate">
+                    {o.label}: {n} ({pct}%)
+                  </p>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
       {no.tipo === "condicional" ? (
         <>
@@ -339,7 +357,17 @@ export default function FluxoDetalhe() {
   if (isLoading) return <div className="p-6 text-center text-muted-foreground">Carregando...</div>;
   if (!data) return <div className="p-6 text-center text-muted-foreground">Fluxo não encontrado.</div>;
 
-  const { fluxo, nos } = data as { fluxo: any; nos: FluxoNo[] };
+  const { fluxo, nos, cliques } = data as { fluxo: any; nos: FluxoNo[]; cliques?: Array<{ fluxoNoId: number; opcaoIndex: number; cliques: number }> };
+
+  // noId -> opcaoIndex -> cliques, pra CTR por opção no card do nó "menu"
+  // (contadores só existem depois que um Disparo real roda por cima
+  // desse fluxo — ver server/fluxosMenu.ts).
+  const cliquesPorNo = new Map<number, Record<number, number>>();
+  for (const c of cliques ?? []) {
+    const mapaNo = cliquesPorNo.get(c.fluxoNoId) ?? {};
+    mapaNo[c.opcaoIndex] = c.cliques;
+    cliquesPorNo.set(c.fluxoNoId, mapaNo);
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-220px)] gap-4">
@@ -380,6 +408,7 @@ export default function FluxoDetalhe() {
             fluxoId={fluxoId}
             fluxo={fluxo}
             nos={nos}
+            cliquesPorNo={cliquesPorNo}
             selectedNoId={selectedNoId}
             setSelectedNoId={setSelectedNoId}
             showAddMenu={showAddMenu}
@@ -455,12 +484,13 @@ export default function FluxoDetalhe() {
 
 // ─── Canvas + painel lateral ────────────────────────────────────────────────
 function FluxoCanvas({
-  fluxoId, fluxo, nos, selectedNoId, setSelectedNoId, showAddMenu, setShowAddMenu,
+  fluxoId, fluxo, nos, cliquesPorNo, selectedNoId, setSelectedNoId, showAddMenu, setShowAddMenu,
   createNoMut, updateNoMut, updateFluxoMut, deleteNoMut, invalidateAll,
 }: {
   fluxoId: number;
   fluxo: any;
   nos: FluxoNo[];
+  cliquesPorNo: Map<number, Record<number, number>>;
   selectedNoId: number | null;
   setSelectedNoId: (id: number | null) => void;
   showAddMenu: boolean;
@@ -477,8 +507,8 @@ function FluxoCanvas({
     id: String(no.id),
     type: "fluxoNo",
     position: { x: no.posX ?? 0, y: no.posY ?? 0 },
-    data: { no, isEntrada: no.ordem === entradaOrdem },
-  })), [nos, entradaOrdem]);
+    data: { no, isEntrada: no.ordem === entradaOrdem, cliques: cliquesPorNo.get(no.id) },
+  })), [nos, entradaOrdem, cliquesPorNo]);
 
   const edgesIniciais = useMemo(() => derivarArestas(nos), [nos]);
 

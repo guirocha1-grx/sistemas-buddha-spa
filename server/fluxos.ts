@@ -11,7 +11,7 @@
  * sem QStash (aguardar fica só com o piso de ~1min do cron), e a
  * âncora da execução é a conversa do Inbox, não o cliente.
  */
-import type { Fluxo, FluxoExecucao, FluxoNoConfig } from "../drizzle/schema";
+import type { Fluxo, FluxoExecucao, FluxoNoConfig, Unidade } from "../drizzle/schema";
 import {
   createFluxoExecucao,
   getFluxoById,
@@ -25,6 +25,7 @@ import {
   updateFluxoExecucao,
 } from "./db";
 import { zapiApi } from "./zapiApi";
+import { buddhaMktApi } from "./buddhaMktApi";
 import { storageGetBase64, storageGetSignedUrl } from "./storage";
 
 // Limite de passos processados em sequência numa única chamada
@@ -195,14 +196,22 @@ async function extrairVariavelViaIa(conversaId: number, promptIa: string, nomeVa
 }
 
 /**
- * Credenciais Z-API da unidade dona do fluxo — nó nenhum guarda
+ * Manda texto pela unidade dona do fluxo — nó nenhum guarda
  * telefone/instância direto, sempre resolve via fluxo → unidade, igual
- * o resto do app (inbox.mensagens.enviar, enviarMidia).
+ * o resto do app (inbox.mensagens.enviar, enviarMidia). Ramifica por
+ * `unidade.canal`: a unidade sintética "Buddha Mkt" (WhatsApp Cloud API
+ * oficial) não tem credencial Z-API nenhuma — usa a conta global lida
+ * de `configuracoes` (ver server/buddhaMktApi.ts).
  */
-async function getCredenciaisZapi(unidadeId: number) {
-  const unidade = await getUnidadeById(unidadeId);
-  if (!unidade?.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) return null;
-  return { instanceId: unidade.zapiInstanceId, token: unidade.zapiToken, clientToken: unidade.zapiClientToken };
+export async function enviarPelaUnidade(unidade: Unidade, telefone: string, texto: string): Promise<void> {
+  if (unidade.canal === "buddha_mkt") {
+    await buddhaMktApi.sendText(telefone, texto);
+    return;
+  }
+  if (!unidade.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) {
+    throw new Error("Z-API não configurado para a unidade do fluxo");
+  }
+  await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, telefone, texto);
 }
 
 /**
@@ -273,10 +282,10 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
         const variaveisComSistema = { ...variaveis, ...(await computarVariaveisSistema(execucao, fluxo)) };
         const texto = interpolarVariaveis(config.texto, variaveisComSistema);
         if (conversa?.telefone) {
-          const creds = await getCredenciaisZapi(fluxo.unidadeId);
-          if (creds) {
+          const unidade = await getUnidadeById(fluxo.unidadeId);
+          if (unidade) {
             try {
-              await zapiApi.sendText(creds.instanceId, creds.token, creds.clientToken, conversa.telefone, texto);
+              await enviarPelaUnidade(unidade, conversa.telefone, texto);
             } catch (e) {
               console.error(`[Fluxos] Erro ao enviar mensagem (execução ${execucaoId}):`, e);
             }
@@ -344,8 +353,19 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
         const config = no.config as Extract<FluxoNoConfig, { tipoMidia: "imagem" | "audio" | "documento"; storageKey: string }>;
         const conversa = await getInboxConversaById(execucao.conversaId);
         if (conversa?.telefone && config.storageKey) {
-          const creds = await getCredenciaisZapi(fluxo.unidadeId);
-          if (creds) {
+          const unidade = await getUnidadeById(fluxo.unidadeId);
+          if (unidade?.canal === "buddha_mkt") {
+            // Envio de mídia pela Cloud API oficial exige upload prévio
+            // via endpoint próprio da Graph API — fora de escopo por
+            // ora. Fallback: manda ao menos a legenda como texto, pra
+            // não perder o passo do fluxo silenciosamente.
+            try {
+              await enviarPelaUnidade(unidade, conversa.telefone, config.legenda || config.nomeArquivo || `[${config.tipoMidia}]`);
+            } catch (e) {
+              console.error(`[Fluxos] Erro ao enviar mídia via Buddha Mkt (execução ${execucaoId}):`, e);
+            }
+          } else if (unidade?.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken) {
+            const creds = { instanceId: unidade.zapiInstanceId, token: unidade.zapiToken, clientToken: unidade.zapiClientToken };
             try {
               // Base64 direto pra Z-API pra imagem/documento — URL
               // assinada do storage se mostrou não-confiável nesse

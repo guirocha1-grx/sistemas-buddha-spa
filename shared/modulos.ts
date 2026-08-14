@@ -27,6 +27,7 @@ export const MODULOS = [
   { chave: "laminas", label: "Lâminas" },
   { chave: "leads", label: "Leads" },
   { chave: "fluxos", label: "Fluxos" },
+  { chave: "disparos", label: "Buddha Mkt (Templates e Disparos)" },
   { chave: "configuracoes", label: "Configurações" },
   { chave: "sincronizacao", label: "Sincronização Global" },
 ] as const;

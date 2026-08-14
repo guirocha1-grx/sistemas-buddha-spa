@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import { normalizarTelefone, variantesTelefone } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
@@ -2896,6 +2896,14 @@ export async function listClientesLocal() {
   return db.select().from(clientes).orderBy(clientes.nome).limit(20000);
 }
 
+/** Resolve nome/telefone dos clientes selecionados pra montar destinatários de um Disparo. */
+export async function getClientesPorIds(ids: number[]) {
+  const db = await getDb();
+  if (!db || ids.length === 0) return [];
+  return db.select({ id: clientes.id, nome: clientes.nome, celular: clientes.celular, telefone: clientes.telefone })
+    .from(clientes).where(inArray(clientes.id, ids));
+}
+
 /**
  * Busca por CPF na base local — usada pelo Copilot (server/routers.ts
  * copilot router) desde que a API do Belle foi desativada pra
@@ -3383,4 +3391,202 @@ export async function listConversasSemContatoHaDias(unidadeId: number, dias: num
   return db.select({ id: inboxConversas.id, clienteId: inboxConversas.clienteId })
     .from(inboxConversas)
     .where(and(eq(inboxConversas.unidadeId, unidadeId), lte(inboxConversas.ultimaMensagemEm, limite)));
+}
+
+// ===== Buddha Mkt: unidade sintética, templates, disparos, CTR do menu (2026-08-14) =====
+
+/**
+ * A unidade "Buddha Mkt (Marketing)" não tem seed manual — é criada na
+ * primeira chamada, mesmo espírito de getOrCreateContaMercadoPago
+ * (server/db.ts:1526). Identificada por slug fixo, não por nome (nome
+ * pode mudar, slug não).
+ */
+export async function getOrCreateUnidadeBuddhaMkt() {
+  const db = await getDb();
+  if (!db) return undefined;
+  const existente = await db.select().from(unidades).where(eq(unidades.slug, "buddha-mkt")).limit(1);
+  if (existente[0]) return existente[0];
+
+  const insertValues: InsertUnidade = {
+    nome: "Buddha Mkt (Marketing)",
+    slug: "buddha-mkt",
+    canal: "buddha_mkt",
+  };
+  const result = await db.insert(unidades).values(insertValues).$returningId();
+  const novaId = result[0]?.id;
+  if (!novaId) return undefined;
+  const nova = await db.select().from(unidades).where(eq(unidades.id, novaId)).limit(1);
+  return nova[0];
+}
+
+// --- Templates ---
+
+export async function listBuddhaMktTemplates() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(buddhaMktTemplates).orderBy(desc(buddhaMktTemplates.createdAt));
+}
+
+export async function getBuddhaMktTemplateById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(buddhaMktTemplates).where(eq(buddhaMktTemplates.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createBuddhaMktTemplate(dados: {
+  nome: string; idioma: string; categoria: "MARKETING" | "UTILITY"; corpo: string;
+  cabecalho?: string; rodape?: string; botoes?: Array<{ tipo: "QUICK_REPLY"; texto: string }>;
+}): Promise<number | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const insertValues: InsertBuddhaMktTemplate = { ...dados };
+  const result = await db.insert(buddhaMktTemplates).values(insertValues).$returningId();
+  return result[0]?.id;
+}
+
+export async function atualizarBuddhaMktTemplateStatus(id: number, dados: {
+  status: "pendente" | "aprovado" | "rejeitado"; metaTemplateId?: string | null; motivoRejeicao?: string | null;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(buddhaMktTemplates).set(dados).where(eq(buddhaMktTemplates.id, id));
+}
+
+// --- Disparos (campanhas) ---
+
+export async function listDisparos() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(disparos).orderBy(desc(disparos.createdAt));
+}
+
+export async function getDisparoById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(disparos).where(eq(disparos.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createDisparo(dados: {
+  nome: string; templateId: number; fluxoRespostaId?: number;
+  destinatarios: Array<{ clienteId: number; telefone: string }>;
+}): Promise<number | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const insertValues: InsertDisparo = {
+    nome: dados.nome, templateId: dados.templateId, fluxoRespostaId: dados.fluxoRespostaId ?? null,
+    totalDestinatarios: dados.destinatarios.length,
+  };
+  const result = await db.insert(disparos).values(insertValues).$returningId();
+  const disparoId = result[0]?.id;
+  if (!disparoId) return undefined;
+  if (dados.destinatarios.length > 0) {
+    const linhas: InsertDisparoDestinatario[] = dados.destinatarios.map((d) => ({
+      disparoId, clienteId: d.clienteId, telefone: d.telefone,
+    }));
+    await db.insert(disparoDestinatarios).values(linhas);
+  }
+  return disparoId;
+}
+
+export async function listDisparoDestinatarios(disparoId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(disparoDestinatarios).where(eq(disparoDestinatarios.disparoId, disparoId));
+}
+
+export async function listDisparoDestinatariosPendentes(disparoId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(disparoDestinatarios)
+    .where(and(eq(disparoDestinatarios.disparoId, disparoId), eq(disparoDestinatarios.status, "pendente")));
+}
+
+export async function atualizarDisparoDestinatario(id: number, dados: {
+  status: "enviado" | "erro"; erroMsg?: string | null; enviadoEm?: Date;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(disparoDestinatarios).set(dados).where(eq(disparoDestinatarios.id, id));
+}
+
+export async function atualizarDisparo(id: number, dados: Partial<InsertDisparo>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(disparos).set(dados).where(eq(disparos.id, id));
+}
+
+export async function incrementarDisparoContadores(id: number, dados: { totalEnviados?: number; totalErros?: number }): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const set: Record<string, any> = {};
+  if (dados.totalEnviados) set.totalEnviados = sql`${disparos.totalEnviados} + ${dados.totalEnviados}`;
+  if (dados.totalErros) set.totalErros = sql`${disparos.totalErros} + ${dados.totalErros}`;
+  if (Object.keys(set).length === 0) return;
+  await db.update(disparos).set(set).where(eq(disparos.id, id));
+}
+
+// --- CTR do nó "menu" ---
+
+export async function incrementarFluxoNoEnviados(fluxoNoId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(fluxoNos).set({ enviados: sql`${fluxoNos.enviados} + 1` }).where(eq(fluxoNos.id, fluxoNoId));
+}
+
+export async function incrementarFluxoNoOpcaoClique(fluxoNoId: number, opcaoIndex: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(fluxoNoOpcaoCliques).values({ fluxoNoId, opcaoIndex, cliques: 1 })
+    .onDuplicateKeyUpdate({ set: { cliques: sql`${fluxoNoOpcaoCliques.cliques} + 1` } });
+}
+
+export async function listFluxoNoOpcaoCliques(fluxoIds: number[]) {
+  const db = await getDb();
+  if (!db || fluxoIds.length === 0) return [];
+  const nos = await db.select({ id: fluxoNos.id }).from(fluxoNos).where(inArray(fluxoNos.fluxoId, fluxoIds));
+  const noIds = nos.map((n) => n.id);
+  if (noIds.length === 0) return [];
+  return db.select().from(fluxoNoOpcaoCliques).where(inArray(fluxoNoOpcaoCliques.fluxoNoId, noIds));
+}
+
+// --- Aviso de 10min sem retorno (roteador Buddha Mkt) ---
+
+export async function listConversasBuddhaMktSemAlerta() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(inboxConversas)
+    .where(and(eq(inboxConversas.canal, "buddha_mkt"), isNull(inboxConversas.buddhaMktAlertadoEm)));
+}
+
+export async function getUltimaMensagemEnviadaEm(conversaId: number): Promise<Date | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select({ createdAt: inboxMensagens.createdAt })
+    .from(inboxMensagens)
+    .where(and(eq(inboxMensagens.conversaId, conversaId), eq(inboxMensagens.direcao, "enviada")))
+    .orderBy(desc(inboxMensagens.createdAt))
+    .limit(1);
+  return rows[0]?.createdAt ?? null;
+}
+
+/** Existe conversa Z-API (unidade real) do mesmo telefone com mensagem a partir do horário do envio do roteador? Sinal de que o cliente já seguiu o link. */
+export async function existeConversaZapiComMensagemApos(telefone: string, apos: Date): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const conversasZapi = await db.select({ id: inboxConversas.id }).from(inboxConversas)
+    .where(and(eq(inboxConversas.canal, "zapi"), eq(inboxConversas.telefone, telefone)));
+  if (conversasZapi.length === 0) return false;
+  const ids = conversasZapi.map((c) => c.id);
+  const rows = await db.select({ id: inboxMensagens.id }).from(inboxMensagens)
+    .where(and(inArray(inboxMensagens.conversaId, ids), gte(inboxMensagens.createdAt, apos)))
+    .limit(1);
+  return rows.length > 0;
+}
+
+export async function marcarBuddhaMktAlertado(conversaId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inboxConversas).set({ buddhaMktAlertadoEm: new Date() }).where(eq(inboxConversas.id, conversaId));
 }
