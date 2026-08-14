@@ -1220,27 +1220,33 @@ Diretrizes:
       }),
     }),
 
-    registrarHeartbeat: adminProcedure.mutation(async ({ ctx }) => {
-      const userSession = parseCookieHeader(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
+    // upsertHeartbeatJob espera a sessão da PLATAFORMA Manus, não o
+    // cookie de login deste app (COOKIE_NAME/app_session_id é um JWT
+    // que o próprio buddha-spa emite via sdk.createSessionToken — o
+    // Heartbeat não reconhece esse token e rejeita com 401 "invalid
+    // user session", confirmado no Log de Auditoria). String vazia cai
+    // na "identidade do dono do projeto" (ver server/_core/heartbeat.ts),
+    // que é o caso certo aqui — não existe sessão de plataforma pra
+    // repassar dentro de uma mutation tRPC comum.
+    registrarHeartbeat: adminProcedure.mutation(async () => {
       await upsertHeartbeatJob({
         name: "cron-retomar-fluxos",
         cron: "0 * * * * *",
         path: "/api/scheduled/retomar-fluxos",
         method: "POST",
         description: "Fluxos: retoma execuções pausadas (nó aguardar) e trata timeout de menu aguardando resposta.",
-      }, userSession);
+      }, "");
       return { success: true };
     }),
 
-    registrarHeartbeatGatilhosAgendados: adminProcedure.mutation(async ({ ctx }) => {
-      const userSession = parseCookieHeader(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
+    registrarHeartbeatGatilhosAgendados: adminProcedure.mutation(async () => {
       await upsertHeartbeatJob({
         name: "cron-disparar-fluxos-agendados",
         cron: "0 0 6 * * *",
         path: "/api/scheduled/disparar-fluxos-agendados",
         method: "POST",
         description: "Fluxos: varredura diária do gatilho dias_sem_contato.",
-      }, userSession);
+      }, "");
       return { success: true };
     }),
   }),
