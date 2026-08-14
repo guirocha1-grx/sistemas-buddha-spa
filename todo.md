@@ -214,4 +214,4 @@
 - [x] Sincronizar a última versão do GitHub, validar e publicar
 - [x] Instalar a dependência @xyflow/react ausente e validar a tela de Fluxos
 - [x] Publicar o módulo de Fluxos e a migração aplicada
-- [ ] Sincronizar o GitHub após publicar o módulo de Fluxos
+- [x] Sincronizar o GitHub após publicar o módulo de Fluxos
