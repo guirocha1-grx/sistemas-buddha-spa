@@ -233,4 +233,7 @@
 - [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
 - [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
 - [x] Publicar a página pública de Política de Privacidade
-- [ ] Sincronizar o GitHub após publicar a Política de Privacidade
+- [x] Sincronizar o GitHub após publicar a Política de Privacidade
+- [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
+- [x] Publicar a correção que libera scripts de fluxo para a recepção
+- [ ] Sincronizar o GitHub após publicar a correção da recepção
