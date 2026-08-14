@@ -28,6 +28,7 @@ import Configuracoes from "@/pages/Configuracoes";
 import ConfigInbox from "@/pages/ConfigInbox";
 import AuditLog from "@/pages/AuditLog";
 import Usuarios from "@/pages/Usuarios";
+import PoliticaPrivacidade from "@/pages/PoliticaPrivacidade";
 
 function Router() {
   return (
@@ -69,7 +70,12 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
-          <Router />
+          {/* Fora do DashboardLayout de propósito — precisa ser acessível
+              sem login pro crawler da Meta (exigência do App Review). */}
+          <Switch>
+            <Route path="/privacidade" component={PoliticaPrivacidade} />
+            <Route>{() => <Router />}</Route>
+          </Switch>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
