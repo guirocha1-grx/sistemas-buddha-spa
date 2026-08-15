@@ -260,3 +260,4 @@
 - [x] Sincronizar a última versão do GitHub e publicar após a auditoria
 - [x] Publicar a trava contra telefones institucionais e o relatório de CPF duplicado
 - [x] Sincronizar o GitHub após publicar a trava de telefones institucionais
+- [x] Sincronizar e publicar a última versão disponível no GitHub
