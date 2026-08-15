@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, clienteTelefones, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import { normalizarTelefone, variantesTelefone, telefoneCanonico } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
@@ -23,6 +23,22 @@ export async function getDb() {
     }
   }
   return _db;
+}
+
+/**
+ * Debug TEMPORÁRIO (2026-08-15) — grava direto no banco em vez de
+ * log de arquivo, que se mostrou não confiável (dev vs produção) pra
+ * investigar o payload real que a Z-API manda em contato @lid novo.
+ * Nunca lança erro — debug não pode derrubar o webhook.
+ */
+export async function registrarWebhookDebug(origem: string, payloadBruto: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.insert(webhookDebugLog).values({ origem, payloadBruto });
+  } catch (error) {
+    console.error("[registrarWebhookDebug] Falha ao gravar:", error);
+  }
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {

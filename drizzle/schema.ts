@@ -270,6 +270,23 @@ export type AuditLogEntry = typeof auditLog.$inferSelect;
 export type InsertAuditLogEntry = typeof auditLog.$inferInsert;
 
 /**
+ * Tabela TEMPORÁRIA de debug (2026-08-15) — investigação em andamento
+ * sobre @lid não resolvido no webhook Z-API. Log de arquivo não se
+ * mostrou confiável (dev vs produção); grava direto no banco, que já
+ * provou ser consultável via SQL pelo Manus. Remover (DROP TABLE)
+ * depois de capturar um payload real e decidir o próximo passo.
+ */
+export const webhookDebugLog = mysqlTable("webhook_debug_log", {
+  id: int("id").autoincrement().primaryKey(),
+  origem: varchar("origem", { length: 50 }).notNull(),
+  payloadBruto: text("payloadBruto").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type WebhookDebugLog = typeof webhookDebugLog.$inferSelect;
+export type InsertWebhookDebugLog = typeof webhookDebugLog.$inferInsert;
+
+/**
  * Atendente = pessoa física da recepção, distinta da conta Google/Manus
  * usada pra logar no computador compartilhado (2026-08-10). Um PIN de
  * 4 dígitos identifica quem está atendendo, sem precisar de conta

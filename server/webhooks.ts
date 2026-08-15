@@ -192,6 +192,15 @@ function registerZapiWebhook(app: Express) {
 
       const payload = req.body as ZapiWebhookPayload;
 
+      // Debug TEMPORÁRIO (2026-08-15) — grava TODO webhook que chega
+      // nessa rota, mesmo antes de qualquer filtro. Investigação: log
+      // de arquivo não achou nada mesmo após reproduzir o cenário real
+      // (mensagem manual pelo app do celular pra contato novo) — pode
+      // ser que o evento nem chegue aqui (tipo diferente de
+      // "ReceivedCallback", ou webhook de "enviando" separado não
+      // configurado). Remover depois de decidir o próximo passo.
+      db.registrarWebhookDebug("zapi_all", JSON.stringify(req.body)).catch(() => {});
+
       // fromMe (recepção mandou) NÃO é ignorado: quando alguém responde
       // direto pelo app do WhatsApp Business no celular (fora do CRM),
       // é assim que ficamos sabendo — ver dedup por zapiMessageId
@@ -246,14 +255,8 @@ function registerZapiWebhook(app: Express) {
         identificadorContato = ehLidBruto ? (lidPayload ?? payload.phone) : payload.phone;
         ehLid = ehLidBruto;
 
-        // Log do payload bruto inteiro — investigação em andamento (2026-08-15)
-        // sobre se a Z-API manda algum campo não documentado com o número
-        // real mesmo em contato @lid novo (ver conversa: mensagem mandada
-        // pelo próprio app do celular, não por API, ainda assim resolvida
-        // certo por outra ferramenta de API não-oficial). Remover depois
-        // de capturar um exemplo real e decidir o que fazer com ele.
         if (ehLidBruto) {
-          console.log(`[Webhook Z-API] payload bruto @lid: ${JSON.stringify(req.body)}`);
+          db.registrarWebhookDebug("zapi_lid", JSON.stringify(req.body)).catch(() => {});
         }
 
         if (ehLidBruto && !(unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken)) {
