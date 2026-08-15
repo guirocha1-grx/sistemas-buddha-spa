@@ -754,6 +754,22 @@ Diretrizes:
         return db.criarClienteRapidoDeConversa(input.conversaId, input.nome, input.forcarDuplicata);
       }),
 
+      /**
+       * "Vincular a este cliente" — telefone bate com 2+ clientes Belle
+       * (ex.: mãe e filha cadastradas com o mesmo celular). Não dá pra
+       * adivinhar quem está mandando mensagem só pelo número, então o
+       * painel do Inbox lista os candidatos e a recepção escolhe com 1
+       * clique, em vez de criar um cadastro duplicado ou ficar sem
+       * vincular pra sempre.
+       */
+      vincularCliente: protectedProcedure.input(z.object({
+        conversaId: z.number(),
+        clienteId: z.number(),
+      })).mutation(async ({ input }) => {
+        await db.vincularClienteAConversa(input.conversaId, input.clienteId);
+        return { success: true };
+      }),
+
       alterarStatus: protectedProcedure.input(z.object({
         id: z.number(),
         status: z.enum(["aberta", "encerrada"]),

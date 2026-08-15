@@ -259,6 +259,15 @@ export default function Mensagens() {
     onError: (error) => toast.error(`Erro ao criar cliente: ${error.message}`),
   });
 
+  const vincularClienteMutation = trpc.inbox.conversas.vincularCliente.useMutation({
+    onSuccess: () => {
+      toast.success("Conversa vinculada ao cliente!");
+      utils.inbox.conversas.get.invalidate({ id: conversaSelecionadaId ?? 0 });
+      utils.inbox.conversas.list.invalidate();
+    },
+    onError: (error) => toast.error(`Erro ao vincular cliente: ${error.message}`),
+  });
+
   const iniciarConversaComClienteMutation = trpc.inbox.iniciarConversaComCliente.useMutation({
     onSuccess: (data) => {
       if (data.status === "conflito") {
@@ -1101,11 +1110,39 @@ export default function Mensagens() {
                   </div>
                 )}
 
+                {conversaSelecionada && !conversaSelecionada.clienteId && conversaSelecionada.isGrupo !== "true" && (conversaSelecionada.candidatosCliente?.length ?? 0) > 0 && (
+                  <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-2">
+                    <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-500">
+                      <UserPlus size={13} />
+                      <p className="text-xs font-semibold">Esse número já está em {conversaSelecionada.candidatosCliente!.length} cadastros</p>
+                    </div>
+                    <p className="text-[11px] text-amber-700/80 dark:text-amber-500/80">
+                      Comum quando um cliente usa o mesmo celular pra outra pessoa (ex.: mãe e filha). Qual é o cliente dessa conversa?
+                    </p>
+                    <div className="space-y-1">
+                      {conversaSelecionada.candidatosCliente!.map((c) => (
+                        <Button
+                          key={c.id}
+                          size="sm"
+                          variant="outline"
+                          className="w-full h-7 text-xs justify-start"
+                          disabled={vincularClienteMutation.isPending}
+                          onClick={() => conversaSelecionadaId && vincularClienteMutation.mutate({ conversaId: conversaSelecionadaId, clienteId: c.id })}
+                        >
+                          Vincular a {c.nome}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {conversaSelecionada && !conversaSelecionada.clienteId && conversaSelecionada.isGrupo !== "true" && (
                   <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-2">
                     <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-500">
                       <UserPlus size={13} />
-                      <p className="text-xs font-semibold">Criar cliente no CRM</p>
+                      <p className="text-xs font-semibold">
+                        {(conversaSelecionada.candidatosCliente?.length ?? 0) > 0 ? "Nenhum desses? Criar novo cliente" : "Criar cliente no CRM"}
+                      </p>
                     </div>
                     <p className="text-[11px] text-amber-700/80 dark:text-amber-500/80">
                       Este contato ainda não está cadastrado. Confira/edite o nome e clique em criar.

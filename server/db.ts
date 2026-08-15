@@ -413,11 +413,20 @@ export async function getInboxConversaById(id: number) {
 
   // Linka com Clientes agora, se ainda não tinha (conversa criada antes
   // desse recurso, ou o match não bateu na hora da mensagem original).
+  // 2+ candidatos (ex.: mãe e filha cadastradas com o mesmo celular no
+  // Belle) não são um bug a "adivinhar" — não tem como saber quem
+  // está mandando mensagem só pelo número. Em vez de ficar
+  // permanentemente sem cliente vinculado, devolve os candidatos pro
+  // painel do Inbox oferecer "vincular a X" com 1 clique.
+  let candidatosCliente: ClienteCandidato[] = [];
   if (!conversa.clienteId && conversa.telefone) {
-    const clienteId = await buscarClienteIdPorTelefone(conversa.telefone);
-    if (clienteId) {
+    const candidatos = await buscarClientesPorTelefone(conversa.telefone);
+    if (candidatos.length === 1) {
+      const clienteId = candidatos[0].id;
       await db.update(inboxConversas).set({ clienteId }).where(and(eq(inboxConversas.id, id), isNull(inboxConversas.clienteId)));
       conversa.clienteId = clienteId;
+    } else if (candidatos.length > 1) {
+      candidatosCliente = candidatos;
     }
   }
 
@@ -433,7 +442,18 @@ export async function getInboxConversaById(id: number) {
     clienteNome: clienteRows[0]?.nome,
     clienteQtdServicos: clienteRows[0]?.qtdServicosFinalizados,
     clienteUltimoAtendimento: clienteRows[0]?.ultimoAtendimento,
+    candidatosCliente,
   };
+}
+
+/** "Vincular a este cliente" no painel do Inbox — resolve o caso de telefone compartilhado entre clientes distintos (ex.: mãe/filha) sem criar um cadastro duplicado nem adivinhar sozinho. */
+export async function vincularClienteAConversa(conversaId: number, clienteId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const clienteRows = await db.select({ nome: clientes.nome }).from(clientes).where(eq(clientes.id, clienteId)).limit(1);
+  await db.update(inboxConversas)
+    .set({ clienteId, ...(clienteRows[0]?.nome ? { nomeContato: clienteRows[0].nome } : {}) })
+    .where(eq(inboxConversas.id, conversaId));
 }
 
 export async function marcarInboxConversaLida(id: number) {
