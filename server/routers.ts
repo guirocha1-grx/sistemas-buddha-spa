@@ -267,6 +267,18 @@ export const appRouter = router({
       return db.resumoClientesLocal();
     }),
 
+    /**
+     * Reconstrói o índice cliente_telefones (drizzle/schema.ts) do zero
+     * a partir do cadastro atual e preenche telefoneNormalizado nas
+     * conversas antigas — não muda nenhum vínculo cliente↔conversa
+     * existente, só recalcula o índice e devolve um relatório de
+     * auditoria (ver server/db.ts:backfillIndiceTelefones). Botão
+     * manual em Clientes.tsx — não roda em cron nem no import.
+     */
+    reindexarTelefones: adminProcedure.mutation(async () => {
+      return db.backfillIndiceTelefones();
+    }),
+
     // Sem filtro/paginação server-side — busca e ordenação ficam no
     // client (Clientes.tsx), a base cabe inteira numa resposta.
     listImportados: protectedProcedure.query(async () => {

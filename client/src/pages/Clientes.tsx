@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, Users, Loader2, Phone, Mail, Calendar, Upload, UserCheck, IdCard, ArrowUp, ArrowDown, ArrowUpDown, X, MessageCircle } from "lucide-react";
+import { Search, Users, Loader2, Phone, Mail, Calendar, Upload, UserCheck, IdCard, ArrowUp, ArrowDown, ArrowUpDown, X, MessageCircle, RefreshCw, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { rotaInboxConversa } from "@shared/inboxNavigation";
@@ -33,6 +33,14 @@ function ImportarClientesCard() {
   const utils = trpc.useUtils();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [unidadeImport, setUnidadeImport] = useState<"rbs" | "ssu">("ssu");
+  const [relatorioReindex, setRelatorioReindex] = useState<{
+    totalClientes: number;
+    clientesIndexados: number;
+    clientesSemTelefoneValido: number;
+    telefonesIndexados: number;
+    numerosCompartilhados: number;
+    conversasAtualizadas: number;
+  } | null>(null);
 
   const resumoQuery = trpc.clientes.resumoImportados.useQuery();
 
@@ -43,6 +51,11 @@ function ImportarClientesCard() {
       utils.clientes.listImportados.invalidate();
     },
     onError: (err) => toast.error(`Erro ao importar planilha: ${err.message}`),
+  });
+
+  const reindexarMutation = trpc.clientes.reindexarTelefones.useMutation({
+    onSuccess: (data) => setRelatorioReindex(data),
+    onError: (err) => toast.error(`Erro ao reindexar telefones: ${err.message}`),
   });
 
   async function handleImportar(e: React.ChangeEvent<HTMLInputElement>) {
@@ -97,12 +110,47 @@ function ImportarClientesCard() {
             {importarMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
             Importar planilha (.xlsx)
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={reindexarMutation.isPending}
+            onClick={() => reindexarMutation.mutate()}
+          >
+            {reindexarMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+            Reindexar telefones
+          </Button>
         </div>
         <p className="text-xs text-muted-foreground">
           Selecione a unidade dona da planilha antes de importar — clientes que já existem (mesmo ID da planilha) são atualizados,
           e passam a valer pra ambas as unidades se já constavam na outra.
         </p>
+        <p className="text-xs text-muted-foreground">
+          "Reindexar telefones" recalcula o índice usado pra detectar duplicidade de celular (ex.: mãe/filha com o mesmo número) —
+          não altera nenhum cliente ou vínculo existente, só atualiza o índice interno e mostra um relatório.
+        </p>
       </CardContent>
+      <Dialog open={!!relatorioReindex} onOpenChange={(open) => !open && setRelatorioReindex(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+              <ClipboardList className="h-4 w-4" /> Relatório de reindexação
+            </DialogTitle>
+          </DialogHeader>
+          {relatorioReindex && (
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Total de clientes</span><span className="font-medium">{relatorioReindex.totalClientes}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Com telefone indexado</span><span className="font-medium">{relatorioReindex.clientesIndexados}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Sem telefone válido</span><span className="font-medium">{relatorioReindex.clientesSemTelefoneValido}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Números de telefone indexados</span><span className="font-medium">{relatorioReindex.telefonesIndexados}</span></div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Números compartilhados por 2+ clientes</span>
+                <span className={`font-medium ${relatorioReindex.numerosCompartilhados > 0 ? "text-amber-700" : ""}`}>{relatorioReindex.numerosCompartilhados}</span>
+              </div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Conversas do Inbox atualizadas</span><span className="font-medium">{relatorioReindex.conversasAtualizadas}</span></div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

@@ -2960,6 +2960,78 @@ export async function upsertClientesImportados(
   return { inseridos, atualizados, promovidosDeLead };
 }
 
+export interface RelatorioReindexTelefones {
+  totalClientes: number;
+  clientesIndexados: number;
+  clientesSemTelefoneValido: number;
+  telefonesIndexados: number;
+  numerosCompartilhados: number;
+  conversasAtualizadas: number;
+}
+
+/**
+ * Reconstrói cliente_telefones do zero a partir do cadastro atual de
+ * `clientes` e preenche inbox_conversas.telefoneNormalizado nas linhas
+ * antigas (criadas antes dessa coluna existir, 2026-08-15). NÃO toca
+ * em inboxConversas.clienteId nem em nenhum vínculo já feito — é só
+ * recálculo do índice + relatório de auditoria (contagem de números
+ * compartilhados por 2+ clientes, ex.: mãe/filha), pra decidir com
+ * segurança se/quando trocar buscarClientesPorTelefone pra ler daqui.
+ * Botão admin em Clientes.tsx, não roda sozinho.
+ */
+export async function backfillIndiceTelefones(): Promise<RelatorioReindexTelefones> {
+  const db = await getDb();
+  if (!db) return { totalClientes: 0, clientesIndexados: 0, clientesSemTelefoneValido: 0, telefonesIndexados: 0, numerosCompartilhados: 0, conversasAtualizadas: 0 };
+
+  const todosClientes = await db.select({
+    id: clientes.id,
+    celular: clientes.celular,
+    celular2: clientes.celular2,
+    telefone: clientes.telefone,
+  }).from(clientes);
+
+  const linhasIndice: InsertClienteTelefone[] = [];
+  const clientesIndexadosSet = new Set<number>();
+  const clientesPorNumero = new Map<string, Set<number>>();
+  for (const c of todosClientes) {
+    const linhas = telefonesParaIndexar(c.id, { celular: c.celular, celular2: c.celular2, telefone: c.telefone });
+    for (const l of linhas) {
+      linhasIndice.push(l);
+      clientesIndexadosSet.add(c.id);
+      const grupo = clientesPorNumero.get(l.numeroCanonico) ?? new Set<number>();
+      grupo.add(c.id);
+      clientesPorNumero.set(l.numeroCanonico, grupo);
+    }
+  }
+  const numerosCompartilhados = Array.from(clientesPorNumero.values()).filter((s) => s.size > 1).length;
+
+  await db.delete(clienteTelefones);
+  for (let i = 0; i < linhasIndice.length; i += 500) {
+    await db.insert(clienteTelefones).values(linhasIndice.slice(i, i + 500));
+  }
+
+  const conversasSemNormalizacao = await db.select({
+    id: inboxConversas.id,
+    telefone: inboxConversas.telefone,
+  }).from(inboxConversas).where(isNull(inboxConversas.telefoneNormalizado));
+  let conversasAtualizadas = 0;
+  for (const conversa of conversasSemNormalizacao) {
+    const canonico = telefoneCanonico(conversa.telefone);
+    if (!canonico) continue;
+    await db.update(inboxConversas).set({ telefoneNormalizado: canonico }).where(eq(inboxConversas.id, conversa.id));
+    conversasAtualizadas++;
+  }
+
+  return {
+    totalClientes: todosClientes.length,
+    clientesIndexados: clientesIndexadosSet.size,
+    clientesSemTelefoneValido: todosClientes.length - clientesIndexadosSet.size,
+    telefonesIndexados: linhasIndice.length,
+    numerosCompartilhados,
+    conversasAtualizadas,
+  };
+}
+
 export async function resumoClientesLocal() {
   const db = await getDb();
   if (!db) return { total: 0, ssu: 0, rbs: 0, ambas: 0 };
