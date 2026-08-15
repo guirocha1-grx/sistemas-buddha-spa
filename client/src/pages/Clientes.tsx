@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, Users, Loader2, Phone, Mail, Calendar, Upload, UserCheck, IdCard, ArrowUp, ArrowDown, ArrowUpDown, X, MessageCircle, RefreshCw, ClipboardList } from "lucide-react";
+import { Search, Users, Loader2, Phone, Mail, Calendar, Upload, UserCheck, IdCard, ArrowUp, ArrowDown, ArrowUpDown, X, MessageCircle, RefreshCw, ClipboardList, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { rotaInboxConversa } from "@shared/inboxNavigation";
@@ -31,6 +31,7 @@ function fileParaBase64(file: File): Promise<string> {
 
 function ImportarClientesCard() {
   const utils = trpc.useUtils();
+  const { unidadeSelecionada } = useUnidade();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [unidadeImport, setUnidadeImport] = useState<"rbs" | "ssu">("ssu");
   const [relatorioReindex, setRelatorioReindex] = useState<{
@@ -62,6 +63,13 @@ function ImportarClientesCard() {
   const reindexarMutation = trpc.clientes.reindexarTelefones.useMutation({
     onSuccess: (data) => setRelatorioReindex(data),
     onError: (err) => toast.error(`Erro ao reindexar telefones: ${err.message}`),
+  });
+
+  const resolverLidsMutation = trpc.clientes.resolverLids.useMutation({
+    onSuccess: (data) => {
+      toast.success(`LIDs resolvidos: ${data.resolvidos} de ${data.totalTelefones} telefone(s)${data.semWhatsapp ? `, ${data.semWhatsapp} sem WhatsApp` : ""}${data.erros ? `, ${data.erros} com erro` : ""}.`);
+    },
+    onError: (err) => toast.error(`Erro ao resolver LIDs: ${err.message}`),
   });
 
   async function handleImportar(e: React.ChangeEvent<HTMLInputElement>) {
@@ -125,6 +133,15 @@ function ImportarClientesCard() {
             {reindexarMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
             Reindexar telefones
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={resolverLidsMutation.isPending || !unidadeSelecionada}
+            onClick={() => unidadeSelecionada && resolverLidsMutation.mutate({ unidadeId: unidadeSelecionada.id })}
+          >
+            {resolverLidsMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5 mr-1.5" />}
+            Resolver LIDs ({unidadeSelecionada?.nome ?? "selecione a unidade"})
+          </Button>
         </div>
         <p className="text-xs text-muted-foreground">
           Selecione a unidade dona da planilha antes de importar — clientes que já existem (mesmo ID da planilha) são atualizados,
@@ -133,6 +150,11 @@ function ImportarClientesCard() {
         <p className="text-xs text-muted-foreground">
           "Reindexar telefones" recalcula o índice usado pra detectar duplicidade de celular (ex.: mãe/filha com o mesmo número) —
           não altera nenhum cliente ou vínculo existente, só atualiza o índice interno e mostra um relatório.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          "Resolver LIDs" consulta o WhatsApp da unidade selecionada (seletor no topo da página) e guarda o identificador oculto
+          (@lid) de cada telefone já cadastrado — isso permite ao Inbox identificar automaticamente o cliente mesmo quando o
+          WhatsApp esconde o número real (ex.: confirmação de agendamento do Belle).
         </p>
       </CardContent>
       <Dialog open={!!relatorioReindex} onOpenChange={(open) => !open && setRelatorioReindex(null)}>

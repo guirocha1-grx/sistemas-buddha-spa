@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, lidMapping, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import { normalizarTelefone, variantesTelefone, telefoneCanonico } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
@@ -601,6 +601,50 @@ export async function syncClienteTelefones(
   const linhas = telefonesParaIndexar(clienteId, dados);
   await db.delete(clienteTelefones).where(eq(clienteTelefones.clienteId, clienteId));
   if (linhas.length > 0) await db.insert(clienteTelefones).values(linhas);
+}
+
+/**
+ * Telefones canônicos únicos de todos os clientes de uma unidade
+ * (clienteSsu/clienteRbs conforme o slug) — base pra resolução em lote
+ * de lid via zapiApi.phoneExistsBatch (orquestrado em routers.ts, não
+ * aqui — este arquivo fica só com acesso a dado).
+ */
+export async function listTelefonesCanonicosDaUnidade(unidadeSlug: string): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const ehRbs = unidadeSlug.includes("ribeirao") || unidadeSlug.includes("rbs");
+  const clientesDaUnidade = await db.select({ id: clientes.id }).from(clientes)
+    .where(ehRbs ? eq(clientes.clienteRbs, true) : eq(clientes.clienteSsu, true));
+  const clienteIds = clientesDaUnidade.map((c) => c.id);
+  if (clienteIds.length === 0) return [];
+  const telefonesRows = await db.select({ numeroCanonico: clienteTelefones.numeroCanonico })
+    .from(clienteTelefones)
+    .where(inArray(clienteTelefones.clienteId, clienteIds));
+  return Array.from(new Set(telefonesRows.map((r) => r.numeroCanonico)));
+}
+
+/** Upsert em lote pro mapeamento telefone→lid (ver drizzle/schema.ts:lidMapping). */
+export async function upsertLidMapping(linhas: InsertLidMapping[]): Promise<void> {
+  if (linhas.length === 0) return;
+  const db = await getDb();
+  if (!db) return;
+  for (let i = 0; i < linhas.length; i += 500) {
+    await db.insert(lidMapping).values(linhas.slice(i, i + 500))
+      .onDuplicateKeyUpdate({ set: { lid: sql`VALUES(lid)`, resolvedAt: sql`VALUES(resolvedAt)` } });
+  }
+}
+
+/**
+ * Lookup reverso lid→telefone, usado no webhook Z-API quando o
+ * telefone chega mascarado como @lid e o mapeamento proativo (botão
+ * admin "Resolver LIDs") já tiver resolvido esse contato antes.
+ */
+export async function buscarTelefonePorLid(unidadeId: number, lid: string): Promise<string | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select({ telefoneCanonico: lidMapping.telefoneCanonico }).from(lidMapping)
+    .where(and(eq(lidMapping.unidadeId, unidadeId), eq(lidMapping.lid, lid))).limit(1);
+  return rows[0]?.telefoneCanonico;
 }
 
 /**

@@ -409,6 +409,31 @@ export type ClienteTelefone = typeof clienteTelefones.$inferSelect;
 export type InsertClienteTelefone = typeof clienteTelefones.$inferInsert;
 
 /**
+ * Mapeamento proativo telefone→lid do WhatsApp (2026-08-15) — resolve
+ * o problema de conversas @lid não identificadas (Belle manda
+ * confirmação de agendamento, WhatsApp mascara o número real como
+ * @lid). A conversão @lid→telefone não é suportada pela Z-API, mas o
+ * caminho inverso (telefone→lid) é, via zapiApi.phoneExistsBatch —
+ * como já se conhece o telefone de todo cliente cadastrado, resolve-se
+ * o lid de cada um ANTES de qualquer mensagem chegar, e casa via
+ * lookup reverso (lid→telefone) quando o webhook chegar mascarado. Por
+ * unidade porque cada uma tem sua própria instância/conta Z-API.
+ */
+export const lidMapping = mysqlTable("lid_mapping", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  telefoneCanonico: varchar("telefoneCanonico", { length: 20 }).notNull(),
+  lid: varchar("lid", { length: 64 }).notNull(),
+  resolvedAt: timestamp("resolvedAt").defaultNow().notNull(),
+}, (table) => ({
+  unidadeTelefoneUnico: uniqueIndex("lid_mapping_unidade_telefone_idx").on(table.unidadeId, table.telefoneCanonico),
+  lidIdx: index("lid_mapping_lid_idx").on(table.lid),
+}));
+
+export type LidMapping = typeof lidMapping.$inferSelect;
+export type InsertLidMapping = typeof lidMapping.$inferInsert;
+
+/**
  * Conversas do Copilot de atendimento.
  */
 export const copilotConversas = mysqlTable("copilotConversas", {

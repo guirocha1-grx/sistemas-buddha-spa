@@ -11,6 +11,7 @@ import { zapiApi } from "./zapiApi";
 import { buddhaMktApi } from "./buddhaMktApi";
 import { metaTemplatesApi } from "./metaTemplatesApi";
 import { validarCorpo, validarCabecalho, extrairVariaveis } from "@shared/templateVariaveis";
+import { telefoneCanonico } from "@shared/telefone";
 import { storagePut, storageGetSignedUrl, normalizeStorageKey } from "./storage";
 import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
@@ -277,6 +278,53 @@ export const appRouter = router({
      */
     reindexarTelefones: adminProcedure.mutation(async () => {
       return db.backfillIndiceTelefones();
+    }),
+
+    /**
+     * Mapeamento proativo telefone→lid (2026-08-15) — resolve conversas
+     * @lid não identificadas quando o WhatsApp mascara o número real
+     * (ex.: confirmação de agendamento do Belle). A conversão @lid→
+     * telefone não é suportada pela Z-API, mas o caminho inverso é
+     * (zapiApi.phoneExistsBatch) — como já se sabe o telefone de todo
+     * cliente cadastrado, resolve-se o lid de cada um ANTES de qualquer
+     * mensagem chegar. Guarda em lid_mapping, usado pelo webhook Z-API
+     * (server/webhooks.ts) como 2ª tentativa de resolução. Só cobre
+     * quem já está na base local — cliente lançado direto no Belle no
+     * balcão (nunca importado) fica de fora até a próxima importação de
+     * planilha.
+     */
+    resolverLids: adminProcedure.input(z.object({ unidadeId: z.number() })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) throw new Error("Unidade não encontrada");
+      if (!unidade.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) {
+        throw new Error("Unidade sem credenciais Z-API configuradas.");
+      }
+
+      const telefones = await db.listTelefonesCanonicosDaUnidade(unidade.slug);
+      let resolvidos = 0;
+      let semWhatsapp = 0;
+      let erros = 0;
+      const LOTE = 1000;
+      for (let i = 0; i < telefones.length; i += LOTE) {
+        const lote = telefones.slice(i, i + LOTE);
+        try {
+          const resultados = await zapiApi.phoneExistsBatch(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, lote);
+          const linhas: Array<{ unidadeId: number; telefoneCanonico: string; lid: string }> = [];
+          for (const r of resultados) {
+            if (!r.exists || !r.lid) { semWhatsapp++; continue; }
+            const canonico = telefoneCanonico(r.outputPhone || r.inputPhone);
+            if (!canonico) continue;
+            linhas.push({ unidadeId: input.unidadeId, telefoneCanonico: canonico, lid: r.lid });
+          }
+          await db.upsertLidMapping(linhas);
+          resolvidos += linhas.length;
+        } catch (error) {
+          console.error("[resolverLids] Falha no lote:", error);
+          erros += lote.length;
+        }
+      }
+
+      return { totalTelefones: telefones.length, resolvidos, semWhatsapp, erros };
     }),
 
     // Sem filtro/paginação server-side — busca e ordenação ficam no

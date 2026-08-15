@@ -275,6 +275,20 @@ function registerZapiWebhook(app: Express) {
             console.error("[Webhook Z-API] Falha ao resolver @lid:", error);
           }
         }
+
+        // Segunda tentativa: mapeamento próprio (lid_mapping), resolvido
+        // proativamente pelo botão admin "Resolver LIDs" via
+        // zapiApi.phoneExistsBatch — cobre o caso em que resolveLid
+        // (GET /contacts/{lid}) falha porque a Z-API ainda não
+        // sincronizou esse contato, mas já sabíamos o telefone dele de
+        // antemão (cliente já cadastrado no CRM).
+        if (ehLid) {
+          const telefoneMapeado = await db.buscarTelefonePorLid(unidadeId, identificadorContato);
+          if (telefoneMapeado) {
+            identificadorContato = telefoneMapeado;
+            ehLid = false;
+          }
+        }
       }
 
       let tipo: "texto" | "imagem" | "audio" | "documento" = "texto";

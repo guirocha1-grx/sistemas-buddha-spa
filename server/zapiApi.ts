@@ -262,6 +262,41 @@ export const zapiApi = {
   },
 
   /**
+   * Resolve o "lid" a partir do telefone (caminho INVERSO de resolveLid,
+   * confirmado suportado pela doc do Z-API mesmo com a página tips/lid
+   * afirmando que "não é possível converter @lid em telefone" — essa
+   * afirmação é sobre o outro sentido). Base do mapeamento proativo:
+   * como já temos o telefone de todo cliente cadastrado, dá pra saber o
+   * lid de cada um ANTES de qualquer mensagem chegar, e casar via
+   * lid_mapping quando o webhook chegar só com @lid. Até 50.000 números
+   * por chamada. URL do endpoint em lote não tem exemplo 100% oficial
+   * na doc pública (achado por pesquisa) — se der 404, é o primeiro
+   * lugar a conferir.
+   */
+  async phoneExistsBatch(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    telefones: string[],
+  ): Promise<Array<{ inputPhone: string; outputPhone: string; exists: boolean; lid: string | null }>> {
+    if (telefones.length === 0) return [];
+    const response = await fetch(buildUrl(instanceId, token, "/phone-exists-batch"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Client-Token": clientToken },
+      body: JSON.stringify({ phones: telefones }),
+    });
+    if (!response.ok) {
+      const corpo = await response.text().catch(() => "");
+      throw new Error(`Z-API phoneExistsBatch → HTTP ${response.status}: ${corpo.slice(0, 500)}`);
+    }
+    const data = await response.json().catch(() => null);
+    if (!Array.isArray(data)) {
+      throw new Error(`Z-API phoneExistsBatch → resposta inesperada: ${JSON.stringify(data).slice(0, 500)}`);
+    }
+    return data;
+  },
+
+  /**
    * Não usa zapiGet aqui de propósito, mesmo motivo do resolveLid: precisa
    * do corpo da resposta em caso de erro pra diagnosticar (rate limit,
    * credencial errada, endpoint fora do plano contratado etc.), coisa que

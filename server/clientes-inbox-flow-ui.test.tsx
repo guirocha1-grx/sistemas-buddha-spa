@@ -59,6 +59,7 @@ const state = vi.hoisted(() => {
       listImportados: { useQuery: () => ({ data: [cliente], isLoading: false }) },
       importarXlsx: { useMutation: () => mutation() },
       reindexarTelefones: { useMutation: () => mutation() },
+      resolverLids: { useMutation: () => mutation() },
     },
     inbox: {
       conversas: {
