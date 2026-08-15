@@ -248,4 +248,8 @@
 - [x] Sincronizar o GitHub após publicar a correção de telefone
 - [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
 - [x] Publicar a vinculação manual de conversas a clientes com telefone ambíguo
-- [ ] Sincronizar o GitHub após publicar a vinculação manual de clientes
+- [x] Sincronizar o GitHub após publicar a vinculação manual de clientes
+- [x] Diagnosticar a rejeição dos templates do WhatsApp Oficial no Buddha Mkt
+- [x] Sincronizar, validar e publicar o commit 96b37ba solicitado
+- [x] Publicar o índice canônico e a reindexação de telefones
+- [ ] Sincronizar o GitHub após publicar o índice de telefones
