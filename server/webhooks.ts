@@ -246,6 +246,16 @@ function registerZapiWebhook(app: Express) {
         identificadorContato = ehLidBruto ? (lidPayload ?? payload.phone) : payload.phone;
         ehLid = ehLidBruto;
 
+        // Log do payload bruto inteiro — investigação em andamento (2026-08-15)
+        // sobre se a Z-API manda algum campo não documentado com o número
+        // real mesmo em contato @lid novo (ver conversa: mensagem mandada
+        // pelo próprio app do celular, não por API, ainda assim resolvida
+        // certo por outra ferramenta de API não-oficial). Remover depois
+        // de capturar um exemplo real e decidir o que fazer com ele.
+        if (ehLidBruto) {
+          console.log(`[Webhook Z-API] payload bruto @lid: ${JSON.stringify(req.body)}`);
+        }
+
         if (ehLidBruto && !(unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken)) {
           console.warn(`[Webhook Z-API] @lid ${identificadorContato} não resolvido: faltam credenciais Z-API (instanceId/token/clientToken) na unidade ${unidadeId}.`);
         }
