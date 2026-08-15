@@ -245,4 +245,7 @@
 - [x] Sincronizar o GitHub após publicar a melhoria de templates
 - [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
 - [x] Publicar a correção de variantes de telefone brasileiras
-- [ ] Sincronizar o GitHub após publicar a correção de telefone
+- [x] Sincronizar o GitHub após publicar a correção de telefone
+- [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
+- [x] Publicar a vinculação manual de conversas a clientes com telefone ambíguo
+- [ ] Sincronizar o GitHub após publicar a vinculação manual de clientes
