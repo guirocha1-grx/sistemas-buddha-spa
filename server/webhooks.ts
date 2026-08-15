@@ -144,6 +144,17 @@ function jaProcessada(messageId: string | undefined): boolean {
 interface ZapiWebhookPayload {
   type?: string;
   phone?: string;
+  // O campo real que a Z-API manda no payload de mensagem individual é
+  // "senderLid" (confirmado no exemplo oficial de payload da doc,
+  // developer.z-api.io/webhooks/on-message-received-examples — "chatLid"
+  // não aparece lá; existe só na página de dicas sobre @lid, terminologia
+  // inconsistente entre as páginas da própria doc). Bug real encontrado
+  // 2026-08-15: código antigo só lia "chatLid", que nunca vinha
+  // preenchido — por isso o mecanismo de promover @lid pro telefone real
+  // assim que uma mensagem posterior revelasse o número (já existente em
+  // upsertInboxConversa, db.ts) nunca disparava. Aceita os dois nomes,
+  // por segurança, com senderLid tendo prioridade.
+  senderLid?: string;
   chatLid?: string;
   messageId?: string;
   senderName?: string;
@@ -207,6 +218,7 @@ function registerZapiWebhook(app: Express) {
       let ehLid = false;
       let nomeResolvidoPorLid: string | undefined;
       let fotoUrlResolvidaPorLid: string | undefined;
+      const lidPayload = payload.senderLid ?? payload.chatLid;
 
       // Grupo nunca vem como "@lid" (o ID do grupo, sufixo "-group", já
       // é o identificador definitivo) — pula toda a resolução abaixo,
@@ -231,7 +243,7 @@ function registerZapiWebhook(app: Express) {
         // (foi exatamente o que aconteceu com um cliente novo — o número
         // real já tinha chegado no payload e foi escondido sem necessidade).
         const ehLidBruto = payload.phone.includes("@lid");
-        identificadorContato = ehLidBruto ? (payload.chatLid ?? payload.phone) : payload.phone;
+        identificadorContato = ehLidBruto ? (lidPayload ?? payload.phone) : payload.phone;
         ehLid = ehLidBruto;
 
         if (ehLidBruto && !(unidade.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken)) {
@@ -318,7 +330,7 @@ function registerZapiWebhook(app: Express) {
         unidadeId,
         canal: "zapi",
         telefone: identificadorContato,
-        chatLid: payload.chatLid,
+        chatLid: lidPayload,
         isLidPendente: ehLid,
         isGrupo: payload.isGroup,
         clienteId,

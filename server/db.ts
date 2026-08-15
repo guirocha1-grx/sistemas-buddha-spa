@@ -3070,7 +3070,7 @@ export async function backfillIndiceTelefones(): Promise<RelatorioReindexTelefon
   );
   const gruposComCpfDuplicado = gruposCompartilhados.filter(([, ids]) => {
     const cpfsVistos = new Set<string>();
-    for (const id of ids) {
+    for (const id of Array.from(ids)) {
       const cpf = clientePorId.get(id)?.cpf;
       if (!cpf) continue;
       if (cpfsVistos.has(cpf)) return true;
