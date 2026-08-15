@@ -259,4 +259,4 @@
 - [x] Executar a auditoria de clientes nas duas unidades e retornar JSON completo
 - [x] Sincronizar a última versão do GitHub e publicar após a auditoria
 - [x] Publicar a trava contra telefones institucionais e o relatório de CPF duplicado
-- [ ] Sincronizar o GitHub após publicar a trava de telefones institucionais
+- [x] Sincronizar o GitHub após publicar a trava de telefones institucionais
