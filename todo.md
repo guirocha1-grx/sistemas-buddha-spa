@@ -255,4 +255,8 @@
 - [x] Sincronizar o GitHub após publicar o índice de telefones
 - [x] Verificar e sincronizar a última versão do GitHub
 - [x] Publicar o relatório detalhado de reindexação de telefones
-- [ ] Sincronizar o GitHub após publicar o relatório de reindexação
+- [x] Sincronizar o GitHub após publicar o relatório de reindexação
+- [x] Executar a auditoria de clientes nas duas unidades e retornar JSON completo
+- [x] Sincronizar a última versão do GitHub e publicar após a auditoria
+- [x] Publicar a trava contra telefones institucionais e o relatório de CPF duplicado
+- [ ] Sincronizar o GitHub após publicar a trava de telefones institucionais
