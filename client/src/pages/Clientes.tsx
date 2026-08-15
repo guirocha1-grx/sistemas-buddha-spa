@@ -41,7 +41,10 @@ function ImportarClientesCard() {
     numerosCompartilhados: number;
     maiorGrupoTamanho: number;
     distribuicaoGrupos: { tamanho2: number; tamanho3: number; tamanho4Mais: number };
-    amostraMaioresGrupos: Array<{ numeroCanonico: string; clientes: string[] }>;
+    gruposComCpfDuplicado: number;
+    cpfsComMultiplosCadastros: number;
+    amostraCpfsDuplicados: Array<{ cpf: string; clientes: Array<{ nome: string; ssu: boolean; rbs: boolean }> }>;
+    amostraMaioresGrupos: Array<{ numeroCanonico: string; clientes: Array<{ nome: string; cpf: string | null }> }>;
     conversasAtualizadas: number;
   } | null>(null);
 
@@ -157,6 +160,45 @@ function ImportarClientesCard() {
                   <div className="flex justify-between"><span>— maior grupo</span><span>{relatorioReindex.maiorGrupoTamanho} clientes</span></div>
                 </div>
               )}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Grupos com o mesmo CPF em 2+ cadastros</span>
+                <span className={`font-medium ${relatorioReindex.gruposComCpfDuplicado > 0 ? "text-red-700" : ""}`}>{relatorioReindex.gruposComCpfDuplicado}</span>
+              </div>
+              {relatorioReindex.gruposComCpfDuplicado > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Mesmo CPF em cadastros diferentes = provavelmente o mesmo cliente importado 2x do Belle, não família dividindo número.
+                </p>
+              )}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">CPFs com mais de 1 cadastro (base inteira)</span>
+                <span className={`font-medium ${relatorioReindex.cpfsComMultiplosCadastros > 0 ? "text-red-700" : ""}`}>{relatorioReindex.cpfsComMultiplosCadastros}</span>
+              </div>
+              {relatorioReindex.cpfsComMultiplosCadastros > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Inclui cadastros com telefones diferentes entre si — ex.: mesmo cliente registrado uma vez por unidade, com belleId distinto em cada.
+                </p>
+              )}
+              {relatorioReindex.amostraCpfsDuplicados.length > 0 && (
+                <div className="pt-2 border-t space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">CPFs duplicados (amostra):</p>
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {relatorioReindex.amostraCpfsDuplicados.map((g) => (
+                      <div key={g.cpf} className="text-xs">
+                        <span className="font-medium">{g.cpf}</span>
+                        <span className="text-muted-foreground">
+                          {": "}
+                          {g.clientes.map((c, i) => (
+                            <span key={i}>
+                              {i > 0 && ", "}
+                              {c.nome} ({c.ssu && c.rbs ? "SSU+RBS" : c.ssu ? "SSU" : c.rbs ? "RBS" : "—"})
+                            </span>
+                          ))}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex justify-between"><span className="text-muted-foreground">Conversas do Inbox atualizadas</span><span className="font-medium">{relatorioReindex.conversasAtualizadas}</span></div>
               {relatorioReindex.amostraMaioresGrupos.length > 0 && (
                 <div className="pt-2 border-t space-y-2">
@@ -164,9 +206,16 @@ function ImportarClientesCard() {
                   <div className="space-y-2 max-h-56 overflow-y-auto">
                     {relatorioReindex.amostraMaioresGrupos.map((g) => (
                       <div key={g.numeroCanonico} className="text-xs">
-                        <span className="font-medium">{g.numeroCanonico}</span>
-                        <span className="text-muted-foreground"> ({g.clientes.length}): </span>
-                        <span className="text-muted-foreground">{g.clientes.join(", ")}</span>
+                        <div className="font-medium">{g.numeroCanonico} ({g.clientes.length})</div>
+                        <div className="text-muted-foreground">
+                          {g.clientes.map((c, i) => (
+                            <span key={i}>
+                              {i > 0 && ", "}
+                              {c.nome}
+                              {c.cpf && <span className="text-[10px]"> [{c.cpf}]</span>}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>

@@ -420,7 +420,7 @@ export async function getInboxConversaById(id: number) {
   // painel do Inbox oferecer "vincular a X" com 1 clique.
   let candidatosCliente: ClienteCandidato[] = [];
   if (!conversa.clienteId && conversa.telefone) {
-    const candidatos = await buscarClientesPorTelefone(conversa.telefone);
+    const candidatos = candidatosConfiaveis(await buscarClientesPorTelefone(conversa.telefone));
     if (candidatos.length === 1) {
       const clienteId = candidatos[0].id;
       await db.update(inboxConversas).set({ clienteId }).where(and(eq(inboxConversas.id, id), isNull(inboxConversas.clienteId)));
@@ -527,6 +527,21 @@ export async function buscarClientesPorTelefone(telefoneWhatsapp: string): Promi
 export async function buscarClienteIdPorTelefone(telefoneWhatsapp: string): Promise<number | undefined> {
   const candidatos = await buscarClientesPorTelefone(telefoneWhatsapp);
   return candidatos.length === 1 ? candidatos[0].id : undefined;
+}
+
+/**
+ * Acima desse limite o número quase certamente não é de uso pessoal —
+ * é o fixo da recepção, usado como valor de preenchimento quando o
+ * cliente não quis informar o celular (confirmado com o usuário
+ * 2026-08-15: reindex achou números com 19 e 93 clientes distintos,
+ * ambos eram exatamente isso). Listar dezenas de "vincular a X" não
+ * ajuda ninguém — acima do limite trata como se não houvesse match
+ * confiável, igual a 0 candidatos.
+ */
+const LIMITE_CANDIDATOS_TELEFONE_COMPARTILHADO = 10;
+
+function candidatosConfiaveis(candidatos: ClienteCandidato[]): ClienteCandidato[] {
+  return candidatos.length <= LIMITE_CANDIDATOS_TELEFONE_COMPARTILHADO ? candidatos : [];
 }
 
 /**
@@ -828,7 +843,7 @@ export async function iniciarConversaComCliente(params: {
   let clienteId: number | undefined;
   let clienteCriadoAgora = false;
   if (!params.forcarDuplicata) {
-    const candidatos = await buscarClientesPorTelefone(telefoneNormalizado);
+    const candidatos = candidatosConfiaveis(await buscarClientesPorTelefone(telefoneNormalizado));
     if (candidatos.length === 1 && provavelmenteMesmaPessoa(candidatos[0].nome, params.nome)) {
       clienteId = candidatos[0].id;
     } else if (candidatos.length > 0) {
@@ -926,7 +941,7 @@ export async function criarClienteRapidoDeConversa(
   let clienteId: number | undefined;
   let clienteCriadoAgora = false;
   if (!forcarDuplicata) {
-    const candidatos = await buscarClientesPorTelefone(conversa.telefone);
+    const candidatos = candidatosConfiaveis(await buscarClientesPorTelefone(conversa.telefone));
     if (candidatos.length === 1 && provavelmenteMesmaPessoa(candidatos[0].nome, nome)) {
       clienteId = candidatos[0].id;
     } else if (candidatos.length > 0) {
@@ -2968,7 +2983,10 @@ export interface RelatorioReindexTelefones {
   numerosCompartilhados: number;
   maiorGrupoTamanho: number;
   distribuicaoGrupos: { tamanho2: number; tamanho3: number; tamanho4Mais: number };
-  amostraMaioresGrupos: Array<{ numeroCanonico: string; clientes: string[] }>;
+  gruposComCpfDuplicado: number;
+  cpfsComMultiplosCadastros: number;
+  amostraCpfsDuplicados: Array<{ cpf: string; clientes: Array<{ nome: string; ssu: boolean; rbs: boolean }> }>;
+  amostraMaioresGrupos: Array<{ numeroCanonico: string; clientes: Array<{ nome: string; cpf: string | null }> }>;
   conversasAtualizadas: number;
 }
 
@@ -2987,6 +3005,7 @@ export async function backfillIndiceTelefones(): Promise<RelatorioReindexTelefon
   const vazio: RelatorioReindexTelefones = {
     totalClientes: 0, clientesIndexados: 0, clientesSemTelefoneValido: 0, telefonesIndexados: 0,
     numerosCompartilhados: 0, maiorGrupoTamanho: 0, distribuicaoGrupos: { tamanho2: 0, tamanho3: 0, tamanho4Mais: 0 },
+    gruposComCpfDuplicado: 0, cpfsComMultiplosCadastros: 0, amostraCpfsDuplicados: [],
     amostraMaioresGrupos: [], conversasAtualizadas: 0,
   };
   if (!db) return vazio;
@@ -2994,11 +3013,35 @@ export async function backfillIndiceTelefones(): Promise<RelatorioReindexTelefon
   const todosClientes = await db.select({
     id: clientes.id,
     nome: clientes.nome,
+    cpf: clientes.cpf,
     celular: clientes.celular,
     celular2: clientes.celular2,
     telefone: clientes.telefone,
+    clienteSsu: clientes.clienteSsu,
+    clienteRbs: clientes.clienteRbs,
   }).from(clientes);
-  const nomePorClienteId = new Map(todosClientes.map((c) => [c.id, c.nome]));
+  const clientePorId = new Map(todosClientes.map((c) => [c.id, c]));
+
+  // Independe de telefone — pega também o caso de um mesmo cliente
+  // cadastrado 2x no Belle (1 registro por unidade, belleId diferente
+  // em cada), mesmo quando o telefone informado difere entre os dois
+  // cadastros. CPF é identificador exato, sem achismo de nome.
+  const idsPorCpf = new Map<string, number[]>();
+  for (const c of todosClientes) {
+    if (!c.cpf) continue;
+    const arr = idsPorCpf.get(c.cpf) ?? [];
+    arr.push(c.id);
+    idsPorCpf.set(c.cpf, arr);
+  }
+  const cpfsDuplicados = Array.from(idsPorCpf.entries()).filter(([, ids]) => ids.length > 1);
+  const cpfsComMultiplosCadastros = cpfsDuplicados.length;
+  const amostraCpfsDuplicados = cpfsDuplicados.slice(0, 10).map(([cpf, ids]) => ({
+    cpf,
+    clientes: ids.map((id) => {
+      const c = clientePorId.get(id);
+      return { nome: c?.nome ?? `#${id}`, ssu: !!c?.clienteSsu, rbs: !!c?.clienteRbs };
+    }),
+  }));
 
   const linhasIndice: InsertClienteTelefone[] = [];
   const clientesIndexadosSet = new Set<number>();
@@ -3025,12 +3068,25 @@ export async function backfillIndiceTelefones(): Promise<RelatorioReindexTelefon
     },
     { tamanho2: 0, tamanho3: 0, tamanho4Mais: 0 },
   );
+  const gruposComCpfDuplicado = gruposCompartilhados.filter(([, ids]) => {
+    const cpfsVistos = new Set<string>();
+    for (const id of ids) {
+      const cpf = clientePorId.get(id)?.cpf;
+      if (!cpf) continue;
+      if (cpfsVistos.has(cpf)) return true;
+      cpfsVistos.add(cpf);
+    }
+    return false;
+  }).length;
   const amostraMaioresGrupos = gruposCompartilhados
     .sort((a, b) => b[1].size - a[1].size)
     .slice(0, 10)
     .map(([numeroCanonico, ids]) => ({
       numeroCanonico,
-      clientes: Array.from(ids).map((id) => nomePorClienteId.get(id) ?? `#${id}`),
+      clientes: Array.from(ids).map((id) => {
+        const c = clientePorId.get(id);
+        return { nome: c?.nome ?? `#${id}`, cpf: c?.cpf ?? null };
+      }),
     }));
 
   await db.delete(clienteTelefones);
@@ -3058,6 +3114,9 @@ export async function backfillIndiceTelefones(): Promise<RelatorioReindexTelefon
     numerosCompartilhados,
     maiorGrupoTamanho,
     distribuicaoGrupos,
+    gruposComCpfDuplicado,
+    cpfsComMultiplosCadastros,
+    amostraCpfsDuplicados,
     amostraMaioresGrupos,
     conversasAtualizadas,
   };
