@@ -369,6 +369,29 @@ export type Cliente = typeof clientes.$inferSelect;
 export type InsertCliente = typeof clientes.$inferInsert;
 
 /**
+ * Índice de telefones em forma canônica (55+DDD+9+número, ver
+ * shared/telefone.ts:telefoneCanonico) — um cliente pode ter até 3
+ * entradas (celular/celular2/telefone). Populado no write-time (import
+ * do Belle e criação manual pelo Inbox), não por backfill em massa;
+ * existe pra permitir lookup direto por igualdade em vez da cadeia de
+ * REPLACE() em SQL usada em buscarClientesPorTelefone hoje — troca de
+ * fato o caminho de leitura fica pra depois de um relatório de
+ * auditoria (ver conversa 2026-08-15).
+ */
+export const clienteTelefones = mysqlTable("cliente_telefones", {
+  id: int("id").autoincrement().primaryKey(),
+  clienteId: int("clienteId").notNull(),
+  numeroCanonico: varchar("numeroCanonico", { length: 20 }).notNull(),
+  origem: mysqlEnum("origem", ["celular", "celular2", "telefone"]).notNull(),
+}, (table) => ({
+  clienteNumeroUnico: uniqueIndex("cliente_telefones_cliente_numero_idx").on(table.clienteId, table.numeroCanonico),
+  numeroIdx: index("cliente_telefones_numero_idx").on(table.numeroCanonico),
+}));
+
+export type ClienteTelefone = typeof clienteTelefones.$inferSelect;
+export type InsertClienteTelefone = typeof clienteTelefones.$inferInsert;
+
+/**
  * Conversas do Copilot de atendimento.
  */
 export const copilotConversas = mysqlTable("copilotConversas", {
@@ -447,10 +470,16 @@ export const inboxConversas = mysqlTable("inbox_conversas", {
   // aviso no Telegram a cada tick do cron pra mesma rodada de
   // roteamento.
   buddhaMktAlertadoEm: timestamp("buddhaMktAlertadoEm"),
+  // Forma canônica de `telefone` (shared/telefone.ts:telefoneCanonico),
+  // pré-computada no insert — populada só pra conversas criadas depois
+  // dessa coluna existir (2026-08-15); linhas antigas ficam null até um
+  // backfill futuro, não usada como fonte primária de matching ainda.
+  telefoneNormalizado: varchar("telefoneNormalizado", { length: 20 }),
 }, (table) => ({
   telefoneCanalIdx: index("inbox_conversas_telefone_canal_idx").on(table.telefone, table.canal),
   unidadeIdx: index("inbox_conversas_unidade_idx").on(table.unidadeId),
   chatLidIdx: index("inbox_conversas_chat_lid_idx").on(table.chatLid),
+  telefoneNormalizadoIdx: index("inbox_conversas_telefone_normalizado_idx").on(table.telefoneNormalizado),
 }));
 
 export type InboxConversa = typeof inboxConversas.$inferSelect;

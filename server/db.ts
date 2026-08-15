@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
 import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, clientes, clienteTelefones, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
-import { normalizarTelefone, variantesTelefone } from "@shared/telefone";
+import { normalizarTelefone, variantesTelefone, telefoneCanonico } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
@@ -530,6 +530,49 @@ export async function buscarClienteIdPorTelefone(telefoneWhatsapp: string): Prom
 }
 
 /**
+ * Linhas do índice cliente_telefones (drizzle/schema.ts) pra um cliente,
+ * a partir dos 3 campos de telefone do cadastro — dedup por número
+ * canônico (celular/celular2/telefone iguais viram 1 linha só, mantém
+ * a origem do primeiro campo preenchido).
+ */
+function telefonesParaIndexar(
+  clienteId: number,
+  dados: { celular?: string | null; celular2?: string | null; telefone?: string | null },
+): InsertClienteTelefone[] {
+  const vistos = new Set<string>();
+  const linhas: InsertClienteTelefone[] = [];
+  const campos: Array<["celular" | "celular2" | "telefone", string | null | undefined]> = [
+    ["celular", dados.celular],
+    ["celular2", dados.celular2],
+    ["telefone", dados.telefone],
+  ];
+  for (const [origem, valor] of campos) {
+    const canonico = telefoneCanonico(valor);
+    if (!canonico || vistos.has(canonico)) continue;
+    vistos.add(canonico);
+    linhas.push({ clienteId, numeroCanonico: canonico, origem });
+  }
+  return linhas;
+}
+
+/**
+ * Sincroniza o índice cliente_telefones pra 1 cliente (create/update
+ * fora do import em massa — ex.: lead criado pelo Inbox). Sempre
+ * substitui tudo (delete + insert) — volume por cliente é no máximo 3
+ * linhas, sem custo de performance real.
+ */
+export async function syncClienteTelefones(
+  clienteId: number,
+  dados: { celular?: string | null; celular2?: string | null; telefone?: string | null },
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const linhas = telefonesParaIndexar(clienteId, dados);
+  await db.delete(clienteTelefones).where(eq(clienteTelefones.clienteId, clienteId));
+  if (linhas.length > 0) await db.insert(clienteTelefones).values(linhas);
+}
+
+/**
  * Busca a conversa por (telefone, canal) — se não achar, cria. Usada pelo
  * webhook de entrada e ao iniciar uma conversa manualmente.
  */
@@ -602,6 +645,7 @@ export async function upsertInboxConversa(params: {
     unidadeId: params.unidadeId,
     canal: params.canal,
     telefone: params.telefone,
+    telefoneNormalizado: telefoneCanonico(params.telefone),
     chatLid: params.chatLid,
     isLidPendente: params.isLidPendente ? "true" : "false",
     isGrupo: params.isGrupo ? "true" : "false",
@@ -666,6 +710,7 @@ export async function abrirInboxPorCliente(params: { clienteId: number; unidadeI
     unidadeId: params.unidadeId,
     canal: "zapi",
     telefone,
+    telefoneNormalizado: telefoneCanonico(telefone),
     chatLid: null,
     isLidPendente: "false",
     nomeContato: cliente.nome,
@@ -732,7 +777,9 @@ async function criarClienteManual(nome: string, telefoneDigitos: string, unidade
     clienteRbs,
   };
   const result = await db.insert(clientes).values(insertValues).$returningId();
-  return result[0]?.id;
+  const clienteId = result[0]?.id;
+  if (clienteId) await syncClienteTelefones(clienteId, { celular: telefoneDigitos });
+  return clienteId;
 }
 
 /**
@@ -815,6 +862,7 @@ export async function iniciarConversaComCliente(params: {
     unidadeId: params.unidadeId,
     canal: "zapi",
     telefone: telefoneNormalizado,
+    telefoneNormalizado: telefoneCanonico(telefoneNormalizado),
     nomeContato: params.nome,
     clienteId,
     isLidPendente: "false",
@@ -2801,8 +2849,8 @@ export async function upsertClientesImportados(
   if (linhas.length === 0) return { inseridos: 0, atualizados: 0, promovidosDeLead: 0 };
 
   const belleIds = linhas.map((l) => l.belleId);
-  const existentes = await db.select({ belleId: clientes.belleId }).from(clientes).where(inArray(clientes.belleId, belleIds));
-  const existentesSet = new Set(existentes.map((e) => e.belleId));
+  const existentes = await db.select({ id: clientes.id, belleId: clientes.belleId }).from(clientes).where(inArray(clientes.belleId, belleIds));
+  const idPorBelleId = new Map(existentes.map((e) => [e.belleId, e.id]));
 
   const leads = await db.select({
     id: clientes.id,
@@ -2830,6 +2878,12 @@ export async function upsertClientesImportados(
   let inseridos = 0;
   let atualizados = 0;
   let promovidosDeLead = 0;
+  const clienteIdsTocados: number[] = [];
+  const linhasIndice: InsertClienteTelefone[] = [];
+  const indexarTelefones = (clienteId: number, l: LinhaClienteImportada) => {
+    clienteIdsTocados.push(clienteId);
+    linhasIndice.push(...telefonesParaIndexar(clienteId, { celular: l.celular, celular2: l.celular2, telefone: l.telefone }));
+  };
   for (const l of linhas) {
     const dadosBase = {
       nome: l.nome,
@@ -2852,8 +2906,10 @@ export async function upsertClientesImportados(
       qtdServicosFinalizados: l.qtdServicosFinalizados,
     };
 
-    if (existentesSet.has(l.belleId)) {
+    const clienteIdExistente = idPorBelleId.get(l.belleId);
+    if (clienteIdExistente !== undefined) {
       await db.update(clientes).set({ ...dadosBase, ...flagUnidade }).where(eq(clientes.belleId, l.belleId));
+      indexarTelefones(clienteIdExistente, l);
       atualizados++;
       continue;
     }
@@ -2871,6 +2927,7 @@ export async function upsertClientesImportados(
         ...flagUnidade,
       }).where(eq(clientes.id, leadId));
       leadsJaPromovidos.add(leadId);
+      indexarTelefones(leadId, l);
       promovidosDeLead++;
       continue;
     }
@@ -2882,8 +2939,22 @@ export async function upsertClientesImportados(
       clienteSsu: unidadeSlug === "ssu",
       clienteRbs: unidadeSlug === "rbs",
     };
-    await db.insert(clientes).values(insertValues);
+    const result = await db.insert(clientes).values(insertValues).$returningId();
+    const novoClienteId = result[0]?.id;
+    if (novoClienteId) indexarTelefones(novoClienteId, l);
     inseridos++;
+  }
+
+  // Índice cliente_telefones: 1 DELETE + 1 (ou poucos) INSERT em lote
+  // pra todo o import, em vez de round-trip por linha — reimport do
+  // Belle roda pra todo o cadastro toda vez, então isso também serve
+  // de "backfill de graça" pra clientes que já existiam antes dessa
+  // coluna existir (2026-08-15), sem precisar de job dedicado.
+  if (clienteIdsTocados.length > 0) {
+    await db.delete(clienteTelefones).where(inArray(clienteTelefones.clienteId, clienteIdsTocados));
+  }
+  for (let i = 0; i < linhasIndice.length; i += 500) {
+    await db.insert(clienteTelefones).values(linhasIndice.slice(i, i + 500));
   }
 
   return { inseridos, atualizados, promovidosDeLead };

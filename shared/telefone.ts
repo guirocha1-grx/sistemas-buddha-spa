@@ -58,6 +58,24 @@ export function variantesTelefone(valor: string | null | undefined): string[] {
   return Array.from(variantes);
 }
 
+/**
+ * Forma canônica única (55+DDD+9+número, 13 dígitos) — diferente de
+ * variantesTelefone (que gera todas as formas plausíveis pra casar
+ * contra dado legado), essa função devolve só UMA representação, usada
+ * pra indexar (cliente_telefones.numeroCanonico,
+ * inboxConversas.telefoneNormalizado) em vez de comparar via REPLACE()
+ * em SQL toda hora. undefined quando não dá pra confiar no formato
+ * (nem 10 nem 11 dígitos depois de tirar DDI/zero de tronco).
+ */
+export function telefoneCanonico(valor: string | null | undefined): string | undefined {
+  const digitosBrutos = normalizarTelefone(valor);
+  if (!digitosBrutos) return undefined;
+  const semDDI = semDdiELimpo(digitosBrutos);
+  if (semDDI.length === 11) return `55${semDDI}`;
+  if (semDDI.length === 10) return `55${semDDI.slice(0, 2)}9${semDDI.slice(2)}`;
+  return undefined;
+}
+
 export function telefonesCorrespondem(a: string | null | undefined, b: string | null | undefined) {
   const aDigits = normalizarTelefone(a);
   const bDigits = normalizarTelefone(b);
