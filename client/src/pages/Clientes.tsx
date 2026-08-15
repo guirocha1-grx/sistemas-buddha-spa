@@ -39,6 +39,9 @@ function ImportarClientesCard() {
     clientesSemTelefoneValido: number;
     telefonesIndexados: number;
     numerosCompartilhados: number;
+    maiorGrupoTamanho: number;
+    distribuicaoGrupos: { tamanho2: number; tamanho3: number; tamanho4Mais: number };
+    amostraMaioresGrupos: Array<{ numeroCanonico: string; clientes: string[] }>;
     conversasAtualizadas: number;
   } | null>(null);
 
@@ -146,7 +149,29 @@ function ImportarClientesCard() {
                 <span className="text-muted-foreground">Números compartilhados por 2+ clientes</span>
                 <span className={`font-medium ${relatorioReindex.numerosCompartilhados > 0 ? "text-amber-700" : ""}`}>{relatorioReindex.numerosCompartilhados}</span>
               </div>
+              {relatorioReindex.numerosCompartilhados > 0 && (
+                <div className="pl-3 space-y-1 text-xs text-muted-foreground">
+                  <div className="flex justify-between"><span>— com 2 clientes</span><span>{relatorioReindex.distribuicaoGrupos.tamanho2}</span></div>
+                  <div className="flex justify-between"><span>— com 3 clientes</span><span>{relatorioReindex.distribuicaoGrupos.tamanho3}</span></div>
+                  <div className="flex justify-between"><span>— com 4+ clientes</span><span>{relatorioReindex.distribuicaoGrupos.tamanho4Mais}</span></div>
+                  <div className="flex justify-between"><span>— maior grupo</span><span>{relatorioReindex.maiorGrupoTamanho} clientes</span></div>
+                </div>
+              )}
               <div className="flex justify-between"><span className="text-muted-foreground">Conversas do Inbox atualizadas</span><span className="font-medium">{relatorioReindex.conversasAtualizadas}</span></div>
+              {relatorioReindex.amostraMaioresGrupos.length > 0 && (
+                <div className="pt-2 border-t space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Maiores grupos (amostra):</p>
+                  <div className="space-y-2 max-h-56 overflow-y-auto">
+                    {relatorioReindex.amostraMaioresGrupos.map((g) => (
+                      <div key={g.numeroCanonico} className="text-xs">
+                        <span className="font-medium">{g.numeroCanonico}</span>
+                        <span className="text-muted-foreground"> ({g.clientes.length}): </span>
+                        <span className="text-muted-foreground">{g.clientes.join(", ")}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>

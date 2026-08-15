@@ -2966,6 +2966,9 @@ export interface RelatorioReindexTelefones {
   clientesSemTelefoneValido: number;
   telefonesIndexados: number;
   numerosCompartilhados: number;
+  maiorGrupoTamanho: number;
+  distribuicaoGrupos: { tamanho2: number; tamanho3: number; tamanho4Mais: number };
+  amostraMaioresGrupos: Array<{ numeroCanonico: string; clientes: string[] }>;
   conversasAtualizadas: number;
 }
 
@@ -2981,14 +2984,21 @@ export interface RelatorioReindexTelefones {
  */
 export async function backfillIndiceTelefones(): Promise<RelatorioReindexTelefones> {
   const db = await getDb();
-  if (!db) return { totalClientes: 0, clientesIndexados: 0, clientesSemTelefoneValido: 0, telefonesIndexados: 0, numerosCompartilhados: 0, conversasAtualizadas: 0 };
+  const vazio: RelatorioReindexTelefones = {
+    totalClientes: 0, clientesIndexados: 0, clientesSemTelefoneValido: 0, telefonesIndexados: 0,
+    numerosCompartilhados: 0, maiorGrupoTamanho: 0, distribuicaoGrupos: { tamanho2: 0, tamanho3: 0, tamanho4Mais: 0 },
+    amostraMaioresGrupos: [], conversasAtualizadas: 0,
+  };
+  if (!db) return vazio;
 
   const todosClientes = await db.select({
     id: clientes.id,
+    nome: clientes.nome,
     celular: clientes.celular,
     celular2: clientes.celular2,
     telefone: clientes.telefone,
   }).from(clientes);
+  const nomePorClienteId = new Map(todosClientes.map((c) => [c.id, c.nome]));
 
   const linhasIndice: InsertClienteTelefone[] = [];
   const clientesIndexadosSet = new Set<number>();
@@ -3003,7 +3013,25 @@ export async function backfillIndiceTelefones(): Promise<RelatorioReindexTelefon
       clientesPorNumero.set(l.numeroCanonico, grupo);
     }
   }
-  const numerosCompartilhados = Array.from(clientesPorNumero.values()).filter((s) => s.size > 1).length;
+  const gruposCompartilhados = Array.from(clientesPorNumero.entries()).filter(([, s]) => s.size > 1);
+  const numerosCompartilhados = gruposCompartilhados.length;
+  const maiorGrupoTamanho = gruposCompartilhados.reduce((max, [, s]) => Math.max(max, s.size), 0);
+  const distribuicaoGrupos = gruposCompartilhados.reduce(
+    (acc, [, s]) => {
+      if (s.size === 2) acc.tamanho2++;
+      else if (s.size === 3) acc.tamanho3++;
+      else acc.tamanho4Mais++;
+      return acc;
+    },
+    { tamanho2: 0, tamanho3: 0, tamanho4Mais: 0 },
+  );
+  const amostraMaioresGrupos = gruposCompartilhados
+    .sort((a, b) => b[1].size - a[1].size)
+    .slice(0, 10)
+    .map(([numeroCanonico, ids]) => ({
+      numeroCanonico,
+      clientes: Array.from(ids).map((id) => nomePorClienteId.get(id) ?? `#${id}`),
+    }));
 
   await db.delete(clienteTelefones);
   for (let i = 0; i < linhasIndice.length; i += 500) {
@@ -3028,6 +3056,9 @@ export async function backfillIndiceTelefones(): Promise<RelatorioReindexTelefon
     clientesSemTelefoneValido: todosClientes.length - clientesIndexadosSet.size,
     telefonesIndexados: linhasIndice.length,
     numerosCompartilhados,
+    maiorGrupoTamanho,
+    distribuicaoGrupos,
+    amostraMaioresGrupos,
     conversasAtualizadas,
   };
 }
