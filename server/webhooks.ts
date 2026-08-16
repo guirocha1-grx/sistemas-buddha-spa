@@ -180,6 +180,18 @@ interface ZapiWebhookPayload {
   // (2026-08-15, via webhook_debug_log) — não vem em "text", por isso
   // ficava em branco no Inbox antes desse campo existir aqui.
   listResponseMessage?: { message?: string; title?: string; selectedRowId?: string };
+  // A mensagem de lista em si (ex.: pesquisa de satisfação do Belle),
+  // quando enviada fromMe=true FORA do CRM (direto pelo sistema do
+  // Belle, mesmo número conectado) — sem isso não temos texto
+  // pré-gravado e o parsing cai no mesmo problema do listResponseMessage.
+  // Confirmado contra payload real de produção (2026-08-16,
+  // webhook_debug_log). "description" é o texto da pergunta, igual
+  // aparece no app nativo do WhatsApp acima do botão "Avaliar".
+  listMessage?: {
+    description?: string;
+    buttonText?: string;
+    sections?: Array<{ title?: string; options?: Array<{ title?: string; description?: string; rowId?: string }> }>;
+  };
   // Presentes só em type="MessageStatusCallback" (tick de entrega:
   // RECEIVED = entregue no aparelho do contato, READ = lida). ids é uma
   // lista porque a Z-API agrupa vários messageId sob o mesmo status.
@@ -343,6 +355,16 @@ function registerZapiWebhook(app: Express) {
         // pro nó "menu" estilo "lista".
         const { title, message } = payload.listResponseMessage;
         conteudo = [title, message].filter(Boolean).join(" - ");
+      } else if (payload.listMessage) {
+        // A mensagem de lista em si (a pergunta, ex.: pesquisa de
+        // satisfação). "description" é o texto que aparece no balão
+        // acima do botão "Avaliar" no app nativo — guarda as opções em
+        // metadados só como registro, a UI hoje mostra só o texto.
+        conteudo = payload.listMessage.description ?? "";
+        metadados = {
+          buttonText: payload.listMessage.buttonText,
+          opcoes: payload.listMessage.sections?.[0]?.options,
+        };
       }
 
       const resumo = conteudo || (tipo !== "texto" ? `[${tipo}]` : "");
