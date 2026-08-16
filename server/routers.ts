@@ -734,6 +734,11 @@ Diretrizes:
         return db.listInboxConversas(input);
       }),
 
+      /** Tela "Tratamento de erros → LIDs não resolvidos" (2026-08-15). */
+      listLidsPendentes: adminProcedure.query(async () => {
+        return db.listConversasLidPendente();
+      }),
+
       abrirPorCliente: protectedProcedure.input(z.object({
         clienteId: z.number(),
         unidadeId: z.number(),

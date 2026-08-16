@@ -28,6 +28,7 @@ import Configuracoes from "@/pages/Configuracoes";
 import ConfigInbox from "@/pages/ConfigInbox";
 import AuditLog from "@/pages/AuditLog";
 import Usuarios from "@/pages/Usuarios";
+import TratamentoErros from "@/pages/TratamentoErros";
 import PoliticaPrivacidade from "@/pages/PoliticaPrivacidade";
 
 function Router() {
@@ -57,6 +58,7 @@ function Router() {
         <Route path="/configuracoes" component={Configuracoes} />
         <Route path="/usuarios" component={Usuarios} />
         <Route path="/auditoria" component={AuditLog} />
+        <Route path="/tratamento-erros" component={TratamentoErros} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

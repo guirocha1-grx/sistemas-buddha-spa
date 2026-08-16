@@ -419,6 +419,33 @@ export async function listInboxConversas(filtros: { unidadeId?: number; canal?: 
   return rows;
 }
 
+/**
+ * Conversas presas em @lid (isLidPendente="true") — nunca chegou uma
+ * mensagem, em nenhuma direção, que revelasse o telefone real pro
+ * mesmo lid (nem via resolveLid, nem via lid_mapping). Base da tela
+ * "Tratamento de erros → LIDs não resolvidos" (2026-08-15), pra
+ * identificação manual quando a automática não dá conta (ex.: cliente
+ * lançado direto no Belle no balcão, nunca importado pro CRM).
+ */
+export async function listConversasLidPendente() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: inboxConversas.id,
+    unidadeId: inboxConversas.unidadeId,
+    unidadeNome: unidades.nome,
+    nomeContato: inboxConversas.nomeContato,
+    telefone: inboxConversas.telefone,
+    chatLid: inboxConversas.chatLid,
+    ultimaMensagemTexto: inboxConversas.ultimaMensagemTexto,
+    ultimaMensagemEm: inboxConversas.ultimaMensagemEm,
+    createdAt: inboxConversas.createdAt,
+  }).from(inboxConversas)
+    .leftJoin(unidades, eq(inboxConversas.unidadeId, unidades.id))
+    .where(eq(inboxConversas.isLidPendente, "true"))
+    .orderBy(desc(inboxConversas.ultimaMensagemEm));
+}
+
 export async function getInboxConversaById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
