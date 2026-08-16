@@ -180,6 +180,11 @@ interface ZapiWebhookPayload {
   // (2026-08-15, via webhook_debug_log) — não vem em "text", por isso
   // ficava em branco no Inbox antes desse campo existir aqui.
   listResponseMessage?: { message?: string; title?: string; selectedRowId?: string };
+  // Presentes só em type="MessageStatusCallback" (tick de entrega:
+  // RECEIVED = entregue no aparelho do contato, READ = lida). ids é uma
+  // lista porque a Z-API agrupa vários messageId sob o mesmo status.
+  status?: string;
+  ids?: string[];
 }
 
 function registerZapiWebhook(app: Express) {
@@ -208,6 +213,23 @@ function registerZapiWebhook(app: Express) {
       // "ReceivedCallback", ou webhook de "enviando" separado não
       // configurado). Remover depois de decidir o próximo passo.
       db.registrarWebhookDebug("zapi_all", JSON.stringify(req.body)).catch(() => {});
+
+      // Tick de entrega estilo WhatsApp — evento à parte, sem relação
+      // com o fluxo de ReceivedCallback abaixo (não é mensagem nova).
+      // Só RECEIVED (entregue no aparelho do contato) e READ (lida)
+      // viram tick — READ_BY_ME é sobre NÓS lendo mensagem do contato,
+      // não sobre o contato lendo a nossa, então não se aplica aqui.
+      if (payload.type === "MessageStatusCallback") {
+        const mapaStatus: Record<string, "entregue" | "lida"> = { RECEIVED: "entregue", READ: "lida" };
+        const novoStatus = payload.status ? mapaStatus[payload.status] : undefined;
+        if (novoStatus && Array.isArray(payload.ids) && payload.ids.length > 0) {
+          db.atualizarStatusEntregaMensagens(payload.ids, novoStatus).catch((error) => {
+            console.error("[Webhook Z-API] Falha ao atualizar status de entrega:", error);
+          });
+        }
+        res.status(200).json({ ignored: true, motivo: "status_callback" });
+        return;
+      }
 
       // fromMe (recepção mandou) NÃO é ignorado: quando alguém responde
       // direto pelo app do WhatsApp Business no celular (fora do CRM),

@@ -19,7 +19,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
-  Pencil, Check, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
+  Pencil, Check, CheckCheck, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
   UserPlus, SmilePlus, Users, Download, ZoomIn, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -30,13 +30,52 @@ import { formatPhone, diasDesde } from "@/lib/utils";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { ScriptPicker } from "@/components/ScriptPicker";
 
-function formatHora(data: string | Date | null | undefined) {
-  if (!data) return "";
-  const d = new Date(data);
-  const hoje = new Date();
-  const mesmoDay = d.toDateString() === hoje.toDateString();
-  if (mesmoDay) return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+// Portado do mobai-crm (client/src/pages/Inbox.tsx) — conversão manual
+// pra BRT (UTC-3) em vez de depender do timezone do navegador, mais
+// "agora"/"Nmin" pra mensagem recente e dia da semana quando não é hoje.
+function formatHora(data: string | Date | number | null | undefined) {
+  if (!data) return "—";
+  let utcMs: number;
+  if (data instanceof Date) {
+    utcMs = data.getTime();
+  } else if (typeof data === "number") {
+    utcMs = data;
+  } else {
+    const normalizado = (!data.endsWith("Z") && !data.includes("+") && !/[-+]\d{2}:\d{2}$/.test(data) && data.includes("T"))
+      ? data + "Z"
+      : data;
+    utcMs = new Date(normalizado).getTime();
+  }
+  if (isNaN(utcMs)) return "—";
+  const BRT_OFFSET_MS = -3 * 60 * 60 * 1000;
+  const brtMs = utcMs + BRT_OFFSET_MS;
+  const brtDate = new Date(brtMs);
+  const nowUtcMs = Date.now();
+  const nowBrtMs = nowUtcMs + BRT_OFFSET_MS;
+  const nowBrtDate = new Date(nowBrtMs);
+  const diff = nowUtcMs - utcMs;
+  if (diff >= 0 && diff < 60_000) return "agora";
+  if (diff >= 0 && diff < 3_600_000) return `${Math.floor(diff / 60_000)}min`;
+  const mesmoDay =
+    brtDate.getUTCFullYear() === nowBrtDate.getUTCFullYear() &&
+    brtDate.getUTCMonth() === nowBrtDate.getUTCMonth() &&
+    brtDate.getUTCDate() === nowBrtDate.getUTCDate();
+  const hh = String(brtDate.getUTCHours()).padStart(2, "0");
+  const mm = String(brtDate.getUTCMinutes()).padStart(2, "0");
+  if (mesmoDay) return `${hh}:${mm}`;
+  const DIAS_SEMANA_ABREV = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+  const MESES_ABREV = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  const diaSemana = DIAS_SEMANA_ABREV[brtDate.getUTCDay()];
+  const dd = String(brtDate.getUTCDate()).padStart(2, "0");
+  const mes = MESES_ABREV[brtDate.getUTCMonth()];
+  const ano = brtDate.getUTCFullYear();
+  return `${diaSemana}, ${dd} ${mes} ${ano}, ${hh}:${mm}`;
+}
+
+function TickEntrega({ status }: { status?: "enviada" | "entregue" | "lida" }) {
+  if (status === "lida") return <CheckCheck size={12} className="text-sky-400" />;
+  if (status === "entregue") return <CheckCheck size={12} className="opacity-60" />;
+  return <Check size={12} className="opacity-60" />;
 }
 
 function statusDotClass(status: string) {
@@ -812,11 +851,14 @@ export default function Mensagens() {
                             <span className="text-xs opacity-70">[documento indisponível]</span>
                           )
                         )}
-                        <p className="text-[10px] opacity-60 mt-1">
-                          {new Date(m.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                          {m.direcao === "enviada" && m.enviadaPorAtendenteNome && (
-                            <> · {m.enviadaPorAtendenteNome}</>
-                          )}
+                        <p className="flex items-center justify-end gap-1 text-[10px] opacity-60 mt-1">
+                          <span>
+                            {formatHora(m.createdAt)}
+                            {m.direcao === "enviada" && m.enviadaPorAtendenteNome && (
+                              <> · {m.enviadaPorAtendenteNome}</>
+                            )}
+                          </span>
+                          {m.direcao === "enviada" && <TickEntrega status={m.statusEntrega} />}
                         </p>
                       </div>
                     </div>

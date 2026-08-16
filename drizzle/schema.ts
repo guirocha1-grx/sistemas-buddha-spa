@@ -562,6 +562,12 @@ export const inboxMensagens = mysqlTable("inbox_mensagens", {
   // nossa equipe mandou").
   participanteTelefone: varchar("participanteTelefone", { length: 30 }),
   participanteNome: varchar("participanteNome", { length: 200 }),
+  // Tick de entrega estilo WhatsApp (1 cinza / 2 cinza / 2 azul), só
+  // relevante pra direcao="enviada" — vem do MessageStatusCallback da
+  // Z-API (webhooks.ts), casado por zapiMessageId. "Nunca regride"
+  // (server/db.ts, atualizarStatusEntregaMensagens): READ não volta pra
+  // RECEIVED se os eventos chegarem fora de ordem.
+  statusEntrega: mysqlEnum("statusEntrega", ["enviada", "entregue", "lida"]).default("enviada").notNull(),
 }, (table) => ({
   conversaCreatedIdx: index("inbox_mensagens_conversa_created_idx").on(table.conversaId, table.createdAt),
 }));

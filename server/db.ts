@@ -720,6 +720,24 @@ export async function upsertLidMapping(linhas: InsertLidMapping[]): Promise<void
  * telefone chega mascarado como @lid e o mapeamento proativo (botão
  * admin "Resolver LIDs") já tiver resolvido esse contato antes.
  */
+/**
+ * Atualiza o tick de entrega (estilo WhatsApp) das mensagens enviadas,
+ * casando por zapiMessageId — chamado pelo webhook Z-API ao receber um
+ * MessageStatusCallback (RECEIVED→"entregue", READ→"lida"). "Nunca
+ * regride": se a mensagem já está "lida", um RECEIVED atrasado (fora de
+ * ordem) não pode voltar pra "entregue".
+ */
+export async function atualizarStatusEntregaMensagens(zapiMessageIds: string[], novoStatus: "entregue" | "lida"): Promise<void> {
+  if (zapiMessageIds.length === 0) return;
+  const db = await getDb();
+  if (!db) return;
+  const condicoes = [inArray(inboxMensagens.zapiMessageId, zapiMessageIds)];
+  if (novoStatus === "entregue") {
+    condicoes.push(ne(inboxMensagens.statusEntrega, "lida"));
+  }
+  await db.update(inboxMensagens).set({ statusEntrega: novoStatus }).where(and(...condicoes));
+}
+
 export async function buscarTelefonePorLid(unidadeId: number, lid: string): Promise<string | undefined> {
   const db = await getDb();
   if (!db) return undefined;
@@ -1121,6 +1139,7 @@ export async function listInboxMensagens(conversaId: number, limit: number = 50)
     participanteTelefone: inboxMensagens.participanteTelefone,
     participanteNome: inboxMensagens.participanteNome,
     lida: inboxMensagens.lida,
+    statusEntrega: inboxMensagens.statusEntrega,
     createdAt: inboxMensagens.createdAt,
   })
     .from(inboxMensagens)
