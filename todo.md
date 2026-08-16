@@ -264,3 +264,4 @@
 - [x] Sincronizar e publicar a última versão disponível no GitHub (nova solicitação)
 - [x] Sincronizar e publicar a última versão disponível no GitHub (nova verificação)
 - [x] Sincronizar e publicar a última versão disponível no GitHub (solicitação atual)
+- [x] Analisar erros, falhas e ruídos mais frequentes nos payloads do webhook Z-API
