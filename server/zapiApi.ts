@@ -98,6 +98,26 @@ export const zapiApi = {
     });
   },
 
+  /**
+   * Confirmado em developer.z-api.io/message/send-message-reaction:
+   * POST /send-message-reaction, body {phone, messageId, reaction}.
+   * Reação vazia ("") remove uma reação já enviada.
+   */
+  async sendReaction(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    messageId: string,
+    reaction: string,
+  ): Promise<ZapiSendResult> {
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-message-reaction", {
+      phone,
+      messageId,
+      reaction,
+    });
+  },
+
   async sendImage(
     instanceId: string,
     token: string,

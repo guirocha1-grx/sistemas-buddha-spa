@@ -197,6 +197,16 @@ interface ZapiWebhookPayload {
   // lista porque a Z-API agrupa vários messageId sob o mesmo status.
   status?: string;
   ids?: string[];
+  // Reação de emoji a uma mensagem existente (nossa ou do contato) —
+  // confirmado em payload real de produção (2026-08-16,
+  // webhook_debug_log). "value" vazio ("") indica reação removida.
+  // referencedMessage.messageId é o messageId Z-API da mensagem
+  // original, casado por inboxMensagens.zapiMessageId.
+  reaction?: {
+    value?: string;
+    reactionBy?: string;
+    referencedMessage?: { messageId?: string; fromMe?: boolean; phone?: string; participant?: string | null };
+  };
 }
 
 function registerZapiWebhook(app: Express) {
@@ -240,6 +250,21 @@ function registerZapiWebhook(app: Express) {
           });
         }
         res.status(200).json({ ignored: true, motivo: "status_callback" });
+        return;
+      }
+
+      // Reação de emoji — evento à parte, não vira mensagem nova no
+      // Inbox (igual o WhatsApp real: a reação fica anexada à mensagem
+      // original, não é uma linha nova na conversa). Só atualiza a
+      // mensagem referenciada, se ela já estiver no nosso banco.
+      if (payload.reaction) {
+        const referencedId = payload.reaction.referencedMessage?.messageId;
+        if (referencedId) {
+          db.atualizarReacaoMensagemPorZapiId(referencedId, payload.reaction.value).catch((error) => {
+            console.error("[Webhook Z-API] Falha ao atualizar reação:", error);
+          });
+        }
+        res.status(200).json({ ignored: true, motivo: "reaction" });
         return;
       }
 
@@ -478,7 +503,10 @@ function registerZapiWebhook(app: Express) {
         tipo,
         conteudo,
         metadados: metadados ? JSON.stringify(metadados) : null,
-        zapiMessageId: payload.fromMe ? (payload.messageId ?? null) : null,
+        // Gravado pra mensagem recebida também (não só fromMe) desde
+        // 2026-08-16 — precisa disso pra casar reação a uma mensagem
+        // que o cliente mandou (ver payload.reaction acima).
+        zapiMessageId: payload.messageId ?? null,
       });
 
       // Fluxos de automação — só mensagem 1:1 de verdade vinda do

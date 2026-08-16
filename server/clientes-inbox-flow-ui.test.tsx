@@ -90,6 +90,7 @@ const state = vi.hoisted(() => {
           isPending: false,
         }) },
         enviarMidia: { useMutation: () => mutation() },
+        reagir: { useMutation: () => mutation() },
       },
       unificarConversas: { useMutation: () => mutation() },
       iniciarConversaComCliente: { useMutation: () => mutation() },

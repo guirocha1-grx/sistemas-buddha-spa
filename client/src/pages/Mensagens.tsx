@@ -78,6 +78,8 @@ function TickEntrega({ status }: { status?: "enviada" | "entregue" | "lida" }) {
   return <Check size={12} className="opacity-60" />;
 }
 
+const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
 function statusDotClass(status: string) {
   if (status === "encerrada") return "bg-gray-400";
   if (status === "aguardando") return "bg-amber-400";
@@ -214,6 +216,11 @@ export default function Mensagens() {
       utils.inbox.mensagens.list.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
       utils.inbox.conversas.list.invalidate();
     },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const reagirMutation = trpc.inbox.mensagens.reagir.useMutation({
+    onSuccess: () => utils.inbox.mensagens.list.invalidate({ conversaId: conversaSelecionadaId ?? 0 }),
     onError: (error) => toast.error(error.message),
   });
 
@@ -778,11 +785,37 @@ export default function Mensagens() {
                     const meta = parseMetadados(m.metadados);
                     const attachmentUrl = getInboxAttachmentUrl(meta);
                     const imagemComFalha = midiasComFalha.has(m.id);
+                    const enviada = m.direcao === "enviada";
                     return (
-                    <div key={m.id} className={`flex ${m.direcao === "enviada" ? "justify-end" : "justify-start"}`}>
+                    <div key={m.id} className={`group flex ${enviada ? "justify-end" : "justify-start"}`}>
+                      <div className="relative max-w-[70%]">
                       <div
-                        className={`max-w-[70%] rounded-lg px-3 py-2 text-sm ${
-                          m.direcao === "enviada" ? "bg-primary text-primary-foreground" : "bg-muted"
+                        className={`absolute top-0 ${enviada ? "-left-8" : "-right-8"} opacity-0 group-hover:opacity-100 transition-opacity`}
+                      >
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button type="button" className="p-1.5 rounded-full hover:bg-muted text-muted-foreground" title="Reagir">
+                              <SmilePlus size={14} />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-1 flex gap-0.5" side="top">
+                            {EMOJIS_REACAO.map((e) => (
+                              <button
+                                key={e}
+                                type="button"
+                                className="text-lg p-1 rounded hover:bg-muted hover:scale-110 transition-transform"
+                                onClick={() => reagirMutation.mutate({ mensagemId: m.id, emoji: m.reacaoEmoji === e ? "" : e })}
+                                title={m.reacaoEmoji === e ? "Remover reação" : "Reagir"}
+                              >
+                                {e}
+                              </button>
+                            ))}
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      <div
+                        className={`rounded-lg px-3 py-2 text-sm ${
+                          enviada ? "bg-primary text-primary-foreground" : "bg-muted"
                         }`}
                       >
                         {conversaSelecionada?.isGrupo === "true" && m.direcao === "recebida" && m.participanteNome && (
@@ -860,6 +893,16 @@ export default function Mensagens() {
                           </span>
                           {m.direcao === "enviada" && <TickEntrega status={m.statusEntrega} />}
                         </p>
+                      </div>
+                      {m.reacaoEmoji && (
+                        <span
+                          className={`absolute -bottom-2 flex h-5 w-5 items-center justify-center rounded-full border bg-background text-xs shadow ${
+                            enviada ? "left-1" : "right-1"
+                          }`}
+                        >
+                          {m.reacaoEmoji}
+                        </span>
+                      )}
                       </div>
                     </div>
                     );

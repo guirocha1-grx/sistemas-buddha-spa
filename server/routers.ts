@@ -1030,6 +1030,40 @@ Diretrizes:
         return { success: true };
       }),
 
+      // emoji="" remove a reação já enviada (mesmo botão clicado de novo,
+      // ver Mensagens.tsx). Só canal zapi por enquanto — Buddha Mkt usa a
+      // Cloud API oficial da Meta, que tem endpoint próprio de reação
+      // ainda não portado (fora de escopo aqui).
+      reagir: protectedProcedure.input(z.object({
+        mensagemId: z.number(),
+        emoji: z.string().max(8),
+      })).mutation(async ({ input }) => {
+        const mensagem = await db.getInboxMensagemById(input.mensagemId);
+        if (!mensagem) throw new Error("Mensagem não encontrada");
+        if (!mensagem.zapiMessageId) throw new Error("Essa mensagem não pode receber reação (sem messageId da Z-API)");
+
+        const conversa = await db.getInboxConversaById(mensagem.conversaId);
+        if (!conversa) throw new Error("Conversa não encontrada");
+        if (conversa.canal !== "zapi" || !conversa.unidadeId) {
+          throw new Error("Reação só é suportada em conversas do WhatsApp (Z-API) por enquanto");
+        }
+        const unidade = await db.getUnidadeById(conversa.unidadeId);
+        if (!unidade?.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) {
+          throw new Error("Z-API não configurado para esta unidade");
+        }
+
+        try {
+          await zapiApi.sendReaction(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, mensagem.zapiMessageId, input.emoji);
+        } catch (error) {
+          console.error("[Inbox] Falha ao enviar reação:", error);
+          const detalhe = error instanceof Error ? error.message : "erro desconhecido";
+          throw new Error(`Falha ao enviar reação: ${detalhe}`);
+        }
+
+        await db.atualizarReacaoMensagem(input.mensagemId, input.emoji);
+        return { success: true };
+      }),
+
       enviarMidia: protectedProcedure.input(z.object({
         conversaId: z.number(),
         tipo: z.enum(["imagem", "audio", "documento"]),

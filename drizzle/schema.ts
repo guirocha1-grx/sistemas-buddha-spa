@@ -551,11 +551,20 @@ export const inboxMensagens = mysqlTable("inbox_mensagens", {
   // conta Google/Manus compartilhada da recepção) — ver atendentes
   // abaixo. Alimenta o "enviada por" mostrado em cada balão no Inbox.
   enviadaPorAtendenteId: int("enviadaPorAtendenteId"),
-  // messageId devolvido pela Z-API ao enviar pelo CRM — usado só pra
+  // messageId da Z-API — pra mensagem enviada pelo CRM, usado pra
   // deduplicar contra o webhook fromMe (recepção respondendo direto
-  // pelo app do WhatsApp Business, fora do CRM). Própria do
-  // buddha-spa, migração 2026-08-11-inbox-zapi-message-id.sql.
+  // pelo app do WhatsApp Business, fora do CRM); migração
+  // 2026-08-11-inbox-zapi-message-id.sql. A partir de 2026-08-16
+  // também é gravado pra mensagem RECEBIDA — precisa disso pra casar
+  // uma reação (payload.reaction.referencedMessage.messageId) com a
+  // mensagem original, nos dois sentidos (ver reacaoEmoji abaixo).
   zapiMessageId: varchar("zapiMessageId", { length: 100 }),
+  // Emoji da reação mais recente sobre essa mensagem (WhatsApp só
+  // permite 1 reação por pessoa, mas aqui guardamos só a última pra
+  // manter simples — não é uma lista de quem reagiu). Atualizado pelo
+  // webhook (payload.reaction) ou pelo próprio envio de reação via CRM
+  // (inbox.mensagens.reagir). "" ou reação removida vira NULL.
+  reacaoEmoji: varchar("reacaoEmoji", { length: 16 }),
   // Quem DENTRO de um grupo mandou essa mensagem específica (null pra
   // conversa 1:1) — muda a cada mensagem, por isso mora aqui e não na
   // conversa. Contraparte de enviadaPorAtendenteId (que é "quem da

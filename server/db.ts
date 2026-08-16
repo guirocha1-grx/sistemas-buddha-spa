@@ -1140,6 +1140,8 @@ export async function listInboxMensagens(conversaId: number, limit: number = 50)
     participanteNome: inboxMensagens.participanteNome,
     lida: inboxMensagens.lida,
     statusEntrega: inboxMensagens.statusEntrega,
+    reacaoEmoji: inboxMensagens.reacaoEmoji,
+    zapiMessageId: inboxMensagens.zapiMessageId,
     createdAt: inboxMensagens.createdAt,
   })
     .from(inboxMensagens)
@@ -1204,6 +1206,32 @@ export async function updateInboxMensagemTranscricao(id: number, transcricao: st
   const db = await getDb();
   if (!db) return;
   await db.update(inboxMensagens).set({ transcricao }).where(eq(inboxMensagens.id, id));
+}
+
+export async function getInboxMensagemById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(inboxMensagens).where(eq(inboxMensagens.id, id)).limit(1);
+  return rows[0];
+}
+
+/** "" ou undefined vira NULL (reação removida). */
+export async function atualizarReacaoMensagem(id: number, emoji: string | null | undefined) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inboxMensagens).set({ reacaoEmoji: emoji || null }).where(eq(inboxMensagens.id, id));
+}
+
+/**
+ * Caminho do webhook (payload.reaction) — só temos o messageId da
+ * Z-API, não o id interno da mensagem. Best-effort: se a mensagem
+ * original não estiver no nosso banco (ex.: de antes dessa coluna
+ * existir), simplesmente não atualiza nada.
+ */
+export async function atualizarReacaoMensagemPorZapiId(zapiMessageId: string, emoji: string | null | undefined) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inboxMensagens).set({ reacaoEmoji: emoji || null }).where(eq(inboxMensagens.zapiMessageId, zapiMessageId));
 }
 
 // ===== Banco Inter =====
