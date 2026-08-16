@@ -54,6 +54,9 @@ function ImportarClientesCard() {
   const importarMutation = trpc.clientes.importarXlsx.useMutation({
     onSuccess: (data) => {
       toast.success(`Planilha importada: ${data.inseridos} novo(s), ${data.atualizados} atualizado(s)${data.promovidosDeLead ? `, ${data.promovidosDeLead} lead(s) do Inbox promovido(s) a cliente` : ""} de ${data.totalLinhas} linha(s).`);
+      if (data.lids?.conversasPromovidas) {
+        toast.success(`${data.lids.conversasPromovidas} conversa(s) do Inbox identificada(s) automaticamente.`);
+      }
       utils.clientes.resumoImportados.invalidate();
       utils.clientes.listImportados.invalidate();
     },
@@ -68,6 +71,9 @@ function ImportarClientesCard() {
   const resolverLidsMutation = trpc.clientes.resolverLids.useMutation({
     onSuccess: (data) => {
       toast.success(`LIDs resolvidos: ${data.resolvidos} de ${data.totalTelefones} telefone(s)${data.semWhatsapp ? `, ${data.semWhatsapp} sem WhatsApp` : ""}${data.erros ? `, ${data.erros} com erro` : ""}.`);
+      if (data.conversasPromovidas) {
+        toast.success(`${data.conversasPromovidas} conversa(s) do Inbox identificada(s) automaticamente.`);
+      }
     },
     onError: (err) => toast.error(`Erro ao resolver LIDs: ${err.message}`),
   });

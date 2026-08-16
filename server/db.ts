@@ -223,6 +223,60 @@ export async function getUnidadeBySlug(slug: string) {
   return result[0];
 }
 
+/**
+ * Acha a unidade FÍSICA real (canal="zapi", exclui a unidade sintética
+ * Buddha Mkt) a partir do flag "rbs"/"ssu" usado no import de planilha
+ * (upsertClientesImportados) — esse flag não é o slug real da unidade,
+ * é só o rótulo da planilha. Mesma convenção de substring já usada em
+ * criarClienteManual pra decidir RBS vs SSU pelo slug de verdade.
+ */
+export async function getUnidadeFisicaPorFlag(flag: "rbs" | "ssu"): Promise<Unidade | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const todas = await db.select().from(unidades).where(eq(unidades.canal, "zapi"));
+  return todas.find((u) => {
+    const ehRbs = u.slug.includes("ribeirao") || u.slug.includes("rbs");
+    return flag === "rbs" ? ehRbs : !ehRbs;
+  });
+}
+
+/**
+ * Correção retroativa (2026-08-15): conversas presas em @lid
+ * (isLidPendente="true") cujo lid JÁ está resolvido em lid_mapping —
+ * seja porque "Resolver LIDs" rodou depois que a conversa ficou presa,
+ * seja porque o import da planilha acabou de resolver um cliente novo
+ * — mas ninguém mandou mensagem nova depois pra disparar a promoção
+ * automática que já existe em upsertInboxConversa. Promove na hora,
+ * sem esperar.
+ */
+export async function promoverConversasPendentesPorLidMapping(unidadeId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const pendentes = await db.select({ id: inboxConversas.id, chatLid: inboxConversas.chatLid })
+    .from(inboxConversas)
+    .where(and(eq(inboxConversas.unidadeId, unidadeId), eq(inboxConversas.isLidPendente, "true")));
+  if (pendentes.length === 0) return 0;
+
+  let promovidas = 0;
+  for (const conversa of pendentes) {
+    if (!conversa.chatLid) continue;
+    const mapeamento = await db.select({ telefoneCanonico: lidMapping.telefoneCanonico })
+      .from(lidMapping)
+      .where(and(eq(lidMapping.unidadeId, unidadeId), eq(lidMapping.lid, conversa.chatLid)))
+      .limit(1);
+    const telefone = mapeamento[0]?.telefoneCanonico;
+    if (!telefone) continue;
+    const clienteId = await buscarClienteIdPorTelefone(telefone);
+    await db.update(inboxConversas).set({
+      telefone,
+      isLidPendente: "false",
+      ...(clienteId ? { clienteId } : {}),
+    }).where(eq(inboxConversas.id, conversa.id));
+    promovidas++;
+  }
+  return promovidas;
+}
+
 export async function updateUnidade(id: number, dados: Partial<InsertUnidade>) {
   const db = await getDb();
   if (!db) return;

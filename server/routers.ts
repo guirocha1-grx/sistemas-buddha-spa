@@ -134,6 +134,47 @@ async function totalContasBancariasNoPeriodo(unidadeId: number, dataInicio: stri
   return total;
 }
 
+/**
+ * Mapeamento proativo telefone→lid (2026-08-15) + correção retroativa
+ * das conversas @lid que já podem ser resolvidas com o mapeamento
+ * resultante. Usado tanto pelo botão manual "Resolver LIDs" quanto
+ * automaticamente ao fim de cada import de planilha (reconciliação —
+ * cobre o cliente lançado direto no Belle no balcão assim que ele
+ * aparece na próxima planilha, sem precisar clicar em nada).
+ */
+async function resolverEPromoverLids(unidade: NonNullable<Awaited<ReturnType<typeof db.getUnidadeById>>>) {
+  if (!unidade.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) {
+    throw new Error("Unidade sem credenciais Z-API configuradas.");
+  }
+
+  const telefones = await db.listTelefonesCanonicosDaUnidade(unidade.slug);
+  let resolvidos = 0;
+  let semWhatsapp = 0;
+  let erros = 0;
+  const LOTE = 1000;
+  for (let i = 0; i < telefones.length; i += LOTE) {
+    const lote = telefones.slice(i, i + LOTE);
+    try {
+      const resultados = await zapiApi.phoneExistsBatch(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, lote);
+      const linhas: Array<{ unidadeId: number; telefoneCanonico: string; lid: string }> = [];
+      for (const r of resultados) {
+        if (!r.exists || !r.lid) { semWhatsapp++; continue; }
+        const canonico = telefoneCanonico(r.outputPhone || r.inputPhone);
+        if (!canonico) continue;
+        linhas.push({ unidadeId: unidade.id, telefoneCanonico: canonico, lid: r.lid });
+      }
+      await db.upsertLidMapping(linhas);
+      resolvidos += linhas.length;
+    } catch (error) {
+      console.error("[resolverEPromoverLids] Falha no lote:", error);
+      erros += lote.length;
+    }
+  }
+
+  const conversasPromovidas = await db.promoverConversasPendentesPorLidMapping(unidade.id);
+  return { totalTelefones: telefones.length, resolvidos, semWhatsapp, erros, conversasPromovidas };
+}
+
 export const appRouter = router({
   system: systemRouter,
 
@@ -261,7 +302,21 @@ export const appRouter = router({
         throw new Error("Nenhum cliente encontrado na planilha.");
       }
       const resultado = await db.upsertClientesImportados(input.unidade, linhas);
-      return { success: true, totalLinhas: linhas.length, ...resultado };
+
+      // Reconciliação de @lid (2026-08-15): best-effort, nunca falha o
+      // import — cobre o cliente lançado direto no Belle no balcão
+      // (nunca esteve no CRM antes) assim que ele aparece na planilha.
+      let lids: Awaited<ReturnType<typeof resolverEPromoverLids>> | null = null;
+      try {
+        const unidadeFisica = await db.getUnidadeFisicaPorFlag(input.unidade);
+        if (unidadeFisica?.zapiInstanceId && unidadeFisica.zapiToken && unidadeFisica.zapiClientToken) {
+          lids = await resolverEPromoverLids(unidadeFisica);
+        }
+      } catch (error) {
+        console.error("[importarXlsx] Falha na reconciliação de @lid:", error);
+      }
+
+      return { success: true, totalLinhas: linhas.length, ...resultado, lids };
     }),
 
     resumoImportados: protectedProcedure.query(async () => {
@@ -288,43 +343,18 @@ export const appRouter = router({
      * (zapiApi.phoneExistsBatch) — como já se sabe o telefone de todo
      * cliente cadastrado, resolve-se o lid de cada um ANTES de qualquer
      * mensagem chegar. Guarda em lid_mapping, usado pelo webhook Z-API
-     * (server/webhooks.ts) como 2ª tentativa de resolução. Só cobre
-     * quem já está na base local — cliente lançado direto no Belle no
-     * balcão (nunca importado) fica de fora até a próxima importação de
-     * planilha.
+     * (server/webhooks.ts) como 2ª tentativa de resolução, e promove na
+     * hora qualquer conversa já presa em @lid cujo mapeamento acabou de
+     * ficar disponível (correção retroativa, sem esperar mensagem
+     * nova). O mesmo fluxo roda automaticamente ao fim de cada
+     * importação de planilha (ver importarXlsx) — cobre o cliente
+     * lançado direto no Belle no balcão assim que ele aparecer na
+     * próxima planilha.
      */
     resolverLids: adminProcedure.input(z.object({ unidadeId: z.number() })).mutation(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
       if (!unidade) throw new Error("Unidade não encontrada");
-      if (!unidade.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) {
-        throw new Error("Unidade sem credenciais Z-API configuradas.");
-      }
-
-      const telefones = await db.listTelefonesCanonicosDaUnidade(unidade.slug);
-      let resolvidos = 0;
-      let semWhatsapp = 0;
-      let erros = 0;
-      const LOTE = 1000;
-      for (let i = 0; i < telefones.length; i += LOTE) {
-        const lote = telefones.slice(i, i + LOTE);
-        try {
-          const resultados = await zapiApi.phoneExistsBatch(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, lote);
-          const linhas: Array<{ unidadeId: number; telefoneCanonico: string; lid: string }> = [];
-          for (const r of resultados) {
-            if (!r.exists || !r.lid) { semWhatsapp++; continue; }
-            const canonico = telefoneCanonico(r.outputPhone || r.inputPhone);
-            if (!canonico) continue;
-            linhas.push({ unidadeId: input.unidadeId, telefoneCanonico: canonico, lid: r.lid });
-          }
-          await db.upsertLidMapping(linhas);
-          resolvidos += linhas.length;
-        } catch (error) {
-          console.error("[resolverLids] Falha no lote:", error);
-          erros += lote.length;
-        }
-      }
-
-      return { totalTelefones: telefones.length, resolvidos, semWhatsapp, erros };
+      return resolverEPromoverLids(unidade);
     }),
 
     // Sem filtro/paginação server-side — busca e ordenação ficam no
