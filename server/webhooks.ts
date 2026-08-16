@@ -9,6 +9,7 @@ import { sendTelegramParaRecepcao } from "./telegramApi";
 import { zapiApi } from "./zapiApi";
 import { storagePut, storageGetSignedUrl } from "./storage";
 import { extrairNomeConfirmacaoBelle } from "@shared/belleTemplates";
+import { telefoneCanonico } from "@shared/telefone";
 import { pipeInboxMedia } from "./inboxMediaProxy";
 
 // Tabela deploy_pending para comunicação entre webhook (sandbox) e cron (produção)
@@ -173,6 +174,12 @@ interface ZapiWebhookPayload {
   image?: { imageUrl?: string; caption?: string };
   audio?: { audioUrl?: string };
   document?: { documentUrl?: string; fileName?: string };
+  // Resposta do cliente a uma mensagem de lista interativa do WhatsApp
+  // (botão "Avaliar" → escolhe uma opção numerada, ex.: pesquisa de
+  // satisfação do Belle). Confirmado contra payload real de produção
+  // (2026-08-15, via webhook_debug_log) — não vem em "text", por isso
+  // ficava em branco no Inbox antes desse campo existir aqui.
+  listResponseMessage?: { message?: string; title?: string; selectedRowId?: string };
 }
 
 function registerZapiWebhook(app: Express) {
@@ -306,6 +313,14 @@ function registerZapiWebhook(app: Express) {
       } else if (payload.document?.documentUrl) {
         tipo = "documento";
         metadados = { url: payload.document.documentUrl, fileName: payload.document.fileName };
+      } else if (payload.listResponseMessage) {
+        // Formato "10 - Excelente" mantém compatível com
+        // processarRespostaMenu (server/fluxosMenu.ts), que casa a
+        // resposta tentando parseInt no início da string ou por
+        // substring do label — os Fluxos também usam lista interativa
+        // pro nó "menu" estilo "lista".
+        const { title, message } = payload.listResponseMessage;
+        conteudo = [title, message].filter(Boolean).join(" - ");
       }
 
       const resumo = conteudo || (tipo !== "texto" ? `[${tipo}]` : "");
@@ -351,6 +366,22 @@ function registerZapiWebhook(app: Express) {
           }
         } catch (error) {
           console.error("[Webhook Z-API] Falha ao buscar/armazenar foto de perfil:", error);
+        }
+      }
+
+      // Aprendizado oportunista do par telefone↔lid: sempre que o
+      // telefone já é real (veio assim no payload, ou foi resolvido por
+      // resolveLid/lid_mapping acima) E a Z-API também mandou o chatLid
+      // dessa mesma mensagem, é um par confirmado pela própria Z-API —
+      // sem heurística nenhuma. Grava em lid_mapping pra já servir de
+      // resolução pronta numa próxima conversa que só venha com @lid
+      // (ex.: outro contato, ou mesmo contato reprocessado sem o
+      // telefone real no payload). Idempotente (upsert por unidade+
+      // telefone), best-effort — nunca bloqueia o webhook.
+      if (!payload.isGroup && lidPayload && !identificadorContato.includes("@lid")) {
+        const canonico = telefoneCanonico(identificadorContato);
+        if (canonico) {
+          db.upsertLidMapping([{ unidadeId, telefoneCanonico: canonico, lid: lidPayload }]).catch(() => {});
         }
       }
 
