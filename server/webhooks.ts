@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { sendTelegramParaRecepcao } from "./telegramApi";
 import { zapiApi } from "./zapiApi";
 import { storagePut, storageGetSignedUrl } from "./storage";
+import { extrairNomeConfirmacaoBelle } from "@shared/belleTemplates";
 import { pipeInboxMedia } from "./inboxMediaProxy";
 
 // Tabela deploy_pending para comunicação entre webhook (sandbox) e cron (produção)
@@ -371,9 +372,16 @@ function registerZapiWebhook(app: Express) {
         // do próprio resolveLid. Em grupo, o nome da CONVERSA é o nome
         // do grupo (chatName) — senderName ali é de quem mandou aquela
         // mensagem específica, não do grupo.
+        // Exceção pro fromMe: a confirmação de agendamento do Belle tem
+        // formato fixo com o nome exato do cliente no corpo da mensagem
+        // ("Olá, Fulana ✨") — só melhora a exibição de uma conversa
+        // ainda não identificada (ehLid), não vincula cliente nenhum
+        // sozinho (ver shared/belleTemplates.ts).
         nomeContato: payload.isGroup
           ? payload.chatName
-          : (payload.fromMe ? undefined : (payload.senderName ?? nomeResolvidoPorLid)),
+          : (payload.fromMe
+            ? (ehLid ? extrairNomeConfirmacaoBelle(conteudo) : undefined)
+            : (payload.senderName ?? nomeResolvidoPorLid)),
         ultimaMensagemTexto: resumo,
         incrementarNaoLidas: !payload.fromMe,
       });
