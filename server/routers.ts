@@ -2646,6 +2646,8 @@ Diretrizes:
             unidadeId: input.unidadeId,
             contaId: contaCaixa?.id,
             // Sintético — a planilha não tem um ID de transação próprio.
+            // Inclui unidadeId pra nunca colidir entre unidades no mesmo
+            // dia/tipo/título (RBS e SSU sincronizam datas sobrepostas).
             // NÃO inclui o valor: a planilha soma tudo num único
             // lançamento "Vendas do dia" por data+tipo (confirmado pelo
             // usuário), então essa chave já é estável mesmo quando o
@@ -2654,7 +2656,7 @@ Diretrizes:
             // gerava um idTransacao novo, e upsertOuAtualizarCaixaFisico
             // (abaixo) tratava como lançamento novo em vez de atualizar
             // o existente — duplicava o dia em vez de substituir.
-            idTransacao: `caixa:${l.data}:${l.tipoOperacao}:${l.ocorrencia.slice(0, 60)}`,
+            idTransacao: `caixa:${input.unidadeId}:${l.data}:${l.tipoOperacao}:${l.ocorrencia.slice(0, 60)}`,
             dataEntrada: l.data,
             tipoOperacao: l.tipoOperacao,
             valor: l.valor.toFixed(2),
