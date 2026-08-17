@@ -275,3 +275,4 @@
 - [x] Sincronizar e publicar a última versão disponível no GitHub (nova solicitação)
 - [x] Sincronizar e publicar a última versão disponível no GitHub (solicitação atual)
 - [x] Auditar duplicidades do Caixa Físico antes de qualquer exclusão ou normalização
+- [x] Remover as linhas históricas duplicadas do Caixa Físico, mantendo a mais recente por syncedAt
