@@ -8,6 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { registerWhatsappWebhookRoutes } from "../webhooks";
 import { registerAutoDeployRoute } from "../autoDeploy";
 import { registerFluxosScheduledRoutes } from "../fluxosScheduled";
+import { registerDailySyncScheduledRoute } from "../dailySyncReport";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -42,6 +43,7 @@ async function startServer() {
   registerWhatsappWebhookRoutes(app);
   registerAutoDeployRoute(app);
   registerFluxosScheduledRoutes(app);
+  registerDailySyncScheduledRoute(app);
   // tRPC API
   app.use(
     "/api/trpc",

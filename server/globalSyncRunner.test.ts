@@ -9,7 +9,7 @@ describe("global sync runner", () => {
     const started: string[] = [];
     let finishMercadoPago: (() => void) | undefined;
     let finishInter: (() => void) | undefined;
-    let finishSicredi: (() => void) | undefined;
+    let finishCaixa: (() => void) | undefined;
 
     const execution = runGlobalSyncQueue(
       plan,
@@ -17,7 +17,7 @@ describe("global sync runner", () => {
         started.push(step.kind);
         if (step.kind === "mercadoPagoConta") await new Promise<void>((resolve) => { finishMercadoPago = resolve; });
         if (step.kind === "inter") await new Promise<void>((resolve) => { finishInter = resolve; });
-        if (step.kind === "sicredi") await new Promise<void>((resolve) => { finishSicredi = resolve; });
+        if (step.kind === "caixa") await new Promise<void>((resolve) => { finishCaixa = resolve; });
       },
     );
 
@@ -32,12 +32,12 @@ describe("global sync runner", () => {
     expect(started).toEqual(["mercadoPagoConta", "inter"]);
     finishInter?.();
     await flushQueue();
-    expect(started).toEqual(["mercadoPagoConta", "inter", "sicredi"]);
-    finishSicredi?.();
+    expect(started).toEqual(["mercadoPagoConta", "inter", "caixa"]);
+    finishCaixa?.();
     await flushQueue();
-    expect(started).toEqual(["mercadoPagoConta", "inter", "sicredi", "caixa"]);
+    expect(started).toEqual(["mercadoPagoConta", "inter", "caixa", "mercadoPagoAdquirentes"]);
     await execution;
-    expect(started).toEqual(["mercadoPagoConta", "inter", "sicredi", "caixa"]);
+    expect(started).toEqual(["mercadoPagoConta", "inter", "caixa", "mercadoPagoAdquirentes"]);
     finishMercadoPago?.();
   });
 

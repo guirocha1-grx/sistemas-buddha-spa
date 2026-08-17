@@ -17,7 +17,15 @@ export function globalSyncReducer(state: GlobalSyncState, action: GlobalSyncActi
     isOpen: true,
     isMinimized: false,
     isRunning: true,
-    steps: state.steps.map((item) => item.status === "error" ? { ...item, status: "pending", detail: "Aguardando nova tentativa", error: undefined } : item),
+    // "mercadoPagoConta" roda em segundo plano (Promise.allSettled, fora da
+    // fila sequencial de runGlobalSyncQueue) e nunca entra na lista de
+    // `falhas` que `start()` usa pra decidir o que retomar — se resetássemos
+    // pra "pending" aqui, ela ficaria travada pra sempre (nada nunca a
+    // retentaria), prendendo `finished` em false indefinidamente. Deixa como
+    // "error" mesmo: um clique manual em "Sincronizar erros" ainda a pega
+    // (retryErrors lê o status atual), e runGlobalSyncQueue sabe disparar
+    // esse kind em segundo plano de novo.
+    steps: state.steps.map((item) => item.status === "error" && item.kind !== "mercadoPagoConta" ? { ...item, status: "pending", detail: "Aguardando nova tentativa", error: undefined } : item),
   };
   if (action.type === "updateStep") return { ...state, steps: state.steps.map((item) => item.id === action.id ? { ...item, ...action.patch } : item) };
   if (action.type === "minimize") return state.isRunning ? { ...state, isMinimized: true } : state;

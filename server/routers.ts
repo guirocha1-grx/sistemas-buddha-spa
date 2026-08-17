@@ -2622,9 +2622,27 @@ Diretrizes:
         const linhas = await lerCaixaFisicoSheet(spreadsheetId, aba, 9999, "2025-12-01");
 
         const contaCaixa = await db.getOrCreateContaCaixaFisico(input.unidadeId);
-        const inseridos = await db.upsertInterExtratos(
-          input.unidadeId,
-          linhas.map((l) => ({
+        // Categoriza na inserção (mesmo padrão do Sicredi/Inter) — sem
+        // isso, a linha nasce com dreDescricaoId null e fica invisível
+        // pra "Contas bancárias" da Comanda (detalheContasBancariasPorDia
+        // filtra por dreDescricaoId), mesmo aparecendo normal em Contas.
+        // Bug real encontrado 2026-08-17.
+        const regrasDre = await db.listRegrasParaMatch();
+        const cnpjsPorUnidadeDre = await db.listCnpjsPorUnidade();
+        const transacoes = await Promise.all(linhas.map(async (l) => {
+          const resultado = contaCaixa?.id
+            ? await db.categorizarTransacaoAutomaticamente({
+              unidadeId: input.unidadeId,
+              contaId: contaCaixa.id,
+              dataEntrada: l.data,
+              titulo: l.ocorrencia,
+              descricao: l.conferidoPor ?? "",
+              valor: l.valor,
+              origem: "caixa_fisico",
+              tipoOperacao: l.tipoOperacao,
+            }, regrasDre, cnpjsPorUnidadeDre)
+            : { dreDescricaoId: undefined, categorizacaoStatus: "pendente" as const, alerta: null };
+          return {
             unidadeId: input.unidadeId,
             contaId: contaCaixa?.id,
             // Sintético — a planilha não tem um ID de transação próprio.
@@ -2637,8 +2655,17 @@ Diretrizes:
             titulo: l.ocorrencia,
             descricao: l.conferidoPor ? `Conferido por: ${l.conferidoPor}` : undefined,
             origem: "caixa_fisico" as const,
-          })),
-        );
+            dreDescricaoId: resultado.dreDescricaoId ?? undefined,
+            categorizacaoStatus: resultado.categorizacaoStatus,
+          };
+        }));
+
+        const inseridos = await db.upsertInterExtratos(input.unidadeId, transacoes);
+        // Corrige retroativamente linhas sincronizadas antes desse fix
+        // (upsertInterExtratos é insert-only, nunca mexe em linha já
+        // existente) — a cada clique em "Sincronizar", qualquer Caixa
+        // Físico ainda sem categoria é resolvido.
+        const backfillados = await db.backfillCategorizacaoCaixaFisico(input.unidadeId);
 
         // Diagnóstico: intervalo de datas encontrado — se um dia vier
         // muito antigo (ex.: meses atrás), é sinal de que a "cauda" da
@@ -2651,9 +2678,9 @@ Diretrizes:
           tipo: "caixa_fisico",
           status: "sucesso",
           registrosProcessados: inseridos,
-          detalhes: `Lidos: ${linhas.length}. Novos: ${inseridos}. Intervalo de datas: ${intervalo}.`,
+          detalhes: `Lidos: ${linhas.length}. Novos: ${inseridos}. Categorizados retroativamente: ${backfillados}. Intervalo de datas: ${intervalo}.`,
         });
-        return { success: true, totalLidos: linhas.length, totalInseridos: inseridos };
+        return { success: true, totalLidos: linhas.length, totalInseridos: inseridos, totalBackfillados: backfillados };
       } catch (error: any) {
         await db.createSyncLog({
           unidadeId: input.unidadeId,
@@ -2664,6 +2691,24 @@ Diretrizes:
         });
         throw error;
       }
+    }),
+
+    /**
+     * Registra a rotina diária (server/dailySyncReport.ts): roda a
+     * mesma sincronização do botão "Sincronizar tudo" todo dia às 7h
+     * BRT (10h UTC) e manda um relatório pro Telegram do Guilherme.
+     * Mesmo padrão de fluxos.registrarHeartbeat (upsertHeartbeatJob
+     * espera a sessão da plataforma Manus, não a do usuário logado).
+     */
+    registrarHeartbeatSincronizacaoDiaria: adminProcedure.mutation(async () => {
+      await upsertHeartbeatJob({
+        name: "cron-sincronizar-tudo-diario",
+        cron: "0 0 10 * * *",
+        path: "/api/scheduled/sincronizar-tudo-diario",
+        method: "POST",
+        description: "Roda a sincronização completa (todas as contas/adquirentes/comanda) e manda relatório diário pro Telegram.",
+      }, "");
+      return { success: true };
     }),
   }),
 

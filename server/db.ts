@@ -1308,6 +1308,38 @@ export async function upsertInterExtratos(
  * recalculados a cada re-sync — apagaria categorização manual que o
  * usuário já tenha confirmado.
  */
+/**
+ * Backfill pontual: sincronizarCaixaFisico (server/routers.ts) não
+ * chamava categorizarTransacaoAutomaticamente na inserção (diferente
+ * do Sicredi/Inter, que já chamam) — linhas de Caixa Físico sincronizadas
+ * antes desse fix (2026-08-17) ficaram com dreDescricaoId null,
+ * invisíveis pra "Contas bancárias" da Comanda (detalheContasBancariasPorDia
+ * filtra por dreDescricaoId). Roda a cada clique em "Sincronizar Caixa
+ * Físico" (idempotente — só mexe em linha ainda sem categoria, nunca
+ * sobrescreve confirmação manual já feita).
+ */
+export async function backfillCategorizacaoCaixaFisico(unidadeId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const especieId = await resolverDescricaoIdPorChave(CHAVE_RECEITA_ESPECIE);
+  if (!especieId) return 0;
+  const pendentes = await db.select({ id: interExtratos.id, valor: interExtratos.valor })
+    .from(interExtratos)
+    .where(and(
+      eq(interExtratos.unidadeId, unidadeId),
+      eq(interExtratos.origem, "caixa_fisico"),
+      eq(interExtratos.tipoOperacao, "C"),
+      isNull(interExtratos.dreDescricaoId),
+    ));
+  let atualizados = 0;
+  for (const p of pendentes) {
+    const status = Number(p.valor) === 0 ? "confirmada" : "sugerida";
+    await db.update(interExtratos).set({ dreDescricaoId: especieId, categorizacaoStatus: status }).where(eq(interExtratos.id, p.id));
+    atualizados++;
+  }
+  return atualizados;
+}
+
 export async function atualizarTituloInterExtrato(
   unidadeId: number,
   idTransacao: string,
@@ -1711,6 +1743,27 @@ export async function resumoContasBancariasPorDia(
     else l.pix += item.valor;
   }
   return porDia;
+}
+
+/**
+ * Total de saídas (débito, qualquer origem/conta) no período — usado
+ * no relatório diário da rotina de sincronização (server/dailySyncReport.ts)
+ * pra dar a dimensão do dia (entradas via resumoContasBancariasPorDia
+ * já existente, saídas aqui). Soma bruta de inter_extratos, sem
+ * depender de categorização (diferente de resumoContasBancariasPorDia,
+ * que só conta o que já foi categorizado como Receita de Vendas) —
+ * saída não passa por esse filtro, então soma tudo que é débito.
+ */
+export async function totalSaidasNoPeriodo(unidadeId: number, dataInicio: string, dataFim: string): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const linhas = await db.select({ valor: interExtratos.valor }).from(interExtratos).where(and(
+    eq(interExtratos.unidadeId, unidadeId),
+    eq(interExtratos.tipoOperacao, "D"),
+    gte(interExtratos.dataEntrada, dataInicio),
+    lte(interExtratos.dataEntrada, dataFim),
+  ));
+  return linhas.reduce((soma, l) => soma + Number(l.valor), 0);
 }
 
 // ===== Contas =====

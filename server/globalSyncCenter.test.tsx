@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   mutateAsync: vi.fn().mockResolvedValue({ success: true }),
@@ -19,11 +19,18 @@ vi.mock("@/contexts/UnidadeContext", () => ({
   }),
 }));
 
+vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: 1, role: "admin", name: "Teste" } }) }));
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+
 vi.mock("@/lib/trpc", () => ({
   trpc: {
     inter: { sincronizar: { useMutation: () => ({ mutateAsync: mocks.mutateAsync }) }, extratos: { invalidate: mocks.invalidate } },
     sicredi: { sincronizar: { useMutation: () => ({ mutateAsync: mocks.mutateAsync }) } },
-    contas: { sincronizarCaixaFisico: { useMutation: () => ({ mutateAsync: mocks.mutateAsync }) }, sincronizarMercadoPago: { useMutation: () => ({ mutateAsync: mocks.mutateAsync }) } },
+    contas: {
+      sincronizarCaixaFisico: { useMutation: () => ({ mutateAsync: mocks.mutateAsync }) },
+      sincronizarMercadoPago: { useMutation: () => ({ mutateAsync: mocks.mutateAsync }) },
+      registrarHeartbeatSincronizacaoDiaria: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+    },
     adquirentes: { sincronizarMercadoPago: { useMutation: () => ({ mutateAsync: mocks.mutateAsync }) }, vendas: { invalidate: mocks.invalidate } },
     comandaRecepcao: {
       sincronizar: { useMutation: () => ({ mutateAsync: mocks.mutateAsync }) },
@@ -42,6 +49,12 @@ vi.mock("@/lib/trpc", () => ({
 }));
 
 import GlobalSyncCenter from "../client/src/components/GlobalSyncCenter";
+
+// Sem isso, os testes deste arquivo compartilham o mesmo document (o
+// projeto não tem globals:true nem setupFiles pra RTL limpar sozinho
+// entre "it"s) — um render de um teste anterior que também chega em
+// "finalizado" fica montado e colide com o do teste seguinte.
+afterEach(cleanup);
 
 describe("GlobalSyncCenter", () => {
   it("abre o modal, lista etapas por unidade e mostra o resumo final", async () => {
@@ -84,8 +97,17 @@ describe("GlobalSyncCenter", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sincronizar tudo" }));
     fireEvent.click(await screen.findByRole("button", { name: "Iniciar sincronização" }));
 
-    expect(await screen.findByText("Sincronização finalizada")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sincronizar erros" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sincronizar novamente" })).toBeInTheDocument();
-  });
+    // A retomada automática de erros (1x) faz "finalizada" aparecer
+    // brevemente após a 1ª passada, antes da 2ª tentativa rodar e
+    // falhar de novo — por isso as 3 asserções vão juntas num único
+    // waitFor, esperando o estado final estável em vez do 1º mutation.
+    // Timeout maior que o padrão (1000ms): a auto-retry roda 2 passadas
+    // sobre as 14 etapas (2 unidades × 7), o que leva mais ciclos de
+    // act()/render pra estabilizar do que uma única passada.
+    await waitFor(() => {
+      expect(screen.getByText("Sincronização finalizada")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Sincronizar erros" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Sincronizar novamente" })).toBeInTheDocument();
+    }, { timeout: 5000 });
+  }, 10000);
 });

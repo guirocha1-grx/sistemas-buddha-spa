@@ -5,6 +5,7 @@ export type SyncStepKind = "inter" | "sicredi" | "caixa" | "mercadoPagoConta" | 
 export type SyncUnit = {
   id: number;
   nome: string;
+  slug?: string;
   interClientId?: string | null;
   interClientSecret?: string | null;
   interCertificado?: string | null;
@@ -43,14 +44,29 @@ function step(unidade: SyncUnit, category: SyncStep["category"], label: string, 
   };
 }
 
-/** Monta o roteiro visível e garante que etapas sem credenciais não sejam disparadas. */
+/**
+ * Monta o roteiro visível e garante que etapas sem credenciais não
+ * sejam disparadas.
+ *
+ * "Buddha Mkt" (slug sintética "buddha-mkt", ver getOrCreateUnidadeBuddhaMkt
+ * em server/db.ts) é usada só pra disparos de WhatsApp Marketing — não
+ * tem conta bancária, Comanda nem adquirente próprios, então nunca
+ * entra no roteiro de sincronização (2026-08-17).
+ *
+ * Sicredi fica fora do roteiro por ora — API ainda em fase final de
+ * teste, sem liberação (2026-08-17). Reativar trocando o "false" pela
+ * checagem de credenciais (linha comentada abaixo) quando a API for
+ * liberada.
+ */
 export function buildGlobalSyncPlan(unidades: SyncUnit[]): SyncStep[] {
-  return [...unidades]
+  return unidades
+    .filter((unidade) => unidade.slug !== "buddha-mkt")
     .sort((a, b) => Number(/ribeir[aã]o|rbs/i.test(b.nome)) - Number(/ribeir[aã]o|rbs/i.test(a.nome)))
     .flatMap((unidade) => [
       step(unidade, "Contas Bancárias", "Conta Corrente Mercado Pago", "mercadoPagoConta", Boolean(unidade.mpAccessToken)),
       step(unidade, "Contas Bancárias", "Conta corrente · Banco Inter", "inter", configured([unidade.interClientId, unidade.interClientSecret, unidade.interCertificado, unidade.interChavePrivada])),
-      step(unidade, "Contas Bancárias", "Conta corrente · Sicredi", "sicredi", configured([unidade.sicrediClientId, unidade.sicrediClientSecret, unidade.sicrediCertificado, unidade.sicrediChavePrivada])),
+      // Sicredi oculto por enquanto — API ainda não liberada (ver comentário acima).
+      // step(unidade, "Contas Bancárias", "Conta corrente · Sicredi", "sicredi", configured([unidade.sicrediClientId, unidade.sicrediClientSecret, unidade.sicrediCertificado, unidade.sicrediChavePrivada])),
       step(unidade, "Contas Bancárias", "Caixa físico · Google Sheets", "caixa"),
       step(unidade, "Adquirentes", "Mercado Pago · vendas aprovadas", "mercadoPagoAdquirentes", Boolean(unidade.mpAccessToken)),
       step(unidade, "Google Drive / Comanda da Recepção", "Comanda consolidada · recepção", "comandaConsolidado"),

@@ -13,4 +13,8 @@ export const ENV = {
   googleSheetsPrivateKey: process.env.GOOGLE_SHEETS_PRIVATE_KEY ?? "",
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN ?? "",
   telegramChatIdGrupoRecepcao: process.env.TELEGRAM_CHAT_ID_GRUPO_RECEPCAO ?? "",
+  // Destino do relatório diário da rotina de sincronização (7h, ver
+  // server/dailySyncReport.ts) — chat pessoal do Guilherme, já salvo
+  // como env var no Manus (2026-08-17).
+  telegramChatIdGuilherme: process.env.TELEGRAM_CHAT_ID_GUILHERME ?? "",
 };
