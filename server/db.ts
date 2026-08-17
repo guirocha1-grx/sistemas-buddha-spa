@@ -1303,16 +1303,24 @@ export async function upsertInterExtratos(
  * Insere ou atualiza lançamentos de Caixa Físico. Diferente de
  * `upsertInterExtratos` (insert-only, correto pra extrato bancário
  * imutável), o Caixa Físico é digitado à mão numa planilha e pode ser
- * corrigido depois — se o `idTransacao` já existir com valor
- * diferente, atualiza a linha (valor/título/descrição) em vez de criar
- * uma segunda. Categorização (dreDescricaoId/categorizacaoStatus) só é
- * atualizada junto se a linha ainda não estiver "confirmada", pra não
- * sobrescrever uma categoria que o usuário já revisou.
+ * corrigido depois — se já existir uma linha pro mesmo dia+tipo+título
+ * com valor diferente, atualiza a linha (valor/título/descrição) em
+ * vez de criar uma segunda. Categorização (dreDescricaoId/
+ * categorizacaoStatus) só é atualizada junto se a linha ainda não
+ * estiver "confirmada", pra não sobrescrever uma categoria que o
+ * usuário já revisou.
  *
- * Bug real corrigido (2026-08-17): o idTransacao antes incluía o
- * valor — corrigir o valor na planilha gerava uma chave nova e
- * `upsertInterExtratos` inseria uma segunda linha pro mesmo dia em vez
- * de substituir a antiga.
+ * Casa por CHAVE NATURAL (dataEntrada+tipoOperacao+titulo), não por
+ * `idTransacao` — bug real corrigido 2x em 2026-08-17: (1) o
+ * idTransacao antes incluía o valor, então corrigir o valor na
+ * planilha gerava uma chave nova e o sync antigo (insert-only)
+ * duplicava o dia; (2) ao remover o valor da chave do idTransacao,
+ * linhas já sincronizadas ANTES desse fix continuaram com o
+ * idTransacao no formato antigo gravado no banco — casar pelo novo
+ * formato não encontrava nada e duplicava TODO o histórico de novo.
+ * Chave natural resolve os dois de vez, sem depender do formato do
+ * idTransacao gravado. `idTransacao` é sempre regravado com o valor
+ * atual, só pra manter o dado coerente com o que o código gera hoje.
  */
 export async function upsertOuAtualizarCaixaFisico(
   unidadeId: number,
@@ -1324,32 +1332,41 @@ export async function upsertOuAtualizarCaixaFisico(
 
   const existentes = await db.select({
     id: interExtratos.id,
-    idTransacao: interExtratos.idTransacao,
+    dataEntrada: interExtratos.dataEntrada,
+    tipoOperacao: interExtratos.tipoOperacao,
+    titulo: interExtratos.titulo,
     valor: interExtratos.valor,
     categorizacaoStatus: interExtratos.categorizacaoStatus,
   }).from(interExtratos).where(and(
     eq(interExtratos.unidadeId, unidadeId),
     eq(interExtratos.origem, "caixa_fisico"),
   ));
-  const porIdTransacao = new Map(existentes.filter((e) => e.idTransacao).map((e) => [e.idTransacao as string, e]));
+  const chaveNatural = (dataEntrada: string, tipoOperacao: string, titulo: string | null | undefined) =>
+    `${dataEntrada}|${tipoOperacao}|${(titulo ?? "").trim()}`;
+  const porChave = new Map(existentes.map((e) => [chaveNatural(e.dataEntrada, e.tipoOperacao, e.titulo), e]));
 
   let inseridos = 0;
   let atualizados = 0;
   for (const t of transacoes) {
-    const existente = t.idTransacao ? porIdTransacao.get(t.idTransacao) : undefined;
+    const existente = porChave.get(chaveNatural(t.dataEntrada, t.tipoOperacao, t.titulo));
     if (!existente) {
       await db.insert(interExtratos).values({ ...t, unidadeId });
       inseridos++;
       continue;
     }
-    if (Number(existente.valor) === Number(t.valor)) continue;
-    const patch: Partial<InsertInterExtrato> = { valor: t.valor, titulo: t.titulo, descricao: t.descricao };
-    if (existente.categorizacaoStatus !== "confirmada") {
-      patch.dreDescricaoId = t.dreDescricaoId;
-      patch.categorizacaoStatus = t.categorizacaoStatus;
+    const mudouValor = Number(existente.valor) !== Number(t.valor);
+    const patch: Partial<InsertInterExtrato> = { idTransacao: t.idTransacao };
+    if (mudouValor) {
+      patch.valor = t.valor;
+      patch.titulo = t.titulo;
+      patch.descricao = t.descricao;
+      if (existente.categorizacaoStatus !== "confirmada") {
+        patch.dreDescricaoId = t.dreDescricaoId;
+        patch.categorizacaoStatus = t.categorizacaoStatus;
+      }
     }
     await db.update(interExtratos).set(patch).where(eq(interExtratos.id, existente.id));
-    atualizados++;
+    if (mudouValor) atualizados++;
   }
   return { inseridos, atualizados };
 }
