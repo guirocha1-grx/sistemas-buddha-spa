@@ -272,3 +272,4 @@
 - [x] Sincronizar e publicar a última versão disponível no GitHub (verificação atual)
 - [x] Incluir Arraial d’Ajuda no autocomplete de destinos da integração Cangooro (cancelada: pertence a outro projeto)
 - [x] Sincronizar e publicar a última versão disponível no GitHub (solicitação atual)
+- [x] Sincronizar e publicar a última versão disponível no GitHub (nova solicitação)
