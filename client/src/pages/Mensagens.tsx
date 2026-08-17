@@ -23,7 +23,7 @@ import {
   UserPlus, SmilePlus, Users, Download, ZoomIn, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useLocation } from "wouter";
+import { useSearch } from "wouter";
 import { telefonesCorrespondem } from "@shared/telefone";
 import { getInboxAttachmentUrl, type InboxAttachmentMetadata } from "@shared/inboxMedia";
 import { formatPhone, diasDesde } from "@/lib/utils";
@@ -129,7 +129,7 @@ export default function Mensagens() {
   const { unidadeSelecionada } = useUnidade();
   const { user } = useAuth();
   const { atendente } = useAtendenteAtual();
-  const [location] = useLocation();
+  const search = useSearch();
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState<"todos" | "aberta" | "encerrada">("todos");
   const [conversaSelecionadaId, setConversaSelecionadaId] = useState<number | null>(null);
@@ -189,16 +189,20 @@ export default function Mensagens() {
     { enabled: !!conversaSelecionadaId && ehGrupo },
   );
 
+  // wouter's useLocation() só devolve o pathname, nunca a query string
+  // (existe um hook separado, useSearch(), pra isso) — usar
+  // location.split("?") aqui sempre resultava em query vazia, e o link
+  // de WhatsApp de Clientes/Reativação (rotaInboxConversa) nunca abria
+  // a conversa certa, caindo na última conversa que já estava
+  // selecionada. Bug real encontrado 2026-08-17.
   const conversaIdSolicitada = useMemo(() => {
-    const query = location.split("?")[1] ?? "";
-    const valor = Number(new URLSearchParams(query).get("conversaId"));
+    const valor = Number(new URLSearchParams(search).get("conversaId"));
     return Number.isInteger(valor) && valor > 0 ? valor : null;
-  }, [location]);
+  }, [search]);
 
   const telefoneSolicitado = useMemo(() => {
-    const query = location.split("?")[1] ?? "";
-    return new URLSearchParams(query).get("telefone")?.trim() ?? "";
-  }, [location]);
+    return new URLSearchParams(search).get("telefone")?.trim() ?? "";
+  }, [search]);
 
   const { data: mensageriaStatus } = trpc.mensageria.status.useQuery();
   const setMensageriaStatus = trpc.mensageria.setStatus.useMutation({

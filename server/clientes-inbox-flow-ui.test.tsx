@@ -123,7 +123,15 @@ vi.mock("@/contexts/UnidadeContext", () => ({
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: 1, role: "admin", name: "Teste" } }) }));
 vi.mock("@/components/UnidadeSelector", () => ({ default: () => <div data-testid="unidade-selector" /> }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
-vi.mock("wouter", () => ({ useLocation: () => [state.page.location, state.page.setLocation] }));
+// wouter de verdade separa pathname (useLocation) de query string
+// (useSearch) — mockar os dois só com useLocation retornando o path
+// inteiro (como estava antes) escondia o bug real corrigido em
+// 2026-08-17: Mensagens.tsx tentava ler ?conversaId= via
+// location.split("?"), que nunca funciona com o useLocation() real.
+vi.mock("wouter", () => ({
+  useLocation: () => [state.page.location.split("?")[0], state.page.setLocation],
+  useSearch: () => state.page.location.split("?")[1] ?? "",
+}));
 vi.mock("@/components/ui/avatar", () => ({
   Avatar: ({ children, ...props }: any) => <div {...props}>{children}</div>,
   AvatarImage: ({ src, alt, ...props }: any) => <img src={src} alt={alt} {...props} />,
