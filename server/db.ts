@@ -1395,7 +1395,13 @@ export function labelTipoAdquirente(tipoNormalizado: string): string {
  */
 function chaveDescricaoAdquirente(tipo: string | null | undefined): string | null {
   const t = (tipo || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  if (t.includes("pix") || t.includes("saldo_mercado_pago")) return CHAVE_RECEITA_PIX;
+  // Interpag exporta o Tipo do Pix como "Pagamento Instantaneo" (o nome
+  // oficial do Pix no mercado adquirente/bancario), nunca a palavra
+  // "pix" - confirmado num CSV real (2026-08-17). Sem isso, essas
+  // linhas nao batiam nem no filtro de exclusao (upsertAdquirenteVendas,
+  // Pix de maquininha nao deve entrar aqui) nem na Descricao, ficando
+  // "Pendente" a toa em vez de simplesmente nao aparecer.
+  if (t.includes("pix") || t.includes("instantaneo") || t.includes("saldo_mercado_pago")) return CHAVE_RECEITA_PIX;
   if (t.includes("debit")) return CHAVE_RECEITA_CARTAO_DEBITO;
   if (t.includes("credit")) return CHAVE_RECEITA_CARTAO_CREDITO;
   return null;
@@ -3576,7 +3582,21 @@ export async function listScripts(busca?: string, categoria?: string) {
   if (!db) return [];
   const condicoes = [eq(scripts.ativo, true)];
   if (categoria) condicoes.push(eq(scripts.categoriaScript, categoria));
-  if (busca) condicoes.push(like(scripts.script, `%${busca}%`));
+  if (busca) {
+    // Script tipo "fluxo" não tem texto próprio (scripts.script é null
+    // nesse caso, ver schema.ts) — o "conteúdo" dele pra quem tá
+    // procurando é o nome do Fluxo vinculado. Sem isso, buscar por
+    // "preço" nunca achava um script-fluxo chamado "Enviar tabela de
+    // preços". Também busca na categoria — script tipo texto sem
+    // aquela palavra no corpo, mas categorizado como "Preços, planos e
+    // ofertas", também deve aparecer.
+    const termo = `%${busca}%`;
+    condicoes.push(or(
+      like(scripts.script, termo),
+      like(scripts.categoriaScript, termo),
+      like(fluxos.nome, termo),
+    )!);
+  }
   return db.select({ ...getTableColumns(scripts), fluxoUnidadeId: fluxos.unidadeId, fluxoNome: fluxos.nome })
     .from(scripts)
     .leftJoin(fluxos, eq(scripts.fluxoId, fluxos.id))
