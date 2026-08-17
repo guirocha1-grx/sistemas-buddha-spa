@@ -276,3 +276,7 @@
 - [x] Sincronizar e publicar a última versão disponível no GitHub (solicitação atual)
 - [x] Auditar duplicidades do Caixa Físico antes de qualquer exclusão ou normalização
 - [x] Remover as linhas históricas duplicadas do Caixa Físico, mantendo a mais recente por syncedAt
+- [x] Verificar pré-requisitos e colisões antes de normalizar idTransacao do Caixa Físico
+- [x] Sincronizar e publicar a última versão disponível no GitHub (solicitação atual)
+- [x] Confirmar se a versão atual contém a normalização final de idTransacao com unidade
+- [x] Normalizar os 865 idTransacao históricos do Caixa Físico com unidadeId após confirmação explícita
