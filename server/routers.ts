@@ -2646,9 +2646,15 @@ Diretrizes:
             unidadeId: input.unidadeId,
             contaId: contaCaixa?.id,
             // Sintético — a planilha não tem um ID de transação próprio.
-            // Inclui valor no id pra não colidir quando há mais de um
-            // lançamento igual (ocorrência+tipo) no mesmo dia.
-            idTransacao: `caixa:${l.data}:${l.tipoOperacao}:${l.ocorrencia.slice(0, 60)}:${l.valor}`,
+            // NÃO inclui o valor: a planilha soma tudo num único
+            // lançamento "Vendas do dia" por data+tipo (confirmado pelo
+            // usuário), então essa chave já é estável mesmo quando o
+            // valor é corrigido depois. Incluir o valor aqui foi a causa
+            // de um bug real (2026-08-17): corrigir o valor na planilha
+            // gerava um idTransacao novo, e upsertOuAtualizarCaixaFisico
+            // (abaixo) tratava como lançamento novo em vez de atualizar
+            // o existente — duplicava o dia em vez de substituir.
+            idTransacao: `caixa:${l.data}:${l.tipoOperacao}:${l.ocorrencia.slice(0, 60)}`,
             dataEntrada: l.data,
             tipoOperacao: l.tipoOperacao,
             valor: l.valor.toFixed(2),
@@ -2660,11 +2666,17 @@ Diretrizes:
           };
         }));
 
-        const inseridos = await db.upsertInterExtratos(input.unidadeId, transacoes);
-        // Corrige retroativamente linhas sincronizadas antes desse fix
-        // (upsertInterExtratos é insert-only, nunca mexe em linha já
-        // existente) — a cada clique em "Sincronizar", qualquer Caixa
-        // Físico ainda sem categoria é resolvido.
+        // Caixa Físico é digitado à mão e pode ser corrigido depois na
+        // planilha (diferente de Sicredi/Inter/Mercado Pago, extrato
+        // bancário imutável) — por isso usa upsert-com-atualização em
+        // vez do insert-only genérico (upsertInterExtratos): se o valor
+        // do dia mudou, atualiza a linha existente em vez de criar uma
+        // segunda. Bug real encontrado 2026-08-17 (ver comentário no
+        // idTransacao acima).
+        const { inseridos, atualizados } = await db.upsertOuAtualizarCaixaFisico(input.unidadeId, transacoes);
+        // Corrige retroativamente linhas sincronizadas antes do fix de
+        // categorização (2026-08-17) — a cada clique em "Sincronizar",
+        // qualquer Caixa Físico ainda sem categoria é resolvido.
         const backfillados = await db.backfillCategorizacaoCaixaFisico(input.unidadeId);
 
         // Diagnóstico: intervalo de datas encontrado — se um dia vier
@@ -2677,10 +2689,10 @@ Diretrizes:
           unidadeId: input.unidadeId,
           tipo: "caixa_fisico",
           status: "sucesso",
-          registrosProcessados: inseridos,
-          detalhes: `Lidos: ${linhas.length}. Novos: ${inseridos}. Categorizados retroativamente: ${backfillados}. Intervalo de datas: ${intervalo}.`,
+          registrosProcessados: inseridos + atualizados,
+          detalhes: `Lidos: ${linhas.length}. Novos: ${inseridos}. Atualizados: ${atualizados}. Categorizados retroativamente: ${backfillados}. Intervalo de datas: ${intervalo}.`,
         });
-        return { success: true, totalLidos: linhas.length, totalInseridos: inseridos, totalBackfillados: backfillados };
+        return { success: true, totalLidos: linhas.length, totalInseridos: inseridos, totalAtualizados: atualizados, totalBackfillados: backfillados };
       } catch (error: any) {
         await db.createSyncLog({
           unidadeId: input.unidadeId,

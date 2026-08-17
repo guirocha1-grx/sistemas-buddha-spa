@@ -401,7 +401,7 @@ export default function Extratos() {
 
   const sincronizarCaixaFisicoMutation = trpc.contas.sincronizarCaixaFisico.useMutation({
     onSuccess: (data) => {
-      toast.success(`Caixa Físico sincronizado: ${data.totalInseridos} nova(s) transação(ões) de ${data.totalLidos} lida(s).`);
+      toast.success(`Caixa Físico sincronizado: ${data.totalInseridos} nova(s) e ${data.totalAtualizados} atualizada(s) de ${data.totalLidos} lida(s).`);
       extratosQuery.refetch();
     },
     onError: (err) => toast.error(`Erro na sincronização do Caixa Físico: ${err.message}`),

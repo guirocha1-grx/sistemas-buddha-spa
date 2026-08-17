@@ -1300,6 +1300,61 @@ export async function upsertInterExtratos(
 }
 
 /**
+ * Insere ou atualiza lançamentos de Caixa Físico. Diferente de
+ * `upsertInterExtratos` (insert-only, correto pra extrato bancário
+ * imutável), o Caixa Físico é digitado à mão numa planilha e pode ser
+ * corrigido depois — se o `idTransacao` já existir com valor
+ * diferente, atualiza a linha (valor/título/descrição) em vez de criar
+ * uma segunda. Categorização (dreDescricaoId/categorizacaoStatus) só é
+ * atualizada junto se a linha ainda não estiver "confirmada", pra não
+ * sobrescrever uma categoria que o usuário já revisou.
+ *
+ * Bug real corrigido (2026-08-17): o idTransacao antes incluía o
+ * valor — corrigir o valor na planilha gerava uma chave nova e
+ * `upsertInterExtratos` inseria uma segunda linha pro mesmo dia em vez
+ * de substituir a antiga.
+ */
+export async function upsertOuAtualizarCaixaFisico(
+  unidadeId: number,
+  transacoes: InsertInterExtrato[],
+): Promise<{ inseridos: number; atualizados: number }> {
+  const db = await getDb();
+  if (!db) return { inseridos: 0, atualizados: 0 };
+  if (transacoes.length === 0) return { inseridos: 0, atualizados: 0 };
+
+  const existentes = await db.select({
+    id: interExtratos.id,
+    idTransacao: interExtratos.idTransacao,
+    valor: interExtratos.valor,
+    categorizacaoStatus: interExtratos.categorizacaoStatus,
+  }).from(interExtratos).where(and(
+    eq(interExtratos.unidadeId, unidadeId),
+    eq(interExtratos.origem, "caixa_fisico"),
+  ));
+  const porIdTransacao = new Map(existentes.filter((e) => e.idTransacao).map((e) => [e.idTransacao as string, e]));
+
+  let inseridos = 0;
+  let atualizados = 0;
+  for (const t of transacoes) {
+    const existente = t.idTransacao ? porIdTransacao.get(t.idTransacao) : undefined;
+    if (!existente) {
+      await db.insert(interExtratos).values({ ...t, unidadeId });
+      inseridos++;
+      continue;
+    }
+    if (Number(existente.valor) === Number(t.valor)) continue;
+    const patch: Partial<InsertInterExtrato> = { valor: t.valor, titulo: t.titulo, descricao: t.descricao };
+    if (existente.categorizacaoStatus !== "confirmada") {
+      patch.dreDescricaoId = t.dreDescricaoId;
+      patch.categorizacaoStatus = t.categorizacaoStatus;
+    }
+    await db.update(interExtratos).set(patch).where(eq(interExtratos.id, existente.id));
+    atualizados++;
+  }
+  return { inseridos, atualizados };
+}
+
+/**
  * Atualiza só o `titulo` de uma linha já existente (por idTransacao) —
  * usado pra corrigir a descrição da liquidação Mercado Pago (ver
  * enriquecimento por SOURCE_ID em contas.sincronizarMercadoPago) sem
