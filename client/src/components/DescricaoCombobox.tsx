@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CategoriaCombobox, type DreCategoriaOption } from "@/components/CategoriaCombobox";
@@ -135,17 +136,22 @@ export function DescricaoCombobox({
   return (
     <>
       <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            role="combobox"
-            aria-expanded={open}
-            className={`h-7 text-xs justify-between font-normal w-full px-2 ${corClasse}`}
-          >
-            <span className="truncate">{atual ? atual.nome : placeholder}</span>
-            <ChevronsUpDown className="h-3 w-3 opacity-50 shrink-0 ml-1" />
-          </Button>
-        </PopoverTrigger>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={open}
+                className={`h-7 text-xs justify-between font-normal w-full px-2 ${corClasse}`}
+              >
+                <span className="truncate">{atual ? atual.nome : placeholder}</span>
+                <ChevronsUpDown className="h-3 w-3 opacity-50 shrink-0 ml-1" />
+              </Button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          {atual && <TooltipContent>{atual.nome}</TooltipContent>}
+        </Tooltip>
         <PopoverContent className="w-80 p-0" align="start">
           <Command>
             <CommandInput placeholder="Buscar descrição..." className="text-sm h-8" />

@@ -1071,7 +1071,7 @@ export default function Extratos() {
                             <TableHead className="text-xs">Descrição</TableHead>
                             <TableHead className="text-xs w-32">Conta</TableHead>
                             <TableHead className="text-xs w-20">Origem</TableHead>
-                            <TableHead className="text-xs w-64">Descrição DRE</TableHead>
+                            <TableHead className="text-xs w-[295px]">Descrição DRE</TableHead>
                             <TableHead className="text-xs text-right w-32">Valor</TableHead>
                             {contaAtual && <TableHead className="text-xs text-right w-32">Saldo</TableHead>}
                           </TableRow>
