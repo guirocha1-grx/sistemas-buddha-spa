@@ -195,9 +195,16 @@ export interface LinhaExtratoMp {
   // SOURCE_ID cru (sem o prefixo "mp:" nem a data) — candidato a bater
   // com o id de pagamento (adquirenteVendas.idTransacaoExterno), pra
   // enriquecer a descrição da liquidação com o tipo de venda de origem.
-  // Ainda não confirmado com dado real — ver diagnóstico em
-  // contas.sincronizarMercadoPago.
+  // Confirmado com CSV real 2026-08-16.
   sourceId?: string;
+  // PAYMENT_METHOD_TYPE ("credit_card"/"debit_card"/"pix"/...) e
+  // PAYMENT_METHOD (bandeira, ex. "master") — colunas reais do relatório
+  // (RECORD_TYPE, esperado pela doc pública, NÃO existe nesse CSV;
+  // confirmado 2026-08-16). Usados em contas.sincronizarMercadoPago pra
+  // dar um título legível às linhas que não batem com nenhuma venda
+  // conhecida via SOURCE_ID.
+  paymentMethodType?: string;
+  paymentMethod?: string;
 }
 
 /**
@@ -213,11 +220,17 @@ const MP_RECORD_TYPES_SALDO = new Set(["initial_available_balance", "available_b
 
 /**
  * Parser do CSV do relatório "Dinheiro liberado" — por NOME de coluna
- * (não posição), porque o layout exato (DATE, SOURCE_ID, RECORD_TYPE,
- * DESCRIPTION, NET_CREDIT_AMOUNT, NET_DEBIT_AMOUNT, ...) vem só da doc
- * pública, sem confirmação com arquivo real ainda — se a ordem ou algum
- * nome vier diferente, isso ainda funciona (ou falha visivelmente por
- * coluna não encontrada, em vez de ler a coluna errada em silêncio).
+ * (não posição). Layout real confirmado 2026-08-16 (syncLogs,
+ * amostra do CSV): DATE, SOURCE_ID, DESCRIPTION, NET_CREDIT_AMOUNT,
+ * NET_DEBIT_AMOUNT, GROSS_AMOUNT, MP_FEE_AMOUNT, TAXES_AMOUNT,
+ * PAYMENT_METHOD, TRANSACTION_APPROVAL_DATE, BUSINESS_UNIT, SUB_UNIT,
+ * BALANCE_AMOUNT, PAYMENT_METHOD_TYPE, PURCHASE_ID — SEM coluna
+ * RECORD_TYPE (a doc pública promete essa coluna, mas ela não veio no
+ * arquivo real; iTipo abaixo fica sempre -1 na prática, mantido só por
+ * segurança caso uma conta/versão diferente do relatório venha com
+ * ela). DESCRIPTION, nesse formato, não é um texto legível — vem só
+ * "payment"/"reserve_for_dispute"/etc., o mesmo valor que a doc
+ * descreve pra RECORD_TYPE.
  */
 export function parseRelatorioLiberadoMp(texto: string): LinhaExtratoMp[] {
   const linhas = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -234,6 +247,8 @@ export function parseRelatorioLiberadoMp(texto: string): LinhaExtratoMp[] {
   const iDescricao = indice("DESCRIPTION");
   const iCredito = indice("NET_CREDIT_AMOUNT");
   const iDebito = indice("NET_DEBIT_AMOUNT");
+  const iPaymentMethod = indice("PAYMENT_METHOD");
+  const iPaymentMethodType = indice("PAYMENT_METHOD_TYPE");
 
   if (iData === -1 || (iCredito === -1 && iDebito === -1)) {
     throw new Error(`Colunas esperadas não encontradas no CSV (cabeçalho: ${cabecalho.join(", ")})`);
@@ -246,6 +261,14 @@ export function parseRelatorioLiberadoMp(texto: string): LinhaExtratoMp[] {
     const tipoRegistro = (iTipo !== -1 ? campos[iTipo] : "")?.trim().toLowerCase();
     if (tipoRegistro && MP_RECORD_TYPES_SALDO.has(tipoRegistro)) continue;
 
+    const sourceId = iSourceId !== -1 ? campos[iSourceId] : undefined;
+    const descricaoBruta = iDescricao !== -1 ? campos[iDescricao] : undefined;
+    // Sem RECORD_TYPE nesse formato, o jeito de identificar a linha de
+    // snapshot de saldo (sem SOURCE_ID nem DESCRIPTION, só o valor) é
+    // por ausência de qualquer identificador — confirmado no CSV real:
+    // é a primeira linha de cada período, só com DATE + valores.
+    if (!sourceId && !descricaoBruta) continue;
+
     const credito = parseFloat((campos[iCredito] ?? "0").replace(",", ".")) || 0;
     const debito = parseFloat((campos[iDebito] ?? "0").replace(",", ".")) || 0;
     if (credito === 0 && debito === 0) continue;
@@ -255,7 +278,7 @@ export function parseRelatorioLiberadoMp(texto: string): LinhaExtratoMp[] {
 
     const tipoOperacao: "C" | "D" = credito > 0 ? "C" : "D";
     const valor = Math.abs(credito > 0 ? credito : debito);
-    const idBase = campos[iSourceId] || campos[iExternalRef] || `${dataEntrada}-${valor}`;
+    const idBase = sourceId || campos[iExternalRef] || `${dataEntrada}-${valor}`;
 
     linhasDados.push({
       idTransacao: `mp:${idBase}:${dataEntrada}`,
@@ -264,8 +287,10 @@ export function parseRelatorioLiberadoMp(texto: string): LinhaExtratoMp[] {
       tipoOperacao,
       valor: valor.toFixed(2),
       titulo: iTipo !== -1 ? campos[iTipo] : undefined,
-      descricao: iDescricao !== -1 ? campos[iDescricao] : undefined,
-      sourceId: iSourceId !== -1 ? campos[iSourceId] : undefined,
+      descricao: descricaoBruta,
+      sourceId,
+      paymentMethodType: iPaymentMethodType !== -1 ? campos[iPaymentMethodType] : undefined,
+      paymentMethod: iPaymentMethod !== -1 ? campos[iPaymentMethod] : undefined,
     });
   }
   return linhasDados;

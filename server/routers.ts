@@ -2522,12 +2522,31 @@ Diretrizes:
         const amostraMatch: string[] = [];
         const linhasEnriquecidas = linhasCsv.map((l) => {
           const tipoVenda = l.sourceId ? tipoPorIdTransacao.get(l.sourceId) : undefined;
-          if (!tipoVenda) return l;
-          bateram++;
-          if (amostraMatch.length < 5) {
-            amostraMatch.push(`SOURCE_ID=${l.sourceId} → tipo venda="${tipoVenda}" (RECORD_TYPE original="${l.tipoTransacao}")`);
+          if (tipoVenda) {
+            bateram++;
+            if (amostraMatch.length < 5) {
+              amostraMatch.push(`SOURCE_ID=${l.sourceId} → tipo venda="${tipoVenda}" (RECORD_TYPE original="${l.tipoTransacao}")`);
+            }
+            return { ...l, titulo: `Liquidação · ${db.labelTipoAdquirente(tipoVenda)}` };
           }
-          return { ...l, titulo: `Liquidação · ${db.labelTipoAdquirente(tipoVenda)}` };
+          // Sem match de venda conhecida (venda de antes do primeiro
+          // sync de Adquirentes, ou movimento sem venda associada, ex.:
+          // reserva pra disputa) — usa o método de pagamento real do
+          // próprio CSV do Mercado Pago (PAYMENT_METHOD_TYPE) em vez de
+          // deixar em branco. Sem RECORD_TYPE nesse relatório (ver
+          // mercadoPagoApi.ts), é o melhor dado real disponível.
+          if (l.paymentMethodType || l.paymentMethod) {
+            const tipoNormalizado = db.normalizarTipoAdquirente(l.paymentMethodType, l.paymentMethod);
+            if (tipoNormalizado !== "desconhecido") {
+              return { ...l, titulo: `Pagamento · ${db.labelTipoAdquirente(tipoNormalizado)}` };
+            }
+          }
+          // Último recurso: o texto cru do CSV (ex.: "reserve_for_dispute")
+          // vira o título em vez de duplicado em título E descrição.
+          if (l.descricao) {
+            return { ...l, titulo: l.descricao, descricao: undefined };
+          }
+          return l;
         });
 
         const contaMp = await db.getOrCreateContaMercadoPago(input.unidadeId);
@@ -2550,11 +2569,12 @@ Diretrizes:
         // upsertInterExtratos é insert-only (nunca atualiza linha já
         // existente, de propósito — não pode recalcular dreDescricaoId/
         // categorizacaoStatus a cada re-sync, senão apagaria categorização
-        // manual). Então, pra linhas que já existiam de um sync anterior a
-        // esse enriquecimento, o título novo não é gravado pelo upsert
+        // manual). Então, pra linhas que já existiam de um sync anterior
+        // (seja o enriquecimento por SOURCE_ID, seja o fallback por
+        // PAYMENT_METHOD_TYPE novo), o título não é gravado pelo upsert
         // acima — atualiza à parte, só o título, sem tocar em mais nada.
         for (const l of linhasEnriquecidas) {
-          if (l.titulo?.startsWith("Liquidação · ")) {
+          if (l.titulo) {
             await db.atualizarTituloInterExtrato(input.unidadeId, l.idTransacao, l.titulo);
           }
         }
