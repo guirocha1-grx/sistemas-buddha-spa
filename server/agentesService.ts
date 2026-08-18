@@ -40,7 +40,11 @@ function textoContexto(contexto: ContextoConversa) {
 
 function jsonSeguro(texto: string | null | undefined) {
   if (!texto) return null;
-  try { return JSON.parse(texto) as unknown; } catch { return null; }
+  // Alguns modelos retornam o JSON envolto em ```json ... ``` mesmo com
+  // tool_choice "none" pedindo só o objeto — remove a cerca antes de tentar
+  // o parse em vez de descartar a resposta inteira.
+  const semCerca = texto.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  try { return JSON.parse(semCerca) as unknown; } catch { return null; }
 }
 
 /** Normaliza o retorno do proxy antes de acessar choices e preserva um erro útil no log. */
@@ -154,7 +158,15 @@ async function obterRespostaEspecialista(params: {
       { role: "user", content: `${textoContexto(params.contexto)}\n\nEstado estruturado atual:\n${JSON.stringify({ resumo: params.estado?.resumo ?? "", variaveis: params.estado?.variaveis ?? {}, proximaRota: params.estado?.proximaRota ?? null })}\n\nRecursos oficiais vigentes:\n${serializarRecursos(recursos)}${tabelaPrecos.length ? `\n\nTabela comercial oficial:\n${JSON.stringify(tabelaPrecos)}` : ""}\n\nFormato obrigatório: {"message":"", "status":"in_process", "summary":"", "variables":{}, "action":null}` },
     ],
   });
-  return interpretarRespostaEspecialista(jsonSeguro(extrairConteudoRespostaLLM(resposta)));
+  const conteudo = extrairConteudoRespostaLLM(resposta);
+  const interpretado = interpretarRespostaEspecialista(jsonSeguro(conteudo));
+  if (!interpretado) {
+    // Sem isso, "contrato JSON esperado" não diz se o modelo mandou prosa,
+    // JSON truncado ou um campo fora do formato — cada falha nova virava
+    // outro palpite às cegas (mesmo raciocínio do diagnóstico em llm.ts).
+    throw new Error(`O especialista não retornou o contrato JSON esperado; conteúdo bruto: ${conteudo.slice(0, 500)}`);
+  }
+  return interpretado;
 }
 
 /** Executa receptor e especialistas com no máximo três handoffs invisíveis. */
