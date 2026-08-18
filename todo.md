@@ -294,3 +294,4 @@
 - [x] Sincronizar e publicar a última versão disponível no GitHub (consulta atual)
 - [x] Corrigir o mock de agentes nos testes do Inbox após integrar o diagnóstico administrativo
 - [x] Integrar o commit 3ec4505, verificar migrações, validar e publicar
+- [x] Integrar o commit 8bf38be, verificar migrações, validar e publicar
