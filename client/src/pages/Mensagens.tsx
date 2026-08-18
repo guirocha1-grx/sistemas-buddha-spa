@@ -245,6 +245,24 @@ export default function Mensagens() {
     onError: (error) => toast.error(error.message),
   });
 
+  const aprovarSugestaoAgenteMutation = trpc.agentes.fila.aprovarEEnviar.useMutation({
+    onSuccess: () => {
+      toast.success("Sugestão enviada ao cliente.");
+      utils.agentes.diagnostico.conversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+      utils.inbox.mensagens.list.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+      utils.inbox.conversas.list.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const reprovarSugestaoAgenteMutation = trpc.agentes.fila.reprovar.useMutation({
+    onSuccess: () => {
+      toast.success("Sugestão reprovada.");
+      utils.agentes.diagnostico.conversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   const sugerirMensagemIaMutation = trpc.inbox.mensagens.sugerir.useMutation({
     onSuccess: ({ sugestao }) => setSugestaoIa(sugestao),
     onError: (error) => {
@@ -1385,7 +1403,32 @@ export default function Mensagens() {
                             </div>
                             <p className="text-muted-foreground">{formatHora(evento.createdAt)}{evento.classificacao ? ` · ${evento.classificacao}` : ""}{evento.confianca !== null ? ` · ${evento.confianca}%` : ""}</p>
                             {rastro && <p className="text-muted-foreground break-words">{rastro}</p>}
-                            {evento.sugestao && <p className="text-emerald-700">Sugestão: {evento.sugestao.avaliacao}{evento.sugestao.acaoPendente ? ` · ação ${evento.sugestao.acaoPendente}` : ""}</p>}
+                            {evento.sugestao && evento.sugestao.avaliacao === "pendente" && !evento.sugestao.enviadaEm ? (
+                              <div className="rounded border border-emerald-200 bg-emerald-50/60 p-1.5 space-y-1.5">
+                                <p className="text-emerald-900 whitespace-pre-wrap">{evento.sugestao.texto || "(sem texto)"}</p>
+                                <div className="flex gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    className="h-6 px-2 text-[10px] bg-emerald-600 hover:bg-emerald-700"
+                                    disabled={aprovarSugestaoAgenteMutation.isPending || reprovarSugestaoAgenteMutation.isPending}
+                                    onClick={() => aprovarSugestaoAgenteMutation.mutate({ sugestaoId: evento.sugestao!.id, atendenteId: atendente?.id })}
+                                  >
+                                    {aprovarSugestaoAgenteMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Aprovar e enviar"}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 px-2 text-[10px]"
+                                    disabled={aprovarSugestaoAgenteMutation.isPending || reprovarSugestaoAgenteMutation.isPending}
+                                    onClick={() => reprovarSugestaoAgenteMutation.mutate({ sugestaoId: evento.sugestao!.id })}
+                                  >
+                                    Reprovar
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : evento.sugestao && (
+                              <p className="text-emerald-700">Sugestão: {evento.sugestao.avaliacao}{evento.sugestao.acaoPendente ? ` · ação ${evento.sugestao.acaoPendente}` : ""}</p>
+                            )}
                             {evento.erro && <p className="text-red-700 break-words">Falha: {evento.erro}</p>}
                           </div>
                         );

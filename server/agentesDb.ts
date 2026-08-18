@@ -308,6 +308,7 @@ export async function listarDiagnosticoConversa(conversaId: number, limite = 30)
       erro: item.erroMsg,
       sugestao: sugestao ? {
         id: sugestao.id,
+        texto: sugestao.sugestao,
         statusAgente: sugestao.statusAgente,
         avaliacao: sugestao.avaliacao,
         acaoPendente: sugestao.acaoPendente,

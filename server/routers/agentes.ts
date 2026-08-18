@@ -68,7 +68,7 @@ export const agentesRouter = router({
   fila: router({
     list: adminProcedure.input(z.object({ unidadeId: z.number().optional() }).optional())
       .query(({ input }) => agentesDb.listarFilaSugestoes(input?.unidadeId)),
-    aprovarEEnviar: adminProcedure.input(z.object({ sugestaoId: z.number(), comentario: z.string().trim().max(2000).optional(), motivo: motivoAvaliacao.optional() }))
+    aprovarEEnviar: adminProcedure.input(z.object({ sugestaoId: z.number(), comentario: z.string().trim().max(2000).optional(), motivo: motivoAvaliacao.optional(), atendenteId: z.number().optional() }))
       .mutation(async ({ input, ctx }) => {
         const origemCabecalho = ctx.req.headers.origin;
         const protocolo = String(ctx.req.headers["x-forwarded-proto"] ?? ctx.req.protocol ?? "https").split(",")[0];

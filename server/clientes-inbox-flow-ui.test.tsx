@@ -116,6 +116,10 @@ const state = vi.hoisted(() => {
       diagnostico: {
         conversa: { useQuery: () => ({ data: [], isLoading: false }) },
       },
+      fila: {
+        aprovarEEnviar: { useMutation: () => mutation() },
+        reprovar: { useMutation: () => mutation() },
+      },
     },
   };
   return { cliente, conversa, page, trpc };
