@@ -32,6 +32,8 @@ export const agentesRouter = router({
       }
       return { success: true };
     }),
+    atualizarTodos: adminProcedure.input(z.object({ unidadeId: z.number(), ativo: z.boolean() }))
+      .mutation(({ input }) => agentesDb.atualizarAtivacaoTodosAgentes(input.unidadeId, input.ativo)),
     criarVersao: adminProcedure.input(z.object({
       agenteId: z.number(),
       unidadeId: z.number(),

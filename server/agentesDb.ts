@@ -173,6 +173,15 @@ export async function atualizarConfiguracaoAgente(params: {
     .where(and(eq(agentesConfiguracoes.agenteId, agenteId), eq(agentesConfiguracoes.unidadeId, unidadeId)));
 }
 
+/** Ativa ou desativa o processamento assistido de todos os agentes da unidade. Não altera a automação individual. */
+export async function atualizarAtivacaoTodosAgentes(unidadeId: number, ativo: boolean) {
+  await garantirAgentesIniciais(unidadeId);
+  const db = await getDb();
+  if (!db) throw new Error("Banco indisponível");
+  await db.update(agentesConfiguracoes).set({ ativo })
+    .where(eq(agentesConfiguracoes.unidadeId, unidadeId));
+}
+
 export async function criarVersaoPrompt(params: {
   agenteId: number;
   unidadeId: number;

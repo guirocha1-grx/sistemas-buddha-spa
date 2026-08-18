@@ -39,9 +39,11 @@ export function AgentesPromptSection() {
   }, [agente?.id]);
 
   const atualizar = trpc.agentes.configuracao.atualizar.useMutation({ onSuccess: () => utils.agentes.configuracao.list.invalidate() });
+  const atualizarTodos = trpc.agentes.configuracao.atualizarTodos.useMutation({ onSuccess: () => utils.agentes.configuracao.list.invalidate() });
   const criarVersao = trpc.agentes.configuracao.criarVersao.useMutation({ onSuccess: () => utils.agentes.configuracao.list.invalidate() });
   const ativarVersao = trpc.agentes.configuracao.ativarVersao.useMutation({ onSuccess: () => utils.agentes.configuracao.list.invalidate() });
-  const ocupado = atualizar.isPending || criarVersao.isPending || ativarVersao.isPending;
+  const ocupado = atualizar.isPending || atualizarTodos.isPending || criarVersao.isPending || ativarVersao.isPending;
+  const todosAtivos = (configuracao.data?.length ?? 0) > 0 && configuracao.data?.every((item) => item.ativo);
 
   if (configuracao.isLoading) return <Card><CardContent className="p-6 text-sm text-muted-foreground">Carregando agentes...</CardContent></Card>;
   if (configuracao.isError) return <Card className="border-amber-200 bg-amber-50"><CardContent className="p-5 text-sm text-amber-900">A edição dos prompts de agentes é restrita à administração.</CardContent></Card>;
@@ -71,6 +73,17 @@ export function AgentesPromptSection() {
               <SelectTrigger className="mt-1"><SelectValue placeholder="Selecione a unidade" /></SelectTrigger>
               <SelectContent>{unidades.map((unidade) => <SelectItem key={unidade.id} value={unidade.id.toString()}>{unidade.nome}</SelectItem>)}</SelectContent>
             </Select>
+            <Button
+              size="sm"
+              className="mt-2 w-full"
+              variant={todosAtivos ? "outline" : "default"}
+              disabled={ocupado || !unidadeId || !configuracao.data?.length}
+              onClick={() => unidadeId && atualizarTodos.mutate({ unidadeId, ativo: !todosAtivos })}
+            >
+              {atualizarTodos.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              {todosAtivos ? "Desativar todos" : "Ativar todos"}
+            </Button>
+            <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">Não altera permissões individuais de automação.</p>
           </div>
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agentes do fluxo</p>
           {configuracao.data?.map((item) => {
@@ -82,9 +95,11 @@ export function AgentesPromptSection() {
                   <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.descricao ?? "Especialidade não definida"}</p>
                   <div className="mt-1 text-[11px] text-muted-foreground">{item.promptAtivo ? `Prompt v${item.promptAtivo.versao} ativo` : "Sem prompt ativo"}</div>
                 </button>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <Button size="sm" variant={item.ativo ? "outline" : "default"} disabled={ocupado || !unidadeId} onClick={() => unidadeId && atualizar.mutate({ id: item.id, unidadeId, ativo: !item.ativo })}>{item.ativo ? "Desativar" : "Ativar assistente"}</Button>
-                  <Button size="sm" variant={item.modoOperacao === "automatico" ? "default" : "outline"} className={item.modoOperacao === "automatico" ? "bg-[#6c2330] hover:bg-[#4e1823]" : ""} disabled={ocupado || !podeAutomatizar || !unidadeId} onClick={() => unidadeId && atualizar.mutate({ id: item.id, unidadeId, modoOperacao: item.modoOperacao === "automatico" ? "assistido" : "automatico" })}>{item.tipo === "receptor" ? "Sem automação" : item.modoOperacao === "automatico" ? "Automação autorizada" : "Autorizar automação"}</Button>
+                <div className="mt-3 space-y-1.5">
+                  <Button size="sm" className="w-full" variant={item.ativo ? "outline" : "default"} disabled={ocupado || !unidadeId} onClick={() => unidadeId && atualizar.mutate({ id: item.id, unidadeId, ativo: !item.ativo })}>{item.ativo ? "Desativar assistente" : "Ativar assistente"}</Button>
+                  {item.tipo !== "receptor" ? (
+                    <Button size="sm" variant={item.modoOperacao === "automatico" ? "default" : "outline"} className={`w-full h-auto min-h-8 whitespace-normal leading-tight ${item.modoOperacao === "automatico" ? "bg-[#6c2330] hover:bg-[#4e1823]" : ""}`} disabled={ocupado || !podeAutomatizar || !unidadeId} onClick={() => unidadeId && atualizar.mutate({ id: item.id, unidadeId, modoOperacao: item.modoOperacao === "automatico" ? "assistido" : "automatico" })}>{item.modoOperacao === "automatico" ? "Desautorizar automação" : "Autorizar automação"}</Button>
+                  ) : <p className="text-[10px] text-muted-foreground">Roteador sempre em modo assistido.</p>}
                 </div>
                 {item.tipo !== "receptor" && !item.ativo && <p className="mt-2 text-[11px] text-muted-foreground">Ative o assistente antes de autorizar qualquer resposta automática.</p>}
               </div>

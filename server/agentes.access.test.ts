@@ -37,6 +37,14 @@ describe("agentes: acesso administrativo", () => {
     });
   });
 
+  it("bloqueia um consultor da ativação coletiva dos agentes", async () => {
+    const caller = appRouter.createCaller(createUserContext());
+
+    await expect(caller.agentes.configuracao.atualizarTodos({ unidadeId: 1, ativo: true })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
+
   it("bloqueia um consultor do diagnóstico operacional por conversa", async () => {
     const caller = appRouter.createCaller(createUserContext());
 
