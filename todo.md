@@ -303,3 +303,4 @@
 - [x] Sincronizar e publicar a última versão disponível no GitHub (verificação atual)
 - [x] Integrar o commit ccb432a, verificar migrações, validar e publicar
 - [x] Sincronizar e publicar a última versão disponível no GitHub (nova consulta)
+- [x] Sincronizar e publicar a última versão disponível no GitHub (consulta atual)
