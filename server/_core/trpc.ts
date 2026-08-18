@@ -61,6 +61,7 @@ const ROUTER_MODULO: Record<string, string> = {
   fluxos: "fluxos",
   templates: "disparos",
   disparos: "disparos",
+  tabelaPrecos: "tabela_precos",
 };
 
 /**

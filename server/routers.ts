@@ -31,7 +31,7 @@ import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY, montarPedidoSuges
 import { upsertHeartbeatJob } from "./_core/heartbeat";
 import { listarHeartbeatsSincronizacaoDiaria } from "./dailySyncReport";
 import { iniciarExecucaoFluxo } from "./fluxos";
-import { agentesRouter } from "./routers/agentes";
+import { agentesRouter, tabelaPrecosRouter } from "./routers/agentes";
 
 function fmtDateIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -179,6 +179,7 @@ async function resolverEPromoverLids(unidade: NonNullable<Awaited<ReturnType<typ
 
 export const appRouter = router({
   agentes: agentesRouter,
+  tabelaPrecos: tabelaPrecosRouter,
   system: systemRouter,
 
   auth: router({
@@ -197,9 +198,11 @@ export const appRouter = router({
     // (UnidadeSelector, Dashboard, Configurações etc.) consome esta
     // query via useUnidade(), então herda o filtro automaticamente.
     list: protectedProcedure.query(async ({ ctx }) => {
-      return db.getUnidadesParaUsuario(ctx.user.id, ctx.user.role);
+      const unidades = await db.getUnidadesParaUsuario(ctx.user.id, ctx.user.role);
+      if (ctx.user.role === "admin") return unidades;
+      return unidades.map(db.unidadeSemCredenciais);
     }),
-    get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    get: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
       return db.getUnidadeById(input.id);
     }),
     update: adminProcedure.input(z.object({

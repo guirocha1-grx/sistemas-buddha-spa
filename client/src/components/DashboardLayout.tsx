@@ -26,7 +26,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { startGoogleLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText, Repeat, Users2, Loader2, Workflow, Megaphone, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText, Repeat, Users2, Loader2, Workflow, Megaphone, AlertTriangle, BookOpenCheck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -49,6 +49,7 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
   { icon: KanbanSquare, label: "Reativação", path: "/reativacao", modulo: "reativacao" },
   { icon: Calendar, label: "Agenda", path: "/agenda", modulo: "agenda" },
   { icon: MessageCircle, label: "WhatsApp", path: "/mensagens", modulo: "mensagens" },
+  { icon: BookOpenCheck, label: "Tabela de Preços", path: "/tabela-precos", modulo: "tabela_precos" },
   { icon: ScrollText, label: "Scripts", path: "/scripts", modulo: "scripts" },
   { icon: Workflow, label: "Fluxos", path: "/fluxos", modulo: "fluxos", adminOnly: true },
   {
@@ -70,17 +71,11 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
     ],
   },
   { icon: Sparkles, label: "Copilot", path: "/copilot", modulo: "copilot" },
-  {
-    icon: Sparkles, label: "Agentes", path: "/agentes",
-    children: [
-      { label: "Fila de sugestões", path: "/agentes" },
-      { label: "Tabela comercial", path: "/agentes/tabela" },
-    ],
-  },
+  { icon: Sparkles, label: "Agentes", path: "/agentes", adminOnly: true },
   { icon: Image, label: "Lâminas", path: "/laminas", modulo: "laminas" },
   { icon: UserPlus, label: "Leads", path: "/leads", modulo: "leads" },
   { icon: MessageCircle, label: "Config. Inbox", path: "/config-inbox", modulo: "mensagens" },
-  { icon: Settings, label: "Configurações", path: "/configuracoes", modulo: "configuracoes" },
+  { icon: Settings, label: "Configurações", path: "/configuracoes", modulo: "configuracoes", adminOnly: true },
   { icon: Users2, label: "Usuários", path: "/usuarios", adminOnly: true },
   { icon: ScrollText, label: "Log de Auditoria", path: "/auditoria", adminOnly: true },
   { icon: AlertTriangle, label: "Tratamento de erros", path: "/tratamento-erros", adminOnly: true },
