@@ -2,8 +2,18 @@ import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import * as agentesDb from "../agentesDb";
 import { aprovarEEnviarSugestao, processarMensagemRecebida, reprovarSugestao } from "../agentesService";
+import { TRPCError } from "@trpc/server";
 
 const motivoAvaliacao = z.enum(["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"]);
+
+async function validarResponsavelDaSugestao(params: { sugestaoId: number; role: string; atendenteId?: number }) {
+  if (params.role === "admin") return;
+  if (!params.atendenteId) throw new TRPCError({ code: "FORBIDDEN", message: "Usuário sem consultor vinculado" });
+  const registro = await agentesDb.buscarSugestao(params.sugestaoId);
+  if (!registro || registro.conversa.atendenteResponsavelId !== params.atendenteId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Esta sugestão pertence a outro consultor" });
+  }
+}
 
 export const agentesRouter = router({
   configuracao: router({
@@ -64,9 +74,13 @@ export const agentesRouter = router({
   }),
   fila: router({
     list: protectedProcedure.input(z.object({ unidadeId: z.number().optional() }).optional())
-      .query(({ input, ctx }) => agentesDb.listarFilaSugestoes(input?.unidadeId, ctx.user.role === "admin" ? undefined : ctx.atendente?.id)),
+      .query(({ input, ctx }) => {
+        if (ctx.user.role !== "admin" && !ctx.atendente?.id) return [];
+        return agentesDb.listarFilaSugestoes(input?.unidadeId, ctx.user.role === "admin" ? undefined : ctx.atendente?.id);
+      }),
     aprovarEEnviar: protectedProcedure.input(z.object({ sugestaoId: z.number(), comentario: z.string().trim().max(2000).optional(), motivo: motivoAvaliacao.optional() }))
-      .mutation(({ input, ctx }) => {
+      .mutation(async ({ input, ctx }) => {
+        await validarResponsavelDaSugestao({ sugestaoId: input.sugestaoId, role: ctx.user.role, atendenteId: ctx.atendente?.id });
         const origemCabecalho = ctx.req.headers.origin;
         const protocolo = String(ctx.req.headers["x-forwarded-proto"] ?? ctx.req.protocol ?? "https").split(",")[0];
         const host = String(ctx.req.headers["x-forwarded-host"] ?? ctx.req.headers.host ?? "").split(",")[0];
@@ -74,7 +88,10 @@ export const agentesRouter = router({
         return aprovarEEnviarSugestao({ ...input, userId: ctx.user.id, atendenteId: ctx.atendente?.id, origemPublica });
       }),
     reprovar: protectedProcedure.input(z.object({ sugestaoId: z.number(), comentario: z.string().trim().max(2000).optional(), motivo: motivoAvaliacao.optional() }))
-      .mutation(({ input, ctx }) => reprovarSugestao({ ...input, userId: ctx.user.id, atendenteId: ctx.atendente?.id })),
+      .mutation(async ({ input, ctx }) => {
+        await validarResponsavelDaSugestao({ sugestaoId: input.sugestaoId, role: ctx.user.role, atendenteId: ctx.atendente?.id });
+        return reprovarSugestao({ ...input, userId: ctx.user.id, atendenteId: ctx.atendente?.id });
+      }),
   }),
   metricas: adminProcedure.input(z.object({ unidadeId: z.number().optional(), inicio: z.date().optional(), fim: z.date().optional() }).optional())
     .query(({ input }) => agentesDb.listarMetricasAgentes(input?.unidadeId, input?.inicio, input?.fim)),

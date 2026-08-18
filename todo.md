@@ -33,7 +33,7 @@
 - [x] Cadastrar e ativar as seis versões iniciais de prompt para Ribeirão Shopping, após revisão do conteúdo específico da unidade.
 - [ ] Cadastrar fontes oficiais de Ribeirão Shopping — preços, promoções, mídias e conteúdos vigentes — e validar sua entrega ao orquestrador.
 - [x] Exibir por agente nome, especialidade, ativação individual e autorização explícita de automação na configuração da unidade.
-- [ ] Garantir que agentes ativos sem automação produzam apenas sugestões para o consultor da conversa, sem envio ao cliente.
+- [x] Garantir que agentes ativos sem automação produzam apenas sugestões para o consultor da conversa, sem envio ao cliente.
 - [x] Manter todos os controles de automação desligados por padrão até autorização administrativa expressa.
 - [x] Adaptar os seis prompts-base para Ribeirão Shopping, mantendo fatos específicos em fontes configuráveis.
 - [x] Normalizar a tabela de preços recebida como catálogo oficial da unidade Ribeirão Shopping.
