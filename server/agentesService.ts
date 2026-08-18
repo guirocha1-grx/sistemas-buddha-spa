@@ -168,6 +168,7 @@ export async function processarMensagemRecebida(params: { conversaId: number; me
   });
   if (!execucaoId) return { status: "erro" as const };
 
+  let especialista: AgenteConfigurado | undefined;
   try {
     if (rotaSegura === "humano") {
       const sugestaoId = await criarSugestaoFinal({
@@ -180,7 +181,7 @@ export async function processarMensagemRecebida(params: { conversaId: number; me
       return { status: "concluida" as const, sugestaoId };
     }
 
-    let especialista = estado?.agenteAtualId
+    especialista = estado?.agenteAtualId
       ? especialistas.find(({ agente }) => agente.id === estado.agenteAtualId)
       : undefined;
     let confianca: number | null = null;
@@ -269,7 +270,12 @@ export async function processarMensagemRecebida(params: { conversaId: number; me
     throw new Error("Limite de transições internas excedido");
   } catch (error) {
     const mensagem = error instanceof Error ? error.message : String(error);
-    await agentesDb.concluirExecucao(execucaoId, { status: "erro", erroMsg: mensagem });
+    await agentesDb.concluirExecucao(execucaoId, {
+      status: "erro",
+      erroMsg: mensagem,
+      agenteEspecialistaId: especialista?.agente.id,
+      promptEspecialistaId: especialista?.prompt.id,
+    });
     console.error("[Agentes] Falha ao processar mensagem:", error);
     return { status: "erro" as const };
   }

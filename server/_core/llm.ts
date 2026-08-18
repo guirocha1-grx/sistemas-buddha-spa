@@ -107,7 +107,12 @@ export function normalizarRespostaLLM(payload: unknown): InvokeResult {
   }
 
   const body = payload as Record<string, unknown>;
-  if (Array.isArray(body.choices)) return payload as InvokeResult;
+  const choices = body.choices;
+  if (Array.isArray(choices) && choices.some((choice) => {
+    if (!choice || typeof choice !== "object" || !("message" in choice)) return false;
+    const message = choice.message;
+    return Boolean(message && typeof message === "object" && "content" in message && message.content);
+  })) return payload as InvokeResult;
 
   const textos: string[] = [];
   if (typeof body.output_text === "string") textos.push(body.output_text);

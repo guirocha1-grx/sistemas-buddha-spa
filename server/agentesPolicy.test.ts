@@ -19,6 +19,7 @@ describe("regras híbridas de atendimento", () => {
   it("prioriza os gatilhos determinísticos de preço e escalonamento humano", () => {
     expect(rotaDeterministica("Quero saber o valor da relaxante")).toBe("estela");
     expect(rotaDeterministica("Quero falar com um atendente humano")).toBe("humano");
+    expect(rotaDeterministica("Vocês trabalham com voucher?")).toBe("diana");
   });
 
   it("respeita a autorização de automação para especialistas e preserva bloqueios de segurança", () => {

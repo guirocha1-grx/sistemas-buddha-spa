@@ -19,6 +19,15 @@ describe("normalizarRespostaLLM", () => {
     expect(normalizarRespostaLLM(original)).toBe(original);
   });
 
+  it("prioriza output quando o provedor traz choices vazias", () => {
+    const resultado = normalizarRespostaLLM({
+      choices: [],
+      output: [{ type: "message", content: [{ type: "output_text", text: "resposta recuperada" }] }],
+    });
+
+    expect(resultado.choices[0]?.message.content).toBe("resposta recuperada");
+  });
+
   it("falha com diagnóstico quando não existe texto de saída", () => {
     expect(() => normalizarRespostaLLM({ id: "resp_2", output: [] })).toThrow("did not contain output text");
   });
