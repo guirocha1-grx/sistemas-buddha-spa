@@ -27,7 +27,7 @@ export default function Tabela() {
     <div className="space-y-6">
       <section className="overflow-hidden rounded-2xl border border-[#8d6a2b]/30 bg-gradient-to-br from-[#4d1d26] via-[#622530] to-[#35131a] text-white shadow-lg">
         <div className="flex flex-col gap-5 p-6 md:flex-row md:items-end md:justify-between md:p-8">
-          <div><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#ebcf88]"><BookOpenCheck className="h-4 w-4" /> Consulta comercial</div><h1 className="mt-2 text-3xl leading-none md:text-4xl" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Tabela de Preços</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-white/75">Valores oficiais para consulta manual da equipe. A tabela da unidade também é a referência comercial usada pelo agente Estela.</p></div>
+          <div><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#ebcf88]"><BookOpenCheck className="h-4 w-4" /> Consulta comercial</div><h1 className="mt-2 text-3xl leading-none md:text-4xl" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Tabela de Preços</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-white/75">Valores oficiais para consulta manual da equipe.</p></div>
           <Badge className="w-fit border border-white/15 bg-white/10 text-white hover:bg-white/10">{unidadeSelecionada?.nome ?? "Selecione uma unidade"}</Badge>
         </div>
       </section>

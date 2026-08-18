@@ -290,3 +290,4 @@
 - [x] Dividir a sincronização diária em etapas agendadas para evitar timeout de 2 minutos
 - [x] Executar teste controlado da rotina diária e confirmar a entrega do relatório Telegram
 - [x] Integrar o commit c93c8ca ao main, validar e publicar
+- [x] Simplificar o texto de orientação da tabela de preços da unidade
