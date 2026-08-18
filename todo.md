@@ -305,3 +305,4 @@
 - [x] Sincronizar e publicar a última versão disponível no GitHub (nova consulta)
 - [x] Sincronizar e publicar a última versão disponível no GitHub (consulta atual)
 - [x] Sincronizar e publicar a última versão disponível no GitHub (verificação atual)
+- [x] Sincronizar e publicar a última versão disponível no GitHub (nova solicitação)
