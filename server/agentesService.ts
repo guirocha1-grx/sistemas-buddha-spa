@@ -43,6 +43,34 @@ function jsonSeguro(texto: string | null | undefined) {
   try { return JSON.parse(texto) as unknown; } catch { return null; }
 }
 
+/** Normaliza o retorno do proxy antes de acessar choices e preserva um erro útil no log. */
+export function extrairConteudoRespostaLLM(resposta: unknown) {
+  const valor = resposta as {
+    choices?: Array<{ message?: { content?: unknown } }>;
+    error?: { message?: unknown } | unknown;
+    message?: unknown;
+    detail?: unknown;
+  } | null;
+  const conteudo = valor?.choices?.[0]?.message?.content;
+  if (typeof conteudo === "string") return conteudo;
+  if (Array.isArray(conteudo)) {
+    const texto = conteudo
+      .filter((parte): parte is { type?: unknown; text?: unknown } => Boolean(parte) && typeof parte === "object")
+      .filter((parte) => parte.type === "text" && typeof parte.text === "string")
+      .map((parte) => parte.text as string)
+      .join("");
+    if (texto) return texto;
+  }
+  const erro = typeof valor?.error === "object" && valor.error && "message" in valor.error && typeof valor.error.message === "string"
+    ? valor.error.message
+    : typeof valor?.message === "string"
+      ? valor.message
+      : typeof valor?.detail === "string"
+        ? valor.detail
+        : null;
+  throw new Error(`O modelo não retornou uma escolha válida${erro ? `: ${erro}` : ""}`);
+}
+
 function serializarRecursos(recursos: Awaited<ReturnType<typeof agentesDb.listarRecursosAtivos>>) {
   if (!recursos.length) return "Nenhum recurso oficial vigente foi configurado para esta unidade.";
   return recursos.map((recurso) => [
@@ -103,7 +131,7 @@ async function obterRotaComAurea(params: {
       },
     },
   });
-  const roteamento = jsonSeguro(resposta.choices[0]?.message.content as string | undefined) as { destino?: unknown; confianca?: unknown } | null;
+  const roteamento = jsonSeguro(extrairConteudoRespostaLLM(resposta)) as { destino?: unknown; confianca?: unknown } | null;
   return {
     destino: destinoEspecialistaValido(roteamento?.destino, params.especialistas.map(({ agente }) => agente.chave)),
     confianca: typeof roteamento?.confianca === "number" ? roteamento.confianca : null,
@@ -146,7 +174,7 @@ async function obterRespostaEspecialista(params: {
       },
     },
   });
-  return interpretarRespostaEspecialista(jsonSeguro(resposta.choices[0]?.message.content as string | undefined));
+  return interpretarRespostaEspecialista(jsonSeguro(extrairConteudoRespostaLLM(resposta)));
 }
 
 /** Executa receptor e especialistas com no máximo três handoffs invisíveis. */

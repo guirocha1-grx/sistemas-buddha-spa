@@ -37,7 +37,7 @@ vi.mock("./_core/llm", () => ({ invokeLLM }));
 vi.mock("./zapiApi", () => ({ zapiApi: { sendText, sendDocument, sendImage } }));
 vi.mock("./buddhaMktApi", () => ({ buddhaMktApi: { sendText: vi.fn() } }));
 
-import { aprovarEEnviarSugestao, processarMensagemRecebida, reprovarSugestao } from "./agentesService";
+import { aprovarEEnviarSugestao, extrairConteudoRespostaLLM, processarMensagemRecebida, reprovarSugestao } from "./agentesService";
 
 const respostaJson = (message: string, status = "in_process", action: string | null = null) => JSON.stringify({
   message,
@@ -60,6 +60,14 @@ const biancaAutomatica = { ...biancaAssistida, agente: { ...biancaAssistida.agen
 const dianaAssistida = { agente: { id: 6, chave: "diana", nome: "Diana", descricao: "Vouchers", modelo: "gpt-5-mini", modoOperacao: "assistido" }, prompt: { id: 16, conteudo: "Prepare o voucher." } };
 
 describe("orquestrador de agentes", () => {
+  it("extrai conteúdo de uma escolha válida sem depender de acesso inseguro", () => {
+    expect(extrairConteudoRespostaLLM({ choices: [{ message: { content: '{"destino":"estela"}' } }] })).toBe('{"destino":"estela"}');
+  });
+
+  it("mantém a causa do provedor quando a resposta não traz escolhas", () => {
+    expect(() => extrairConteudoRespostaLLM({ error: { message: "modelo indisponível" } })).toThrow("modelo indisponível");
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     agentesDb.buscarExecucaoPorMensagem.mockResolvedValue(undefined);
