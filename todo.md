@@ -287,3 +287,4 @@
 - [x] Sincronizar e publicar a última versão disponível no GitHub (consulta atual)
 - [x] Sincronizar e publicar a última versão disponível no GitHub (nova consulta)
 - [ ] Corrigir a entrega do relatório diário de Sincronizar tudo ao Telegram
+- [ ] Dividir a sincronização diária em etapas agendadas para evitar timeout de 2 minutos

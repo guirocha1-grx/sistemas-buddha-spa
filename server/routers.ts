@@ -29,6 +29,7 @@ import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTelegramParaRecepcao } from "./telegramApi";
 import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY, montarPedidoSugestaoMensagem } from "@shared/inboxAi";
 import { upsertHeartbeatJob } from "./_core/heartbeat";
+import { listarHeartbeatsSincronizacaoDiaria } from "./dailySyncReport";
 import { iniciarExecucaoFluxo } from "./fluxos";
 import { agentesRouter } from "./routers/agentes";
 
@@ -2719,14 +2720,9 @@ Diretrizes:
      * espera a sessão da plataforma Manus, não a do usuário logado).
      */
     registrarHeartbeatSincronizacaoDiaria: adminProcedure.mutation(async () => {
-      await upsertHeartbeatJob({
-        name: "cron-sincronizar-tudo-diario",
-        cron: "0 0 10 * * *",
-        path: "/api/scheduled/sincronizar-tudo-diario",
-        method: "POST",
-        description: "Roda a sincronização completa (todas as contas/adquirentes/comanda) e manda relatório diário pro Telegram.",
-      }, "");
-      return { success: true };
+      const jobs = listarHeartbeatsSincronizacaoDiaria();
+      await Promise.all(jobs.map((job) => upsertHeartbeatJob(job, "")));
+      return { success: true, totalJobs: jobs.length };
     }),
   }),
 

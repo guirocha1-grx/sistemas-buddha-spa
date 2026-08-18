@@ -1,29 +1,11 @@
 /**
- * Rotina diária (7h BRT) — roda a mesma sincronização do botão
- * "Sincronizar tudo" (client/src/components/GlobalSyncCenter.tsx) do
- * lado do servidor, com a mesma retomada automática de erros (1x), e
- * ao final manda um relatório pro Telegram do Guilherme
- * (TELEGRAM_CHAT_ID_GUILHERME): resumo financeiro do dia anterior por
- * unidade + status da conciliação Comanda x Contas (subseção
- * "Conciliação Recepção", mesmo texto que já aparece no hover das
- * células vermelhas em ComandaRecepcao.tsx, ver shared/conciliacao.ts).
- *
- * Registrada via botão admin (routers.ts:
- * financeiro.registrarHeartbeatSincronizacaoDiaria) usando
- * server/_core/heartbeat.ts, não no boot do servidor — mesmo padrão de
- * server/fluxosScheduled.ts.
- *
- * Reaproveita as MESMAS mutations tRPC que o botão "Sincronizar tudo"
- * já chama (appRouter.createCaller), em vez de duplicar a lógica de
- * cada integração aqui — um único lugar de verdade pra cada
- * sincronização, sem risco de o cron divergir do que roda pelo painel.
- * O caller usa um usuário sintético (role admin, sem restrição de
- * módulo) só pra satisfazer o middleware de autenticação dos
- * procedures — auditLog.userId não tem FK, então o id fictício não
- * quebra nada, e fica identificável no log (nome "Cron · Sincronização
- * diária").
+ * Sincronização diária — inicia às 7h BRT (10h UTC) em etapas independentes.
+ * Cada callback Heartbeat tem limite de 2 minutos; por isso não executamos as
+ * 14 integrações em uma única requisição. As etapas são idempotentes, recebem
+ * retry da plataforma e o relatório é enviado somente após a janela completa.
  */
 import type { Express, Request, Response } from "express";
+import type { HeartbeatJob } from "./_core/heartbeat";
 import { sdk } from "./_core/sdk";
 import { ENV } from "./_core/env";
 import { appRouter } from "./routers";
@@ -50,6 +32,26 @@ const CRON_USER: User = {
   lastSignedIn: new Date(),
 };
 
+const ETAPAS = [
+  { id: "inter", nome: "Banco Inter" },
+  { id: "caixa", nome: "Caixa Físico" },
+  { id: "mercadopago-conta", nome: "Mercado Pago (conta)" },
+  { id: "mercadopago-adquirente", nome: "Mercado Pago (adquirente)" },
+  { id: "comanda", nome: "Comanda consolidada" },
+  { id: "comanda-itens", nome: "Comanda itens" },
+  { id: "contas-drive", nome: "Contas bancárias → Drive" },
+] as const;
+
+type EtapaId = (typeof ETAPAS)[number]["id"];
+type ChaveEtapa = `ssu-${EtapaId}` | `rbs-${EtapaId}`;
+
+interface TarefaSync {
+  chave: ChaveEtapa;
+  unidadeNome: string;
+  etapa: string;
+  executar: () => Promise<unknown>;
+}
+
 function callerCron() {
   return appRouter.createCaller({
     req: {} as Request,
@@ -61,71 +63,66 @@ function callerCron() {
   });
 }
 
-interface TarefaSync {
-  unidadeNome: string;
-  etapa: string;
-  executar: () => Promise<unknown>;
-}
-
-/** BRT = UTC-3 — mesma conversão manual usada em client/src/pages/Mensagens.tsx (formatHora), pra não depender do fuso do processo Node. */
+/** BRT = UTC-3, sem depender do fuso do processo Node. */
 function dataIsoBrt(offsetDias: number): string {
   const BRT_OFFSET_MS = -3 * 60 * 60 * 1000;
   const agoraBrt = new Date(Date.now() + BRT_OFFSET_MS + offsetDias * 24 * 60 * 60 * 1000);
   return `${agoraBrt.getUTCFullYear()}-${String(agoraBrt.getUTCMonth() + 1).padStart(2, "0")}-${String(agoraBrt.getUTCDate()).padStart(2, "0")}`;
 }
 
-function montarTarefas(caller: ReturnType<typeof callerCron>, unidades: Array<{ id: number; nome: string }>): TarefaSync[] {
+function chaveUnidade(slug: string): "ssu" | "rbs" | null {
+  if (slug.includes("ribeirao") || slug.includes("rbs")) return "rbs";
+  if (slug.includes("ssu") || slug.includes("santa")) return "ssu";
+  return null;
+}
+
+function montarTarefas(unidades: Array<{ id: number; nome: string; slug: string }>): TarefaSync[] {
+  const caller = callerCron();
   const inicioMes = dataIsoBrt(0).slice(0, 8) + "01";
   const hoje = dataIsoBrt(0);
   const [ano, mes] = hoje.split("-").map(Number);
-
   const tarefas: TarefaSync[] = [];
+
   for (const unidade of unidades) {
-    tarefas.push({ unidadeNome: unidade.nome, etapa: "Banco Inter", executar: () => caller.inter.sincronizar({ unidadeId: unidade.id, dataInicio: inicioMes, dataFim: hoje }) });
-    tarefas.push({ unidadeNome: unidade.nome, etapa: "Caixa Físico", executar: () => caller.contas.sincronizarCaixaFisico({ unidadeId: unidade.id }) });
-    tarefas.push({ unidadeNome: unidade.nome, etapa: "Mercado Pago (conta)", executar: () => caller.contas.sincronizarMercadoPago({ unidadeId: unidade.id, dataInicio: inicioMes, dataFim: hoje }) });
-    tarefas.push({ unidadeNome: unidade.nome, etapa: "Mercado Pago (adquirente)", executar: () => caller.adquirentes.sincronizarMercadoPago({ unidadeId: unidade.id, dataInicio: inicioMes, dataFim: hoje }) });
-    tarefas.push({ unidadeNome: unidade.nome, etapa: "Comanda consolidada", executar: () => caller.comandaRecepcao.sincronizar({ unidadeId: unidade.id, ano, mes }) });
-    tarefas.push({ unidadeNome: unidade.nome, etapa: "Comanda itens", executar: () => caller.comandaRecepcao.sincronizarItens({ unidadeId: unidade.id, dataInicio: inicioMes, dataFim: hoje }) });
-    tarefas.push({ unidadeNome: unidade.nome, etapa: "Contas bancárias → Drive", executar: () => caller.comandaRecepcao.sincronizarContasBancariasParaDrive({ unidadeId: unidade.id, dataInicio: inicioMes, dataFim: hoje }) });
+    const chave = chaveUnidade(unidade.slug);
+    if (!chave) continue;
+    const base = { unidadeId: unidade.id, dataInicio: inicioMes, dataFim: hoje };
+    tarefas.push({ chave: `${chave}-inter`, unidadeNome: unidade.nome, etapa: "Banco Inter", executar: () => caller.inter.sincronizar(base) });
+    tarefas.push({ chave: `${chave}-caixa`, unidadeNome: unidade.nome, etapa: "Caixa Físico", executar: () => caller.contas.sincronizarCaixaFisico({ unidadeId: unidade.id }) });
+    tarefas.push({ chave: `${chave}-mercadopago-conta`, unidadeNome: unidade.nome, etapa: "Mercado Pago (conta)", executar: () => caller.contas.sincronizarMercadoPago(base) });
+    tarefas.push({ chave: `${chave}-mercadopago-adquirente`, unidadeNome: unidade.nome, etapa: "Mercado Pago (adquirente)", executar: () => caller.adquirentes.sincronizarMercadoPago(base) });
+    tarefas.push({ chave: `${chave}-comanda`, unidadeNome: unidade.nome, etapa: "Comanda consolidada", executar: () => caller.comandaRecepcao.sincronizar({ unidadeId: unidade.id, ano, mes }) });
+    tarefas.push({ chave: `${chave}-comanda-itens`, unidadeNome: unidade.nome, etapa: "Comanda itens", executar: () => caller.comandaRecepcao.sincronizarItens(base) });
+    tarefas.push({ chave: `${chave}-contas-drive`, unidadeNome: unidade.nome, etapa: "Contas bancárias → Drive", executar: () => caller.comandaRecepcao.sincronizarContasBancariasParaDrive(base) });
   }
   return tarefas;
 }
 
-async function rodarTarefas(tarefas: TarefaSync[]): Promise<Array<{ tarefa: TarefaSync; erro: string | null }>> {
-  const resultados: Array<{ tarefa: TarefaSync; erro: string | null }> = [];
-  for (const tarefa of tarefas) {
-    try {
-      await tarefa.executar();
-      resultados.push({ tarefa, erro: null });
-    } catch (error) {
-      resultados.push({ tarefa, erro: error instanceof Error ? error.message : String(error) });
-    }
-  }
-  return resultados;
+async function montarTarefasAtualizadas(): Promise<TarefaSync[]> {
+  const unidadesTodas = await getUnidades();
+  const unidades = unidadesTodas
+    .filter((u) => u.slug !== "buddha-mkt")
+    .map((u) => ({ id: u.id, nome: u.nome, slug: u.slug }));
+
+  return montarTarefas(unidades);
+}
+
+export async function executarEtapaSincronizacaoDiaria(chave: ChaveEtapa): Promise<{ unidade: string; etapa: string }> {
+  const tarefa = (await montarTarefasAtualizadas()).find((item) => item.chave === chave);
+  if (!tarefa) throw new Error(`Etapa diária não encontrada: ${chave}`);
+  await tarefa.executar();
+  return { unidade: tarefa.unidadeNome, etapa: tarefa.etapa };
 }
 
 function fmtMoeda(v: number): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
 }
 
-export async function executarSincronizacaoDiariaComRelatorio(): Promise<{ ok: number; comErro: number }> {
-  const caller = callerCron();
-  const unidadesTodas = await getUnidades();
-  const unidades = unidadesTodas.filter((u) => u.slug !== "buddha-mkt");
-  const tarefas = montarTarefas(caller, unidades);
-
-  let resultados = await rodarTarefas(tarefas);
-  const falhasPrimeiraPassada = resultados.filter((r) => r.erro);
-  if (falhasPrimeiraPassada.length > 0) {
-    const retentativa = await rodarTarefas(falhasPrimeiraPassada.map((f) => f.tarefa));
-    resultados = resultados.map((r) => (r.erro ? retentativa.find((rt) => rt.tarefa === r.tarefa) ?? r : r));
-  }
-
-  const falhasFinal = resultados.filter((r) => r.erro);
+export async function enviarRelatorioDiario(): Promise<void> {
   const ontem = dataIsoBrt(-1);
-
+  const unidades = (await getUnidades()).filter((u) => u.slug !== "buddha-mkt");
   const blocosPorUnidade: string[] = [];
+
   for (const unidade of unidades) {
     const [resumo, saidas, conciliacao] = await Promise.all([
       resumoContasBancariasPorDia(unidade.id, ontem, ontem),
@@ -134,9 +131,7 @@ export async function executarSincronizacaoDiariaComRelatorio(): Promise<{ ok: n
     ]);
     const valores = resumo.get(ontem);
     const entradas = (valores?.dinheiro ?? 0) + (valores?.cartaoDebito ?? 0) + (valores?.cartaoCredito ?? 0) + (valores?.pix ?? 0);
-    const diaConciliacao = conciliacao.find((d) => d.data === ontem);
-    const textoConciliacao = diaConciliacao?.texto;
-
+    const textoConciliacao = conciliacao.find((d) => d.data === ontem)?.texto;
     blocosPorUnidade.push(
       `🏢 *${unidade.nome}*\n` +
       `Entradas: ${fmtMoeda(entradas)} · Saídas: ${fmtMoeda(saidas)}\n` +
@@ -144,37 +139,70 @@ export async function executarSincronizacaoDiariaComRelatorio(): Promise<{ ok: n
     );
   }
 
-  const statusSync = falhasFinal.length === 0
-    ? `✅ Sincronização completa, sem erros (${resultados.length} etapas).`
-    : `⚠️ Sincronização com ${falhasFinal.length} etapa(s) ainda com erro após retomada automática:\n` +
-      falhasFinal.map((f) => `· ${f.tarefa.unidadeNome} — ${f.tarefa.etapa}: ${f.erro}`).join("\n");
-
   const [aaaa, mm, dd] = ontem.split("-");
-  const texto =
-    `📊 *Relatório diário — ${dd}/${mm}/${aaaa}*\n\n` +
-    `${statusSync}\n\n` +
+  const texto = `📊 *Relatório diário — ${dd}/${mm}/${aaaa}*\n\n` +
+    "✅ Etapas de sincronização diária concluídas.\n\n" +
     blocosPorUnidade.join("\n\n");
 
-  if (ENV.telegramChatIdGuilherme) {
-    await sendTelegramMessage(ENV.telegramChatIdGuilherme, texto);
-  } else {
-    console.error("[dailySyncReport] TELEGRAM_CHAT_ID_GUILHERME não configurado — relatório não enviado.");
+  if (!ENV.telegramChatIdGuilherme) {
+    throw new Error("TELEGRAM_CHAT_ID_GUILHERME não configurado");
   }
+  await sendTelegramMessage(ENV.telegramChatIdGuilherme, texto);
+}
 
-  return { ok: resultados.length - falhasFinal.length, comErro: falhasFinal.length };
+const ETAPAS_AGENDADAS: Array<{ chave: ChaveEtapa; minuto: number }> = [
+  { chave: "ssu-inter", minuto: 0 }, { chave: "ssu-caixa", minuto: 1 },
+  { chave: "ssu-mercadopago-conta", minuto: 2 }, { chave: "ssu-mercadopago-adquirente", minuto: 3 },
+  { chave: "ssu-comanda", minuto: 4 }, { chave: "ssu-comanda-itens", minuto: 5 },
+  { chave: "ssu-contas-drive", minuto: 6 }, { chave: "rbs-inter", minuto: 7 },
+  { chave: "rbs-caixa", minuto: 8 }, { chave: "rbs-mercadopago-conta", minuto: 9 },
+  { chave: "rbs-mercadopago-adquirente", minuto: 10 }, { chave: "rbs-comanda", minuto: 11 },
+  { chave: "rbs-comanda-itens", minuto: 12 }, { chave: "rbs-contas-drive", minuto: 13 },
+];
+
+export function listarHeartbeatsSincronizacaoDiaria(): HeartbeatJob[] {
+  const etapas = ETAPAS_AGENDADAS.map(({ chave, minuto }) => ({
+    name: `cron-sync-diaria-${chave}`,
+    cron: `0 ${minuto} 10 * * *`,
+    path: `/api/scheduled/sincronizar-tudo-diario-${chave}`,
+    method: "POST" as const,
+    description: `Sincronização diária ${chave}, executada às 7h${String(minuto).padStart(2, "0")} BRT.`,
+  }));
+  return [
+    ...etapas,
+    {
+      name: "cron-relatorio-sincronizacao-diaria",
+      cron: "0 20 10 * * *",
+      path: "/api/scheduled/relatorio-sincronizacao-diaria",
+      method: "POST",
+      description: "Envia ao Telegram o relatório após a janela diária de sincronização.",
+    },
+  ];
 }
 
 export function registerDailySyncScheduledRoute(app: Express) {
-  app.post("/api/scheduled/sincronizar-tudo-diario", async (req: Request, res: Response) => {
+  for (const { chave } of ETAPAS_AGENDADAS) {
+    app.post(`/api/scheduled/sincronizar-tudo-diario-${chave}`, async (req: Request, res: Response) => {
+      try {
+        const user = await sdk.authenticateRequest(req);
+        if (!user.isCron) return res.status(403).json({ error: "cron-only" });
+        const resultado = await executarEtapaSincronizacaoDiaria(chave);
+        res.json({ success: true, ...resultado });
+      } catch (error) {
+        console.error(`[dailySyncReport] Erro na etapa ${chave}:`, error);
+        res.status(500).json({ error: error instanceof Error ? error.message : "erro desconhecido", etapa: chave });
+      }
+    });
+  }
+
+  app.post("/api/scheduled/relatorio-sincronizacao-diaria", async (req: Request, res: Response) => {
     try {
       const user = await sdk.authenticateRequest(req);
-      if (!user.isCron) {
-        return res.status(403).json({ error: "cron-only" });
-      }
-      const resultado = await executarSincronizacaoDiariaComRelatorio();
-      res.json({ success: true, ...resultado });
+      if (!user.isCron) return res.status(403).json({ error: "cron-only" });
+      await enviarRelatorioDiario();
+      res.json({ success: true });
     } catch (error) {
-      console.error("[dailySyncReport] Erro no cron diário:", error);
+      console.error("[dailySyncReport] Erro no relatório diário:", error);
       res.status(500).json({ error: error instanceof Error ? error.message : "erro desconhecido" });
     }
   });
