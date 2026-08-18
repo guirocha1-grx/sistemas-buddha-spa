@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { podeAcessarRotaAdministrativa } from "../client/src/lib/adminAccess";
+import { podeAcessarRotaAdministrativa, ROTAS_ADMINISTRATIVAS } from "../client/src/lib/adminAccess";
 
 describe("guardas de rotas administrativas", () => {
-  it("permite Agentes e Configurações somente para administradores", () => {
-    expect(podeAcessarRotaAdministrativa("admin")).toBe(true);
-    expect(podeAcessarRotaAdministrativa("user")).toBe(false);
-    expect(podeAcessarRotaAdministrativa(undefined)).toBe(false);
+  it("redireciona usuários comuns nas rotas exatas de Agentes e Configurações", () => {
+    expect(ROTAS_ADMINISTRATIVAS).toEqual(["/agentes", "/configuracoes"]);
+    expect(podeAcessarRotaAdministrativa("/agentes", "admin")).toBe(true);
+    expect(podeAcessarRotaAdministrativa("/configuracoes", "admin")).toBe(true);
+    expect(podeAcessarRotaAdministrativa("/agentes", "user")).toBe(false);
+    expect(podeAcessarRotaAdministrativa("/configuracoes", "user")).toBe(false);
   });
 });

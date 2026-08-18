@@ -35,10 +35,10 @@ import Usuarios from "@/pages/Usuarios";
 import TratamentoErros from "@/pages/TratamentoErros";
 import PoliticaPrivacidade from "@/pages/PoliticaPrivacidade";
 
-function AdminOnly({ children }: { children: React.ReactNode }) {
+function AdminOnly({ children, rota }: { children: React.ReactNode; rota: string }) {
   const { user, loading } = useAuth();
   if (loading) return null;
-  return podeAcessarRotaAdministrativa(user?.role) ? <>{children}</> : <Redirect to="/" />;
+  return podeAcessarRotaAdministrativa(rota, user?.role) ? <>{children}</> : <Redirect to="/" />;
 }
 
 function Router() {
@@ -62,13 +62,13 @@ function Router() {
         <Route path="/financeiro/transacoes-entre-unidades" component={TransacoesEntreUnidades} />
         <Route path="/financeiro/parametros" component={Parametros} />
         <Route path="/copilot" component={Copilot} />
-        <Route path="/agentes">{() => <AdminOnly><Agentes /></AdminOnly>}</Route>
+        <Route path="/agentes">{() => <AdminOnly rota="/agentes"><Agentes /></AdminOnly>}</Route>
         <Route path="/agentes/tabela"><Redirect to="/tabela-precos" /></Route>
         <Route path="/tabela-precos" component={Tabela} />
         <Route path="/laminas" component={Laminas} />
         <Route path="/leads" component={Leads} />
         <Route path="/config-inbox" component={ConfigInbox} />
-        <Route path="/configuracoes">{() => <AdminOnly><Configuracoes /></AdminOnly>}</Route>
+        <Route path="/configuracoes">{() => <AdminOnly rota="/configuracoes"><Configuracoes /></AdminOnly>}</Route>
         <Route path="/usuarios" component={Usuarios} />
         <Route path="/auditoria" component={AuditLog} />
         <Route path="/tratamento-erros" component={TratamentoErros} />
