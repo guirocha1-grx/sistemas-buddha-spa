@@ -100,6 +100,47 @@ export type InvokeResult = {
   };
 };
 
+/** Converte uma resposta da Responses API no formato de Chat Completions usado pelo CRM. */
+export function normalizarRespostaLLM(payload: unknown): InvokeResult {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("LLM returned an invalid response body");
+  }
+
+  const body = payload as Record<string, unknown>;
+  if (Array.isArray(body.choices)) return payload as InvokeResult;
+
+  const textos: string[] = [];
+  if (typeof body.output_text === "string") textos.push(body.output_text);
+  if (Array.isArray(body.output)) {
+    for (const item of body.output) {
+      if (!item || typeof item !== "object") continue;
+      const saida = item as Record<string, unknown>;
+      if (typeof saida.text === "string") textos.push(saida.text);
+      if (!Array.isArray(saida.content)) continue;
+      for (const parte of saida.content) {
+        if (!parte || typeof parte !== "object") continue;
+        const conteudo = parte as Record<string, unknown>;
+        if (typeof conteudo.text === "string") textos.push(conteudo.text);
+      }
+    }
+  }
+
+  const content = textos.join("\n").trim();
+  if (!content) {
+    const detail = typeof body.error === "object" && body.error && "message" in body.error && typeof body.error.message === "string"
+      ? body.error.message
+      : undefined;
+    throw new Error(`LLM response did not contain output text${detail ? `: ${detail}` : ""}`);
+  }
+
+  return {
+    id: typeof body.id === "string" ? body.id : "responses-api",
+    created: typeof body.created === "number" ? body.created : typeof body.created_at === "number" ? body.created_at : Date.now(),
+    model: typeof body.model === "string" ? body.model : "unknown",
+    choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
+  };
+}
+
 export type JsonSchema = {
   name: string;
   schema: Record<string, unknown>;
@@ -417,7 +458,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     );
   }
 
-  return (await response.json()) as InvokeResult;
+  return normalizarRespostaLLM(await response.json());
 }
 
 export type ModelInfo = {
