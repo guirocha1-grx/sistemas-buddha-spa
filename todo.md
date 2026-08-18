@@ -296,3 +296,4 @@
 - [x] Integrar o commit 3ec4505, verificar migrações, validar e publicar
 - [x] Integrar o commit 8bf38be, verificar migrações, validar e publicar
 - [x] Integrar o commit 172842e, verificar migrações, validar e publicar
+- [x] Integrar o commit c91fef4, verificar migrações, validar e publicar
