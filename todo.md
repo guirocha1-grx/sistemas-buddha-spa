@@ -204,7 +204,7 @@
 - [x] Corrigir a transcrição de áudios no Inbox WhatsApp
 - [x] Publicar a correção de transcrição de áudio do Inbox
 - [x] Sincronizar o GitHub após publicar a correção de transcrição
-- [ ] Definir e executar a normalização de telefones entre WhatsApp, clientes e conversas do Inbox — pausado a pedido do usuário, sem alterações estruturais
+- [x] Aplicar normalização operacional de telefones no Inbox — índice canônico, reindexação, variantes brasileiras e vinculação manual concluídos e confirmados pelo usuário
 - [x] Criar sugestão de mensagem por IA no Inbox com aceite ou descarte
 - [x] Criar área editável de prompt de mensagem por IA em Configurações
 - [x] Publicar a sugestão de mensagem por IA e a configuração de prompt
@@ -289,3 +289,4 @@
 - [x] Corrigir a entrega do relatório diário de Sincronizar tudo ao Telegram
 - [x] Dividir a sincronização diária em etapas agendadas para evitar timeout de 2 minutos
 - [x] Executar teste controlado da rotina diária e confirmar a entrega do relatório Telegram
+- [x] Integrar o commit c93c8ca ao main, validar e publicar
