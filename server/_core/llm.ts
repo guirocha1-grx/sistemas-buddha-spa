@@ -115,11 +115,13 @@ export function normalizarRespostaLLM(payload: unknown): InvokeResult {
   })) return payload as InvokeResult;
 
   const textos: string[] = [];
+  const tiposSaida = new Set<string>();
   if (typeof body.output_text === "string") textos.push(body.output_text);
   if (Array.isArray(body.output)) {
     for (const item of body.output) {
       if (!item || typeof item !== "object") continue;
       const saida = item as Record<string, unknown>;
+      if (typeof saida.type === "string") tiposSaida.add(saida.type);
       if (typeof saida.text === "string") textos.push(saida.text);
       if (!Array.isArray(saida.content)) continue;
       for (const parte of saida.content) {
@@ -135,7 +137,8 @@ export function normalizarRespostaLLM(payload: unknown): InvokeResult {
     const detail = typeof body.error === "object" && body.error && "message" in body.error && typeof body.error.message === "string"
       ? body.error.message
       : undefined;
-    throw new Error(`LLM response did not contain output text${detail ? `: ${detail}` : ""}`);
+    const formatos = tiposSaida.size > 0 ? `; output types: ${Array.from(tiposSaida).join(", ")}` : "";
+    throw new Error(`LLM response did not contain output text${detail ? `: ${detail}` : ""}${formatos}`);
   }
 
   return {

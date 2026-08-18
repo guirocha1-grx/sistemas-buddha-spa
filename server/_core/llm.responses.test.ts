@@ -31,4 +31,8 @@ describe("normalizarRespostaLLM", () => {
   it("falha com diagnóstico quando não existe texto de saída", () => {
     expect(() => normalizarRespostaLLM({ id: "resp_2", output: [] })).toThrow("did not contain output text");
   });
+
+  it("informa o tipo de saída quando o provedor devolve apenas uma ferramenta", () => {
+    expect(() => normalizarRespostaLLM({ output: [{ type: "web_search_call" }] })).toThrow("web_search_call");
+  });
 });
