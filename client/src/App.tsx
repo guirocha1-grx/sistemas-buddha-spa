@@ -1,6 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { podeAcessarRotaAdministrativa } from "@/lib/adminAccess";
 import NotFound from "@/pages/NotFound";
 import { Redirect, Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -37,7 +38,7 @@ import PoliticaPrivacidade from "@/pages/PoliticaPrivacidade";
 function AdminOnly({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return null;
-  return user?.role === "admin" ? <>{children}</> : <Redirect to="/" />;
+  return podeAcessarRotaAdministrativa(user?.role) ? <>{children}</> : <Redirect to="/" />;
 }
 
 function Router() {
