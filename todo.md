@@ -59,3 +59,6 @@
 - [x] Implementar o envio controlado dos modelos visuais de voucher, com ação única, histórico no Inbox e teste de aprovação humana.
 - [x] Implementar o envio controlado do quadro visual de Day Spa, com ação única, histórico no Inbox e teste de aprovação humana.
 - [ ] Ajustar os testes de ambiente do CRM: Google Sheets sem credenciais e expectativa legada de duas unidades, sem alterar o escopo inicial de Ribeirão Shopping.
+- [x] Confirmar a janela de histórico e o estado estruturado usados pelo copilot antes do teste conjunto dos seis agentes.
+- [ ] Preparar os seis agentes para teste conjunto em modo assistido, mantendo toda automação desabilitada.
+- [ ] Registrar o estado atual em checkpoint publicado e enviar a versão para o repositório GitHub informado.
