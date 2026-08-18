@@ -181,7 +181,7 @@ export default function Agentes() {
             </CardContent>
           </Card>
           <Card className="bg-[#fbf7ee] border-[#ddc998]">
-            <CardContent className="p-4 flex gap-3"><MessageCircle className="w-5 h-5 shrink-0 text-[#7b5420]" /><p className="text-sm leading-5 text-[#60481f]">Para configurar prompts, ativar versões e mudar o modo de operação, acesse <button className="font-semibold underline underline-offset-2" onClick={() => setLocation("/configuracoes")}>Configurações</button>.</p></CardContent>
+            <CardContent className="p-4 flex gap-3"><MessageCircle className="w-5 h-5 shrink-0 text-[#7b5420]" /><p className="text-sm leading-5 text-[#60481f]">Prompts, versões e modo de operação são administrados exclusivamente por usuários com perfil administrativo.</p></CardContent>
           </Card>
         </aside>
       </div>

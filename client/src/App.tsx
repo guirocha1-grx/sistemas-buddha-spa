@@ -1,7 +1,8 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useAuth } from "@/_core/hooks/useAuth";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Redirect, Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
@@ -33,6 +34,12 @@ import Usuarios from "@/pages/Usuarios";
 import TratamentoErros from "@/pages/TratamentoErros";
 import PoliticaPrivacidade from "@/pages/PoliticaPrivacidade";
 
+function AdminOnly({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  return user?.role === "admin" ? <>{children}</> : <Redirect to="/" />;
+}
+
 function Router() {
   return (
     <DashboardLayout>
@@ -54,12 +61,13 @@ function Router() {
         <Route path="/financeiro/transacoes-entre-unidades" component={TransacoesEntreUnidades} />
         <Route path="/financeiro/parametros" component={Parametros} />
         <Route path="/copilot" component={Copilot} />
-        <Route path="/agentes" component={Agentes} />
-        <Route path="/agentes/tabela" component={Tabela} />
+        <Route path="/agentes">{() => <AdminOnly><Agentes /></AdminOnly>}</Route>
+        <Route path="/agentes/tabela"><Redirect to="/tabela-precos" /></Route>
+        <Route path="/tabela-precos" component={Tabela} />
         <Route path="/laminas" component={Laminas} />
         <Route path="/leads" component={Leads} />
         <Route path="/config-inbox" component={ConfigInbox} />
-        <Route path="/configuracoes" component={Configuracoes} />
+        <Route path="/configuracoes">{() => <AdminOnly><Configuracoes /></AdminOnly>}</Route>
         <Route path="/usuarios" component={Usuarios} />
         <Route path="/auditoria" component={AuditLog} />
         <Route path="/tratamento-erros" component={TratamentoErros} />

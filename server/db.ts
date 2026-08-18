@@ -209,6 +209,19 @@ export async function getUnidadesParaUsuario(userId: number, role: "user" | "adm
   return todas.filter((u) => permitidas.has(u.id));
 }
 
+const CAMPOS_CREDENCIAIS_UNIDADE = [
+  "belleToken", "zapiInstanceId", "zapiToken", "zapiClientToken",
+  "interClientId", "interClientSecret", "interCertificado", "interChavePrivada",
+  "mpAccessToken", "sicrediClientId", "sicrediClientSecret", "sicrediCertificado", "sicrediChavePrivada",
+] as const;
+
+/** Remove segredos antes de retornar unidades a procedimentos acessíveis a usuários não administradores. */
+export function unidadeSemCredenciais<T extends Record<string, unknown>>(unidade: T): Omit<T, (typeof CAMPOS_CREDENCIAIS_UNIDADE)[number]> {
+  const publica: Record<string, unknown> = { ...unidade };
+  for (const campo of CAMPOS_CREDENCIAIS_UNIDADE) delete publica[campo];
+  return publica as Omit<T, (typeof CAMPOS_CREDENCIAIS_UNIDADE)[number]>;
+}
+
 export async function getUnidadeById(id: number) {
   const db = await getDb();
   if (!db) return undefined;

@@ -2,18 +2,16 @@ import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import * as agentesDb from "../agentesDb";
 import { aprovarEEnviarSugestao, processarMensagemRecebida, reprovarSugestao } from "../agentesService";
-import { TRPCError } from "@trpc/server";
 
 const motivoAvaliacao = z.enum(["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"]);
 
-async function validarResponsavelDaSugestao(params: { sugestaoId: number; role: string; atendenteId?: number }) {
-  if (params.role === "admin") return;
-  if (!params.atendenteId) throw new TRPCError({ code: "FORBIDDEN", message: "Usuário sem consultor vinculado" });
-  const registro = await agentesDb.buscarSugestao(params.sugestaoId);
-  if (!registro || registro.conversa.atendenteResponsavelId !== params.atendenteId) {
-    throw new TRPCError({ code: "FORBIDDEN", message: "Esta sugestão pertence a outro consultor" });
-  }
-}
+export const tabelaPrecosRouter = router({
+  list: protectedProcedure.input(z.object({
+    unidadeId: z.number(),
+    busca: z.string().trim().max(100).optional(),
+    categoria: z.string().trim().max(80).optional(),
+  })).query(({ input }) => agentesDb.listarTabelaPrecos(input)),
+});
 
 export const agentesRouter = router({
   configuracao: router({
@@ -65,32 +63,20 @@ export const agentesRouter = router({
       ativo: z.boolean(),
     })).mutation(({ input }) => agentesDb.salvarRecursoAgente(input)),
   }),
-  tabela: router({
-    list: protectedProcedure.input(z.object({
-      unidadeId: z.number(),
-      busca: z.string().trim().max(100).optional(),
-      categoria: z.string().trim().max(80).optional(),
-    })).query(({ input }) => agentesDb.listarTabelaPrecos(input)),
-  }),
   fila: router({
-    list: protectedProcedure.input(z.object({ unidadeId: z.number().optional() }).optional())
-      .query(({ input, ctx }) => {
-        if (ctx.user.role !== "admin" && !ctx.atendente?.id) return [];
-        return agentesDb.listarFilaSugestoes(input?.unidadeId, ctx.user.role === "admin" ? undefined : ctx.atendente?.id);
-      }),
-    aprovarEEnviar: protectedProcedure.input(z.object({ sugestaoId: z.number(), comentario: z.string().trim().max(2000).optional(), motivo: motivoAvaliacao.optional() }))
+    list: adminProcedure.input(z.object({ unidadeId: z.number().optional() }).optional())
+      .query(({ input }) => agentesDb.listarFilaSugestoes(input?.unidadeId)),
+    aprovarEEnviar: adminProcedure.input(z.object({ sugestaoId: z.number(), comentario: z.string().trim().max(2000).optional(), motivo: motivoAvaliacao.optional() }))
       .mutation(async ({ input, ctx }) => {
-        await validarResponsavelDaSugestao({ sugestaoId: input.sugestaoId, role: ctx.user.role, atendenteId: ctx.atendente?.id });
         const origemCabecalho = ctx.req.headers.origin;
         const protocolo = String(ctx.req.headers["x-forwarded-proto"] ?? ctx.req.protocol ?? "https").split(",")[0];
         const host = String(ctx.req.headers["x-forwarded-host"] ?? ctx.req.headers.host ?? "").split(",")[0];
         const origemPublica = typeof origemCabecalho === "string" && origemCabecalho.startsWith("http") ? origemCabecalho : host ? `${protocolo}://${host}` : null;
-        return aprovarEEnviarSugestao({ ...input, userId: ctx.user.id, atendenteId: ctx.atendente?.id, origemPublica });
+        return aprovarEEnviarSugestao({ ...input, userId: ctx.user.id, origemPublica });
       }),
-    reprovar: protectedProcedure.input(z.object({ sugestaoId: z.number(), comentario: z.string().trim().max(2000).optional(), motivo: motivoAvaliacao.optional() }))
+    reprovar: adminProcedure.input(z.object({ sugestaoId: z.number(), comentario: z.string().trim().max(2000).optional(), motivo: motivoAvaliacao.optional() }))
       .mutation(async ({ input, ctx }) => {
-        await validarResponsavelDaSugestao({ sugestaoId: input.sugestaoId, role: ctx.user.role, atendenteId: ctx.atendente?.id });
-        return reprovarSugestao({ ...input, userId: ctx.user.id, atendenteId: ctx.atendente?.id });
+        return reprovarSugestao({ ...input, userId: ctx.user.id });
       }),
   }),
   metricas: adminProcedure.input(z.object({ unidadeId: z.number().optional(), inicio: z.date().optional(), fim: z.date().optional() }).optional())
