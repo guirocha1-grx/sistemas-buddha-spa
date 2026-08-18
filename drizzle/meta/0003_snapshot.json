@@ -1,8 +1,8 @@
 {
+  "id": "8f0727ef-4c9c-45ea-b75a-e9a18a9f05a2",
+  "prevId": "392171e0-ea3a-4d86-bfe6-81b698c476f8",
   "version": "5",
   "dialect": "mysql",
-  "id": "392171e0-ea3a-4d86-bfe6-81b698c476f8",
-  "prevId": "57be1fff-6ce9-489b-ad2b-c1e999561599",
   "tables": {
     "adquirente_vendas": {
       "name": "adquirente_vendas",
@@ -256,8 +256,8 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "onUpdate": true,
-          "default": "(now())"
+          "default": "(now())",
+          "onUpdate": true
         }
       },
       "indexes": {},
@@ -375,8 +375,8 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "onUpdate": true,
-          "default": "(now())"
+          "default": "(now())",
+          "onUpdate": true
         }
       },
       "indexes": {
@@ -467,8 +467,8 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "onUpdate": true,
-          "default": "(now())"
+          "default": "(now())",
+          "onUpdate": true
         }
       },
       "indexes": {},
@@ -725,8 +725,8 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "onUpdate": true,
-          "default": "(now())"
+          "default": "(now())",
+          "onUpdate": true
         }
       },
       "indexes": {
@@ -1134,8 +1134,8 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "onUpdate": true,
-          "default": "(now())"
+          "default": "(now())",
+          "onUpdate": true
         }
       },
       "indexes": {},
@@ -1274,8 +1274,8 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "onUpdate": true,
-          "default": "(now())"
+          "default": "(now())",
+          "onUpdate": true
         }
       },
       "indexes": {},
@@ -1364,8 +1364,8 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "onUpdate": true,
-          "default": "(now())"
+          "default": "(now())",
+          "onUpdate": true
         }
       },
       "indexes": {},
@@ -1593,8 +1593,8 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "onUpdate": true,
-          "default": "(now())"
+          "default": "(now())",
+          "onUpdate": true
         }
       },
       "indexes": {},
@@ -1677,8 +1677,8 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "onUpdate": true,
-          "default": "(now())"
+          "default": "(now())",
+          "onUpdate": true
         },
         "lastSignedIn": {
           "name": "lastSignedIn",
@@ -1712,9 +1712,9 @@
   },
   "views": {},
   "_meta": {
+    "columns": {},
     "schemas": {},
-    "tables": {},
-    "columns": {}
+    "tables": {}
   },
   "internal": {
     "tables": {},

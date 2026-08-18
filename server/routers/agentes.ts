@@ -68,7 +68,14 @@ export const agentesRouter = router({
   fila: router({
     list: adminProcedure.input(z.object({ unidadeId: z.number().optional() }).optional())
       .query(({ input }) => agentesDb.listarFilaSugestoes(input?.unidadeId)),
-    aprovarEEnviar: adminProcedure.input(z.object({ sugestaoId: z.number(), comentario: z.string().trim().max(2000).optional(), motivo: motivoAvaliacao.optional(), atendenteId: z.number().optional() }))
+    aprovarEEnviar: adminProcedure.input(z.object({
+      sugestaoId: z.number(),
+      textoFinal: z.string().trim().min(1).max(4000).optional(),
+      tipoRevisao: z.enum(["aceita_como_esta", "editada"]).optional(),
+      comentario: z.string().trim().max(2000).optional(),
+      motivo: motivoAvaliacao.optional(),
+      atendenteId: z.number().optional(),
+    }))
       .mutation(async ({ input, ctx }) => {
         const origemCabecalho = ctx.req.headers.origin;
         const protocolo = String(ctx.req.headers["x-forwarded-proto"] ?? ctx.req.protocol ?? "https").split(",")[0];
@@ -76,7 +83,7 @@ export const agentesRouter = router({
         const origemPublica = typeof origemCabecalho === "string" && origemCabecalho.startsWith("http") ? origemCabecalho : host ? `${protocolo}://${host}` : null;
         return aprovarEEnviarSugestao({ ...input, userId: ctx.user.id, origemPublica });
       }),
-    reprovar: adminProcedure.input(z.object({ sugestaoId: z.number(), comentario: z.string().trim().max(2000).optional(), motivo: motivoAvaliacao.optional() }))
+    reprovar: adminProcedure.input(z.object({ sugestaoId: z.number(), comentario: z.string().trim().max(2000).optional(), motivo: motivoAvaliacao.optional(), atendenteId: z.number().optional() }))
       .mutation(async ({ input, ctx }) => {
         return reprovarSugestao({ ...input, userId: ctx.user.id });
       }),

@@ -1387,6 +1387,8 @@ export const agentesSugestoes = mysqlTable("agentes_sugestoes", {
   variaveis: json("variaveis").$type<Record<string, unknown>>(),
   acaoPendente: varchar("acaoPendente", { length: 128 }),
   avaliacao: mysqlEnum("avaliacao", ["pendente", "aprovada", "reprovada"]).default("pendente").notNull(),
+  tipoRevisao: mysqlEnum("tipoRevisao", ["aceita_como_esta", "editada", "rejeitada"]),
+  textoFinal: text("textoFinal"),
   motivoAvaliacao: mysqlEnum("motivoAvaliacao", ["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"]),
   comentarioAvaliacao: text("comentarioAvaliacao"),
   avaliadaPorUserId: int("avaliadaPorUserId"),

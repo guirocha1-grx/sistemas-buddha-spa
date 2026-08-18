@@ -170,7 +170,7 @@ describe("orquestrador de agentes", () => {
 
   it("registra uma reprovação com motivo operacional", async () => {
     await reprovarSugestao({ sugestaoId: 91, comentario: "Não pode confirmar disponibilidade", motivo: "operacional", userId: 7, atendenteId: 3 });
-    expect(agentesDb.avaliarSugestao).toHaveBeenCalledWith(expect.objectContaining({ sugestaoId: 91, avaliacao: "reprovada", motivo: "operacional" }));
+    expect(agentesDb.avaliarSugestao).toHaveBeenCalledWith(expect.objectContaining({ sugestaoId: 91, avaliacao: "reprovada", tipoRevisao: "rejeitada", motivo: "operacional" }));
   });
 
   it("aprova, envia e registra uma ação pendente da conversa", async () => {
@@ -182,9 +182,33 @@ describe("orquestrador de agentes", () => {
 
     await expect(aprovarEEnviarSugestao({ sugestaoId: 91, comentario: "Ajustado", motivo: "tom", userId: 7, atendenteId: 3 })).resolves.toEqual({ success: true });
 
-    expect(agentesDb.avaliarSugestao).toHaveBeenCalledWith(expect.objectContaining({ avaliacao: "aprovada", motivo: "tom" }));
+    expect(agentesDb.avaliarSugestao).toHaveBeenCalledWith(expect.objectContaining({ avaliacao: "aprovada", tipoRevisao: "aceita_como_esta", textoFinal: "Posso enviar a tabela de valores.", motivo: "tom" }));
     expect(db.insertInboxMensagem).toHaveBeenCalledWith(expect.objectContaining({ conteudo: "*Ana:*\nPosso enviar a tabela de valores." }));
     expect(agentesDb.registrarAcaoConversa).toHaveBeenCalledWith(10, "enviar_tabela", 91);
+  });
+
+  it("envia o texto editado pela equipe e registra a revisão para aprendizado", async () => {
+    agentesDb.buscarSugestao.mockResolvedValue({ sugestao: { id: 95, conversaId: 10, sugestao: "Posso enviar a tabela de valores.", acaoPendente: null } });
+    agentesDb.obterNomeAtendente.mockResolvedValue("Ana");
+    db.getInboxConversaById.mockResolvedValue({ id: 10, unidadeId: 1, canal: "zapi", telefone: "5516999999999", nomeContato: "Carla" });
+    db.getUnidadeById.mockResolvedValue({ zapiInstanceId: "instancia", zapiToken: "token", zapiClientToken: "client" });
+    sendText.mockResolvedValue({ messageId: "zapi-edicao-1" });
+
+    await expect(aprovarEEnviarSugestao({
+      sugestaoId: 95,
+      textoFinal: "Posso enviar a tabela atualizada de valores para você.",
+      tipoRevisao: "editada",
+      userId: 7,
+      atendenteId: 3,
+    })).resolves.toEqual({ success: true });
+
+    expect(agentesDb.avaliarSugestao).toHaveBeenCalledWith(expect.objectContaining({
+      sugestaoId: 95,
+      avaliacao: "aprovada",
+      tipoRevisao: "editada",
+      textoFinal: "Posso enviar a tabela atualizada de valores para você.",
+    }));
+    expect(db.insertInboxMensagem).toHaveBeenCalledWith(expect.objectContaining({ conteudo: "*Ana:*\nPosso enviar a tabela atualizada de valores para você." }));
   });
 
   it("envia o menu em PDF somente após a aprovação humana", async () => {

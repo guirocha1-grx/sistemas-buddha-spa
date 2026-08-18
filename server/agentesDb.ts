@@ -335,6 +335,10 @@ export async function listarDiagnosticoConversa(conversaId: number, limite = 30)
         texto: sugestao.sugestao,
         statusAgente: sugestao.statusAgente,
         avaliacao: sugestao.avaliacao,
+        tipoRevisao: sugestao.tipoRevisao,
+        textoFinal: sugestao.textoFinal,
+        motivoAvaliacao: sugestao.motivoAvaliacao,
+        comentarioAvaliacao: sugestao.comentarioAvaliacao,
         acaoPendente: sugestao.acaoPendente,
         enviadaEm: sugestao.enviadaEm,
         erroEnvio: sugestao.erroEnvio,
@@ -511,6 +515,8 @@ export async function listarFilaSugestoes(unidadeId?: number, atendenteResponsav
 export async function avaliarSugestao(params: {
   sugestaoId: number;
   avaliacao: "aprovada" | "reprovada";
+  tipoRevisao: "aceita_como_esta" | "editada" | "rejeitada";
+  textoFinal?: string | null;
   comentario?: string | null;
   motivo?: "informacao" | "tom" | "roteamento" | "contexto" | "comercial" | "operacional" | "outro" | null;
   userId: number;
@@ -523,6 +529,8 @@ export async function avaliarSugestao(params: {
   if (atual[0].avaliacao !== "pendente") throw new Error("Esta sugestão já foi avaliada");
   await db.update(agentesSugestoes).set({
     avaliacao: params.avaliacao,
+    tipoRevisao: params.tipoRevisao,
+    textoFinal: params.textoFinal?.trim() || null,
     comentarioAvaliacao: params.comentario?.trim() || null,
     motivoAvaliacao: params.motivo ?? null,
     avaliadaPorUserId: params.userId,

@@ -79,6 +79,9 @@ function TickEntrega({ status }: { status?: "enviada" | "entregue" | "lida" }) {
 }
 
 const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+const MOTIVOS_AVALIACAO = ["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"] as const;
+type MotivoAvaliacao = typeof MOTIVOS_AVALIACAO[number];
+type SugestaoEmRevisao = { id: number; textoOriginal: string; agente: string | null };
 
 function statusDotClass(status: string) {
   if (status === "encerrada") return "bg-gray-400";
@@ -164,6 +167,10 @@ export default function Mensagens() {
   const [scriptPickerOpen, setScriptPickerOpen] = useState(false);
   const [modalSugestaoIa, setModalSugestaoIa] = useState(false);
   const [sugestaoIa, setSugestaoIa] = useState("");
+  const [sugestaoEmRevisao, setSugestaoEmRevisao] = useState<SugestaoEmRevisao | null>(null);
+  const [modalRejeitarSugestao, setModalRejeitarSugestao] = useState(false);
+  const [motivoRejeicao, setMotivoRejeicao] = useState<MotivoAvaliacao | "">("");
+  const [comentarioRejeicao, setComentarioRejeicao] = useState("");
   const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
   const [midiasComFalha, setMidiasComFalha] = useState<Set<number>>(() => new Set());
   // Autocomplete de @menção em grupo — mentionInicio é o índice do "@" no
@@ -248,6 +255,8 @@ export default function Mensagens() {
   const aprovarSugestaoAgenteMutation = trpc.agentes.fila.aprovarEEnviar.useMutation({
     onSuccess: () => {
       toast.success("Sugestão enviada ao cliente.");
+      setTexto("");
+      setSugestaoEmRevisao(null);
       utils.agentes.diagnostico.conversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
       utils.inbox.mensagens.list.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
       utils.inbox.conversas.list.invalidate();
@@ -258,6 +267,11 @@ export default function Mensagens() {
   const reprovarSugestaoAgenteMutation = trpc.agentes.fila.reprovar.useMutation({
     onSuccess: () => {
       toast.success("Sugestão reprovada.");
+      setModalRejeitarSugestao(false);
+      setMotivoRejeicao("");
+      setComentarioRejeicao("");
+      setTexto("");
+      setSugestaoEmRevisao(null);
       utils.agentes.diagnostico.conversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
     },
     onError: (error) => toast.error(error.message),
@@ -412,6 +426,7 @@ export default function Mensagens() {
     setNomeCriarCliente(conversaSelecionada?.nomeContato || "");
     setMentionInicio(null);
     setMentionados(new Set());
+    setSugestaoEmRevisao(null);
   }, [conversaSelecionadaId, conversaSelecionada?.nomeContato]);
 
   function toggleSom() {
@@ -434,9 +449,59 @@ export default function Mensagens() {
   }, [mensagens, buscaMensagem]);
 
   const etiquetasAtuais = parseEtiquetas(conversaSelecionada?.etiquetas ?? null);
+  const sugestaoFoiEditada = !!sugestaoEmRevisao && texto.trim() !== sugestaoEmRevisao.textoOriginal.trim();
+
+  function carregarSugestaoNoRascunho(sugestao: { id: number; texto: string; agente: string | null }) {
+    if (!conversaSelecionadaId || !sugestao.texto.trim()) return;
+    if (texto.trim() && (!sugestaoEmRevisao || sugestaoEmRevisao.id !== sugestao.id)) {
+      toast.error("Envie, descarte ou limpe o rascunho atual antes de abrir outra sugestão.");
+      return;
+    }
+    setTexto(sugestao.texto);
+    setSugestaoEmRevisao({ id: sugestao.id, textoOriginal: sugestao.texto, agente: sugestao.agente });
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      const tamanho = sugestao.texto.length;
+      textareaRef.current?.setSelectionRange(tamanho, tamanho);
+    });
+  }
+
+  function enviarRascunhoRevisado() {
+    if (!sugestaoEmRevisao || !texto.trim()) return;
+    aprovarSugestaoAgenteMutation.mutate({
+      sugestaoId: sugestaoEmRevisao.id,
+      textoFinal: texto.trim(),
+      tipoRevisao: sugestaoFoiEditada ? "editada" : "aceita_como_esta",
+      atendenteId: atendente?.id,
+    });
+  }
+
+  function abrirRejeicaoSugestao() {
+    if (!sugestaoEmRevisao) return;
+    setMotivoRejeicao("");
+    setComentarioRejeicao("");
+    setModalRejeitarSugestao(true);
+  }
+
+  function confirmarRejeicaoSugestao() {
+    if (!sugestaoEmRevisao || !motivoRejeicao) {
+      toast.error("Selecione o motivo da rejeição.");
+      return;
+    }
+    reprovarSugestaoAgenteMutation.mutate({
+      sugestaoId: sugestaoEmRevisao.id,
+      motivo: motivoRejeicao,
+      comentario: comentarioRejeicao.trim() || undefined,
+      atendenteId: atendente?.id,
+    });
+  }
 
   function handleEnviar() {
     if (!texto.trim() || !conversaSelecionadaId) return;
+    if (sugestaoEmRevisao) {
+      toast.error("Revise a sugestão pelos botões do rascunho antes de enviar.");
+      return;
+    }
     enviarMutation.mutate({
       conversaId: conversaSelecionadaId,
       texto: texto.trim(),
@@ -1046,6 +1111,29 @@ export default function Mensagens() {
                       }
                     }}
                   />
+                  {sugestaoEmRevisao && (
+                    <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50/70 p-2.5 dark:bg-amber-950/20">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">Sugestão de {sugestaoEmRevisao.agente ?? "agente"} em revisão</p>
+                          <p className="mt-0.5 text-[11px] text-amber-800/80 dark:text-amber-200/75">{sugestaoFoiEditada ? "Texto alterado pela equipe: a edição será registrada para aperfeiçoar os prompts." : "Revise o texto antes do envio. A decisão será registrada para aperfeiçoar os prompts."}</p>
+                        </div>
+                        <Badge variant="outline" className="shrink-0 border-amber-300 bg-white/70 text-[10px] text-amber-800">{sugestaoFoiEditada ? "Editada" : "Original"}</Badge>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Button size="sm" className="h-7 text-xs bg-emerald-700 hover:bg-emerald-800" disabled={!texto.trim() || aprovarSugestaoAgenteMutation.isPending || reprovarSugestaoAgenteMutation.isPending} onClick={enviarRascunhoRevisado}>
+                          {aprovarSugestaoAgenteMutation.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
+                          {sugestaoFoiEditada ? "Enviar edição" : "Aceitar como está e enviar"}
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-7 text-xs" disabled={aprovarSugestaoAgenteMutation.isPending || reprovarSugestaoAgenteMutation.isPending} onClick={() => textareaRef.current?.focus()}>
+                          <Pencil className="mr-1.5 h-3.5 w-3.5" /> Editar
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-7 border-rose-300 text-xs text-rose-700 hover:bg-rose-50" disabled={aprovarSugestaoAgenteMutation.isPending || reprovarSugestaoAgenteMutation.isPending} onClick={abrirRejeicaoSugestao}>
+                          <X className="mr-1.5 h-3.5 w-3.5" /> Rejeitar
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -1411,18 +1499,9 @@ export default function Mensagens() {
                                     size="sm"
                                     className="h-6 px-2 text-[10px] bg-emerald-600 hover:bg-emerald-700"
                                     disabled={aprovarSugestaoAgenteMutation.isPending || reprovarSugestaoAgenteMutation.isPending}
-                                    onClick={() => aprovarSugestaoAgenteMutation.mutate({ sugestaoId: evento.sugestao!.id, atendenteId: atendente?.id })}
+                                    onClick={() => carregarSugestaoNoRascunho({ id: evento.sugestao!.id, texto: evento.sugestao!.texto, agente: evento.especialista?.nome ?? null })}
                                   >
-                                    {aprovarSugestaoAgenteMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Aprovar e enviar"}
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-6 px-2 text-[10px]"
-                                    disabled={aprovarSugestaoAgenteMutation.isPending || reprovarSugestaoAgenteMutation.isPending}
-                                    onClick={() => reprovarSugestaoAgenteMutation.mutate({ sugestaoId: evento.sugestao!.id })}
-                                  >
-                                    Reprovar
+                                    <Pencil className="mr-1 h-3 w-3" /> Revisar no rascunho
                                   </Button>
                                 </div>
                               </div>
@@ -1497,6 +1576,42 @@ export default function Mensagens() {
             <Button onClick={aceitarSugestaoIa} disabled={!sugestaoIa.trim() || enviarMutation.isPending}>
               {enviarMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
               Aceitar e enviar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={modalRejeitarSugestao} onOpenChange={setModalRejeitarSugestao}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-700">
+              <X className="h-4 w-4" /> Rejeitar sugestão do agente
+            </DialogTitle>
+            <DialogDescription>O motivo é obrigatório e será registrado para a revisão periódica dos prompts.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="motivo-rejeicao-agente">Motivo</Label>
+              <select id="motivo-rejeicao-agente" value={motivoRejeicao} onChange={(event) => setMotivoRejeicao(event.target.value as MotivoAvaliacao | "")} className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground">
+                <option value="">Selecione o motivo</option>
+                <option value="informacao">Informação incorreta ou incompleta</option>
+                <option value="tom">Tom de voz</option>
+                <option value="roteamento">Roteamento inadequado</option>
+                <option value="contexto">Falta de contexto</option>
+                <option value="comercial">Preço ou condição comercial</option>
+                <option value="operacional">Regra operacional</option>
+                <option value="outro">Outro</option>
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="comentario-rejeicao-agente">Comentário para aprendizado <span className="text-muted-foreground">(opcional)</span></Label>
+              <Textarea id="comentario-rejeicao-agente" className="mt-1 min-h-24" value={comentarioRejeicao} onChange={(event) => setComentarioRejeicao(event.target.value)} placeholder="Explique o que deveria ter sido diferente, se necessário." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalRejeitarSugestao(false)} disabled={reprovarSugestaoAgenteMutation.isPending}>Cancelar</Button>
+            <Button variant="destructive" onClick={confirmarRejeicaoSugestao} disabled={!motivoRejeicao || reprovarSugestaoAgenteMutation.isPending}>
+              {reprovarSugestaoAgenteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Confirmar rejeição
             </Button>
           </DialogFooter>
         </DialogContent>

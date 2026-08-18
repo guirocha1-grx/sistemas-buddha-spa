@@ -307,3 +307,6 @@
 - [x] Sincronizar e publicar a última versão disponível no GitHub (verificação atual)
 - [x] Sincronizar e publicar a última versão disponível no GitHub (nova solicitação)
 - [x] Corrigir o conflito entre reasoning effort mínimo e web_search nas chamadas dos agentes
+- [x] Preencher o compositor do Inbox com a sugestão de IA como rascunho editável
+- [x] Criar ações de aceitar e enviar, editar, e rejeitar com motivo obrigatório para sugestões de agentes
+- [x] Registrar as decisões e alterações de sugestões para revisão futura dos prompts

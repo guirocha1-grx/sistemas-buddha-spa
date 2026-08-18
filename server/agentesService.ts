@@ -426,12 +426,19 @@ async function enviarQuadroDaySpa(params: { conversaId: number; userId: number; 
   });
 }
 
-export async function aprovarEEnviarSugestao(params: { sugestaoId: number; comentario?: string | null; motivo?: "informacao" | "tom" | "roteamento" | "contexto" | "comercial" | "operacional" | "outro" | null; userId: number; atendenteId?: number | null; origemPublica?: string | null }) {
+export async function aprovarEEnviarSugestao(params: { sugestaoId: number; textoFinal?: string | null; tipoRevisao?: "aceita_como_esta" | "editada"; comentario?: string | null; motivo?: "informacao" | "tom" | "roteamento" | "contexto" | "comercial" | "operacional" | "outro" | null; userId: number; atendenteId?: number | null; origemPublica?: string | null }) {
   const registro = await agentesDb.buscarSugestao(params.sugestaoId);
   if (!registro) throw new Error("Sugestão não encontrada");
-  await agentesDb.avaliarSugestao({ ...params, avaliacao: "aprovada" });
+  const textoFinal = params.textoFinal?.trim() || registro.sugestao.sugestao;
+  if (!textoFinal) throw new Error("A sugestão não possui texto para enviar");
+  await agentesDb.avaliarSugestao({
+    ...params,
+    avaliacao: "aprovada",
+    tipoRevisao: params.tipoRevisao ?? "aceita_como_esta",
+    textoFinal,
+  });
   try {
-    await enviarSugestao(registro.sugestao.conversaId, registro.sugestao.sugestao, params.userId, params.atendenteId ?? null, false);
+    await enviarSugestao(registro.sugestao.conversaId, textoFinal, params.userId, params.atendenteId ?? null, false);
     if (registro.sugestao.acaoPendente === "enviar_menu_servicos") {
       await enviarMenuServicos({ conversaId: registro.sugestao.conversaId, userId: params.userId, atendenteId: params.atendenteId ?? null, origemPublica: params.origemPublica });
     }
@@ -458,6 +465,6 @@ export async function aprovarEEnviarSugestao(params: { sugestaoId: number; comen
 }
 
 export async function reprovarSugestao(params: { sugestaoId: number; comentario?: string | null; motivo?: "informacao" | "tom" | "roteamento" | "contexto" | "comercial" | "operacional" | "outro" | null; userId: number; atendenteId?: number | null }) {
-  await agentesDb.avaliarSugestao({ ...params, avaliacao: "reprovada" });
+  await agentesDb.avaliarSugestao({ ...params, avaliacao: "reprovada", tipoRevisao: "rejeitada", textoFinal: null });
   return { success: true };
 }

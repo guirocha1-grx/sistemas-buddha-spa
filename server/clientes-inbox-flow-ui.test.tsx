@@ -44,6 +44,7 @@ const state = vi.hoisted(() => {
     resumoConversa: null,
   };
   const page = { location: "/clientes", setLocation: vi.fn(), openMutation: vi.fn() };
+  const diagnosticos: any[] = [];
   const mutation = (options: any = {}) => ({ mutate: vi.fn(), isPending: false, ...options });
   const trpc = {
     useUtils: () => ({
@@ -114,7 +115,7 @@ const state = vi.hoisted(() => {
     },
     agentes: {
       diagnostico: {
-        conversa: { useQuery: () => ({ data: [], isLoading: false }) },
+        conversa: { useQuery: () => ({ data: diagnosticos, isLoading: false }) },
       },
       fila: {
         aprovarEEnviar: { useMutation: () => mutation() },
@@ -122,7 +123,7 @@ const state = vi.hoisted(() => {
       },
     },
   };
-  return { cliente, conversa, page, trpc };
+  return { cliente, conversa, page, diagnosticos, trpc };
 });
 
 vi.mock("@/lib/trpc", () => ({ trpc: state.trpc }));
@@ -158,6 +159,7 @@ beforeEach(() => {
   state.conversa.nomeContato = "Cliente Existente";
   state.conversa.fotoUrl = null;
   state.conversa.isGrupo = "false";
+  state.diagnosticos.splice(0);
   Element.prototype.scrollIntoView = vi.fn();
 });
 
@@ -193,6 +195,43 @@ describe("fluxo completo Clientes → Inbox", () => {
       const imagens = screen.getAllByAltText("Grupo Recepção");
       expect(imagens.some((imagem) => imagem.getAttribute("src") === "/manus-storage/inbox-fotos-perfil/grupo.jpg")).toBe(true);
     });
+  });
+
+  it("leva uma sugestão pendente do agente para o rascunho editável do Inbox", async () => {
+    state.page.location = "/mensagens?conversaId=41";
+    state.diagnosticos.push({
+      id: 91,
+      createdAt: new Date().toISOString(),
+      status: "concluida",
+      classificacao: "diana",
+      confianca: 98,
+      receptor: { nome: "Aurea" },
+      especialista: { nome: "Diana" },
+      rastro: null,
+      erro: null,
+      sugestao: {
+        id: 44,
+        texto: "Posso preparar as opções de voucher para você.",
+        avaliacao: "pendente",
+        enviadaEm: null,
+        acaoPendente: null,
+      },
+    });
+
+    render(<Mensagens />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Revisar no rascunho/i }));
+    const compositor = screen.getAllByPlaceholderText("Digite uma mensagem, / para scripts ou cole um print...").at(-1) as HTMLTextAreaElement;
+    expect(compositor.value).toBe("Posso preparar as opções de voucher para você.");
+    expect(screen.getByText("Sugestão de Diana em revisão")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Aceitar como está e enviar/i })).toBeTruthy();
+
+    fireEvent.change(compositor, { target: { value: "Posso preparar um voucher virtual para você." } });
+    expect(screen.getByRole("button", { name: /Enviar edição/i })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Rejeitar$/i }));
+    expect(screen.getByText("Rejeitar sugestão do agente")).toBeTruthy();
+    expect((screen.getByRole("button", { name: /Confirmar rejeição/i }) as HTMLButtonElement).disabled).toBe(true);
   });
 
 });
