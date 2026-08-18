@@ -36,8 +36,24 @@
 - [ ] Garantir que agentes ativos sem automação produzam apenas sugestões para o consultor da conversa, sem envio ao cliente.
 - [x] Manter todos os controles de automação desligados por padrão até autorização administrativa expressa.
 - [x] Adaptar os seis prompts-base para Ribeirão Shopping, mantendo fatos específicos em fontes configuráveis.
-- [ ] Normalizar a tabela de preços recebida como catálogo oficial da unidade Ribeirão Shopping.
+- [x] Normalizar a tabela de preços recebida como catálogo oficial da unidade Ribeirão Shopping.
 - [x] Criar a subseção Tabela para pesquisa manual de serviços, categorias, duração e valores de semana/domingo.
-- [ ] Confirmar os valores ausentes da tabela para Banho de Imersão Casal e Banho de Imersão Casal 30 antes de cadastrá-los como preços oficiais.
+- [x] Confirmar os valores ausentes da tabela para Banho de Imersão Casal e Banho de Imersão Casal 30 antes de cadastrá-los como preços oficiais.
 - [x] Cadastrar os prompts-base versionados para Ribeirão Shopping, mantendo os seis assistentes desativados até autorização manual.
 - [ ] Cadastrar e validar as fontes oficiais restantes de Ribeirão Shopping — promoções, mídias, conteúdos e regras vigentes.
+- [x] Cadastrar o horário operacional informado do Ribeirão Shopping como fonte oficial para atendimento e agendamento.
+- [x] Cadastrar a orientação de localização e acesso do Ribeirão Shopping como fonte oficial de atendimento.
+- [x] Extrair descrições gerais reutilizáveis do menu de experiências recebido e cadastrá-las como fontes oficiais.
+- [x] Conferir a tabela final do menu contra o catálogo de preços de Ribeirão Shopping e reportar divergências ou itens ausentes.
+- [x] Corrigir a normalização de Banho de Imersão Casal 30 e Abdoburn 50 com base na tabela visual do menu.
+- [x] Confirmar se os seis preços de Day Spa do menu Santa Úrsula também se aplicam ao Ribeirão Shopping antes de cadastrá-los.
+- [x] Cadastrar os seis Day Spas e respectivos preços do menu confirmado como idêntico para Ribeirão Shopping.
+- [x] Disponibilizar o menu de serviços de Ribeirão Shopping como recurso acionável no fluxo de atendimento, com controle de envio único.
+- [ ] Cadastrar fontes oficiais faltantes de Ribeirão Shopping para voucher/modelos, mídias adicionais e regras operacionais ainda não cobertas.
+- [x] Cadastrar a composição detalhada dos Day Spas ou manter bloqueio explícito no agente Fabricia até essa informação existir.
+- [ ] Validar em testes a entrega de todas as categorias de fontes oficiais ao orquestrador, não apenas preços e menu.
+- [x] Cadastrar as composições e durações aproximadas de Mini Day Spa, Day Spa e Day Spa Prime como fonte oficial da Fabricia.
+- [x] Registrar as regras de atendimento individual/casal e de substituição condicionada à aprovação da direção.
+- [x] Cadastrar regras oficiais de voucher físico e virtual, validade, personalização e limites de confirmação humana para Ribeirão Shopping.
+- [x] Disponibilizar os modelos visuais de voucher como materiais controlados do fluxo de atendimento, sem prometer emissão automática.
+- [x] Implementar o envio controlado dos modelos visuais de voucher, com ação única, histórico no Inbox e teste de aprovação humana.
