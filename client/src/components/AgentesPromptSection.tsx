@@ -21,8 +21,6 @@ export function AgentesPromptSection() {
   const [nome, setNome] = useState("");
   const [descricao, setDescricao] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [modo, setModo] = useState<"assistido" | "automatico">("assistido");
-  const [ativo, setAtivo] = useState(true);
   const [ativarAgora, setAtivarAgora] = useState(true);
 
   useEffect(() => {
@@ -38,8 +36,6 @@ export function AgentesPromptSection() {
     setNome(selecionado.nome);
     setDescricao(selecionado.descricao ?? "");
     setPrompt(selecionado.promptAtivo?.conteudo ?? "");
-    setModo(selecionado.modoOperacao);
-    setAtivo(selecionado.ativo);
   }, [agente?.id]);
 
   const atualizar = trpc.agentes.configuracao.atualizar.useMutation({ onSuccess: () => utils.agentes.configuracao.list.invalidate() });
@@ -53,7 +49,7 @@ export function AgentesPromptSection() {
 
   function salvarConfiguracao() {
     if (!agente || !unidadeId) return;
-    atualizar.mutate({ id: agente.id, unidadeId, nome: nome.trim(), descricao: descricao.trim() || null, ativo, modoOperacao: modo });
+    atualizar.mutate({ id: agente.id, unidadeId, nome: nome.trim(), descricao: descricao.trim() || null });
   }
 
   function salvarNovaVersao() {
@@ -98,10 +94,10 @@ export function AgentesPromptSection() {
         <div className="space-y-4 min-w-0">
           <div className="grid gap-3 md:grid-cols-2">
             <div><Label>Nome do agente</Label><Input className="mt-1" value={nome} onChange={(event) => setNome(event.target.value)} /></div>
-            <div><Label>Modo atual</Label><div className="mt-1 rounded-md border bg-muted/30 px-3 py-2 text-sm">{modo === "assistido" ? "Assistido — gera sugestão para o consultor" : "Automático — envia sem filtro"}</div></div>
+            <div><Label>Modo atual</Label><div className="mt-1 rounded-md border bg-muted/30 px-3 py-2 text-sm">{agente.modoOperacao === "assistido" ? "Assistido — gera sugestão para o consultor" : "Automático — envia sem filtro"}</div></div>
           </div>
           <div><Label>Descrição da especialidade</Label><Input className="mt-1" value={descricao} onChange={(event) => setDescricao(event.target.value)} placeholder="Explique o escopo e as responsabilidades deste agente" /></div>
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-[#eadfca] bg-[#fdf9f1] p-3"><div><p className="text-sm font-medium">Agente ativo</p><p className="text-xs text-muted-foreground">Um assistente ativo sem automação autorizada só gera sugestão para o consultor responsável pela conversa.</p></div><Switch checked={ativo} onCheckedChange={setAtivo} /></div>
+          <p className="rounded-lg border border-[#eadfca] bg-[#fdf9f1] p-3 text-xs text-muted-foreground">A ativação e a autorização de automação são controladas individualmente no cartão de cada agente, à esquerda.</p>
           <Button size="sm" variant="outline" disabled={ocupado || !nome.trim()} onClick={salvarConfiguracao}>{atualizar.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}Salvar configuração</Button>
           <div className="pt-2 border-t border-[#eadfca]">
             <div className="flex items-center justify-between gap-3"><Label>Prompt desta versão</Label><div className="flex items-center gap-2 text-xs"><Switch checked={ativarAgora} onCheckedChange={setAtivarAgora} /><span>Ativar ao salvar</span></div></div>
