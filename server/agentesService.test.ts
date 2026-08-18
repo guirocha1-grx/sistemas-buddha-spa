@@ -134,13 +134,35 @@ describe("orquestrador de agentes", () => {
     expect(chamadaDiana.messages[1].content).toContain("Validade de 6 meses");
   });
 
+  it("disponibiliza todas as categorias de fontes oficiais ao especialista", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quero presentear alguém com um voucher"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [dianaAssistida]);
+    agentesDb.listarRecursosAtivos.mockResolvedValue([
+      { chave: "preco_exemplo", tipo: "preco", titulo: "Preço", conteudo: "R$ 100", url: null },
+      { chave: "promocao_exemplo", tipo: "promocao", titulo: "Promoção", conteudo: "Condição vigente", url: null },
+      { chave: "conteudo_exemplo", tipo: "conteudo", titulo: "Regra", conteudo: "Confirmação humana", url: null },
+      { chave: "midia_exemplo", tipo: "midia", titulo: "Menu", conteudo: null, url: "/manus-storage/menu.pdf" },
+      { chave: "modelo_exemplo", tipo: "modelo_voucher", titulo: "Voucher", conteudo: null, url: "/manus-storage/voucher.jpg" },
+    ]);
+    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("Vou orientar as opções de presente.") } }] });
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 48 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
+
+    const contextoEspecialista = invokeLLM.mock.calls[0]?.[0].messages[1].content as string;
+    expect(contextoEspecialista).toContain("preco_exemplo");
+    expect(contextoEspecialista).toContain("promocao_exemplo");
+    expect(contextoEspecialista).toContain("conteudo_exemplo");
+    expect(contextoEspecialista).toContain("midia_exemplo");
+    expect(contextoEspecialista).toContain("modelo_exemplo");
+  });
+
   it("registra uma reprovação com motivo operacional", async () => {
     await reprovarSugestao({ sugestaoId: 91, comentario: "Não pode confirmar disponibilidade", motivo: "operacional", userId: 7, atendenteId: 3 });
     expect(agentesDb.avaliarSugestao).toHaveBeenCalledWith(expect.objectContaining({ sugestaoId: 91, avaliacao: "reprovada", motivo: "operacional" }));
   });
 
   it("aprova, envia e registra uma ação pendente da conversa", async () => {
-    agentesDb.buscarSugestao.mockResolvedValue({ sugestao: { id: 91, conversaId: 10, sugestao: "Posso enviar o quadro comparativo.", acaoPendente: "enviar_resumo_dayspa" } });
+    agentesDb.buscarSugestao.mockResolvedValue({ sugestao: { id: 91, conversaId: 10, sugestao: "Posso enviar a tabela de valores.", acaoPendente: "enviar_tabela" } });
     agentesDb.obterNomeAtendente.mockResolvedValue("Ana");
     db.getInboxConversaById.mockResolvedValue({ id: 10, unidadeId: 1, canal: "zapi", telefone: "5516999999999", nomeContato: "Carla" });
     db.getUnidadeById.mockResolvedValue({ zapiInstanceId: "instancia", zapiToken: "token", zapiClientToken: "client" });
@@ -149,8 +171,8 @@ describe("orquestrador de agentes", () => {
     await expect(aprovarEEnviarSugestao({ sugestaoId: 91, comentario: "Ajustado", motivo: "tom", userId: 7, atendenteId: 3 })).resolves.toEqual({ success: true });
 
     expect(agentesDb.avaliarSugestao).toHaveBeenCalledWith(expect.objectContaining({ avaliacao: "aprovada", motivo: "tom" }));
-    expect(db.insertInboxMensagem).toHaveBeenCalledWith(expect.objectContaining({ conteudo: "*Ana:*\nPosso enviar o quadro comparativo." }));
-    expect(agentesDb.registrarAcaoConversa).toHaveBeenCalledWith(10, "enviar_resumo_dayspa", 91);
+    expect(db.insertInboxMensagem).toHaveBeenCalledWith(expect.objectContaining({ conteudo: "*Ana:*\nPosso enviar a tabela de valores." }));
+    expect(agentesDb.registrarAcaoConversa).toHaveBeenCalledWith(10, "enviar_tabela", 91);
   });
 
   it("envia o menu em PDF somente após a aprovação humana", async () => {
@@ -183,5 +205,21 @@ describe("orquestrador de agentes", () => {
     expect(sendImage).toHaveBeenCalledWith("instancia", "token", "client", "5516999999999", "https://spa.exemplo.com/manus-storage/voucher-virtual.jpg", "Exemplo de voucher virtual personalizado — sujeito à confirmação da equipe.");
     expect(db.insertInboxMensagem).toHaveBeenCalledWith(expect.objectContaining({ tipo: "imagem", metadados: expect.stringContaining("modelo_voucher_virtual_ribeirao") }));
     expect(agentesDb.registrarAcaoConversa).toHaveBeenCalledWith(10, "enviar_modelo_voucher_virtual", 93);
+  });
+
+  it("envia o quadro de Day Spa somente após a aprovação humana", async () => {
+    agentesDb.buscarSugestao.mockResolvedValue({ sugestao: { id: 94, conversaId: 10, sugestao: "Vou enviar a composição dos Day Spas.", acaoPendente: "enviar_resumo_dayspa" } });
+    agentesDb.obterNomeAtendente.mockResolvedValue("Ana");
+    agentesDb.listarRecursosAtivos.mockResolvedValue([{ chave: "quadro_dayspas_ribeirao", ativo: true, url: "/manus-storage/quadro-dayspa.jpg" }]);
+    db.getInboxConversaById.mockResolvedValue({ id: 10, unidadeId: 1, canal: "zapi", telefone: "5516999999999", nomeContato: "Carla" });
+    db.getUnidadeById.mockResolvedValue({ zapiInstanceId: "instancia", zapiToken: "token", zapiClientToken: "client" });
+    sendText.mockResolvedValue({ messageId: "zapi-texto-dayspa" });
+    sendImage.mockResolvedValue({ messageId: "zapi-imagem-dayspa" });
+
+    await expect(aprovarEEnviarSugestao({ sugestaoId: 94, userId: 7, atendenteId: 3, origemPublica: "https://spa.exemplo.com" })).resolves.toEqual({ success: true });
+
+    expect(sendImage).toHaveBeenCalledWith("instancia", "token", "client", "5516999999999", "https://spa.exemplo.com/manus-storage/quadro-dayspa.jpg", "Composição dos Day Spas — qualquer ajuste depende de confirmação da equipe.");
+    expect(db.insertInboxMensagem).toHaveBeenCalledWith(expect.objectContaining({ tipo: "imagem", metadados: expect.stringContaining("quadro_dayspas_ribeirao") }));
+    expect(agentesDb.registrarAcaoConversa).toHaveBeenCalledWith(10, "enviar_resumo_dayspa", 94);
   });
 });

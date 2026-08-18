@@ -51,9 +51,11 @@
 - [x] Disponibilizar o menu de serviços de Ribeirão Shopping como recurso acionável no fluxo de atendimento, com controle de envio único.
 - [ ] Cadastrar fontes oficiais faltantes de Ribeirão Shopping para voucher/modelos, mídias adicionais e regras operacionais ainda não cobertas.
 - [x] Cadastrar a composição detalhada dos Day Spas ou manter bloqueio explícito no agente Fabricia até essa informação existir.
-- [ ] Validar em testes a entrega de todas as categorias de fontes oficiais ao orquestrador, não apenas preços e menu.
+- [x] Validar em testes a entrega de todas as categorias de fontes oficiais ao orquestrador, não apenas preços e menu.
 - [x] Cadastrar as composições e durações aproximadas de Mini Day Spa, Day Spa e Day Spa Prime como fonte oficial da Fabricia.
 - [x] Registrar as regras de atendimento individual/casal e de substituição condicionada à aprovação da direção.
 - [x] Cadastrar regras oficiais de voucher físico e virtual, validade, personalização e limites de confirmação humana para Ribeirão Shopping.
 - [x] Disponibilizar os modelos visuais de voucher como materiais controlados do fluxo de atendimento, sem prometer emissão automática.
 - [x] Implementar o envio controlado dos modelos visuais de voucher, com ação única, histórico no Inbox e teste de aprovação humana.
+- [x] Implementar o envio controlado do quadro visual de Day Spa, com ação única, histórico no Inbox e teste de aprovação humana.
+- [ ] Ajustar os testes de ambiente do CRM: Google Sheets sem credenciais e expectativa legada de duas unidades, sem alterar o escopo inicial de Ribeirão Shopping.
