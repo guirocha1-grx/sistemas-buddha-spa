@@ -306,3 +306,4 @@
 - [x] Sincronizar e publicar a última versão disponível no GitHub (consulta atual)
 - [x] Sincronizar e publicar a última versão disponível no GitHub (verificação atual)
 - [x] Sincronizar e publicar a última versão disponível no GitHub (nova solicitação)
+- [x] Corrigir o conflito entre reasoning effort mínimo e web_search nas chamadas dos agentes

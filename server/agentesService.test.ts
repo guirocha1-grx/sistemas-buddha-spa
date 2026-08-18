@@ -99,7 +99,7 @@ describe("orquestrador de agentes", () => {
     }));
     expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({ status: "concluida", classificacao: "bianca" }));
     expect(sendText).not.toHaveBeenCalled();
-    expect(invokeLLM.mock.calls[0]?.[0]).toMatchObject({ tool_choice: "none" });
+    expect(invokeLLM.mock.calls[0]?.[0]).toMatchObject({ tool_choice: "none", tools: [], reasoningEffort: "low" });
     expect(invokeLLM.mock.calls[0]?.[0]).not.toHaveProperty("response_format");
   });
 
@@ -142,7 +142,7 @@ describe("orquestrador de agentes", () => {
     const chamadaDiana = invokeLLM.mock.calls[0]?.[0];
     expect(chamadaDiana.messages[1].content).toContain("voucher_regras_ribeirao");
     expect(chamadaDiana.messages[1].content).toContain("Validade de 6 meses");
-    expect(chamadaDiana).toMatchObject({ tool_choice: "none" });
+    expect(chamadaDiana).toMatchObject({ tool_choice: "none", tools: [], reasoningEffort: "low" });
     expect(chamadaDiana).not.toHaveProperty("response_format");
   });
 

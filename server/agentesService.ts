@@ -117,15 +117,13 @@ async function obterRotaComAurea(params: {
   const resposta = await invokeLLM({
     model: params.receptor.agente.modelo,
     // maxTokens alto o bastante pra sobrar espaço pra resposta mesmo se o
-    // modelo gastar tokens de raciocínio interno antes do JSON final —
-    // com um orçamento pequeno (240) o raciocínio consumia tudo e a
-    // resposta chegava vazia ("choices: N sem conteúdo textual"). O
-    // diagnóstico de usage num erro real mostrou reasoning_tokens ==
-    // maxTokens inteiro mesmo com "reasoning:{effort}" configurado — esse
-    // campo é da Responses API e é ignorado no endpoint /v1/chat/completions
-    // usado aqui; o nome certo é "reasoning_effort" (campo plano). Ver llm.ts.
+    // modelo gastar tokens de raciocínio interno antes do JSON final. O proxy
+    // de produção pode encaminhar a chamada à Responses API e anexar
+    // web_search; nessa superfície Azure rejeita reasoning effort "minimal"
+    // quando há ferramenta. "low" preserva um raciocínio econômico e é
+    // compatível com a ferramenta inevitavelmente anexada pelo provedor.
     maxTokens: 600,
-    reasoningEffort: "minimal",
+    reasoningEffort: "low",
     tools: [],
     tool_choice: "none",
     messages: [
@@ -151,12 +149,11 @@ async function obterRespostaEspecialista(params: {
   ]);
   const resposta = await invokeLLM({
     model: params.especialista.agente.modelo,
-    // Mesma razão do receptor (ver obterRotaComAurea, incluindo o porquê de
-    // "reasoningEffort" e não "reasoning:{effort}"). O especialista tem
-    // prompt mais pesado (recursos + tabela de preços), então precisa de
-    // mais margem que o roteador.
+    // O proxy pode encaminhar a chamada à Responses API com web_search
+    // anexado; "minimal" é inválido nessa combinação. "low" mantém o custo
+    // e a latência contidos, sem bloquear a resposta do especialista.
     maxTokens: 1600,
-    reasoningEffort: "minimal",
+    reasoningEffort: "low",
     tools: [],
     tool_choice: "none",
     messages: [
