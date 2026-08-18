@@ -99,7 +99,8 @@ describe("orquestrador de agentes", () => {
     }));
     expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({ status: "concluida", classificacao: "bianca" }));
     expect(sendText).not.toHaveBeenCalled();
-    expect(invokeLLM.mock.calls[0]?.[0]).toMatchObject({ tool_choice: "none", response_format: { type: "json_object" } });
+    expect(invokeLLM.mock.calls[0]?.[0]).toMatchObject({ tool_choice: "none" });
+    expect(invokeLLM.mock.calls[0]?.[0]).not.toHaveProperty("response_format");
   });
 
   it("envia imediatamente apenas quando uma resposta de baixo risco da Bianca está no modo automático", async () => {
@@ -141,7 +142,8 @@ describe("orquestrador de agentes", () => {
     const chamadaDiana = invokeLLM.mock.calls[0]?.[0];
     expect(chamadaDiana.messages[1].content).toContain("voucher_regras_ribeirao");
     expect(chamadaDiana.messages[1].content).toContain("Validade de 6 meses");
-    expect(chamadaDiana).toMatchObject({ tool_choice: "none", response_format: { type: "json_object" } });
+    expect(chamadaDiana).toMatchObject({ tool_choice: "none" });
+    expect(chamadaDiana).not.toHaveProperty("response_format");
   });
 
   it("disponibiliza todas as categorias de fontes oficiais ao especialista", async () => {
