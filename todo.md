@@ -300,3 +300,4 @@
 - [x] Integrar o commit 7566b50, verificar migrações, validar e publicar
 - [x] Integrar o commit 4139646, verificar migrações, validar e publicar
 - [x] Sincronizar e publicar a última versão disponível no GitHub (nova verificação)
+- [x] Sincronizar e publicar a última versão disponível no GitHub (verificação atual)
