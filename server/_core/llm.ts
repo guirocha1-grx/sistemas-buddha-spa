@@ -158,7 +158,17 @@ export function normalizarRespostaLLM(payload: unknown): InvokeResult {
       : undefined;
     const formatos = tiposSaida.size > 0 ? `; output types: ${Array.from(tiposSaida).join(", ")}` : "";
     const diagnosticoChoices = Array.isArray(choices) ? `; choices: ${choices.length} sem conteúdo textual` : "";
-    throw new Error(`LLM response did not contain output text${detail ? `: ${detail}` : ""}${formatos}${diagnosticoChoices}`);
+    // finish_reason + usage são o que realmente diferencia "estourou
+    // max_tokens no raciocínio" (finish_reason "length", completion_tokens
+    // no teto) de qualquer outra causa (ex.: filtro de conteúdo, tool_calls
+    // inesperado) — sem isso, cada falha nova vira outro palpite às cegas.
+    const finishReasons = Array.isArray(choices)
+      ? choices.map((choice) => (choice && typeof choice === "object" && "finish_reason" in choice ? choice.finish_reason : undefined)).filter((valor) => valor != null)
+      : [];
+    const diagnosticoFinish = finishReasons.length > 0 ? `; finish_reason: ${finishReasons.join(", ")}` : "";
+    const usage = body.usage && typeof body.usage === "object" ? body.usage as Record<string, unknown> : null;
+    const diagnosticoUsage = usage ? `; usage: ${JSON.stringify(usage)}` : "";
+    throw new Error(`LLM response did not contain output text${detail ? `: ${detail}` : ""}${formatos}${diagnosticoChoices}${diagnosticoFinish}${diagnosticoUsage}`);
   }
 
   return {
