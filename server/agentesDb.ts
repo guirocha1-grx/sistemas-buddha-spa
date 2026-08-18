@@ -265,6 +265,50 @@ export async function concluirExecucao(id: number, dados: {
   await db.update(agentesExecucoes).set({ ...dados, concludedAt: new Date() }).where(eq(agentesExecucoes.id, id));
 }
 
+/** Histórico operacional seguro para diagnóstico administrativo no Inbox. Nunca inclui prompts ou credenciais. */
+export async function listarDiagnosticoConversa(conversaId: number, limite = 30) {
+  const db = await getDb();
+  if (!db) return [];
+  const execucoes = await db.select().from(agentesExecucoes)
+    .where(eq(agentesExecucoes.conversaId, conversaId))
+    .orderBy(desc(agentesExecucoes.createdAt))
+    .limit(Math.min(Math.max(limite, 1), 100));
+  if (execucoes.length === 0) return [];
+
+  const idsAgentes = Array.from(new Set(execucoes.flatMap((item) => [item.agenteReceptorId, item.agenteEspecialistaId]).filter((id): id is number => typeof id === "number")));
+  const [agentes, sugestoes] = await Promise.all([
+    idsAgentes.length ? db.select({ id: agentesAtendimento.id, nome: agentesAtendimento.nome, chave: agentesAtendimento.chave }).from(agentesAtendimento).where(inArray(agentesAtendimento.id, idsAgentes)) : Promise.resolve([]),
+    db.select().from(agentesSugestoes).where(inArray(agentesSugestoes.execucaoId, execucoes.map((item) => item.id))),
+  ]);
+  const porAgente = new Map(agentes.map((item) => [item.id, item]));
+  const porExecucao = new Map(sugestoes.map((item) => [item.execucaoId, item]));
+
+  return execucoes.map((item) => {
+    const sugestao = porExecucao.get(item.id);
+    return {
+      id: item.id,
+      mensagemEntradaId: item.mensagemEntradaId,
+      createdAt: item.createdAt,
+      concludedAt: item.concludedAt,
+      status: item.status,
+      classificacao: item.classificacao,
+      confianca: item.confianca,
+      receptor: item.agenteReceptorId ? porAgente.get(item.agenteReceptorId) ?? null : null,
+      especialista: item.agenteEspecialistaId ? porAgente.get(item.agenteEspecialistaId) ?? null : null,
+      rastro: item.rastro,
+      erro: item.erroMsg,
+      sugestao: sugestao ? {
+        id: sugestao.id,
+        statusAgente: sugestao.statusAgente,
+        avaliacao: sugestao.avaliacao,
+        acaoPendente: sugestao.acaoPendente,
+        enviadaEm: sugestao.enviadaEm,
+        erroEnvio: sugestao.erroEnvio,
+      } : null,
+    };
+  });
+}
+
 export async function obterEstadoConversa(conversaId: number) {
   const db = await getDb();
   if (!db) return undefined;

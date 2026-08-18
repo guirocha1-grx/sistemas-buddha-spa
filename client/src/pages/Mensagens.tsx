@@ -113,6 +113,18 @@ function parseEtiquetas(etiquetas: string | null): string[] {
   }
 }
 
+function resumirRastroAgente(rastro: unknown) {
+  if (!rastro || typeof rastro !== "object") return null;
+  const passos = (rastro as { passos?: Array<Record<string, unknown>> }).passos;
+  if (!Array.isArray(passos) || passos.length === 0) return null;
+  return passos.map((passo) => {
+    const agente = typeof passo.agente === "string" ? passo.agente : null;
+    const destino = typeof passo.destino === "string" ? `→ ${passo.destino}` : null;
+    const status = typeof passo.status === "string" ? passo.status : null;
+    return [agente, destino, status].filter(Boolean).join(" ");
+  }).filter(Boolean).join(" · ");
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -181,6 +193,11 @@ export default function Mensagens() {
   const { data: mensagens, isLoading: carregandoMensagens } = trpc.inbox.mensagens.list.useQuery(
     { conversaId: conversaSelecionadaId ?? 0 },
     { enabled: !!conversaSelecionadaId, refetchInterval: 8000 },
+  );
+
+  const diagnosticoAgentes = trpc.agentes.diagnostico.conversa.useQuery(
+    { conversaId: conversaSelecionadaId ?? 0, limite: 25 },
+    { enabled: user?.role === "admin" && !!conversaSelecionadaId, refetchInterval: 8000 },
   );
 
   const ehGrupo = conversaSelecionada?.isGrupo === "true";
@@ -1336,6 +1353,40 @@ export default function Mensagens() {
                     )}
                   </div>
                 </div>
+
+                {user?.role === "admin" && (
+                  <div className="rounded-lg border border-[#d9c7a1] bg-[#fffdfa] overflow-hidden">
+                    <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-[#eadfca]">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <Sparkles size={11} className="text-[#8a6227]" />
+                        <span className="text-[10px] font-semibold text-[#6c2330] uppercase tracking-wide">Log dos agentes</span>
+                      </div>
+                      <Badge variant="outline" className="text-[9px] h-4">Admin</Badge>
+                    </div>
+                    <div className="max-h-52 overflow-y-auto p-2 space-y-2">
+                      {diagnosticoAgentes.isLoading && <p className="px-1 text-[10px] text-muted-foreground">Carregando diagnósticos...</p>}
+                      {!diagnosticoAgentes.isLoading && (diagnosticoAgentes.data?.length ?? 0) === 0 && (
+                        <p className="px-1 text-[10px] text-muted-foreground">Ainda não há execução registrada para esta conversa.</p>
+                      )}
+                      {diagnosticoAgentes.data?.map((evento) => {
+                        const rota = [evento.receptor?.nome, evento.especialista?.nome].filter(Boolean).join(" → ");
+                        const rastro = resumirRastroAgente(evento.rastro);
+                        return (
+                          <div key={evento.id} className="rounded-md border border-[#eadfca] bg-white/70 p-2 text-[10px] space-y-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-medium truncate">{rota || "Execução sem rota definida"}</span>
+                              <Badge variant="outline" className={evento.status === "erro" ? "border-red-300 text-red-700 text-[9px]" : evento.status === "ignorada" ? "border-amber-300 text-amber-700 text-[9px]" : "text-[9px]"}>{evento.status}</Badge>
+                            </div>
+                            <p className="text-muted-foreground">{formatHora(evento.createdAt)}{evento.classificacao ? ` · ${evento.classificacao}` : ""}{evento.confianca !== null ? ` · ${evento.confianca}%` : ""}</p>
+                            {rastro && <p className="text-muted-foreground break-words">{rastro}</p>}
+                            {evento.sugestao && <p className="text-emerald-700">Sugestão: {evento.sugestao.avaliacao}{evento.sugestao.acaoPendente ? ` · ação ${evento.sugestao.acaoPendente}` : ""}</p>}
+                            {evento.erro && <p className="text-red-700 break-words">Falha: {evento.erro}</p>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

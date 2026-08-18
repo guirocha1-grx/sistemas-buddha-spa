@@ -83,6 +83,10 @@ export const agentesRouter = router({
     .query(({ input }) => agentesDb.listarMetricasAgentes(input?.unidadeId, input?.inicio, input?.fim)),
   serieQualidade: adminProcedure.input(z.object({ unidadeId: z.number().optional(), inicio: z.date().optional(), fim: z.date().optional() }).optional())
     .query(({ input }) => agentesDb.listarSerieQualidadeAgentes(input?.unidadeId, input?.inicio, input?.fim)),
+  diagnostico: router({
+    conversa: adminProcedure.input(z.object({ conversaId: z.number(), limite: z.number().min(1).max(100).optional() }))
+      .query(({ input }) => agentesDb.listarDiagnosticoConversa(input.conversaId, input.limite)),
+  }),
   processarTeste: adminProcedure.input(z.object({ conversaId: z.number(), mensagemEntradaId: z.number() }))
     .mutation(({ input }) => processarMensagemRecebida(input)),
 });

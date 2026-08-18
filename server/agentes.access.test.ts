@@ -36,4 +36,12 @@ describe("agentes: acesso administrativo", () => {
       code: "FORBIDDEN",
     });
   });
+
+  it("bloqueia um consultor do diagnóstico operacional por conversa", async () => {
+    const caller = appRouter.createCaller(createUserContext());
+
+    await expect(caller.agentes.diagnostico.conversa({ conversaId: 1 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
 });
