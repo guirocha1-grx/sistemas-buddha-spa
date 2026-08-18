@@ -29,3 +29,11 @@ export const startLogin = () => {
 
   window.location.href = url.toString();
 };
+
+// Login direto com Google (2026-08-09) — alternativa ao portal do
+// Manus acima. Diferente de startLogin, todo o fluxo (inclusive montar
+// a URL de autorização do Google) roda no servidor — aqui é só uma
+// navegação same-origin, sem nonce/cookie pra montar no client.
+export const startGoogleLogin = () => {
+  window.location.href = "/api/oauth/google/start";
+};

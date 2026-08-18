@@ -1,0 +1,437 @@
+/**
+ * Z-API (WhatsApp não-oficial) — integração por unidade.
+ *
+ * Cada unidade tem sua própria instância Z-API, então instanceId/token/
+ * clientToken são sempre passados como parâmetro explícito (mesmo padrão
+ * de server/belleApi.ts), nunca lidos de ENV.
+ */
+
+const ZAPI_BASE_URL = "https://api.z-api.io/instances";
+
+function buildUrl(instanceId: string, token: string, endpoint: string): string {
+  return `${ZAPI_BASE_URL}/${instanceId}/token/${token}${endpoint}`;
+}
+
+async function zapiRequest<T>(
+  instanceId: string,
+  token: string,
+  clientToken: string,
+  endpoint: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const response = await fetch(buildUrl(instanceId, token, endpoint), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Client-Token": clientToken,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new Error(`Z-API error ${response.status}: ${errorBody || response.statusText}`);
+  }
+
+  const result = await response.json().catch(() => null) as T | null;
+  // A Z-API documenta messageId/zaapId como confirmação de envio. Uma
+  // resposta 2xx sem nenhum dos dois não pode ser tratada como sucesso:
+  // alguns erros assíncronos chegam nesse formato e antes acabavam
+  // registrados no Inbox como se a mídia tivesse sido entregue.
+  if (!result || typeof result !== "object" || (!("messageId" in result) && !("zaapId" in result))) {
+    throw new Error(`Z-API respondeu sem confirmação de envio: ${JSON.stringify(result)}`);
+  }
+
+  return result;
+}
+
+function toDataUrl(base64: string, contentType: string): string {
+  if (base64.startsWith("data:")) return base64;
+  return `data:${contentType || "application/octet-stream"};base64,${base64}`;
+}
+
+function getDocumentExtension(fileName: string | undefined, contentType: string): string {
+  const byName = fileName?.split(".").pop()?.trim().toLowerCase();
+  if (byName && /^[a-z0-9]{1,12}$/.test(byName)) return byName;
+  if (contentType === "application/pdf") return "pdf";
+  return "bin";
+}
+
+async function zapiGet<T>(
+  instanceId: string,
+  token: string,
+  clientToken: string,
+  endpoint: string,
+): Promise<T | null> {
+  const response = await fetch(buildUrl(instanceId, token, endpoint), {
+    method: "GET",
+    headers: { "Client-Token": clientToken },
+  });
+  if (!response.ok) return null;
+  return response.json() as Promise<T>;
+}
+
+export interface ZapiSendResult {
+  messageId?: string;
+  zaapId?: string;
+}
+
+export const zapiApi = {
+  /**
+   * `mentioned`: telefones (dígitos, sem "-group") pra marcar como @menção
+   * num grupo — confirmado em developer.z-api.io/en/group/mention-participant:
+   * é o mesmo endpoint de texto simples, só com esse array a mais; o texto
+   * em si precisa conter "@<telefone>" pra cada um.
+   */
+  async sendText(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    message: string,
+    mentioned?: string[],
+  ): Promise<ZapiSendResult> {
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-text", {
+      phone,
+      message,
+      ...(mentioned && mentioned.length > 0 ? { mentioned } : {}),
+    });
+  },
+
+  /**
+   * Confirmado em developer.z-api.io/message/send-message-reaction:
+   * POST /send-message-reaction, body {phone, messageId, reaction}.
+   * Reação vazia ("") remove uma reação já enviada.
+   */
+  async sendReaction(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    messageId: string,
+    reaction: string,
+  ): Promise<ZapiSendResult> {
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-message-reaction", {
+      phone,
+      messageId,
+      reaction,
+    });
+  },
+
+  async sendImage(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    imageUrl: string,
+    caption?: string,
+  ): Promise<ZapiSendResult> {
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-image", {
+      phone,
+      image: imageUrl,
+      caption,
+    });
+  },
+
+  /**
+   * Arquivos escolhidos no computador são enviados em Base64. Isso evita a
+   * busca posterior da Z-API em uma URL assinada do storage, que pode ser
+   * recusada pelo CDN apesar de a Z-API retornar 2xx para a solicitação.
+   */
+  async sendImageBase64(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    base64: string,
+    contentType: string,
+    caption?: string,
+  ): Promise<ZapiSendResult> {
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-image", {
+      phone,
+      image: toDataUrl(base64, contentType),
+      ...(caption ? { caption } : {}),
+    });
+  },
+
+  async sendAudio(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    audioUrl: string,
+  ): Promise<ZapiSendResult> {
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-audio", {
+      phone,
+      audio: audioUrl,
+    });
+  },
+
+  async sendDocument(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    documentUrl: string,
+    fileName?: string,
+  ): Promise<ZapiSendResult> {
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-document/pdf", {
+      phone,
+      document: documentUrl,
+      ...(fileName ? { fileName } : {}),
+    });
+  },
+
+  async sendDocumentBase64(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    base64: string,
+    contentType: string,
+    fileName?: string,
+    caption?: string,
+  ): Promise<ZapiSendResult> {
+    const extension = getDocumentExtension(fileName, contentType);
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, `/send-document/${extension}`, {
+      phone,
+      document: toDataUrl(base64, contentType),
+      ...(fileName ? { fileName } : {}),
+      ...(caption ? { caption } : {}),
+    });
+  },
+
+  /** Botões nativos do WhatsApp (até 3) — usado pelo nó "menu" dos Fluxos. */
+  async sendButtonList(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    message: string,
+    buttons: Array<{ id: string; label: string }>,
+  ): Promise<ZapiSendResult> {
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-button-list", {
+      phone,
+      message,
+      buttonList: { buttons },
+    });
+  },
+
+  /** Lista nativa do WhatsApp (até 10 opções) — usado pelo nó "menu" dos Fluxos. */
+  async sendOptionList(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+    message: string,
+    tituloLista: string,
+    buttonLabel: string,
+    options: Array<{ id: string; title: string; description?: string }>,
+  ): Promise<ZapiSendResult> {
+    return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-option-list", {
+      phone,
+      message,
+      optionList: { title: tituloLista, buttonLabel, options },
+    });
+  },
+
+  /**
+   * Resolve um identificador "@lid" (contato via anúncio "clique para
+   * WhatsApp", que chega sem o telefone real) para o número de verdade.
+   * Retorna null se a Z-API não conseguir resolver — nesse caso a
+   * conversa continua identificada só pelo lid.
+   *
+   * Não usa zapiGet aqui de propósito: zapiGet engole qualquer resposta
+   * não-2xx e devolve null sem dizer por quê (404 de contato ainda não
+   * sincronizado do lado da Z-API vs. 401 de credencial errada vs. 500
+   * são causas bem diferentes) — loga status+corpo em cada caminho de
+   * falha pra dar pra diagnosticar direto no log do servidor.
+   */
+  async resolveLid(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    lid: string,
+  ): Promise<{ phone: string; name: string; imgUrl?: string } | null> {
+    const response = await fetch(buildUrl(instanceId, token, `/contacts/${encodeURIComponent(lid)}`), {
+      method: "GET",
+      headers: { "Client-Token": clientToken },
+    });
+    if (!response.ok) {
+      const corpo = await response.text().catch(() => "");
+      console.error(`[Z-API resolveLid] ${lid} → HTTP ${response.status}: ${corpo.slice(0, 300)}`);
+      return null;
+    }
+    const data = await response.json() as any;
+    const rawPhone = data?.phone;
+    if (!rawPhone || typeof rawPhone !== "string" || rawPhone.includes("@")) {
+      console.warn(`[Z-API resolveLid] ${lid} → resposta sem phone válido: ${JSON.stringify(data).slice(0, 300)}`);
+      return null;
+    }
+    const digits = rawPhone.replace(/\D/g, "");
+    if (digits.length < 10) {
+      console.warn(`[Z-API resolveLid] ${lid} → phone retornado muito curto: ${rawPhone}`);
+      return null;
+    }
+    if (rawPhone === lid || digits === lid.replace(/\D/g, "")) {
+      console.warn(`[Z-API resolveLid] ${lid} → phone retornado é o próprio lid, não resolvido`);
+      return null;
+    }
+    console.log(`[Z-API resolveLid] ${lid} → ${rawPhone} (${data.name})`);
+    return { phone: rawPhone, name: data.name || data.short || "", imgUrl: data.imgUrl };
+  },
+
+  /**
+   * Resolve o "lid" a partir do telefone (caminho INVERSO de resolveLid,
+   * confirmado suportado pela doc do Z-API mesmo com a página tips/lid
+   * afirmando que "não é possível converter @lid em telefone" — essa
+   * afirmação é sobre o outro sentido). Base do mapeamento proativo:
+   * como já temos o telefone de todo cliente cadastrado, dá pra saber o
+   * lid de cada um ANTES de qualquer mensagem chegar, e casar via
+   * lid_mapping quando o webhook chegar só com @lid. Até 50.000 números
+   * por chamada. URL do endpoint em lote não tem exemplo 100% oficial
+   * na doc pública (achado por pesquisa) — se der 404, é o primeiro
+   * lugar a conferir.
+   */
+  async phoneExistsBatch(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    telefones: string[],
+  ): Promise<Array<{ inputPhone: string; outputPhone: string; exists: boolean; lid: string | null }>> {
+    if (telefones.length === 0) return [];
+    const response = await fetch(buildUrl(instanceId, token, "/phone-exists-batch"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Client-Token": clientToken },
+      body: JSON.stringify({ phones: telefones }),
+    });
+    if (!response.ok) {
+      const corpo = await response.text().catch(() => "");
+      throw new Error(`Z-API phoneExistsBatch → HTTP ${response.status}: ${corpo.slice(0, 500)}`);
+    }
+    const data = await response.json().catch(() => null);
+    if (!Array.isArray(data)) {
+      throw new Error(`Z-API phoneExistsBatch → resposta inesperada: ${JSON.stringify(data).slice(0, 500)}`);
+    }
+    return data;
+  },
+
+  /**
+   * Não usa zapiGet aqui de propósito, mesmo motivo do resolveLid: precisa
+   * do corpo da resposta em caso de erro pra diagnosticar (rate limit,
+   * credencial errada, endpoint fora do plano contratado etc.), coisa que
+   * zapiGet engole silenciosamente.
+   */
+  async getProfilePicture(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    phone: string,
+  ): Promise<string | null> {
+    const response = await fetch(buildUrl(instanceId, token, `/profile-picture?phone=${phone}`), {
+      method: "GET",
+      headers: { "Client-Token": clientToken },
+    });
+    if (!response.ok) {
+      const corpo = await response.text().catch(() => "");
+      console.warn(`[Z-API getProfilePicture] ${phone} → HTTP ${response.status}: ${corpo.slice(0, 300)}`);
+      return null;
+    }
+    const data = await response.json() as any;
+    // Z-API retorna { value: "..." }, { profilePictureUrl: "..." } ou só
+    // { link: "..." } — confirmado em produção no mobai-crm que a resposta
+    // às vezes só tem "link", e checar só as outras duas chaves faz a foto
+    // nunca ser encontrada mesmo com a consulta funcionando.
+    const url = data?.value || data?.profilePictureUrl || data?.link || null;
+    if (typeof url === "string" && url.startsWith("http")) return url;
+    console.warn(`[Z-API getProfilePicture] ${phone} → resposta sem URL válida: ${JSON.stringify(data).slice(0, 300)}`);
+    return null;
+  },
+
+  /**
+   * Foto de grupo — /profile-picture é voltado a contato individual e não
+   * devolve nada pra ID de grupo (sufixo "-group"). O endpoint de metadata
+   * de chat (GET /chats/{phone}, confirmado em developer.z-api.io/en/chats/
+   * get-metadata-chat) devolve profileThumbnail pra qualquer chat, grupo
+   * incluso — é o que usamos aqui em vez de getProfilePicture.
+   */
+  async getGroupPhoto(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    groupPhone: string,
+  ): Promise<string | null> {
+    const response = await fetch(buildUrl(instanceId, token, `/chats/${groupPhone}`), {
+      method: "GET",
+      headers: { "Client-Token": clientToken },
+    });
+    if (!response.ok) {
+      const corpo = await response.text().catch(() => "");
+      console.warn(`[Z-API getGroupPhoto] ${groupPhone} → HTTP ${response.status}: ${corpo.slice(0, 300)}`);
+      return null;
+    }
+    const data = await response.json() as any;
+    const url = data?.profileThumbnail || null;
+    if (typeof url === "string" && url.startsWith("http")) return url;
+    console.warn(`[Z-API getGroupPhoto] ${groupPhone} → resposta sem profileThumbnail: ${JSON.stringify(data).slice(0, 300)}`);
+    return null;
+  },
+
+  /**
+   * Metadata do grupo — GET /group-metadata/{phone}, confirmado em
+   * developer.z-api.io/en/group/metadata-group. `participants[].name`
+   * só vem preenchido quando o WhatsApp expõe isso (nem sempre); telefone
+   * é o único campo garantido.
+   */
+  async getGroupMetadata(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+    groupPhone: string,
+  ): Promise<{ phone: string; isAdmin: boolean; isSuperAdmin: boolean; name?: string; short?: string }[] | null> {
+    const response = await fetch(buildUrl(instanceId, token, `/group-metadata/${groupPhone}`), {
+      method: "GET",
+      headers: { "Client-Token": clientToken },
+    });
+    if (!response.ok) {
+      const corpo = await response.text().catch(() => "");
+      console.warn(`[Z-API getGroupMetadata] ${groupPhone} → HTTP ${response.status}: ${corpo.slice(0, 300)}`);
+      return null;
+    }
+    const data = await response.json() as any;
+    const participantes = data?.participants;
+    if (!Array.isArray(participantes)) {
+      console.warn(`[Z-API getGroupMetadata] ${groupPhone} → resposta sem participants: ${JSON.stringify(data).slice(0, 300)}`);
+      return null;
+    }
+    return participantes.map((p: any) => ({
+      phone: String(p.phone ?? ""),
+      isAdmin: !!p.isAdmin,
+      isSuperAdmin: !!p.isSuperAdmin,
+      name: typeof p.name === "string" ? p.name : undefined,
+      short: typeof p.short === "string" ? p.short : undefined,
+    })).filter((p) => p.phone);
+  },
+
+  async getQrCodeImage(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+  ): Promise<string | null> {
+    const data = await zapiGet<any>(instanceId, token, clientToken, "/qr-code-image");
+    const value = data?.value || data?.qrcode || data?.base64;
+    if (!value) return null;
+    if (typeof value === "string" && value.startsWith("data:image")) return value;
+    if (typeof value === "string" && value.startsWith("/9j/")) return `data:image/jpeg;base64,${value}`;
+    if (typeof value === "string" && value.startsWith("iVBOR")) return `data:image/png;base64,${value}`;
+    return typeof value === "string" ? value : null;
+  },
+
+  async getStatus(
+    instanceId: string,
+    token: string,
+    clientToken: string,
+  ): Promise<{ connected?: boolean; status?: string; phone?: string } | null> {
+    return zapiGet<any>(instanceId, token, clientToken, "/status");
+  },
+};

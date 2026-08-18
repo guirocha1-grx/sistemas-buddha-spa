@@ -7,4 +7,14 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+  googleSheetsClientEmail: process.env.GOOGLE_SHEETS_CLIENT_EMAIL ?? "",
+  googleSheetsPrivateKey: process.env.GOOGLE_SHEETS_PRIVATE_KEY ?? "",
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN ?? "",
+  telegramChatIdGrupoRecepcao: process.env.TELEGRAM_CHAT_ID_GRUPO_RECEPCAO ?? "",
+  // Destino do relatório diário da rotina de sincronização (7h, ver
+  // server/dailySyncReport.ts) — chat pessoal do Guilherme, já salvo
+  // como env var no Manus (2026-08-17).
+  telegramChatIdGuilherme: process.env.TELEGRAM_CHAT_ID_GUILHERME ?? "",
 };

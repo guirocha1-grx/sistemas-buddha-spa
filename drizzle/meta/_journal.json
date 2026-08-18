@@ -1,5 +1,27 @@
 {
   "version": "7",
   "dialect": "mysql",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1785871195839,
+      "tag": "0000_harsh_nekra",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1785871348519,
+      "tag": "0001_complete_jasper_sitwell",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1785880000000,
+      "tag": "0002_inter_banking",
+      "breakpoints": true
+    }
+  ]
 }

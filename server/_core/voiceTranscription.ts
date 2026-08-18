@@ -197,7 +197,11 @@ export async function transcribeAudio(
 /**
  * Helper function to get file extension from MIME type
  */
-function getFileExtension(mimeType: string): string {
+export function getFileExtension(mimeType: string): string {
+  // A Z-API entrega OGG/Opus como "audio/ogg; codecs=opus". O Whisper usa a
+  // extensão do nome multipart para validar o arquivo; sem remover os
+  // parâmetros, o helper criava audio.audio e a API rejeitava a transcrição.
+  const normalizedMimeType = mimeType.toLowerCase().split(";", 1)[0].trim();
   const mimeToExt: Record<string, string> = {
     'audio/webm': 'webm',
     'audio/mp3': 'mp3',
@@ -209,7 +213,7 @@ function getFileExtension(mimeType: string): string {
     'audio/mp4': 'm4a',
   };
   
-  return mimeToExt[mimeType] || 'audio';
+  return mimeToExt[normalizedMimeType] || 'audio';
 }
 
 /**

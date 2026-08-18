@@ -157,6 +157,32 @@ export async function createHeartbeatJob(
 }
 
 /**
+ * Cria o cron, ou se já existir (nome único por owner — Forge devolve
+ * CONFLICT) acha o job existente pelo nome e atualiza no lugar. Usado
+ * pelos Fluxos (server/routers.ts, botões "Ativar retomada
+ * automática") pra registrar sem duplicar toda vez que alguém clica.
+ */
+export async function upsertHeartbeatJob(
+  job: HeartbeatJob,
+  userSession: string
+): Promise<{ taskUid: string; nextExecutionAt?: string | null }> {
+  try {
+    return await createHeartbeatJob(job, userSession);
+  } catch (error) {
+    if (!(error instanceof TRPCError) || error.code !== "CONFLICT") throw error;
+    const { jobs } = await listHeartbeatJobs(userSession, { pageSize: 200 });
+    const existing = jobs.find((j) => j.name === job.name);
+    if (!existing) throw error;
+    const result = await updateHeartbeatJob(
+      existing.taskUid,
+      { cron: job.cron, path: job.path, method: job.method, payload: job.payload, description: job.description, enable: true },
+      userSession
+    );
+    return { taskUid: existing.taskUid, nextExecutionAt: result.nextExecutionAt };
+  }
+}
+
+/**
  * Update an existing cron located by `taskUid`. Only fields you pass in
  * `patch` are mutated. `enable` flips resume/pause; omit to leave alone.
  */
