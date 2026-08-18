@@ -28,11 +28,24 @@ describe("normalizarRespostaLLM", () => {
     expect(resultado.choices[0]?.message.content).toBe("resposta recuperada");
   });
 
+  it("ignora choices com conteúdo vazio e continua lendo output", () => {
+    const resultado = normalizarRespostaLLM({
+      choices: [{ message: { content: [] } }],
+      output: [{ type: "message", content: [{ type: "output_text", text: "resposta do output" }] }],
+    });
+
+    expect(resultado.choices[0]?.message.content).toBe("resposta do output");
+  });
+
   it("falha com diagnóstico quando não existe texto de saída", () => {
     expect(() => normalizarRespostaLLM({ id: "resp_2", output: [] })).toThrow("did not contain output text");
   });
 
   it("informa o tipo de saída quando o provedor devolve apenas uma ferramenta", () => {
     expect(() => normalizarRespostaLLM({ output: [{ type: "web_search_call" }] })).toThrow("web_search_call");
+  });
+
+  it("inclui diagnóstico de choices vazias quando não existe output", () => {
+    expect(() => normalizarRespostaLLM({ choices: [{ message: { content: [] } }] })).toThrow("choices: 1 sem conteúdo textual");
   });
 });

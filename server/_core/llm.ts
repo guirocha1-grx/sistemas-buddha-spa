@@ -108,11 +108,34 @@ export function normalizarRespostaLLM(payload: unknown): InvokeResult {
 
   const body = payload as Record<string, unknown>;
   const choices = body.choices;
-  if (Array.isArray(choices) && choices.some((choice) => {
-    if (!choice || typeof choice !== "object" || !("message" in choice)) return false;
-    const message = choice.message;
-    return Boolean(message && typeof message === "object" && "content" in message && message.content);
-  })) return payload as InvokeResult;
+
+  const textoUtil = (valor: unknown): string | null => {
+    if (typeof valor === "string") return valor.trim() || null;
+    if (!Array.isArray(valor)) return null;
+    const texto = valor
+      .filter((parte): parte is Record<string, unknown> => Boolean(parte) && typeof parte === "object")
+      .filter((parte) => (parte.type === "text" || parte.type === "output_text") && typeof parte.text === "string")
+      .map((parte) => parte.text as string)
+      .join("\n")
+      .trim();
+    return texto || null;
+  };
+
+  if (Array.isArray(choices)) {
+    for (const choice of choices) {
+      if (!choice || typeof choice !== "object" || !("message" in choice)) continue;
+      const message = choice.message;
+      const texto = message && typeof message === "object" && "content" in message ? textoUtil(message.content) : null;
+      if (!texto) continue;
+      if (typeof message.content === "string") return payload as InvokeResult;
+      return {
+        id: typeof body.id === "string" ? body.id : "chat-completions",
+        created: typeof body.created === "number" ? body.created : Date.now(),
+        model: typeof body.model === "string" ? body.model : "unknown",
+        choices: [{ index: 0, message: { role: "assistant", content: texto }, finish_reason: "stop" }],
+      };
+    }
+  }
 
   const textos: string[] = [];
   const tiposSaida = new Set<string>();
@@ -123,12 +146,8 @@ export function normalizarRespostaLLM(payload: unknown): InvokeResult {
       const saida = item as Record<string, unknown>;
       if (typeof saida.type === "string") tiposSaida.add(saida.type);
       if (typeof saida.text === "string") textos.push(saida.text);
-      if (!Array.isArray(saida.content)) continue;
-      for (const parte of saida.content) {
-        if (!parte || typeof parte !== "object") continue;
-        const conteudo = parte as Record<string, unknown>;
-        if (typeof conteudo.text === "string") textos.push(conteudo.text);
-      }
+      const textoConteudo = textoUtil(saida.content);
+      if (textoConteudo) textos.push(textoConteudo);
     }
   }
 
@@ -138,7 +157,8 @@ export function normalizarRespostaLLM(payload: unknown): InvokeResult {
       ? body.error.message
       : undefined;
     const formatos = tiposSaida.size > 0 ? `; output types: ${Array.from(tiposSaida).join(", ")}` : "";
-    throw new Error(`LLM response did not contain output text${detail ? `: ${detail}` : ""}${formatos}`);
+    const diagnosticoChoices = Array.isArray(choices) ? `; choices: ${choices.length} sem conteúdo textual` : "";
+    throw new Error(`LLM response did not contain output text${detail ? `: ${detail}` : ""}${formatos}${diagnosticoChoices}`);
   }
 
   return {
