@@ -70,6 +70,13 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
     ],
   },
   { icon: Sparkles, label: "Copilot", path: "/copilot", modulo: "copilot" },
+  {
+    icon: Sparkles, label: "Agentes", path: "/agentes",
+    children: [
+      { label: "Fila de sugestões", path: "/agentes" },
+      { label: "Tabela comercial", path: "/agentes/tabela" },
+    ],
+  },
   { icon: Image, label: "Lâminas", path: "/laminas", modulo: "laminas" },
   { icon: UserPlus, label: "Leads", path: "/leads", modulo: "leads" },
   { icon: MessageCircle, label: "Config. Inbox", path: "/config-inbox", modulo: "mensagens" },

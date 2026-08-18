@@ -532,16 +532,30 @@ function registerZapiWebhook(app: Express) {
         })();
       }
 
+      // Copilot assistido: gera somente uma sugestão para revisão humana.
+      // Executa fora da resposta do webhook; sem configuração ativa por unidade,
+      // o serviço apenas retorna "nao_configurada" e não envia nada.
+      if (!payload.isGroup && !payload.fromMe && mensagemId && tipo !== "audio") {
+        void import("./agentesService")
+          .then(({ processarMensagemRecebida }) => processarMensagemRecebida({ conversaId, mensagemEntradaId: mensagemId }))
+          .catch((error) => console.error("[Webhook Z-API] Falha ao processar agentes:", error));
+      }
+
       if (tipo === "audio" && payload.audio?.audioUrl && mensagemId) {
         // Assíncrono — não bloqueia a resposta ao webhook.
         transcribeAudio({ audioUrl: payload.audio.audioUrl, language: "pt" })
-          .then((result) => {
+          .then(async (result) => {
             if ("text" in result) {
               // Whisper retorna string vazia pra áudio curto/sem fala — sem
               // esse fallback o resultado "com sucesso, mas vazio" fica
               // indistinguível de "ainda não transcreveu" na tela (a UI só
               // renderiza quando transcricao é truthy).
-              return db.updateInboxMensagemTranscricao(mensagemId, result.text.trim() || "(sem fala identificada)");
+              await db.updateInboxMensagemTranscricao(mensagemId, result.text.trim() || "(sem fala identificada)");
+              if (!payload.isGroup && !payload.fromMe) {
+                const { processarMensagemRecebida } = await import("./agentesService");
+                await processarMensagemRecebida({ conversaId, mensagemEntradaId: mensagemId });
+              }
+              return;
             }
             console.error("[Webhook Z-API] Transcrição recusada:", result.code, result.details ?? result.error);
           })

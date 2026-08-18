@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megaphone, Landmark, CreditCard, Sparkles, RotateCcw } from "lucide-react";
 import { AtendentesSection } from "@/components/AtendentesSection";
+import { AgentesPromptSection } from "@/components/AgentesPromptSection";
+import { AgentesRecursosSection } from "@/components/AgentesRecursosSection";
 import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY } from "@shared/inboxAi";
 
 interface InterForm {
@@ -55,6 +57,7 @@ const SECOES = [
   { chave: "atendentes", label: "Atendentes", escopo: "unidade" },
   { chave: "buddha_mkt", label: "Buddha Mkt", escopo: "global" },
   { chave: "prompts_ia", label: "Prompts de IA", escopo: "global" },
+  { chave: "agentes", label: "Agentes", escopo: "global" },
   { chave: "tecnico", label: "Info Técnica", escopo: "global" },
 ] as const;
 type SecaoChave = typeof SECOES[number]["chave"] | "todas";
@@ -669,6 +672,13 @@ export default function Configuracoes() {
           </div>
         </CardContent>
       </Card>
+      )}
+
+      {(filtroSecao === "todas" || filtroSecao === "agentes") && (
+        <div className="space-y-4">
+          <AgentesPromptSection />
+          <AgentesRecursosSection />
+        </div>
       )}
 
       {(filtroSecao === "todas" || filtroSecao === "tecnico") && (

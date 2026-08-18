@@ -22,6 +22,8 @@ import Adquirentes from "./pages/Adquirentes";
 import TransacoesEntreUnidades from "./pages/TransacoesEntreUnidades";
 import Parametros from "./pages/Parametros";
 import Copilot from "./pages/Copilot";
+import Agentes from "./pages/Agentes";
+import Tabela from "./pages/Tabela";
 import Laminas from "./pages/Laminas";
 import Leads from "./pages/Leads";
 import Configuracoes from "@/pages/Configuracoes";
@@ -52,6 +54,8 @@ function Router() {
         <Route path="/financeiro/transacoes-entre-unidades" component={TransacoesEntreUnidades} />
         <Route path="/financeiro/parametros" component={Parametros} />
         <Route path="/copilot" component={Copilot} />
+        <Route path="/agentes" component={Agentes} />
+        <Route path="/agentes/tabela" component={Tabela} />
         <Route path="/laminas" component={Laminas} />
         <Route path="/leads" component={Leads} />
         <Route path="/config-inbox" component={ConfigInbox} />

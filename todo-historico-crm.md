@@ -281,6 +281,3 @@
 - [x] Confirmar se a versão atual contém a normalização final de idTransacao com unidade
 - [x] Normalizar os 865 idTransacao históricos do Caixa Físico com unidadeId após confirmação explícita
 - [x] Sincronizar e publicar a última versão disponível no GitHub (solicitação atual)
-- [x] Sincronizar e publicar a última versão disponível no GitHub (nova solicitação)
-- [x] Sincronizar e publicar a última versão disponível no GitHub (nova consulta)
-- [x] Integrar com segurança a branch agents-copilot-ribeirao ao main sem perder alterações

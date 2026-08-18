@@ -477,6 +477,9 @@ export const inboxConversas = mysqlTable("inbox_conversas", {
   fotoUrl: text("fotoUrl"),
   clienteId: int("clienteId"),
   unidadeId: int("unidadeId"),
+  // Primeiro consultor que abriu a conversa. As sugestões assistidas só
+  // ficam disponíveis para ele, exceto para administradores.
+  atendenteResponsavelId: int("atendenteResponsavelId"),
   status: mysqlEnum("status", ["aberta", "aguardando", "respondida", "encerrada"]).default("aberta").notNull(),
   ultimaMensagemEm: timestamp("ultimaMensagemEm").defaultNow().notNull(),
   ultimaMensagemTexto: text("ultimaMensagemTexto"),
@@ -520,6 +523,7 @@ export const inboxConversas = mysqlTable("inbox_conversas", {
 }, (table) => ({
   telefoneCanalIdx: index("inbox_conversas_telefone_canal_idx").on(table.telefone, table.canal),
   unidadeIdx: index("inbox_conversas_unidade_idx").on(table.unidadeId),
+  atendenteResponsavelIdx: index("inbox_conversas_atendente_responsavel_idx").on(table.atendenteResponsavelId),
   chatLidIdx: index("inbox_conversas_chat_lid_idx").on(table.chatLid),
   telefoneNormalizadoIdx: index("inbox_conversas_telefone_normalizado_idx").on(table.telefoneNormalizado),
 }));
@@ -1218,3 +1222,186 @@ export const fluxoExecucoes = mysqlTable("fluxo_execucoes", {
 export type FluxoExecucao = typeof fluxoExecucoes.$inferSelect;
 export type InsertFluxoExecucao = typeof fluxoExecucoes.$inferInsert;
 
+/** Catálogo configurável dos agentes de atendimento assistido. */
+export const agentesAtendimento = mysqlTable("agentes_atendimento", {
+  id: int("id").autoincrement().primaryKey(),
+  chave: varchar("chave", { length: 64 }).notNull().unique(),
+  nome: varchar("nome", { length: 120 }).notNull(),
+  descricao: text("descricao"),
+  tipo: mysqlEnum("tipo", ["receptor", "especialista"]).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  modoOperacao: mysqlEnum("modoOperacao", ["assistido", "automatico"]).default("assistido").notNull(),
+  modelo: varchar("modelo", { length: 80 }).default("gpt-5-mini").notNull(),
+  ordem: int("ordem").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  tipoAtivoIdx: index("agentes_atendimento_tipo_ativo_idx").on(table.tipo, table.ativo),
+}));
+export type AgenteAtendimento = typeof agentesAtendimento.$inferSelect;
+export type InsertAgenteAtendimento = typeof agentesAtendimento.$inferInsert;
+
+/** Configuração operacional por agente e por unidade. */
+export const agentesConfiguracoes = mysqlTable("agentes_configuracoes", {
+  id: int("id").autoincrement().primaryKey(),
+  agenteId: int("agenteId").notNull(),
+  unidadeId: int("unidadeId").notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  modoOperacao: mysqlEnum("modoOperacao", ["assistido", "automatico"]).default("assistido").notNull(),
+  modelo: varchar("modelo", { length: 80 }).default("gpt-5-mini").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  agenteUnidadeUnica: uniqueIndex("agentes_configuracoes_agente_unidade_idx").on(table.agenteId, table.unidadeId),
+  unidadeAtivoIdx: index("agentes_configuracoes_unidade_ativo_idx").on(table.unidadeId, table.ativo),
+}));
+export type AgenteConfiguracao = typeof agentesConfiguracoes.$inferSelect;
+export type InsertAgenteConfiguracao = typeof agentesConfiguracoes.$inferInsert;
+
+/** Histórico de prompts, isolado por unidade e agente. */
+export const agentesPromptVersoes = mysqlTable("agentes_prompt_versoes", {
+  id: int("id").autoincrement().primaryKey(),
+  agenteId: int("agenteId").notNull(),
+  unidadeId: int("unidadeId"),
+  versao: int("versao").notNull(),
+  conteudo: text("conteudo").notNull(),
+  status: mysqlEnum("status", ["rascunho", "ativo", "arquivado"]).default("rascunho").notNull(),
+  criadoPorUserId: int("criadoPorUserId"),
+  criadoPorNome: varchar("criadoPorNome", { length: 120 }),
+  ativadoEm: timestamp("ativadoEm"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  agenteUnidadeVersaoUnica: uniqueIndex("agentes_prompt_versoes_agente_unidade_versao_idx").on(table.agenteId, table.unidadeId, table.versao),
+  agenteStatusIdx: index("agentes_prompt_versoes_agente_unidade_status_idx").on(table.agenteId, table.unidadeId, table.status),
+}));
+export type AgentePromptVersao = typeof agentesPromptVersoes.$inferSelect;
+export type InsertAgentePromptVersao = typeof agentesPromptVersoes.$inferInsert;
+
+/** Estado persistido da conversa sob atendimento assistido. */
+export const agentesConversas = mysqlTable("agentes_conversas", {
+  id: int("id").autoincrement().primaryKey(),
+  conversaId: int("conversaId").notNull(),
+  unidadeId: int("unidadeId").notNull(),
+  agenteAtualId: int("agenteAtualId"),
+  proximaRota: varchar("proximaRota", { length: 64 }),
+  etapa: varchar("etapa", { length: 96 }),
+  resumo: text("resumo"),
+  variaveis: json("variaveis").$type<Record<string, string | number | boolean | null>>(),
+  tentativasQualificacao: int("tentativasQualificacao").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  conversaUnica: uniqueIndex("agentes_conversas_conversa_idx").on(table.conversaId),
+  unidadeAtualIdx: index("agentes_conversas_unidade_atual_idx").on(table.unidadeId, table.agenteAtualId),
+}));
+export type AgenteConversa = typeof agentesConversas.$inferSelect;
+export type InsertAgenteConversa = typeof agentesConversas.$inferInsert;
+
+/** Conteúdo comercial aprovado e limitado à unidade. */
+export const agentesRecursos = mysqlTable("agentes_recursos", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  chave: varchar("chave", { length: 96 }).notNull(),
+  tipo: mysqlEnum("tipo", ["preco", "promocao", "conteudo", "midia", "modelo_voucher"]).notNull(),
+  titulo: varchar("titulo", { length: 256 }).notNull(),
+  conteudo: text("conteudo"),
+  url: text("url"),
+  vigenciaInicio: timestamp("vigenciaInicio"),
+  vigenciaFim: timestamp("vigenciaFim"),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeChaveUnica: uniqueIndex("agentes_recursos_unidade_chave_idx").on(table.unidadeId, table.chave),
+  unidadeTipoAtivoIdx: index("agentes_recursos_unidade_tipo_ativo_idx").on(table.unidadeId, table.tipo, table.ativo),
+}));
+export type AgenteRecurso = typeof agentesRecursos.$inferSelect;
+export type InsertAgenteRecurso = typeof agentesRecursos.$inferInsert;
+
+/** Tabela comercial consultável pelo especialista de preços. */
+export const agentesTabelaPrecos = mysqlTable("agentes_tabela_precos", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  servico: varchar("servico", { length: 200 }).notNull(),
+  categoria: varchar("categoria", { length: 80 }).notNull(),
+  duracaoMinutos: int("duracaoMinutos"),
+  precoSemana: decimal("precoSemana", { precision: 10, scale: 2 }).notNull(),
+  precoDomingo: decimal("precoDomingo", { precision: 10, scale: 2 }),
+  ativo: boolean("ativo").default(true).notNull(),
+  origem: varchar("origem", { length: 120 }).default("Tabela administrativa"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeServicoUnico: uniqueIndex("agentes_tabela_precos_unidade_servico_idx").on(table.unidadeId, table.servico),
+  unidadeCategoriaIdx: index("agentes_tabela_precos_unidade_categoria_idx").on(table.unidadeId, table.categoria),
+}));
+export type AgenteTabelaPreco = typeof agentesTabelaPrecos.$inferSelect;
+export type InsertAgenteTabelaPreco = typeof agentesTabelaPrecos.$inferInsert;
+
+/** Impede o reenvio de um mesmo material ou ação em uma conversa. */
+export const agentesAcoesConversa = mysqlTable("agentes_acoes_conversa", {
+  id: int("id").autoincrement().primaryKey(),
+  conversaId: int("conversaId").notNull(),
+  chaveAcao: varchar("chaveAcao", { length: 128 }).notNull(),
+  sugestaoId: int("sugestaoId"),
+  executadaEm: timestamp("executadaEm").defaultNow().notNull(),
+}, (table) => ({
+  conversaAcaoUnica: uniqueIndex("agentes_acoes_conversa_conversa_acao_idx").on(table.conversaId, table.chaveAcao),
+}));
+export type AgenteAcaoConversa = typeof agentesAcoesConversa.$inferSelect;
+export type InsertAgenteAcaoConversa = typeof agentesAcoesConversa.$inferInsert;
+
+/** Rastreia o roteamento e a execução de cada mensagem recebida. */
+export const agentesExecucoes = mysqlTable("agentes_execucoes", {
+  id: int("id").autoincrement().primaryKey(),
+  conversaId: int("conversaId").notNull(),
+  mensagemEntradaId: int("mensagemEntradaId").notNull(),
+  agenteReceptorId: int("agenteReceptorId"),
+  agenteEspecialistaId: int("agenteEspecialistaId"),
+  promptReceptorId: int("promptReceptorId"),
+  promptEspecialistaId: int("promptEspecialistaId"),
+  classificacao: varchar("classificacao", { length: 64 }),
+  confianca: int("confianca"),
+  rastro: json("rastro").$type<Record<string, unknown>>(),
+  status: mysqlEnum("status", ["pendente", "concluida", "ignorada", "erro"]).default("pendente").notNull(),
+  erroMsg: text("erroMsg"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  concludedAt: timestamp("concludedAt"),
+}, (table) => ({
+  mensagemEntradaUnica: uniqueIndex("agentes_execucoes_mensagem_entrada_idx").on(table.mensagemEntradaId),
+  conversaCriadaIdx: index("agentes_execucoes_conversa_criada_idx").on(table.conversaId, table.createdAt),
+  especialistaIdx: index("agentes_execucoes_especialista_idx").on(table.agenteEspecialistaId),
+}));
+export type AgenteExecucao = typeof agentesExecucoes.$inferSelect;
+export type InsertAgenteExecucao = typeof agentesExecucoes.$inferInsert;
+
+/** Sugestões geradas para avaliação explícita do consultor. */
+export const agentesSugestoes = mysqlTable("agentes_sugestoes", {
+  id: int("id").autoincrement().primaryKey(),
+  execucaoId: int("execucaoId").notNull(),
+  agenteId: int("agenteId").notNull(),
+  conversaId: int("conversaId").notNull(),
+  sugestao: text("sugestao").notNull(),
+  contexto: json("contexto").$type<{ ultimaMensagem: string; nomeContato?: string | null; unidadeId?: number | null }>(),
+  statusAgente: varchar("statusAgente", { length: 64 }),
+  variaveis: json("variaveis").$type<Record<string, unknown>>(),
+  acaoPendente: varchar("acaoPendente", { length: 128 }),
+  avaliacao: mysqlEnum("avaliacao", ["pendente", "aprovada", "reprovada"]).default("pendente").notNull(),
+  motivoAvaliacao: mysqlEnum("motivoAvaliacao", ["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"]),
+  comentarioAvaliacao: text("comentarioAvaliacao"),
+  avaliadaPorUserId: int("avaliadaPorUserId"),
+  avaliadaPorAtendenteId: int("avaliadaPorAtendenteId"),
+  avaliadaEm: timestamp("avaliadaEm"),
+  enviadaEm: timestamp("enviadaEm"),
+  enviadaAutomaticamente: boolean("enviadaAutomaticamente").default(false).notNull(),
+  erroEnvio: text("erroEnvio"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  execucaoUnica: uniqueIndex("agentes_sugestoes_execucao_idx").on(table.execucaoId),
+  filaIdx: index("agentes_sugestoes_fila_idx").on(table.avaliacao, table.enviadaEm, table.createdAt),
+  agenteCriadaIdx: index("agentes_sugestoes_agente_criada_idx").on(table.agenteId, table.createdAt),
+  conversaIdx: index("agentes_sugestoes_conversa_idx").on(table.conversaId),
+}));
+export type AgenteSugestao = typeof agentesSugestoes.$inferSelect;
+export type InsertAgenteSugestao = typeof agentesSugestoes.$inferInsert;

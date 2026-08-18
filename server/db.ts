@@ -559,6 +559,15 @@ export async function marcarInboxConversaLida(id: number) {
   await db.update(inboxConversas).set({ naoLidas: 0 }).where(eq(inboxConversas.id, id));
 }
 
+/** Registra o primeiro consultor que abriu a conversa, sem substituir um responsável existente. */
+export async function atribuirConsultorResponsavelInbox(conversaId: number, atendenteId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inboxConversas)
+    .set({ atendenteResponsavelId: atendenteId })
+    .where(and(eq(inboxConversas.id, conversaId), isNull(inboxConversas.atendenteResponsavelId)));
+}
+
 export async function atualizarNomeContatoInbox(id: number, nome: string) {
   const db = await getDb();
   if (!db) return;

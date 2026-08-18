@@ -30,6 +30,7 @@ import { sendTelegramParaRecepcao } from "./telegramApi";
 import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY, montarPedidoSugestaoMensagem } from "@shared/inboxAi";
 import { upsertHeartbeatJob } from "./_core/heartbeat";
 import { iniciarExecucaoFluxo } from "./fluxos";
+import { agentesRouter } from "./routers/agentes";
 
 function fmtDateIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -176,6 +177,7 @@ async function resolverEPromoverLids(unidade: NonNullable<Awaited<ReturnType<typ
 }
 
 export const appRouter = router({
+  agentes: agentesRouter,
   system: systemRouter,
 
   auth: router({
@@ -772,9 +774,10 @@ Diretrizes:
       abrirPorCliente: protectedProcedure.input(z.object({
         clienteId: z.number(),
         unidadeId: z.number(),
-      })).mutation(async ({ input }) => {
+      })).mutation(async ({ input, ctx }) => {
         const conversaId = await db.abrirInboxPorCliente(input);
         if (!conversaId) throw new Error("Não foi possível abrir o Inbox");
+        if (ctx.atendente?.id) await db.atribuirConsultorResponsavelInbox(conversaId, ctx.atendente.id);
         return { conversaId };
       }),
 
@@ -820,9 +823,10 @@ Diretrizes:
         }
       }),
 
-      get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input, ctx }) => {
         const conversa = await db.getInboxConversaById(input.id);
         if (conversa) await db.marcarInboxConversaLida(input.id);
+        if (ctx.atendente?.id) await db.atribuirConsultorResponsavelInbox(input.id, ctx.atendente.id);
         return conversa;
       }),
 
