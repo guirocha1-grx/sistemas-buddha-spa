@@ -31,13 +31,22 @@ export const AGENTES_INICIAIS: Array<Pick<InsertAgenteAtendimento, "chave" | "no
   { chave: "diana", nome: "Diana", descricao: "Explica e prepara solicitações de voucher para emissão humana.", tipo: "especialista", ordem: 6 },
 ];
 
+/** Regra compartilhada por todo especialista: o roteamento entre bianca/fabricia/estela/carol/diana
+ *  é interno (ver rotaDeterministica em agentesPolicy.ts e o handoff em processarMensagemRecebida)
+ *  e nunca deve aparecer pro cliente — ele deve ler como um único atendimento contínuo, nunca como
+ *  vários bots se revezando. Pedido explícito do usuário 2026-08-18 após a Diana se apresentar por
+ *  nome numa resposta real. */
+const REGRA_SEM_IDENTIFICACAO = "Nunca diga seu nome, nunca diga que é uma especialista/atendente diferente da que já estava conversando, e nunca cumprimente de novo como se a conversa estivesse recomeçando — responda como continuação natural do mesmo atendimento, sem revelar a troca interna entre especialistas.";
+
+const CRIADO_POR_BOOTSTRAP = "Bootstrap seguro do copilot";
+
 const PROMPTS_BOOTSTRAP: Record<string, string> = {
   aurea: `Você é Aurea, receptora do Buddha Spa Ribeirão Shopping. Classifique a intenção da última mensagem entre bianca, fabricia, estela, carol, diana ou humano. Pedidos de pessoa, conflito, reclamação, dados sensíveis ou contexto inseguro devem ir para humano. Não escreva resposta ao cliente. Retorne apenas JSON: {"destino":"bianca","confianca":0}.`,
-  bianca: `Você é Bianca, especialista em terapias e bem-estar do Buddha Spa Ribeirão Shopping. Explique experiências somente com base nas fontes oficiais fornecidas. Não informe preço, desconto, agenda ou disponibilidade; encaminhe preço para estela e intenção de agendar para carol. Nunca faça promessa médica. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
-  fabricia: `Você é Fabricia, especialista em Day Spa e estrutura do Buddha Spa Ribeirão Shopping. Use somente composições e regras presentes nas fontes oficiais. Para valores use estela e para reserva use carol. Não prometa ajustes ou substituições sem confirmação humana. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
-  estela: `Você é Estela, especialista comercial do Buddha Spa Ribeirão Shopping. Informe somente preços e condições presentes na tabela e fontes oficiais. Diferencie segunda a sábado de domingos e feriados quando aplicável. Não estime valores, negocie descontos ou confirme disponibilidade. Para agendamento encaminhe para carol. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
-  carol: `Você é Carol, especialista em preparação de agendamento do Buddha Spa Ribeirão Shopping. Colete serviço, data, período/horário e quantidade de pessoas. Nunca confirme vaga, profissional, horário ou pagamento. Quando os dados mínimos estiverem completos, use status success e deixe um pedido estruturado para confirmação humana. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
-  diana: `Você é Diana, especialista em vouchers do Buddha Spa Ribeirão Shopping. Explique as opções apenas com base nas fontes oficiais e colete serviço ou valor, presenteado e mensagem opcional. Nunca emita voucher, cobre ou confirme pagamento. Quando a solicitação estiver completa, use status success e deixe um pedido claro para a equipe. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
+  bianca: `Você é Bianca, especialista em terapias e bem-estar do Buddha Spa Ribeirão Shopping. ${REGRA_SEM_IDENTIFICACAO} Explique experiências somente com base nas fontes oficiais fornecidas. Não informe preço, desconto, agenda ou disponibilidade; encaminhe preço para estela e intenção de agendar para carol. Nunca faça promessa médica. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
+  fabricia: `Você é Fabricia, especialista em Day Spa e estrutura do Buddha Spa Ribeirão Shopping. ${REGRA_SEM_IDENTIFICACAO} Use somente composições e regras presentes nas fontes oficiais. Para valores use estela e para reserva use carol. Não prometa ajustes ou substituições sem confirmação humana. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
+  estela: `Você é Estela, especialista comercial do Buddha Spa Ribeirão Shopping. ${REGRA_SEM_IDENTIFICACAO} Informe somente preços e condições presentes na tabela e fontes oficiais. Diferencie segunda a sábado de domingos e feriados quando aplicável. Não estime valores, negocie descontos ou confirme disponibilidade. Para agendamento encaminhe para carol. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
+  carol: `Você é Carol, especialista em preparação de agendamento do Buddha Spa Ribeirão Shopping. ${REGRA_SEM_IDENTIFICACAO} Colete serviço, data, período/horário e quantidade de pessoas. Nunca confirme vaga, profissional, horário ou pagamento. Quando os dados mínimos estiverem completos, use status success e deixe um pedido estruturado para confirmação humana. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
+  diana: `Você é Diana, especialista em vouchers do Buddha Spa Ribeirão Shopping. ${REGRA_SEM_IDENTIFICACAO} Explique as opções apenas com base nas fontes oficiais e colete serviço ou valor, presenteado e mensagem opcional. Nunca emita voucher, cobre ou confirme pagamento. Quando a solicitação estiver completa, use status success e deixe um pedido claro para a equipe. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
 };
 
 async function obterAgentesCatalogo() {
@@ -72,15 +81,30 @@ export async function garantirAgentesIniciais(unidadeId?: number) {
       }).onDuplicateKeyUpdate({ set: { agenteId: sql`VALUES(agenteId)` } });
     }
 
-    const promptsAtivos = await db.select({ agenteId: agentesPromptVersoes.agenteId })
+    const promptsAtivos = await db.select({
+      agenteId: agentesPromptVersoes.agenteId,
+      id: agentesPromptVersoes.id,
+      conteudo: agentesPromptVersoes.conteudo,
+      criadoPorNome: agentesPromptVersoes.criadoPorNome,
+    })
       .from(agentesPromptVersoes)
       .where(and(
         eq(agentesPromptVersoes.unidadeId, unidadeId),
         eq(agentesPromptVersoes.status, "ativo"),
       ));
-    const agentesComPromptAtivo = new Set(promptsAtivos.map((item) => item.agenteId));
+    const promptAtivoPorAgente = new Map(promptsAtivos.map((item) => [item.agenteId, item]));
     for (const agente of agentes) {
-      if (agentesComPromptAtivo.has(agente.id)) continue;
+      const bootstrap = PROMPTS_BOOTSTRAP[agente.chave] ?? "Retorne apenas JSON com uma sugestão segura para revisão humana.";
+      const ativo = promptAtivoPorAgente.get(agente.id);
+      // Só resincroniza prompt que o próprio bootstrap criou (criadoPorNome
+      // ainda é CRIADO_POR_BOOTSTRAP) e cujo conteúdo mudou no código —
+      // uma versão editada manualmente pelo admin em /agentes nunca é
+      // sobrescrita aqui.
+      const precisaResincronizar = ativo && ativo.criadoPorNome === CRIADO_POR_BOOTSTRAP && ativo.conteudo !== bootstrap;
+      if (ativo && !precisaResincronizar) continue;
+      if (ativo) {
+        await db.update(agentesPromptVersoes).set({ status: "arquivado" }).where(eq(agentesPromptVersoes.id, ativo.id));
+      }
       const maiorVersao = await db.select({ maior: sql<number>`COALESCE(MAX(${agentesPromptVersoes.versao}), 0)` })
         .from(agentesPromptVersoes)
         .where(and(eq(agentesPromptVersoes.agenteId, agente.id), eq(agentesPromptVersoes.unidadeId, unidadeId)));
@@ -88,9 +112,9 @@ export async function garantirAgentesIniciais(unidadeId?: number) {
         agenteId: agente.id,
         unidadeId,
         versao: Number(maiorVersao[0]?.maior ?? 0) + 1,
-        conteudo: PROMPTS_BOOTSTRAP[agente.chave] ?? "Retorne apenas JSON com uma sugestão segura para revisão humana.",
+        conteudo: bootstrap,
         status: "ativo",
-        criadoPorNome: "Bootstrap seguro do copilot",
+        criadoPorNome: CRIADO_POR_BOOTSTRAP,
         ativadoEm: new Date(),
       });
     }
