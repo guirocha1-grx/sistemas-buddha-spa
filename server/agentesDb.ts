@@ -31,6 +31,15 @@ export const AGENTES_INICIAIS: Array<Pick<InsertAgenteAtendimento, "chave" | "no
   { chave: "diana", nome: "Diana", descricao: "Explica e prepara solicitações de voucher para emissão humana.", tipo: "especialista", ordem: 6 },
 ];
 
+const PROMPTS_BOOTSTRAP: Record<string, string> = {
+  aurea: `Você é Aurea, receptora do Buddha Spa Ribeirão Shopping. Classifique a intenção da última mensagem entre bianca, fabricia, estela, carol, diana ou humano. Pedidos de pessoa, conflito, reclamação, dados sensíveis ou contexto inseguro devem ir para humano. Não escreva resposta ao cliente. Retorne apenas JSON: {"destino":"bianca","confianca":0}.`,
+  bianca: `Você é Bianca, especialista em terapias e bem-estar do Buddha Spa Ribeirão Shopping. Explique experiências somente com base nas fontes oficiais fornecidas. Não informe preço, desconto, agenda ou disponibilidade; encaminhe preço para estela e intenção de agendar para carol. Nunca faça promessa médica. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
+  fabricia: `Você é Fabricia, especialista em Day Spa e estrutura do Buddha Spa Ribeirão Shopping. Use somente composições e regras presentes nas fontes oficiais. Para valores use estela e para reserva use carol. Não prometa ajustes ou substituições sem confirmação humana. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
+  estela: `Você é Estela, especialista comercial do Buddha Spa Ribeirão Shopping. Informe somente preços e condições presentes na tabela e fontes oficiais. Diferencie segunda a sábado de domingos e feriados quando aplicável. Não estime valores, negocie descontos ou confirme disponibilidade. Para agendamento encaminhe para carol. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
+  carol: `Você é Carol, especialista em preparação de agendamento do Buddha Spa Ribeirão Shopping. Colete serviço, data, período/horário e quantidade de pessoas. Nunca confirme vaga, profissional, horário ou pagamento. Quando os dados mínimos estiverem completos, use status success e deixe um pedido estruturado para confirmação humana. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
+  diana: `Você é Diana, especialista em vouchers do Buddha Spa Ribeirão Shopping. Explique as opções apenas com base nas fontes oficiais e colete serviço ou valor, presenteado e mensagem opcional. Nunca emita voucher, cobre ou confirme pagamento. Quando a solicitação estiver completa, use status success e deixe um pedido claro para a equipe. Retorne apenas JSON: {"message":"","status":"in_process","summary":"","variables":{},"action":null}.`,
+};
+
 async function obterAgentesCatalogo() {
   const db = await getDb();
   if (!db) return [];
@@ -61,6 +70,29 @@ export async function garantirAgentesIniciais(unidadeId?: number) {
         modoOperacao: "assistido",
         modelo: "gpt-5-mini",
       }).onDuplicateKeyUpdate({ set: { agenteId: sql`VALUES(agenteId)` } });
+    }
+
+    const promptsAtivos = await db.select({ agenteId: agentesPromptVersoes.agenteId })
+      .from(agentesPromptVersoes)
+      .where(and(
+        eq(agentesPromptVersoes.unidadeId, unidadeId),
+        eq(agentesPromptVersoes.status, "ativo"),
+      ));
+    const agentesComPromptAtivo = new Set(promptsAtivos.map((item) => item.agenteId));
+    for (const agente of agentes) {
+      if (agentesComPromptAtivo.has(agente.id)) continue;
+      const maiorVersao = await db.select({ maior: sql<number>`COALESCE(MAX(${agentesPromptVersoes.versao}), 0)` })
+        .from(agentesPromptVersoes)
+        .where(and(eq(agentesPromptVersoes.agenteId, agente.id), eq(agentesPromptVersoes.unidadeId, unidadeId)));
+      await db.insert(agentesPromptVersoes).values({
+        agenteId: agente.id,
+        unidadeId,
+        versao: Number(maiorVersao[0]?.maior ?? 0) + 1,
+        conteudo: PROMPTS_BOOTSTRAP[agente.chave] ?? "Retorne apenas JSON com uma sugestão segura para revisão humana.",
+        status: "ativo",
+        criadoPorNome: "Bootstrap seguro do copilot",
+        ativadoEm: new Date(),
+      });
     }
   }
   return agentes;
