@@ -69,6 +69,14 @@ export type InvokeParams = {
   model?: string;
   thinking?: Record<string, unknown>;
   reasoning?: Record<string, unknown>;
+  // Chat Completions (endpoint usado aqui, /v1/chat/completions) usa o campo
+  // plano "reasoning_effort" pra modelos de raciocínio — "reasoning: {effort}"
+  // é da Responses API e é ignorado silenciosamente aqui. Ver comentário no
+  // uso em agentesService.ts: o diagnóstico de completion_tokens/reasoning_tokens
+  // mostrou o orçamento inteiro (maxTokens) sendo gasto em raciocínio mesmo com
+  // reasoning:{effort:"minimal"} configurado, porque o campo nunca chegava.
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  reasoning_effort?: "minimal" | "low" | "medium" | "high";
 };
 
 export type ToolCall = {
@@ -433,6 +441,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     model,
     thinking,
     reasoning,
+    reasoningEffort,
+    reasoning_effort,
     maxTokens,
     max_tokens,
   } = params;
@@ -467,6 +477,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
   if (reasoning) {
     payload.reasoning = reasoning;
+  }
+  const resolvedReasoningEffort = reasoning_effort ?? reasoningEffort;
+  if (resolvedReasoningEffort) {
+    payload.reasoning_effort = resolvedReasoningEffort;
   }
 
   const normalizedResponseFormat = normalizeResponseFormat({
