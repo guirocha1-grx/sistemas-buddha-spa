@@ -976,59 +976,8 @@ export default function Mensagens() {
                   </div>
                 </div>
               )}
-              <div className="p-3 flex items-end gap-2">
+              <div className="p-3 space-y-2">
                 <input ref={fileInputRef} type="file" accept="image/*,audio/*,application/pdf" className="hidden" onChange={handleAnexo} />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="shrink-0"
-                  disabled={enviarMidiaMutation.isPending || !!anexoPendente}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {enviarMidiaMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
-                </Button>
-                <ScriptPicker
-                  open={scriptPickerOpen}
-                  onOpenChange={setScriptPickerOpen}
-                  onSelect={(s) => setTexto((prev) => (prev ? `${prev}\n${s}` : s))}
-                  disabled={!conversaSelecionadaId}
-                  conversaId={conversaSelecionadaId ?? undefined}
-                  clienteId={conversaSelecionada?.clienteId ?? undefined}
-                  unidadeId={unidadeSelecionada?.id}
-                  variaveis={{
-                    nome_atendente: atendente?.nome ?? user?.name ?? "",
-                    unidade: unidadeSelecionada?.nome ?? "",
-                    nome_cliente: conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || "",
-                  }}
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="shrink-0 text-amber-700 hover:text-amber-800 hover:bg-amber-50"
-                  disabled={!conversaSelecionadaId || !texto.trim() || enviarMutation.isPending || sugerirMensagemIaMutation.isPending}
-                  onClick={abrirSugestaoIa}
-                  title="Sugestão de mensagem com IA"
-                  aria-label="Sugestão de mensagem com IA"
-                >
-                  {sugerirMensagemIaMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                </Button>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="icon" className="shrink-0" title="Inserir emoji">
-                      <SmilePlus className="h-4 w-4" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0 border-0" side="top" align="end">
-                    <EmojiPicker
-                      theme={Theme.AUTO}
-                      onEmojiClick={(emojiData: EmojiClickData) => setTexto((prev) => prev + emojiData.emoji)}
-                      searchPlaceholder="Buscar emoji..."
-                      lazyLoadEmojis
-                      height={380}
-                      width={320}
-                    />
-                  </PopoverContent>
-                </Popover>
                 <div className="relative flex-1">
                   {mentionInicio !== null && mentionSugestoes.length > 0 && (
                     <div className="absolute bottom-full left-0 mb-1 w-64 max-h-48 overflow-y-auto rounded-lg border bg-popover shadow-md z-10">
@@ -1047,8 +996,8 @@ export default function Mensagens() {
                   )}
                   <Textarea
                     ref={textareaRef}
-                    placeholder={ehGrupo ? "Digite uma mensagem... (@ pra mencionar)" : "Digite uma mensagem..."}
-                    className="min-h-[60px] max-h-32 resize-none"
+                    placeholder={ehGrupo ? "Digite uma mensagem... (@ pra mencionar)" : "Digite uma mensagem, / para scripts ou cole um print..."}
+                    className="min-h-[78px] max-h-40 resize-none"
                     value={texto}
                     onPaste={handlePasteTextarea}
                     onChange={(e) => {
@@ -1080,9 +1029,66 @@ export default function Mensagens() {
                     }}
                   />
                 </div>
-                <Button size="icon" className="shrink-0" disabled={enviarMutation.isPending || !texto.trim()} onClick={handleEnviar}>
-                  {enviarMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                </Button>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0"
+                      disabled={enviarMidiaMutation.isPending || !!anexoPendente}
+                      onClick={() => fileInputRef.current?.click()}
+                      title="Anexar arquivo"
+                    >
+                      {enviarMidiaMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+                    </Button>
+                    <ScriptPicker
+                      open={scriptPickerOpen}
+                      onOpenChange={setScriptPickerOpen}
+                      onSelect={(s) => setTexto((prev) => (prev ? `${prev}\n${s}` : s))}
+                      disabled={!conversaSelecionadaId}
+                      conversaId={conversaSelecionadaId ?? undefined}
+                      clienteId={conversaSelecionada?.clienteId ?? undefined}
+                      unidadeId={unidadeSelecionada?.id}
+                      variaveis={{
+                        nome_atendente: atendente?.nome ?? user?.name ?? "",
+                        unidade: unidadeSelecionada?.nome ?? "",
+                        nome_cliente: conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || "",
+                      }}
+                    />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0 text-amber-700 hover:text-amber-800 hover:bg-amber-50"
+                      disabled={!conversaSelecionadaId || !texto.trim() || enviarMutation.isPending || sugerirMensagemIaMutation.isPending}
+                      onClick={abrirSugestaoIa}
+                      title="Sugestão de mensagem com IA"
+                      aria-label="Sugestão de mensagem com IA"
+                    >
+                      {sugerirMensagemIaMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    </Button>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="icon" className="shrink-0" title="Inserir emoji">
+                          <SmilePlus className="h-4 w-4" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0 border-0" side="top" align="end">
+                        <EmojiPicker
+                          theme={Theme.AUTO}
+                          onEmojiClick={(emojiData: EmojiClickData) => setTexto((prev) => prev + emojiData.emoji)}
+                          searchPlaceholder="Buscar emoji..."
+                          lazyLoadEmojis
+                          height={380}
+                          width={320}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <Button size="icon" className="shrink-0" disabled={enviarMutation.isPending || !texto.trim()} onClick={handleEnviar} title="Enviar mensagem">
+                    {enviarMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground">Enter para enviar · Shift+Enter para nova linha · / para scripts · ✨ para sugestão da IA</p>
               </div>
               </div>
             </>
