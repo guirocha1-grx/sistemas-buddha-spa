@@ -291,3 +291,5 @@
 - [x] Executar teste controlado da rotina diária e confirmar a entrega do relatório Telegram
 - [x] Integrar o commit c93c8ca ao main, validar e publicar
 - [x] Simplificar o texto de orientação da tabela de preços da unidade
+- [x] Sincronizar e publicar a última versão disponível no GitHub (consulta atual)
+- [x] Corrigir o mock de agentes nos testes do Inbox após integrar o diagnóstico administrativo

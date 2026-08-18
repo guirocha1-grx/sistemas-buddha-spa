@@ -112,6 +112,11 @@ const state = vi.hoisted(() => {
       iniciarVisivel: { useMutation: () => mutation() },
       get: { useQuery: () => ({ data: undefined, isLoading: false }) },
     },
+    agentes: {
+      diagnostico: {
+        conversa: { useQuery: () => ({ data: [], isLoading: false }) },
+      },
+    },
   };
   return { cliente, conversa, page, trpc };
 });
