@@ -455,7 +455,12 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.model = model;
   }
 
-  if (tools && tools.length > 0) {
+  if (tools !== undefined) {
+    // Array vazio é intencional, não "sem preferência": quando o chamador
+    // não manda nenhuma ferramenta mas o proxy anexa uma por padrão (ex.:
+    // web_search, incompatível com reasoning.effort "minimal" — erro real
+    // visto em produção), "tools: []" explícito é o único jeito de
+    // sobrepor esse padrão do lado do proxy.
     payload.tools = tools;
   }
 
