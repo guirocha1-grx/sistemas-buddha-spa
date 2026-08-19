@@ -123,6 +123,35 @@ describe("orquestrador de agentes", () => {
     expect(invokeLLM.mock.calls[0]?.[0]).not.toHaveProperty("response_format");
   });
 
+  it("acolhe uma abertura sem intenção e aguarda o cliente explicar a necessidade", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Bom dia, tudo bem?"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [biancaAssistida]);
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 440 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
+
+    expect(invokeLLM).not.toHaveBeenCalled();
+    expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
+      agenteId: 1,
+      sugestao: "Olá, seja bem-vindo(a) ao Buddha Spa. Como posso ajudar você hoje?",
+      statusAgente: "in_process",
+    }));
+    expect(agentesDb.salvarEstadoConversa).toHaveBeenCalledWith(expect.objectContaining({
+      agenteAtualId: 1,
+      etapa: "aguardando_intencao",
+    }));
+  });
+
+  it("não cria sugestão quando o especialista devolve mensagem vazia", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quais terapias vocês oferecem?"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [biancaAssistida]);
+    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("", "bianca") } }] });
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 439 })).resolves.toEqual({ status: "erro" });
+
+    expect(agentesDb.criarSugestao).not.toHaveBeenCalled();
+    expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({ status: "erro" }));
+  });
+
   it("prioriza uma pergunta explícita sobre terapias sobre o estado anterior de voucher", async () => {
     agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quais terapias vocês oferecem?"));
     agentesDb.obterEstadoConversa.mockResolvedValue({ agenteAtualId: 6, resumo: "Coleta de voucher pendente", variaveis: { tipo_voucher: "virtual" } });

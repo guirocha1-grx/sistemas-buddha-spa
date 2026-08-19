@@ -333,3 +333,6 @@
 - [x] Implementar prioridade de resolução entre múltiplas intenções e continuidade entre agentes
 - [x] Adicionar campo administrativo para definir quais agentes podem usar cada Script
 - [x] Ocultar o nome do agente no título do cartão de sugestão em revisão do Inbox
+- [x] Corrigir sugestões de agentes concluídas sem texto e restaurar o preenchimento automático do editor
+- [x] Vincular rascunhos e sugestões ao cliente correto ao trocar de conversa no Inbox
+- [x] Fazer a Áurea acolher aberturas sem intenção com uma pergunta aberta antes do roteamento

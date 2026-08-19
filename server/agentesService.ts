@@ -5,6 +5,7 @@ import { buddhaMktApi } from "./buddhaMktApi";
 import { iniciarExecucaoFluxo } from "./fluxos";
 import { zapiApi } from "./zapiApi";
 import {
+  aberturaSemIntencao,
   destinoEspecialistaValido,
   envioAutomaticoPermitido,
   normalizarVariaveis,
@@ -111,12 +112,13 @@ function interpretarRespostaEspecialista(valor: unknown): RespostaEspecialista |
   const resposta = valor as Record<string, unknown>;
   const status = statusAgenteValido(resposta.status);
   if (!status || typeof resposta.message !== "string" || typeof resposta.summary !== "string") return null;
+  const message = resposta.message.trim();
+  if (!message) return null;
   const action = typeof resposta.action === "string" && ((ACOES_PERMITIDAS as readonly string[]).includes(resposta.action) || /^script_fluxo:\d+$/.test(resposta.action))
     ? resposta.action
     : status === "enviar_resumo_dayspa" ? "enviar_resumo_dayspa" : null;
-  const handoff = ["aurea", "bianca", "fabricia", "estela", "carol", "diana"].includes(status);
   return {
-    message: handoff ? "" : resposta.message.trim(),
+    message,
     status,
     summary: resposta.summary.trim().slice(0, 1600),
     variables: normalizarVariaveis(resposta.variables),
@@ -277,6 +279,31 @@ export async function processarMensagemRecebida(params: { conversaId: number; me
         resposta: { message: "Por favor, aguarde um momento.", status: "failure", summary: "Cliente solicitou atendimento humano ou apresentou situação sensível.", variables: {}, action: null, scriptId: null, excecaoOperacional: false },
       });
       await agentesDb.concluirExecucao(execucaoId, { status: "concluida", classificacao: "humano", rastro: { origem: "regra_deterministica" } });
+      return { status: "concluida" as const, sugestaoId };
+    }
+
+    if (aberturaSemIntencao(textoEntrada) && !estado?.agenteAtualId && !estado?.proximaRota) {
+      const respostaAcolhimento: RespostaEspecialista = {
+        message: "Olá, seja bem-vindo(a) ao Buddha Spa. Como posso ajudar você hoje?",
+        status: "in_process",
+        summary: "Abertura acolhida pela Áurea; aguardando o cliente informar a necessidade.",
+        variables: {},
+        action: null,
+        scriptId: null,
+        excecaoOperacional: false,
+      };
+      await agentesDb.salvarEstadoConversa({
+        conversaId: params.conversaId,
+        unidadeId,
+        agenteAtualId: receptor.agente.id,
+        proximaRota: null,
+        etapa: "aguardando_intencao",
+        resumo: respostaAcolhimento.summary,
+        variaveis: {},
+        incrementarTentativas: true,
+      });
+      const sugestaoId = await criarSugestaoFinal({ execucaoId, especialista: receptor, contexto, resposta: respostaAcolhimento });
+      await agentesDb.concluirExecucao(execucaoId, { status: "concluida", classificacao: "aurea", rastro: { origem: "acolhimento_inicial" } });
       return { status: "concluida" as const, sugestaoId };
     }
 

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => {
@@ -43,6 +43,15 @@ const state = vi.hoisted(() => {
     etiquetas: null,
     resumoConversa: null,
   };
+  const conversaAlternativa = {
+    ...conversa,
+    id: 42,
+    clienteNome: "Outro Cliente",
+    nomeContato: "Outro Cliente",
+    telefone: "5516999999999",
+    ultimaMensagemTexto: "Até logo",
+  };
+  const conversas = [conversa, conversaAlternativa];
   const page = { location: "/clientes", setLocation: vi.fn(), openMutation: vi.fn() };
   const diagnosticos: any[] = [];
   const revisaoAgente = { pendente: null as any };
@@ -74,8 +83,8 @@ const state = vi.hoisted(() => {
             isPending: false,
           }),
         },
-        list: { useQuery: () => ({ data: [conversa], isLoading: false, refetch: vi.fn() }) },
-        get: { useQuery: () => ({ data: conversa, isLoading: false }) },
+        list: { useQuery: () => ({ data: conversas, isLoading: false, refetch: vi.fn() }) },
+        get: { useQuery: (input: { id: number }) => ({ data: input.id === 42 ? conversaAlternativa : conversa, isLoading: false }) },
         atualizarNome: { useMutation: () => mutation() },
         alterarStatus: { useMutation: () => mutation() },
         definirEtiquetas: { useMutation: () => mutation() },
@@ -122,13 +131,13 @@ const state = vi.hoisted(() => {
         conversa: { useQuery: () => ({ data: diagnosticos, isLoading: false }) },
       },
       fila: {
-        pendenteConversa: { useQuery: () => ({ data: revisaoAgente.pendente, isLoading: false }) },
+        pendenteConversa: { useQuery: (input: { conversaId: number }) => ({ data: revisaoAgente.pendente?.conversaId === input.conversaId ? revisaoAgente.pendente : undefined, isLoading: false }) },
         aprovarEEnviar: { useMutation: () => mutation() },
         reprovar: { useMutation: () => mutation() },
       },
     },
   };
-  return { cliente, conversa, page, diagnosticos, revisaoAgente, trpc };
+  return { cliente, conversa, conversaAlternativa, page, diagnosticos, revisaoAgente, trpc };
 });
 
 vi.mock("@/lib/trpc", () => ({ trpc: state.trpc }));
@@ -166,6 +175,7 @@ beforeEach(() => {
   state.conversa.isGrupo = "false";
   state.diagnosticos.splice(0);
   state.revisaoAgente.pendente = null;
+  sessionStorage.clear();
   Element.prototype.scrollIntoView = vi.fn();
 });
 
@@ -207,6 +217,7 @@ describe("fluxo completo Clientes → Inbox", () => {
     state.page.location = "/mensagens?conversaId=41";
     state.revisaoAgente.pendente = {
       id: 44,
+      conversaId: 41,
       texto: "Posso preparar as opções de voucher para você.",
       agenteNome: "Diana",
       createdAt: new Date().toISOString(),
@@ -226,6 +237,29 @@ describe("fluxo completo Clientes → Inbox", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Rejeitar$/i }));
     expect(screen.getByText("Rejeitar sugestão do agente")).toBeTruthy();
     expect((screen.getByRole("button", { name: /Confirmar rejeição/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("mantém o rascunho na conversa de origem ao alternar entre clientes", async () => {
+    state.page.location = "/mensagens?conversaId=41";
+    state.revisaoAgente.pendente = {
+      id: 45,
+      conversaId: 41,
+      texto: "Posso explicar as opções de Day Spa para você.",
+      agenteNome: "Fabricia",
+      createdAt: new Date().toISOString(),
+    };
+
+    const tela = render(<Mensagens />);
+    const inbox = within(tela.container);
+    const compositor = inbox.getAllByPlaceholderText("Digite uma mensagem, / para scripts ou cole um print...").at(-1) as HTMLTextAreaElement;
+    await waitFor(() => expect(compositor.value).toBe("Posso explicar as opções de Day Spa para você."));
+
+    fireEvent.click(inbox.getByRole("button", { name: /Outro Cliente/i }));
+    await waitFor(() => expect(compositor.value).toBe(""));
+    await waitFor(() => expect(inbox.queryByText("Sugestão em revisão")).toBeNull());
+
+    fireEvent.click(inbox.getByRole("button", { name: /Cliente Existente/i }));
+    await waitFor(() => expect(compositor.value).toBe("Posso explicar as opções de Day Spa para você."));
   });
 
 });

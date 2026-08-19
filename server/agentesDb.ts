@@ -576,7 +576,7 @@ export async function buscarSugestao(id: number) {
 export async function listarFilaSugestoes(unidadeId?: number, atendenteResponsavelId?: number) {
   const db = await getDb();
   if (!db) return [];
-  const condicoes = [eq(agentesSugestoes.avaliacao, "pendente"), isNull(agentesSugestoes.enviadaEm)];
+  const condicoes = [eq(agentesSugestoes.avaliacao, "pendente"), isNull(agentesSugestoes.enviadaEm), sql`TRIM(${agentesSugestoes.sugestao}) <> ''`];
   if (unidadeId) condicoes.push(eq(inboxConversas.unidadeId, unidadeId));
   if (atendenteResponsavelId) condicoes.push(eq(inboxConversas.atendenteResponsavelId, atendenteResponsavelId));
   return db.select({
@@ -602,6 +602,7 @@ export async function obterSugestaoPendenteConversa(conversaId: number) {
   if (!db) return undefined;
   const rows = await db.select({
     id: agentesSugestoes.id,
+    conversaId: agentesSugestoes.conversaId,
     texto: agentesSugestoes.sugestao,
     agenteNome: agentesAtendimento.nome,
     createdAt: agentesSugestoes.createdAt,
@@ -611,6 +612,7 @@ export async function obterSugestaoPendenteConversa(conversaId: number) {
       eq(agentesSugestoes.conversaId, conversaId),
       eq(agentesSugestoes.avaliacao, "pendente"),
       isNull(agentesSugestoes.enviadaEm),
+      sql`TRIM(${agentesSugestoes.sugestao}) <> ''`,
     ))
     .orderBy(desc(agentesSugestoes.createdAt))
     .limit(1);

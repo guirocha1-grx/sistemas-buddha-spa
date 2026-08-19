@@ -52,6 +52,13 @@ export function rotasDeterministicas(texto: string): Array<ChaveAgente | "humano
   return rotas;
 }
 
+/** Detecta uma primeira mensagem cordial, curta e ainda sem demanda comercial. */
+export function aberturaSemIntencao(texto: string): boolean {
+  const normalizado = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  if (!normalizado || normalizado.length > 80 || rotasDeterministicas(texto).length > 0) return false;
+  return /\b(oi|ola|bom dia|boa tarde|boa noite)\b/.test(normalizado);
+}
+
 /** Compatibilidade para chamadas que precisam apenas do primeiro destino. */
 export function rotaDeterministica(texto: string): ChaveAgente | "humano" | null {
   return rotasDeterministicas(texto)[0] ?? null;

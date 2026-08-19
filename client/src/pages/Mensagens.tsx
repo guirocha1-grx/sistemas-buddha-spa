@@ -81,7 +81,8 @@ function TickEntrega({ status }: { status?: "enviada" | "entregue" | "lida" }) {
 const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 const MOTIVOS_AVALIACAO = ["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"] as const;
 type MotivoAvaliacao = typeof MOTIVOS_AVALIACAO[number];
-type SugestaoEmRevisao = { id: number; textoOriginal: string; agente: string | null };
+type SugestaoEmRevisao = { id: number; conversaId: number; textoOriginal: string; agente: string | null };
+const CHAVE_RASCUNHO_CONVERSA = "buddha_inbox_rascunho";
 
 function statusDotClass(status: string) {
   if (status === "encerrada") return "bg-gray-400";
@@ -186,6 +187,7 @@ export default function Mensagens() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const conversaDonaDoTextoRef = useRef<number | null>(null);
   const utils = trpc.useUtils();
 
   const { data: conversas, isLoading: carregandoConversas, refetch: refetchConversas } = trpc.inbox.conversas.list.useQuery(
@@ -412,23 +414,40 @@ export default function Mensagens() {
   useEffect(() => {
     if (conversaIdSolicitada) {
       setBusca("");
-      setConversaSelecionadaId(conversaIdSolicitada);
+      selecionarConversa(conversaIdSolicitada);
       return;
     }
     if (!telefoneSolicitado) return;
     setBusca(telefoneSolicitado);
     const conversa = (conversas ?? []).find((item) => telefonesCorrespondem(item.telefone, telefoneSolicitado));
     if (conversa) {
-      setConversaSelecionadaId(conversa.id);
+      selecionarConversa(conversa.id);
       setBusca("");
     }
   }, [conversas, conversaIdSolicitada, telefoneSolicitado]);
+
+  function selecionarConversa(conversaId: number) {
+    if (conversaDonaDoTextoRef.current !== conversaId) {
+      conversaDonaDoTextoRef.current = conversaId;
+      setTexto(sessionStorage.getItem(`${CHAVE_RASCUNHO_CONVERSA}:${conversaId}`) ?? "");
+      setSugestaoEmRevisao(null);
+      setSugestaoDispensadaId(null);
+    }
+    setConversaSelecionadaId(conversaId);
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [mensagens]);
 
   useEffect(() => {
+    const conversaAnterior = conversaDonaDoTextoRef.current;
+    if (conversaAnterior === conversaSelecionadaId) return;
+    conversaDonaDoTextoRef.current = conversaSelecionadaId;
+    const rascunho = conversaSelecionadaId
+      ? sessionStorage.getItem(`${CHAVE_RASCUNHO_CONVERSA}:${conversaSelecionadaId}`) ?? ""
+      : "";
+    setTexto(rascunho);
     setEditandoNome(false);
     setBuscaMensagemAtiva(false);
     setBuscaMensagem("");
@@ -440,11 +459,19 @@ export default function Mensagens() {
   }, [conversaSelecionadaId, conversaSelecionada?.nomeContato]);
 
   useEffect(() => {
+    const conversaId = conversaDonaDoTextoRef.current;
+    if (!conversaId) return;
+    const chave = `${CHAVE_RASCUNHO_CONVERSA}:${conversaId}`;
+    if (texto) sessionStorage.setItem(chave, texto);
+    else sessionStorage.removeItem(chave);
+  }, [texto]);
+
+  useEffect(() => {
     const sugestao = sugestaoPendenteAgente.data;
-    if (!conversaSelecionadaId || !sugestao || !sugestao.texto.trim()) return;
+    if (!conversaSelecionadaId || !sugestao || sugestao.conversaId !== conversaSelecionadaId || !sugestao.texto.trim()) return;
     if (sugestaoDispensadaId === sugestao.id || sugestaoEmRevisao?.id === sugestao.id || texto.trim()) return;
     setTexto(sugestao.texto);
-    setSugestaoEmRevisao({ id: sugestao.id, textoOriginal: sugestao.texto, agente: sugestao.agenteNome });
+    setSugestaoEmRevisao({ id: sugestao.id, conversaId: sugestao.conversaId, textoOriginal: sugestao.texto, agente: sugestao.agenteNome });
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(sugestao.texto.length, sugestao.texto.length);
@@ -767,7 +794,7 @@ export default function Mensagens() {
             {conversasFiltradas.map((c) => (
               <button
                 key={c.id}
-                onClick={() => setConversaSelecionadaId(c.id)}
+                  onClick={() => selecionarConversa(c.id)}
                 className={`w-full min-w-0 text-left px-3 py-2.5 border-b hover:bg-muted/50 transition-colors flex gap-2 items-start overflow-hidden ${
                   conversaSelecionadaId === c.id ? "bg-muted" : ""
                 }`}
@@ -1118,7 +1145,7 @@ export default function Mensagens() {
                       }
                     }}
                   />
-                  {sugestaoEmRevisao && (
+                  {sugestaoEmRevisao?.conversaId === conversaSelecionadaId && (
                     <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50/70 p-2.5 dark:bg-amber-950/20">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">

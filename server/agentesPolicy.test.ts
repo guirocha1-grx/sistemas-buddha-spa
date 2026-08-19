@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { destinoEspecialistaValido, envioAutomaticoPermitido, rotaDeterministica, rotasDeterministicas, taxaAprovacaoHumana } from "./agentesPolicy";
+import { aberturaSemIntencao, destinoEspecialistaValido, envioAutomaticoPermitido, rotaDeterministica, rotasDeterministicas, taxaAprovacaoHumana } from "./agentesPolicy";
 
 describe("políticas dos agentes", () => {
   it("aceita apenas destinos presentes entre os especialistas ativos", () => {
@@ -27,6 +27,12 @@ describe("regras híbridas de atendimento", () => {
     expect(rotasDeterministicas("Quero presentear com um Day Spa, qual o valor?")).toEqual(["fabricia", "diana", "estela"]);
     expect(rotasDeterministicas("Quero emitir um voucher de massagem, quanto custa?")).toEqual(["bianca", "diana", "estela", "diana"]);
     expect(rotasDeterministicas("Preciso de nota fiscal e quero saber o valor")).toEqual(["humano"]);
+  });
+
+  it("reconhece uma abertura cordial sem encaminhar antes de entender a necessidade", () => {
+    expect(aberturaSemIntencao("Bom dia, tudo bem?")).toBe(true);
+    expect(aberturaSemIntencao("Olá, gostaria de saber o valor da massagem.")).toBe(false);
+    expect(aberturaSemIntencao("Quero agendar para amanhã")).toBe(false);
   });
 
   it("respeita a autorização de automação para especialistas e preserva bloqueios de segurança", () => {
