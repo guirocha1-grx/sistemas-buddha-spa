@@ -353,3 +353,4 @@
 - [x] Pesquisar boas práticas e propor um plano gradual de cordialidade e precisão para os agentes
 - [x] Restaurar a geração de sugestão manual baseada no texto digitado pela recepção
 - [x] Aplicar o primeiro lote de cordialidade, precisão factual e transições comerciais aos prompts ativos
+- [x] Criar saída de não intervenção focalizada em Carol e Diana para impedir sugestões desnecessárias quando agendamento ou voucher já dependem da recepção ou de sistema externo

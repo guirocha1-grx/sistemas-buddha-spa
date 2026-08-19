@@ -52,6 +52,16 @@ const respostaJson = (message: string, status = "in_process", action: string | n
   excecaoOperacional,
 });
 
+const respostaSemIntervencao = (summary: string, variables: Record<string, string | boolean> = {}) => JSON.stringify({
+  message: "",
+  status: "failure",
+  summary,
+  variables,
+  action: null,
+  scriptId: null,
+  excecaoOperacional: false,
+});
+
 const contexto = (texto: string) => ({
   conversa: { id: 10, unidadeId: 1, canal: "zapi", nomeContato: "Carla", telefone: "5516999999999" },
   unidadeNome: "Ribeirão Shopping",
@@ -148,10 +158,35 @@ describe("orquestrador de agentes", () => {
     }));
   });
 
+  it.each([
+    ["Carol", carolAssistida, "Quero agendar para sexta à tarde", "Recepção deve consultar a agenda e confirmar a disponibilidade.", { agendamento_pronto: true }],
+    ["Diana", dianaAssistida, "Quero emitir o voucher virtual para a Ana", "Recepção deve emitir o voucher e orientar o pagamento.", { voucher_pronto_para_emissao: true }],
+  ])("encerra sem sugestão quando %s já depende da recepção", async (_nome, especialista, texto, summary, variables) => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto(texto));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [especialista]);
+    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaSemIntervencao(summary, variables) } }] });
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: especialista.agente.id === 5 ? 471 : 472 })).resolves.toEqual({ status: "ignorada" });
+
+    expect(agentesDb.criarSugestao).not.toHaveBeenCalled();
+    expect(agentesDb.salvarEstadoConversa).toHaveBeenCalledWith(expect.objectContaining({
+      agenteAtualId: especialista.agente.id,
+      etapa: "aguardando_recepcao",
+      resumo: summary,
+      variaveis: expect.objectContaining(variables),
+    }));
+    expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({
+      classificacao: especialista.agente.chave,
+      status: "ignorada",
+      erroMsg: null,
+    }));
+    expect(invokeLLM.mock.calls[0]?.[0].messages[0].content).toContain("REGRA DE NÃO INTERVENÇÃO");
+  });
+
   it("não cria sugestão quando o especialista devolve mensagem vazia", async () => {
     agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quais terapias vocês oferecem?"));
     agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [biancaAssistida]);
-    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("", "bianca") } }] });
+    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("", "failure") } }] });
 
     await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 439 })).resolves.toEqual({ status: "erro" });
 
