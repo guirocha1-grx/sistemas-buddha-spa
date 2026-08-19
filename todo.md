@@ -352,3 +352,4 @@
 - [ ] Auditar a confiança do roteamento e definir bloqueio para sugestões de baixa certeza
 - [x] Pesquisar boas práticas e propor um plano gradual de cordialidade e precisão para os agentes
 - [x] Restaurar a geração de sugestão manual baseada no texto digitado pela recepção
+- [x] Aplicar o primeiro lote de cordialidade, precisão factual e transições comerciais aos prompts ativos
