@@ -205,11 +205,11 @@ export default function Mensagens() {
   const [cursorMensagensAntigas, setCursorMensagensAntigas] = useState<string | null>(null);
   const [cursorAntigasAplicado, setCursorAntigasAplicado] = useState<string | null>(null);
   const [mensagensAntigas, setMensagensAntigas] = useState<any[]>([]);
-  const { data: paginaMensagensRecentes, isLoading: carregandoMensagens } = trpc.inbox.mensagens.list.useQuery(
+  const { data: paginaMensagensRecentes, isLoading: carregandoMensagens } = trpc.inbox.mensagens.listPaginada.useQuery(
     { conversaId: conversaSelecionadaId ?? 0, limit: 120 },
     { enabled: !!conversaSelecionadaId, refetchInterval: 8000 },
   );
-  const { data: paginaMensagensAntigas, isFetching: carregandoMensagensAntigas } = trpc.inbox.mensagens.list.useQuery(
+  const { data: paginaMensagensAntigas, isFetching: carregandoMensagensAntigas } = trpc.inbox.mensagens.listPaginada.useQuery(
     { conversaId: conversaSelecionadaId ?? 0, limit: 100, antesDe: cursorMensagensAntigas ?? undefined },
     { enabled: !!conversaSelecionadaId && !!cursorMensagensAntigas && cursorMensagensAntigas !== cursorAntigasAplicado },
   );
@@ -264,14 +264,14 @@ export default function Mensagens() {
     onSuccess: () => {
       setTexto("");
       setMentionados(new Set());
-      utils.inbox.mensagens.list.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+      utils.inbox.mensagens.listPaginada.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
       utils.inbox.conversas.list.invalidate();
     },
     onError: (error) => toast.error(error.message),
   });
 
   const reagirMutation = trpc.inbox.mensagens.reagir.useMutation({
-    onSuccess: () => utils.inbox.mensagens.list.invalidate({ conversaId: conversaSelecionadaId ?? 0 }),
+    onSuccess: () => utils.inbox.mensagens.listPaginada.invalidate({ conversaId: conversaSelecionadaId ?? 0 }),
     onError: (error) => toast.error(error.message),
   });
 
@@ -283,7 +283,7 @@ export default function Mensagens() {
       setSugestaoDispensadaId(sugestaoEmRevisao?.id ?? null);
       utils.agentes.diagnostico.conversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
       utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
-      utils.inbox.mensagens.list.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+      utils.inbox.mensagens.listPaginada.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
       utils.inbox.conversas.list.invalidate();
     },
     onError: (error) => toast.error(error.message),
@@ -315,7 +315,7 @@ export default function Mensagens() {
   const enviarMidiaMutation = trpc.inbox.mensagens.enviarMidia.useMutation({
     onSuccess: () => {
       cancelarAnexo();
-      utils.inbox.mensagens.list.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+      utils.inbox.mensagens.listPaginada.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
       utils.inbox.conversas.list.invalidate();
     },
     onError: (error) => toast.error(error.message),
@@ -573,7 +573,15 @@ export default function Mensagens() {
   function handleEnviar() {
     if (!texto.trim() || !conversaSelecionadaId) return;
     if (sugestaoEmRevisao) {
-      toast.error("Revise a sugestão pelos botões do rascunho antes de enviar.");
+      // O envio pelo botão principal também é uma decisão: se mudou o texto,
+      // registra como editada; se não mudou, aceita como está. Assim o rascunho
+      // não fica preso depois que a recepção responde por conta própria.
+      aprovarSugestaoAgenteMutation.mutate({
+        sugestaoId: sugestaoEmRevisao.id,
+        textoFinal: texto.trim(),
+        tipoRevisao: texto.trim() === sugestaoEmRevisao.textoOriginal.trim() ? "aceita_como_esta" : "editada",
+        atendenteId: atendente?.id,
+      });
       return;
     }
     enviarMutation.mutate({

@@ -54,14 +54,18 @@ const state = vi.hoisted(() => {
   const conversas = [conversa, conversaAlternativa];
   const page = { location: "/clientes", setLocation: vi.fn(), openMutation: vi.fn() };
   const diagnosticos: any[] = [];
-  const revisaoAgente = { pendente: null as any };
+  const revisaoAgente = { pendente: null as any, aprovarMutation: vi.fn() };
   const mutation = (options: any = {}) => ({ mutate: vi.fn(), isPending: false, ...options });
   const trpc = {
     useUtils: () => ({
       clientes: { resumoImportados: { invalidate: vi.fn() }, listImportados: { invalidate: vi.fn() } },
       inbox: {
         conversas: { list: { invalidate: vi.fn() }, get: { invalidate: vi.fn() } },
-        mensagens: { list: { invalidate: vi.fn() } },
+        mensagens: { list: { invalidate: vi.fn() }, listPaginada: { invalidate: vi.fn() } },
+      },
+      agentes: {
+        diagnostico: { conversa: { invalidate: vi.fn() } },
+        fila: { pendenteConversa: { invalidate: vi.fn() } },
       },
       mensageria: { status: { invalidate: vi.fn() } },
     }),
@@ -95,6 +99,11 @@ const state = vi.hoisted(() => {
       },
       mensagens: {
         list: { useQuery: (input: { antesDe?: string }) => ({
+          data: input.antesDe ? [] : [{ id: 1, direcao: "recebida", tipo: "texto", conteudo: "Olá", createdAt: new Date().toISOString() }],
+          isLoading: false,
+          isFetching: false,
+        }) },
+        listPaginada: { useQuery: (input: { antesDe?: string }) => ({
           data: {
             mensagens: input.antesDe ? [] : [{ id: 1, direcao: "recebida", tipo: "texto", conteudo: "Olá", createdAt: new Date().toISOString() }],
             hasMore: false,
@@ -140,7 +149,13 @@ const state = vi.hoisted(() => {
       },
       fila: {
         pendenteConversa: { useQuery: (input: { conversaId: number }) => ({ data: revisaoAgente.pendente?.conversaId === input.conversaId ? revisaoAgente.pendente : undefined, isLoading: false }) },
-        aprovarEEnviar: { useMutation: () => mutation() },
+        aprovarEEnviar: { useMutation: (options: any) => ({
+          mutate: (input: any) => {
+            revisaoAgente.aprovarMutation(input);
+            options.onSuccess?.();
+          },
+          isPending: false,
+        }) },
         reprovar: { useMutation: () => mutation() },
       },
     },
@@ -252,6 +267,30 @@ describe("fluxo completo Clientes → Inbox", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Rejeitar$/i }));
     expect(screen.getByText("Rejeitar sugestão do agente")).toBeTruthy();
     expect((screen.getByRole("button", { name: /Confirmar rejeição/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("resolve a sugestão como editada quando a recepção envia pelo botão principal", async () => {
+    state.page.location = "/mensagens?conversaId=41";
+    state.revisaoAgente.pendente = {
+      id: 46,
+      conversaId: 41,
+      texto: "Posso explicar as opções de Day Spa para você.",
+      agenteNome: "Fabricia",
+      createdAt: new Date().toISOString(),
+    };
+    const tela = render(<Mensagens />);
+    const inbox = within(tela.container);
+
+    const compositor = inbox.getAllByPlaceholderText("Digite uma mensagem, / para scripts ou cole um print...").at(-1) as HTMLTextAreaElement;
+    await waitFor(() => expect(compositor.value).toBe("Posso explicar as opções de Day Spa para você."));
+    fireEvent.change(compositor, { target: { value: "Temos Mini Day Spa e Day Spa Home Vitalidade." } });
+    fireEvent.click(inbox.getByTitle("Enviar mensagem"));
+
+    expect(state.revisaoAgente.aprovarMutation).toHaveBeenCalledWith(expect.objectContaining({
+      sugestaoId: 46,
+      textoFinal: "Temos Mini Day Spa e Day Spa Home Vitalidade.",
+      tipoRevisao: "editada",
+    }));
   });
 
   it("mantém o rascunho na conversa de origem ao alternar entre clientes", async () => {
