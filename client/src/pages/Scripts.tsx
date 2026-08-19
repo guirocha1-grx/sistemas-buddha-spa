@@ -23,13 +23,15 @@ type Tipo = "texto" | "fluxo";
 
 interface ScriptForm {
   categoriaScript: string;
+  titulo: string;
+  descricao: string;
   tipo: Tipo;
   script: string;
   fluxoId: number | null;
   observacoes: string;
 }
 
-const FORM_VAZIO: ScriptForm = { categoriaScript: "", tipo: "texto", script: "", fluxoId: null, observacoes: "" };
+const FORM_VAZIO: ScriptForm = { categoriaScript: "", titulo: "", descricao: "", tipo: "texto", script: "", fluxoId: null, observacoes: "" };
 
 /**
  * Lista fixa (diferente do VariavelPicker dos Fluxos, que também lista
@@ -43,6 +45,7 @@ const VARIAVEIS_SCRIPT = [
   { nome: "nome_atendente", dica: "quem está atendendo agora" },
   { nome: "unidade", dica: "nome da unidade" },
   { nome: "nome_cliente", dica: "nome do cliente/contato" },
+  { nome: "campanha_do_mes", dica: "conteúdo atual da campanha da unidade" },
 ];
 
 function VariavelPickerFixo({ onInserir }: { onInserir: (nome: string) => void }) {
@@ -161,10 +164,12 @@ export default function Scripts() {
   });
 
   const abrirNovo = () => { setEditandoId(null); setForm(FORM_VAZIO); setModalAberto(true); };
-  const abrirEdicao = (s: { id: number; categoriaScript: string; tipo: Tipo; script: string | null; fluxoId: number | null; observacoes: string | null }) => {
+  const abrirEdicao = (s: { id: number; categoriaScript: string; titulo: string | null; descricao: string | null; tipo: Tipo; script: string | null; fluxoId: number | null; observacoes: string | null }) => {
     setEditandoId(s.id);
     setForm({
       categoriaScript: s.categoriaScript,
+      titulo: s.titulo ?? "",
+      descricao: s.descricao ?? "",
       tipo: s.tipo,
       script: s.script ?? "",
       fluxoId: s.fluxoId,
@@ -173,11 +178,13 @@ export default function Scripts() {
     setModalAberto(true);
   };
   const salvar = () => {
-    if (!form.categoriaScript.trim()) return;
+    if (!form.categoriaScript.trim() || !form.titulo.trim() || !form.descricao.trim()) return;
     if (form.tipo === "texto" && !form.script.trim()) return;
     if (form.tipo === "fluxo" && !form.fluxoId) return;
     const dados = {
       categoriaScript: form.categoriaScript.trim(),
+      titulo: form.titulo.trim(),
+      descricao: form.descricao.trim(),
       tipo: form.tipo,
       script: form.tipo === "texto" ? form.script.trim() : null,
       fluxoId: form.tipo === "fluxo" ? form.fluxoId ?? undefined : null,
@@ -194,7 +201,7 @@ export default function Scripts() {
   const scripts = scriptsQuery.data ?? [];
   const categorias = categoriasQuery.data ?? [];
   const salvando = createMutation.isPending || updateMutation.isPending;
-  const podeSalvar = form.categoriaScript.trim() && (form.tipo === "texto" ? form.script.trim() : form.fluxoId) && !salvando;
+  const podeSalvar = form.categoriaScript.trim() && form.titulo.trim() && form.descricao.trim() && (form.tipo === "texto" ? form.script.trim() : form.fluxoId) && !salvando;
 
   return (
     <div className="space-y-6">
@@ -264,6 +271,8 @@ export default function Scripts() {
                       </Badge>
                     )}
                   </div>
+                  <p className="text-sm font-medium">{s.titulo || "Sem título"}</p>
+                  {s.descricao && <p className="text-xs text-muted-foreground mt-0.5">{s.descricao}</p>}
                   {s.tipo === "fluxo" ? (
                     <p className="text-sm">{s.fluxoNome || "(fluxo removido)"}</p>
                   ) : (
@@ -318,6 +327,23 @@ export default function Scripts() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div>
+              <Label className="text-xs">Título</Label>
+              <Input
+                value={form.titulo}
+                onChange={(e) => setForm({ ...form, titulo: e.target.value })}
+                placeholder="Ex.: Drenagem linfática — explicação"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Descrição / quando usar</Label>
+              <Textarea
+                value={form.descricao}
+                onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+                rows={2}
+                placeholder="Ex.: Explicar como funciona a drenagem linfática e suas durações."
+              />
             </div>
 
             {form.tipo === "texto" ? (

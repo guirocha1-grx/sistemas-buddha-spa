@@ -103,6 +103,9 @@ const state = vi.hoisted(() => {
       listRecentes: { useQuery: () => ({ data: [], isLoading: false }) },
       registrarUso: { useMutation: () => mutation() },
     },
+    tabelaPrecos: {
+      campanhaMes: { useQuery: () => ({ data: { conteudo: "" }, isLoading: false }) },
+    },
     mensageria: {
       status: { useQuery: () => ({ data: { enabled: true }, isLoading: false }) },
       setStatus: { useMutation: () => mutation() },

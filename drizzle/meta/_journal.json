@@ -29,6 +29,13 @@
       "when": 1787096648797,
       "tag": "0003_agent_suggestion_review_learning",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1787166000000,
+      "tag": "0004_scripts_descricao_intencao",
+      "breakpoints": true
     }
   ]
 }

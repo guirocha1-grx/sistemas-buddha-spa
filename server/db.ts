@@ -3741,6 +3741,8 @@ export async function listScripts(busca?: string, categoria?: string) {
     condicoes.push(or(
       like(scripts.script, termo),
       like(scripts.categoriaScript, termo),
+      like(scripts.titulo, termo),
+      like(scripts.descricao, termo),
       like(fluxos.nome, termo),
     )!);
   }
@@ -3788,12 +3790,14 @@ export async function registrarUsoScript(scriptId: number, userId: number): Prom
 }
 
 export async function createScript(dados: {
-  categoriaScript: string; tipo?: "texto" | "fluxo"; script?: string; fluxoId?: number; observacoes?: string;
+  categoriaScript: string; titulo: string; descricao: string; tipo?: "texto" | "fluxo"; script?: string; fluxoId?: number; observacoes?: string;
 }): Promise<number | undefined> {
   const db = await getDb();
   if (!db) return undefined;
   const insertValues: InsertScript = {
     categoriaScript: dados.categoriaScript,
+    titulo: dados.titulo,
+    descricao: dados.descricao,
     tipo: dados.tipo ?? "texto",
     script: dados.script ?? null,
     fluxoId: dados.fluxoId ?? null,
@@ -3804,11 +3808,22 @@ export async function createScript(dados: {
 }
 
 export async function updateScript(id: number, dados: {
-  categoriaScript?: string; tipo?: "texto" | "fluxo"; script?: string | null; fluxoId?: number | null; observacoes?: string | null;
+  categoriaScript?: string; titulo?: string; descricao?: string; tipo?: "texto" | "fluxo"; script?: string | null; fluxoId?: number | null; observacoes?: string | null;
 }): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.update(scripts).set(dados).where(eq(scripts.id, id));
+}
+
+export async function getScriptById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const linhas = await db.select({ ...getTableColumns(scripts), fluxoNome: fluxos.nome, fluxoUnidadeId: fluxos.unidadeId })
+    .from(scripts)
+    .leftJoin(fluxos, eq(scripts.fluxoId, fluxos.id))
+    .where(and(eq(scripts.id, id), eq(scripts.ativo, true)))
+    .limit(1);
+  return linhas[0];
 }
 
 /** Exclusão soft — preserva o histórico em scriptsUso. */

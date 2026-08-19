@@ -1224,6 +1224,8 @@ Diretrizes:
     // de fora de propósito).
     create: protectedProcedure.input(z.object({
       categoriaScript: z.string().min(1).max(100),
+      titulo: z.string().trim().min(3).max(200),
+      descricao: z.string().trim().min(5).max(500),
       tipo: z.enum(["texto", "fluxo"]).default("texto"),
       script: z.string().min(1).nullable().optional(),
       fluxoId: z.number().nullable().optional(),
@@ -1242,6 +1244,8 @@ Diretrizes:
     update: protectedProcedure.input(z.object({
       id: z.number(),
       categoriaScript: z.string().min(1).max(100).optional(),
+      titulo: z.string().trim().min(3).max(200).optional(),
+      descricao: z.string().trim().min(5).max(500).optional(),
       tipo: z.enum(["texto", "fluxo"]).optional(),
       script: z.string().nullable().optional(),
       fluxoId: z.number().nullable().optional(),

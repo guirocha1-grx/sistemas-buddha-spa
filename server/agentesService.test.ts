@@ -9,6 +9,7 @@ const agentesDb = vi.hoisted(() => ({
   salvarEstadoConversa: vi.fn(),
   listarRecursosAtivos: vi.fn(),
   listarTabelaPrecosParaAgente: vi.fn(),
+  listarScriptsParaAgentes: vi.fn(),
   criarSugestao: vi.fn(),
   concluirExecucao: vi.fn(),
   buscarSugestao: vi.fn(),
@@ -23,6 +24,7 @@ const db = vi.hoisted(() => ({
   mensageriaEstaAtiva: vi.fn(),
   getInboxConversaById: vi.fn(),
   getUnidadeById: vi.fn(),
+  getScriptById: vi.fn(),
   insertInboxMensagem: vi.fn(),
   upsertInboxConversa: vi.fn(),
 }));
@@ -30,12 +32,14 @@ const invokeLLM = vi.hoisted(() => vi.fn());
 const sendText = vi.hoisted(() => vi.fn());
 const sendDocument = vi.hoisted(() => vi.fn());
 const sendImage = vi.hoisted(() => vi.fn());
+const iniciarExecucaoFluxo = vi.hoisted(() => vi.fn());
 
 vi.mock("./agentesDb", () => agentesDb);
 vi.mock("./db", () => db);
 vi.mock("./_core/llm", () => ({ invokeLLM }));
 vi.mock("./zapiApi", () => ({ zapiApi: { sendText, sendDocument, sendImage } }));
 vi.mock("./buddhaMktApi", () => ({ buddhaMktApi: { sendText: vi.fn() } }));
+vi.mock("./fluxos", () => ({ iniciarExecucaoFluxo }));
 
 import { aprovarEEnviarSugestao, extrairConteudoRespostaLLM, processarMensagemRecebida, reprovarSugestao } from "./agentesService";
 
@@ -76,9 +80,11 @@ describe("orquestrador de agentes", () => {
     agentesDb.salvarEstadoConversa.mockResolvedValue(1);
     agentesDb.listarRecursosAtivos.mockResolvedValue([]);
     agentesDb.listarTabelaPrecosParaAgente.mockResolvedValue([]);
+    agentesDb.listarScriptsParaAgentes.mockResolvedValue([]);
     agentesDb.acaoJaRegistrada.mockResolvedValue(false);
     agentesDb.criarSugestao.mockResolvedValue(91);
     db.mensageriaEstaAtiva.mockResolvedValue(true);
+    db.getScriptById.mockResolvedValue(undefined);
   });
 
   it("usa Aurea para intenção ambígua, encaminha para Bianca e cria uma sugestão assistida", async () => {
@@ -168,6 +174,31 @@ describe("orquestrador de agentes", () => {
     expect(contextoEspecialista).toContain("modelo_exemplo");
   });
 
+  it("seleciona um Script pelo contexto, preservando uma transição cordial quando necessária", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Pode me explicar como é a drenagem linfática?"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [biancaAssistida]);
+    agentesDb.listarScriptsParaAgentes.mockResolvedValue([{
+      id: 77,
+      categoriaScript: "Terapias",
+      titulo: "Drenagem Linfática",
+      descricao: "Explicar técnica, benefícios e durações da drenagem linfática.",
+      tipo: "texto",
+      script: "Técnica com movimentos sutis que auxilia na redução de edemas e na sensação de leveza.",
+      fluxoId: null,
+      fluxoNome: null,
+    }]);
+    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({ message: "Claro, vou explicar:", status: "in_process", summary: "Explicação de drenagem solicitada.", variables: {}, action: null, scriptId: 77 }) } }] });
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 49 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
+
+    const contextoEspecialista = invokeLLM.mock.calls[0]?.[0].messages[1].content as string;
+    expect(contextoEspecialista).toContain("Explicar técnica, benefícios e durações da drenagem linfática.");
+    expect(contextoEspecialista).not.toContain("Técnica com movimentos sutis");
+    expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
+      sugestao: "Claro, vou explicar:\n\nTécnica com movimentos sutis que auxilia na redução de edemas e na sensação de leveza.",
+    }));
+  });
+
   it("registra uma reprovação com motivo operacional", async () => {
     await reprovarSugestao({ sugestaoId: 91, comentario: "Não pode confirmar disponibilidade", motivo: "operacional", userId: 7, atendenteId: 3 });
     expect(agentesDb.avaliarSugestao).toHaveBeenCalledWith(expect.objectContaining({ sugestaoId: 91, avaliacao: "reprovada", tipoRevisao: "rejeitada", motivo: "operacional" }));
@@ -209,6 +240,21 @@ describe("orquestrador de agentes", () => {
       textoFinal: "Posso enviar a tabela atualizada de valores para você.",
     }));
     expect(db.insertInboxMensagem).toHaveBeenCalledWith(expect.objectContaining({ conteudo: "*Ana:*\nPosso enviar a tabela atualizada de valores para você." }));
+  });
+
+  it("inicia um fluxo associado ao Script somente depois da aprovação humana", async () => {
+    agentesDb.buscarSugestao.mockResolvedValue({ sugestao: { id: 96, conversaId: 10, sugestao: "Vou seguir com seu atendimento.", acaoPendente: "script_fluxo:78" } });
+    agentesDb.obterNomeAtendente.mockResolvedValue("Ana");
+    db.getInboxConversaById.mockResolvedValue({ id: 10, unidadeId: 1, clienteId: 42, canal: "zapi", telefone: "5516999999999", nomeContato: "Carla" });
+    db.getUnidadeById.mockResolvedValue({ zapiInstanceId: "instancia", zapiToken: "token", zapiClientToken: "client" });
+    db.getScriptById.mockResolvedValue({ id: 78, fluxoId: 31 });
+    sendText.mockResolvedValue({ messageId: "zapi-flux-1" });
+    iniciarExecucaoFluxo.mockResolvedValue({ id: 18 });
+
+    await expect(aprovarEEnviarSugestao({ sugestaoId: 96, userId: 7, atendenteId: 3 })).resolves.toEqual({ success: true });
+
+    expect(iniciarExecucaoFluxo).toHaveBeenCalledWith(31, 10, 42, { nome_atendente: "Ana" });
+    expect(agentesDb.registrarAcaoConversa).toHaveBeenCalledWith(10, "script_fluxo:78", 96);
   });
 
   it("envia o menu em PDF somente após a aprovação humana", async () => {

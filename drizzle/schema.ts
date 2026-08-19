@@ -955,6 +955,10 @@ export type InsertTransacaoEntreUnidades = typeof transacoesEntreUnidades.$infer
 export const scripts = mysqlTable("scripts", {
   id: int("id").autoincrement().primaryKey(),
   categoriaScript: varchar("categoriaScript", { length: 100 }).notNull(),
+  // Título curto para a equipe localizar o recurso e descrição de intenção
+  // para os agentes decidirem quando o Script é aplicável.
+  titulo: varchar("titulo", { length: 200 }),
+  descricao: varchar("descricao", { length: 500 }),
   // Null quando tipo="fluxo" — o conteúdo vem do fluxo referenciado,
   // não de texto próprio.
   script: text("script"),

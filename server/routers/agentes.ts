@@ -89,7 +89,7 @@ export const agentesRouter = router({
       .query(({ input }) => agentesDb.listarFilaSugestoes(input?.unidadeId)),
     pendenteConversa: protectedProcedure.input(z.object({ conversaId: z.number() }))
       .query(({ input }) => agentesDb.obterSugestaoPendenteConversa(input.conversaId)),
-    aprovarEEnviar: adminProcedure.input(z.object({
+    aprovarEEnviar: protectedProcedure.input(z.object({
       sugestaoId: z.number(),
       textoFinal: z.string().trim().min(1).max(4000).optional(),
       tipoRevisao: z.enum(["aceita_como_esta", "editada"]).optional(),
@@ -104,7 +104,7 @@ export const agentesRouter = router({
         const origemPublica = typeof origemCabecalho === "string" && origemCabecalho.startsWith("http") ? origemCabecalho : host ? `${protocolo}://${host}` : null;
         return aprovarEEnviarSugestao({ ...input, userId: ctx.user.id, origemPublica });
       }),
-    reprovar: adminProcedure.input(z.object({ sugestaoId: z.number(), comentario: z.string().trim().max(2000).optional(), motivo: motivoAvaliacao.optional(), atendenteId: z.number().optional() }))
+    reprovar: protectedProcedure.input(z.object({ sugestaoId: z.number(), comentario: z.string().trim().max(2000).optional(), motivo: motivoAvaliacao.optional(), atendenteId: z.number().optional() }))
       .mutation(async ({ input, ctx }) => {
         return reprovarSugestao({ ...input, userId: ctx.user.id });
       }),

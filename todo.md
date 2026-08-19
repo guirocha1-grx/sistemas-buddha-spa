@@ -316,3 +316,9 @@
 - [x] Adicionar permissão separada para gerir a Campanha do Mês
 - [x] Exibir a Campanha do Mês como segunda aba da Tabela de Preços
 - [x] Disponibilizar a variável {{campanha_do_mes}} nos fluxos de mensagens
+- [x] Recuperar descrição, título e preenchimento do catálogo de Scripts
+- [x] Recuperar variável {{campanha_do_mes}} no seletor de Scripts do Inbox
+- [x] Recuperar criação estruturada de Scripts com categoria, título, descrição e texto
+- [x] Recuperar sugestão editável automática e encerramento imediato do cartão no Inbox
+- [x] Integrar Scripts e fluxos aos agentes como base factual com transição cordial condicional
+- [x] Aplicar em todos os prompts perguntas abertas e progressivas, com exceção para agendamento, nota fiscal e voucher

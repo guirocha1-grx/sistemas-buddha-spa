@@ -10,6 +10,8 @@ import { toast } from "sonner";
 interface ScriptRow {
   id: number;
   categoriaScript: string;
+  titulo: string | null;
+  descricao: string | null;
   tipo: "texto" | "fluxo";
   script: string | null;
   fluxoId: number | null;
@@ -64,6 +66,10 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
     { enabled: open },
   );
   const recentesQuery = trpc.scripts.listRecentes.useQuery(undefined, { enabled: open });
+  const campanhaQuery = trpc.tabelaPrecos.campanhaMes.useQuery(
+    { unidadeId: unidadeId ?? 0 },
+    { enabled: open && !!unidadeId },
+  );
   const registrarUsoMutation = trpc.scripts.registrarUso.useMutation();
   const iniciarFluxoMutation = trpc.fluxos.iniciarVisivel.useMutation({
     onSuccess: () => toast.success("Fluxo iniciado."),
@@ -89,7 +95,11 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
       fechar();
       return;
     }
-    const texto = variaveis ? interpolarVariaveis(script.script ?? "", variaveis) : (script.script ?? "");
+    const variaveisComCampanha = {
+      ...(variaveis ?? {}),
+      campanha_do_mes: campanhaQuery.data?.campanha?.conteudo ?? "",
+    };
+    const texto = interpolarVariaveis(script.script ?? "", variaveisComCampanha);
     onSelect(texto);
     registrarUsoMutation.mutate({ scriptId: script.id });
     fechar();
@@ -149,8 +159,8 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
                 >
                   {s.tipo === "fluxo" ? <Workflow className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" /> : <MessageSquare className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />}
                   <span className="flex-1 min-w-0">
-                    <span className="font-medium text-xs text-muted-foreground block">{s.categoriaScript}</span>
-                    <span className="line-clamp-2">{s.tipo === "fluxo" ? (s.fluxoNome || "(fluxo removido)") : s.script?.slice(0, 140)}</span>
+                    <span className="font-medium text-xs text-muted-foreground block">{s.categoriaScript} · {s.titulo || "Sem título"}</span>
+                    <span className="line-clamp-2">{s.descricao || (s.tipo === "fluxo" ? (s.fluxoNome || "(fluxo removido)") : s.script?.slice(0, 140))}</span>
                   </span>
                   {s.tipo === "fluxo" && s.fluxoId && <MiniaturaFluxo fluxoId={s.fluxoId} />}
                 </button>
@@ -171,8 +181,8 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
               >
                 {s.tipo === "fluxo" ? <Workflow className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" /> : <MessageSquare className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />}
                 <span className="flex-1 min-w-0">
-                  <span className="font-medium text-xs text-muted-foreground block">{s.categoriaScript}</span>
-                  <span className="line-clamp-2">{s.tipo === "fluxo" ? (s.fluxoNome || "(fluxo removido)") : s.script?.slice(0, 140)}</span>
+                  <span className="font-medium text-xs text-muted-foreground block">{s.categoriaScript} · {s.titulo || "Sem título"}</span>
+                  <span className="line-clamp-2">{s.descricao || (s.tipo === "fluxo" ? (s.fluxoNome || "(fluxo removido)") : s.script?.slice(0, 140))}</span>
                 </span>
                 {s.tipo === "fluxo" && s.fluxoId && <MiniaturaFluxo fluxoId={s.fluxoId} />}
                 {iniciarFluxoMutation.isPending && s.tipo === "fluxo" && <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />}
