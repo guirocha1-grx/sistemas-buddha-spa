@@ -530,7 +530,7 @@ export async function getInboxConversaById(id: number) {
   // painel do Inbox oferecer "vincular a X" com 1 clique.
   let candidatosCliente: ClienteCandidato[] = [];
   if (!conversa.clienteId && conversa.telefone) {
-    const candidatos = candidatosConfiaveis(await buscarClientesPorTelefone(conversa.telefone));
+    const candidatos = candidatosConfiaveis(await buscarClientesPorTelefone(conversa.telefone, conversa.unidadeId ?? undefined));
     if (candidatos.length === 1) {
       const clienteId = candidatos[0].id;
       await db.update(inboxConversas).set({ clienteId }).where(and(eq(inboxConversas.id, id), isNull(inboxConversas.clienteId)));
@@ -613,11 +613,24 @@ export async function definirEtiquetasInbox(id: number, etiquetas: string[]) {
  * em match exato e único: se mais de 1 cliente bater no mesmo número
  * (duplicata de cadastro, por ex.), não escolhe nenhum — certeza, não
  * achismo. `clientes` não tem unidadeId (cadastro é global, com flags
- * clienteSsu/clienteRbs), então não filtra por unidade aqui.
+ * clienteSsu/clienteRbs). Quando a conversa identifica uma unidade,
+ * considera apenas o cadastro ativo nessa unidade.
  */
 export interface ClienteCandidato {
   id: number;
   nome: string;
+}
+
+type ClienteCandidatoComUnidade = ClienteCandidato & {
+  clienteSsu: boolean;
+  clienteRbs: boolean;
+};
+
+/** Mantém somente candidatos cadastrados na unidade da conversa atual. */
+export function filtrarCandidatosPorUnidade(candidatos: ClienteCandidatoComUnidade[], unidadeId?: number): ClienteCandidatoComUnidade[] {
+  if (unidadeId === 1) return candidatos.filter((candidato) => candidato.clienteSsu);
+  if (unidadeId === 2) return candidatos.filter((candidato) => candidato.clienteRbs);
+  return candidatos;
 }
 
 /**
@@ -629,7 +642,7 @@ export interface ClienteCandidato {
  * duplicar (2+ matches, ou 1 match com nome diferente do que a
  * recepção está tentando cadastrar).
  */
-export async function buscarClientesPorTelefone(telefoneWhatsapp: string): Promise<ClienteCandidato[]> {
+export async function buscarClientesPorTelefone(telefoneWhatsapp: string, unidadeId?: number): Promise<ClienteCandidato[]> {
   const db = await getDb();
   if (!db) return [];
   const variantes = variantesTelefone(telefoneWhatsapp).filter((v) => v.length >= 8);
@@ -637,10 +650,23 @@ export async function buscarClientesPorTelefone(telefoneWhatsapp: string): Promi
   const normalizar = (coluna: any) => sql`REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${coluna}, '+', ''), '-', ''), ' ', ''), '(', ''), ')', ''), '.', '')`;
   const colunas = [clientes.celular, clientes.celular2, clientes.telefone];
   const condicoes = colunas.flatMap((coluna) => variantes.map((v) => sql`${normalizar(coluna)} = ${v}`));
-  const resultado = await db.select({ id: clientes.id, nome: clientes.nome }).from(clientes).where(or(...condicoes));
-  const vistos = new Map<number, string>();
-  for (const r of resultado) if (!vistos.has(r.id)) vistos.set(r.id, r.nome);
-  return Array.from(vistos, ([id, nome]) => ({ id, nome }));
+  const resultado = await db.select({
+    id: clientes.id,
+    nome: clientes.nome,
+    clienteSsu: clientes.clienteSsu,
+    clienteRbs: clientes.clienteRbs,
+  }).from(clientes).where(or(...condicoes));
+  const vistos = new Map<number, ClienteCandidatoComUnidade>();
+  for (const r of resultado) {
+    const existente = vistos.get(r.id);
+    if (existente) {
+      existente.clienteSsu ||= r.clienteSsu;
+      existente.clienteRbs ||= r.clienteRbs;
+    } else {
+      vistos.set(r.id, { id: r.id, nome: r.nome, clienteSsu: r.clienteSsu, clienteRbs: r.clienteRbs });
+    }
+  }
+  return filtrarCandidatosPorUnidade(Array.from(vistos.values()), unidadeId).map(({ id, nome }) => ({ id, nome }));
 }
 
 export async function buscarClienteIdPorTelefone(telefoneWhatsapp: string): Promise<number | undefined> {
@@ -1024,7 +1050,7 @@ export async function iniciarConversaComCliente(params: {
   let clienteId: number | undefined;
   let clienteCriadoAgora = false;
   if (!params.forcarDuplicata) {
-    const candidatos = candidatosConfiaveis(await buscarClientesPorTelefone(telefoneNormalizado));
+    const candidatos = candidatosConfiaveis(await buscarClientesPorTelefone(telefoneNormalizado, params.unidadeId));
     if (candidatos.length === 1 && provavelmenteMesmaPessoa(candidatos[0].nome, params.nome)) {
       clienteId = candidatos[0].id;
     } else if (candidatos.length > 0) {
@@ -1122,7 +1148,7 @@ export async function criarClienteRapidoDeConversa(
   let clienteId: number | undefined;
   let clienteCriadoAgora = false;
   if (!forcarDuplicata) {
-    const candidatos = candidatosConfiaveis(await buscarClientesPorTelefone(conversa.telefone));
+    const candidatos = candidatosConfiaveis(await buscarClientesPorTelefone(conversa.telefone, conversa.unidadeId ?? undefined));
     if (candidatos.length === 1 && provavelmenteMesmaPessoa(candidatos[0].nome, nome)) {
       clienteId = candidatos[0].id;
     } else if (candidatos.length > 0) {
