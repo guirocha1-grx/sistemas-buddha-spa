@@ -1230,14 +1230,16 @@ Diretrizes:
       script: z.string().min(1).nullable().optional(),
       fluxoId: z.number().nullable().optional(),
       observacoes: z.string().optional(),
+      agentesPermitidos: z.array(z.enum(["bianca", "fabricia", "estela", "carol", "diana"])).max(5).optional(),
     }).refine((v) => v.tipo === "texto" ? !!v.script?.trim() : !!v.fluxoId, {
       message: "Script de texto precisa de mensagem; script de fluxo precisa de um fluxo selecionado",
-    })).mutation(async ({ input }) => {
+    })).mutation(async ({ input, ctx }) => {
       if (input.tipo === "fluxo" && input.fluxoId) {
         const fluxo = await db.getFluxoById(input.fluxoId);
         if (!fluxo?.visivelNoInbox) throw new Error('Esse fluxo não está marcado como "Visível para criação de script" — libere em Fluxos primeiro.');
       }
-      const id = await db.createScript({ ...input, script: input.script ?? undefined, fluxoId: input.fluxoId ?? undefined });
+      const agentesPermitidos = ctx.user.role === "admin" ? input.agentesPermitidos : undefined;
+      const id = await db.createScript({ ...input, agentesPermitidos, script: input.script ?? undefined, fluxoId: input.fluxoId ?? undefined });
       return { id };
     }),
 
@@ -1250,13 +1252,16 @@ Diretrizes:
       script: z.string().nullable().optional(),
       fluxoId: z.number().nullable().optional(),
       observacoes: z.string().nullable().optional(),
-    })).mutation(async ({ input }) => {
+      agentesPermitidos: z.array(z.enum(["bianca", "fabricia", "estela", "carol", "diana"])).max(5).optional(),
+    })).mutation(async ({ input, ctx }) => {
       const { id, ...dados } = input;
       if (dados.tipo === "fluxo" && dados.fluxoId) {
         const fluxo = await db.getFluxoById(dados.fluxoId);
         if (!fluxo?.visivelNoInbox) throw new Error('Esse fluxo não está marcado como "Visível para criação de script" — libere em Fluxos primeiro.');
       }
-      await db.updateScript(id, dados);
+      const { agentesPermitidos, ...dadosSemElegibilidade } = dados;
+      const dadosAutorizados = ctx.user.role === "admin" ? dados : dadosSemElegibilidade;
+      await db.updateScript(id, dadosAutorizados);
       return { success: true };
     }),
 

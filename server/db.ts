@@ -3811,7 +3811,7 @@ export async function registrarUsoScript(scriptId: number, userId: number): Prom
 }
 
 export async function createScript(dados: {
-  categoriaScript: string; titulo: string; descricao: string; tipo?: "texto" | "fluxo"; script?: string; fluxoId?: number; observacoes?: string;
+  categoriaScript: string; titulo: string; descricao: string; tipo?: "texto" | "fluxo"; script?: string; fluxoId?: number; observacoes?: string; agentesPermitidos?: Array<"bianca" | "fabricia" | "estela" | "carol" | "diana">;
 }): Promise<number | undefined> {
   const db = await getDb();
   if (!db) return undefined;
@@ -3823,13 +3823,14 @@ export async function createScript(dados: {
     script: dados.script ?? null,
     fluxoId: dados.fluxoId ?? null,
     observacoes: dados.observacoes,
+    agentesPermitidos: dados.agentesPermitidos ?? ["bianca", "fabricia", "estela", "carol", "diana"],
   };
   const result = await db.insert(scripts).values(insertValues).$returningId();
   return result[0]?.id;
 }
 
 export async function updateScript(id: number, dados: {
-  categoriaScript?: string; titulo?: string; descricao?: string; tipo?: "texto" | "fluxo"; script?: string | null; fluxoId?: number | null; observacoes?: string | null;
+  categoriaScript?: string; titulo?: string; descricao?: string; tipo?: "texto" | "fluxo"; script?: string | null; fluxoId?: number | null; observacoes?: string | null; agentesPermitidos?: Array<"bianca" | "fabricia" | "estela" | "carol" | "diana">;
 }): Promise<void> {
   const db = await getDb();
   if (!db) return;

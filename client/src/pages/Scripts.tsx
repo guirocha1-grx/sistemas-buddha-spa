@@ -1,9 +1,11 @@
 import React, { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useUnidade } from "@/contexts/UnidadeContext";
+import { useAuth } from "@/_core/hooks/useAuth";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -29,9 +31,18 @@ interface ScriptForm {
   script: string;
   fluxoId: number | null;
   observacoes: string;
+  agentesPermitidos: string[];
 }
 
-const FORM_VAZIO: ScriptForm = { categoriaScript: "", titulo: "", descricao: "", tipo: "texto", script: "", fluxoId: null, observacoes: "" };
+const AGENTES_SCRIPT = [
+  { chave: "bianca", nome: "Bianca", descricao: "Terapias" },
+  { chave: "fabricia", nome: "Fabricia", descricao: "Day Spa" },
+  { chave: "estela", nome: "Estela", descricao: "Preços" },
+  { chave: "carol", nome: "Carol", descricao: "Agendamento" },
+  { chave: "diana", nome: "Diana", descricao: "Voucher" },
+];
+const TODAS_CHAVES_AGENTES = AGENTES_SCRIPT.map((agente) => agente.chave);
+const FORM_VAZIO: ScriptForm = { categoriaScript: "", titulo: "", descricao: "", tipo: "texto", script: "", fluxoId: null, observacoes: "", agentesPermitidos: TODAS_CHAVES_AGENTES };
 
 /**
  * Lista fixa (diferente do VariavelPicker dos Fluxos, que também lista
@@ -123,6 +134,8 @@ function PreviewFluxo({ fluxoId }: { fluxoId: number }) {
 export default function Scripts() {
   const utils = trpc.useUtils();
   const { unidadeSelecionada } = useUnidade();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   const [busca, setBusca] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState<string | null>(null);
@@ -164,7 +177,7 @@ export default function Scripts() {
   });
 
   const abrirNovo = () => { setEditandoId(null); setForm(FORM_VAZIO); setModalAberto(true); };
-  const abrirEdicao = (s: { id: number; categoriaScript: string; titulo: string | null; descricao: string | null; tipo: Tipo; script: string | null; fluxoId: number | null; observacoes: string | null }) => {
+  const abrirEdicao = (s: { id: number; categoriaScript: string; titulo: string | null; descricao: string | null; tipo: Tipo; script: string | null; fluxoId: number | null; observacoes: string | null; agentesPermitidos?: string[] | null }) => {
     setEditandoId(s.id);
     setForm({
       categoriaScript: s.categoriaScript,
@@ -174,6 +187,7 @@ export default function Scripts() {
       script: s.script ?? "",
       fluxoId: s.fluxoId,
       observacoes: s.observacoes ?? "",
+      agentesPermitidos: s.agentesPermitidos ?? TODAS_CHAVES_AGENTES,
     });
     setModalAberto(true);
   };
@@ -189,6 +203,7 @@ export default function Scripts() {
       script: form.tipo === "texto" ? form.script.trim() : null,
       fluxoId: form.tipo === "fluxo" ? form.fluxoId ?? undefined : null,
       observacoes: form.observacoes.trim() || undefined,
+      agentesPermitidos: isAdmin ? form.agentesPermitidos : undefined,
     };
     if (editandoId) updateMutation.mutate({ id: editandoId, ...dados });
     else createMutation.mutate(dados as any);
@@ -273,6 +288,11 @@ export default function Scripts() {
                   </div>
                   <p className="text-sm font-medium">{s.titulo || "Sem título"}</p>
                   {s.descricao && <p className="text-xs text-muted-foreground mt-0.5">{s.descricao}</p>}
+                  {isAdmin && Array.isArray(s.agentesPermitidos) && (
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Agentes: {s.agentesPermitidos.length ? s.agentesPermitidos.map((chave) => AGENTES_SCRIPT.find((agente) => agente.chave === chave)?.nome ?? chave).join(", ") : "Nenhum"}
+                    </p>
+                  )}
                   {s.tipo === "fluxo" ? (
                     <p className="text-sm">{s.fluxoNome || "(fluxo removido)"}</p>
                   ) : (
@@ -345,6 +365,34 @@ export default function Scripts() {
                 placeholder="Ex.: Explicar como funciona a drenagem linfática e suas durações."
               />
             </div>
+
+            {isAdmin && (
+              <div className="rounded-md border border-border/70 bg-muted/20 p-3">
+                <Label className="text-xs">Disponível para os agentes</Label>
+                <p className="text-[11px] text-muted-foreground mt-1 mb-2">
+                  Apenas os agentes marcados recebem este Script no contexto. A equipe continua podendo usá-lo manualmente no Inbox.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {AGENTES_SCRIPT.map((agente) => {
+                    const marcado = form.agentesPermitidos.includes(agente.chave);
+                    return (
+                      <label key={agente.chave} className="flex items-center gap-2 text-xs cursor-pointer">
+                        <Checkbox
+                          checked={marcado}
+                          onCheckedChange={(checked) => setForm({
+                            ...form,
+                            agentesPermitidos: checked
+                              ? [...form.agentesPermitidos, agente.chave]
+                              : form.agentesPermitidos.filter((chave) => chave !== agente.chave),
+                          })}
+                        />
+                        <span><strong>{agente.nome}</strong> <span className="text-muted-foreground">— {agente.descricao}</span></span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {form.tipo === "texto" ? (
               <div>

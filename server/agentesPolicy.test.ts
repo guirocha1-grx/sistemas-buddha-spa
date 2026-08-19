@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { destinoEspecialistaValido, envioAutomaticoPermitido, rotaDeterministica, taxaAprovacaoHumana } from "./agentesPolicy";
+import { destinoEspecialistaValido, envioAutomaticoPermitido, rotaDeterministica, rotasDeterministicas, taxaAprovacaoHumana } from "./agentesPolicy";
 
 describe("políticas dos agentes", () => {
   it("aceita apenas destinos presentes entre os especialistas ativos", () => {
@@ -16,10 +16,17 @@ describe("políticas dos agentes", () => {
 });
 
 describe("regras híbridas de atendimento", () => {
-  it("prioriza os gatilhos determinísticos de preço e escalonamento humano", () => {
-    expect(rotaDeterministica("Quero saber o valor da relaxante")).toBe("estela");
+  it("prioriza a explicação antes do preço e preserva o escalonamento humano", () => {
+    expect(rotaDeterministica("Quero saber o valor da relaxante")).toBe("bianca");
     expect(rotaDeterministica("Quero falar com um atendente humano")).toBe("humano");
     expect(rotaDeterministica("Vocês trabalham com voucher?")).toBe("diana");
+  });
+
+  it("mantém a fila comercial: explicação, preço e depois agendamento", () => {
+    expect(rotasDeterministicas("Quero agendar uma massagem, quanto custa?")).toEqual(["bianca", "estela", "carol"]);
+    expect(rotasDeterministicas("Quero presentear com um Day Spa, qual o valor?")).toEqual(["fabricia", "diana", "estela"]);
+    expect(rotasDeterministicas("Quero emitir um voucher de massagem, quanto custa?")).toEqual(["bianca", "diana", "estela", "diana"]);
+    expect(rotasDeterministicas("Preciso de nota fiscal e quero saber o valor")).toEqual(["humano"]);
   });
 
   it("respeita a autorização de automação para especialistas e preserva bloqueios de segurança", () => {

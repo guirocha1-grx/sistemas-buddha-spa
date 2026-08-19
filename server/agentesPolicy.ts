@@ -30,16 +30,31 @@ export function normalizarVariaveis(valor: unknown): Record<string, string | num
   )).slice(0, 30));
 }
 
-/** Gatilhos de segurança e rotas de intenção sem depender do modelo. */
-export function rotaDeterministica(texto: string): ChaveAgente | "humano" | null {
+/**
+ * Extrai intenções explícitas na ordem comercial: explicar valor percebido,
+ * informar preço e só então concluir agendamento ou emissão. Isso evita que
+ * “quero agendar, quanto custa a massagem?” pule direto para a reserva.
+ */
+export function rotasDeterministicas(texto: string): Array<ChaveAgente | "humano"> {
   const normalizado = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  if (/\b(humano|atendente|pessoa de verdade|reclamacao|reclamar|procon|advogado|processo)\b/.test(normalizado)) return "humano";
-  if (/\b(preco|precos|valor|valores|quanto custa|promocao|promocoes|desconto|descontos|oferta|ofertas|combo|campanha)\b/.test(normalizado)) return "estela";
-  if (/\b(agendar|agendamento|reservar|reserva|horario|horarios|disponibilidade|marcar)\b/.test(normalizado)) return "carol";
-  if (/\b(voucher|vale presente|cartao presente|presentear|presente)\b/.test(normalizado)) return "diana";
-  if (/\b(day spa|mini day|day spa prime|banheira|sala de casal|wellhub|totalpass|gympass|estrutura)\b/.test(normalizado)) return "fabricia";
-  if (/\b(massagem|massagens|terapia|terapias|shiatsu|relaxante|drenagem|ayurvedica|reflexologia|candle|estetica)\b/.test(normalizado)) return "bianca";
-  return null;
+  if (/\b(humano|atendente|pessoa de verdade|reclamacao|reclamar|procon|advogado|processo|nota fiscal|recibo fiscal)\b/.test(normalizado)) return ["humano"];
+  const rotas: ChaveAgente[] = [];
+  if (/\b(massagem|massagens|terapia|terapias|shiatsu|relaxante|drenagem|ayurvedica|reflexologia|candle|estetica)\b/.test(normalizado)) rotas.push("bianca");
+  if (/\b(day spa|mini day|day spa prime|banheira|sala de casal|wellhub|totalpass|gympass|estrutura)\b/.test(normalizado)) rotas.push("fabricia");
+  const mencionaVoucher = /\b(voucher|vale presente|cartao presente|presentear|presente)\b/.test(normalizado);
+  const querEmitirVoucher = /\b(emitir|emissao|gerar|comprar|adquirir|fazer)\b/.test(normalizado) && mencionaVoucher;
+  if (mencionaVoucher) rotas.push("diana");
+  if (/\b(preco|precos|valor|valores|quanto custa|promocao|promocoes|desconto|descontos|oferta|ofertas|combo|campanha)\b/.test(normalizado)) rotas.push("estela");
+  if (/\b(agendar|agendamento|reservar|reserva|horario|horarios|disponibilidade|marcar)\b/.test(normalizado)) rotas.push("carol");
+  // Diana pode aparecer de novo no fim: primeiro explica voucher, depois de
+  // preço/experiência a emissão é preparada sem atropelar as etapas anteriores.
+  if (querEmitirVoucher && rotas.length > 1) rotas.push("diana");
+  return rotas;
+}
+
+/** Compatibilidade para chamadas que precisam apenas do primeiro destino. */
+export function rotaDeterministica(texto: string): ChaveAgente | "humano" | null {
+  return rotasDeterministicas(texto)[0] ?? null;
 }
 
 /** A autorização explícita libera qualquer especialista; receptor, falhas e ações pendentes continuam protegidos. */

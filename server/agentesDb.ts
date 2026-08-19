@@ -480,14 +480,15 @@ export async function salvarCampanhaMensal(params: { unidadeId: number; conteudo
 }
 
 /** Catálogo enxuto: o agente seleciona pela intenção e usa o conteúdo somente quando necessário. */
-export async function listarScriptsParaAgentes() {
+export async function listarScriptsParaAgentes(chaveAgente: "bianca" | "fabricia" | "estela" | "carol" | "diana") {
   const db = await getDb();
   if (!db) return [];
-  return db.select({
+  const linhas = await db.select({
     id: scripts.id,
     categoriaScript: scripts.categoriaScript,
     titulo: scripts.titulo,
     descricao: scripts.descricao,
+    agentesPermitidos: scripts.agentesPermitidos,
     tipo: scripts.tipo,
     script: scripts.script,
     fluxoId: scripts.fluxoId,
@@ -496,6 +497,9 @@ export async function listarScriptsParaAgentes() {
     .leftJoin(fluxos, eq(scripts.fluxoId, fluxos.id))
     .where(eq(scripts.ativo, true))
     .orderBy(scripts.categoriaScript, scripts.id);
+  // Null representa Scripts legados ainda sem a coluna preenchida: mantém
+  // compatibilidade até a migração de classificação concluir.
+  return linhas.filter((script) => !script.agentesPermitidos || script.agentesPermitidos.includes(chaveAgente));
 }
 
 export async function listarTabelaPrecos(params: { unidadeId: number; busca?: string; categoria?: string; apenasAtivos?: boolean }) {

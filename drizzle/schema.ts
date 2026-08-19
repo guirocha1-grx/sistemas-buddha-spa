@@ -959,6 +959,10 @@ export const scripts = mysqlTable("scripts", {
   // para os agentes decidirem quando o Script é aplicável.
   titulo: varchar("titulo", { length: 200 }),
   descricao: varchar("descricao", { length: 500 }),
+  // Chaves dos especialistas que podem receber este Script no contexto de IA.
+  // A equipe continua vendo todos os Scripts no Inbox; esta seleção é apenas
+  // para reduzir contexto e evitar sugestão fora da especialidade.
+  agentesPermitidos: json("agentesPermitidos").$type<Array<"bianca" | "fabricia" | "estela" | "carol" | "diana">>(),
   // Null quando tipo="fluxo" — o conteúdo vem do fluxo referenciado,
   // não de texto próprio.
   script: text("script"),

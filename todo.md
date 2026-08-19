@@ -329,3 +329,6 @@
 - [x] Corrigir roteamento de perguntas sobre terapias e limitar respostas iniciais extensas dos agentes
 - [x] Limitar sugestões comuns dos agentes a 350 caracteres totais, incluindo espaços, com exceções operacionais
 - [x] Comparar prompts originais e ativos dos agentes e restaurar contexto operacional perdido
+- [x] Revisar os seis prompts para operação assistida real e propor ajustes por agente antes da ativação
+- [x] Implementar prioridade de resolução entre múltiplas intenções e continuidade entre agentes
+- [x] Adicionar campo administrativo para definir quais agentes podem usar cada Script
