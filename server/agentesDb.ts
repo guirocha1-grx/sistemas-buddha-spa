@@ -562,6 +562,26 @@ export async function criarSugestao(params: {
   return insert[0]?.id;
 }
 
+/**
+ * Uma mensagem posterior substitui qualquer resposta pendente da mesma
+ * conversa. Mantém o registro para auditoria, sem tratá-lo como rejeição
+ * ou edição da recepção.
+ */
+export async function descartarSugestoesPendentesDaConversa(conversaId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Banco indisponível");
+  await db.update(agentesSugestoes).set({
+    avaliacao: "obsoleta",
+    tipoRevisao: "substituida_por_contexto",
+    comentarioAvaliacao: "Sugestão substituída por mensagem mais recente do cliente.",
+    avaliadaEm: new Date(),
+  }).where(and(
+    eq(agentesSugestoes.conversaId, conversaId),
+    eq(agentesSugestoes.avaliacao, "pendente"),
+    isNull(agentesSugestoes.enviadaEm),
+  ));
+}
+
 export async function buscarSugestao(id: number) {
   const db = await getDb();
   if (!db) return undefined;

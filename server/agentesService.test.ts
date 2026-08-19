@@ -11,6 +11,7 @@ const agentesDb = vi.hoisted(() => ({
   listarTabelaPrecosParaAgente: vi.fn(),
   listarScriptsParaAgentes: vi.fn(),
   criarSugestao: vi.fn(),
+  descartarSugestoesPendentesDaConversa: vi.fn(),
   concluirExecucao: vi.fn(),
   buscarSugestao: vi.fn(),
   avaliarSugestao: vi.fn(),
@@ -114,6 +115,7 @@ describe("orquestrador de agentes", () => {
     agentesDb.listarScriptsParaAgentes.mockResolvedValue([]);
     agentesDb.acaoJaRegistrada.mockResolvedValue(false);
     agentesDb.criarSugestao.mockResolvedValue(91);
+    agentesDb.descartarSugestoesPendentesDaConversa.mockResolvedValue(undefined);
     db.mensageriaEstaAtiva.mockResolvedValue(true);
     db.getScriptById.mockResolvedValue(undefined);
   });
@@ -134,6 +136,7 @@ describe("orquestrador de agentes", () => {
       statusAgente: "in_process",
       variaveis: expect.objectContaining({ servico_interesse: "Shiatsu 60min" }),
     }));
+    expect(agentesDb.descartarSugestoesPendentesDaConversa).toHaveBeenCalledWith(10);
     expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({ status: "concluida", classificacao: "bianca" }));
     expect(sendText).not.toHaveBeenCalled();
     expect(invokeLLM.mock.calls[0]?.[0]).toMatchObject({ tool_choice: "none", tools: [], reasoningEffort: "low" });

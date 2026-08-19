@@ -358,3 +358,4 @@
 - [x] Confirmar em uso real que a sugestão curta da Diana envia a mensagem e inicia o fluxo oficial de vouchers após aprovação humana
 - [x] Exibir no cartão de sugestão o nome do fluxo que será iniciado após a aprovação humana
 - [x] Criar controle individual de automação por conversa: ativa, bloqueada por 2 horas ou bloqueada permanentemente
+- [x] Manter somente a sugestão automática mais recente por conversa e encerrar pendências obsoletas sem avaliação

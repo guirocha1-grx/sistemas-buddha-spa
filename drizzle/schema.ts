@@ -1398,8 +1398,10 @@ export const agentesSugestoes = mysqlTable("agentes_sugestoes", {
   statusAgente: varchar("statusAgente", { length: 64 }),
   variaveis: json("variaveis").$type<Record<string, unknown>>(),
   acaoPendente: varchar("acaoPendente", { length: 128 }),
-  avaliacao: mysqlEnum("avaliacao", ["pendente", "aprovada", "reprovada"]).default("pendente").notNull(),
-  tipoRevisao: mysqlEnum("tipoRevisao", ["aceita_como_esta", "editada", "rejeitada"]),
+  // "obsoleta" não é uma rejeição humana: registra uma sugestão descartada
+  // porque uma mensagem posterior do mesmo cliente substituiu o contexto.
+  avaliacao: mysqlEnum("avaliacao", ["pendente", "aprovada", "reprovada", "obsoleta"]).default("pendente").notNull(),
+  tipoRevisao: mysqlEnum("tipoRevisao", ["aceita_como_esta", "editada", "rejeitada", "substituida_por_contexto"]),
   textoFinal: text("textoFinal"),
   motivoAvaliacao: mysqlEnum("motivoAvaliacao", ["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"]),
   comentarioAvaliacao: text("comentarioAvaliacao"),

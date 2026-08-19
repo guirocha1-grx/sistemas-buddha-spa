@@ -387,6 +387,9 @@ async function obterRespostaEspecialista(params: {
 export async function processarMensagemRecebida(params: { conversaId: number; mensagemEntradaId: number }) {
   const existente = await agentesDb.buscarExecucaoPorMensagem(params.mensagemEntradaId);
   if (existente) return { status: "duplicada" as const };
+  // O contexto de uma resposta pendente deixa de valer assim que o cliente
+  // envia nova mensagem. Mantemos somente a próxima sugestão desse contexto.
+  await agentesDb.descartarSugestoesPendentesDaConversa(params.conversaId);
   const contexto = await agentesDb.obterContextoConversa(params.conversaId);
   if (!contexto?.conversa.unidadeId) return { status: "sem_unidade" as const };
   if (contexto.conversa.automacaoAgentesEfetiva !== undefined && contexto.conversa.automacaoAgentesEfetiva !== "ativa") {
