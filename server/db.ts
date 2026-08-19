@@ -3729,21 +3729,16 @@ export async function listScripts(busca?: string, categoria?: string) {
   if (!db) return [];
   const condicoes = [eq(scripts.ativo, true)];
   if (categoria) condicoes.push(eq(scripts.categoriaScript, categoria));
-  if (busca) {
-    // Script tipo "fluxo" não tem texto próprio (scripts.script é null
-    // nesse caso, ver schema.ts) — o "conteúdo" dele pra quem tá
-    // procurando é o nome do Fluxo vinculado. Sem isso, buscar por
-    // "preço" nunca achava um script-fluxo chamado "Enviar tabela de
-    // preços". Também busca na categoria — script tipo texto sem
-    // aquela palavra no corpo, mas categorizado como "Preços, planos e
-    // ofertas", também deve aparecer.
-    const termo = `%${busca}%`;
+  const buscaNormalizada = busca?.trim();
+  if (buscaNormalizada) {
+    // A busca é deliberadamente limitada ao que a equipe consulta no item:
+    // título, descrição de uso e corpo da mensagem. Categoria e fluxo são
+    // metadados de organização, portanto não podem introduzir falsos positivos.
+    const termo = `%${buscaNormalizada}%`;
     condicoes.push(or(
       like(scripts.script, termo),
-      like(scripts.categoriaScript, termo),
       like(scripts.titulo, termo),
       like(scripts.descricao, termo),
-      like(fluxos.nome, termo),
     )!);
   }
   return db.select({ ...getTableColumns(scripts), fluxoUnidadeId: fluxos.unidadeId, fluxoNome: fluxos.nome })

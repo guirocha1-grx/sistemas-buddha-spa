@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Zap, MessageSquare, Workflow, Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { scriptCorrespondeBusca } from "@/lib/scriptsSearch";
 import { toast } from "sonner";
 
 interface ScriptRow {
@@ -105,7 +106,8 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
     fechar();
   };
 
-  const listaFiltrada = (scriptsQuery.data ?? []).filter(visivelNaUnidade) as ScriptRow[];
+  const listaFiltrada = (scriptsQuery.data ?? [])
+    .filter((script) => visivelNaUnidade(script) && scriptCorrespondeBusca(script, busca)) as ScriptRow[];
   const recentesFiltrados = (recentesQuery.data ?? []).filter(visivelNaUnidade) as ScriptRow[];
 
   return (
