@@ -18,7 +18,7 @@ import {
   unidades,
   type InsertAgenteAtendimento,
 } from "../drizzle/schema";
-import { getDb } from "./db";
+import { getDb, obterModoEfetivoAutomacaoAgentes } from "./db";
 import { taxaAprovacaoHumana } from "./agentesPolicy";
 
 export type VariaveisAgente = Record<string, string | number | boolean | null>;
@@ -692,7 +692,14 @@ export async function obterContextoConversa(conversaId: number) {
   const mensagens = await db.select({ direcao: inboxMensagens.direcao, conteudo: inboxMensagens.conteudo, transcricao: inboxMensagens.transcricao, createdAt: inboxMensagens.createdAt })
     .from(inboxMensagens).where(eq(inboxMensagens.conversaId, conversaId))
     .orderBy(desc(inboxMensagens.createdAt)).limit(12);
-  return { ...conversa[0], mensagens: mensagens.reverse() };
+  return {
+    ...conversa[0],
+    conversa: {
+      ...conversa[0].conversa,
+      automacaoAgentesEfetiva: obterModoEfetivoAutomacaoAgentes(conversa[0].conversa),
+    },
+    mensagens: mensagens.reverse(),
+  };
 }
 
 export async function listarMetricasAgentes(unidadeId?: number, inicio?: Date, fim?: Date) {

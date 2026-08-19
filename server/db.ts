@@ -12,6 +12,22 @@ import { storageGetSignedUrl } from "./storage";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
+export type ModoAutomacaoAgentes = "ativa" | "bloqueada_temporariamente" | "bloqueada_permanentemente";
+const DUAS_HORAS_MS = 2 * 60 * 60 * 1000;
+
+/** Resolve o bloqueio por data durante a leitura e o webhook, sem tarefa agendada. */
+export function obterModoEfetivoAutomacaoAgentes(conversa: {
+  automacaoAgentes?: ModoAutomacaoAgentes | null;
+  automacaoAgentesBloqueadaAte?: Date | string | null;
+}, agora = new Date()): ModoAutomacaoAgentes {
+  if (conversa.automacaoAgentes === "bloqueada_permanentemente") return "bloqueada_permanentemente";
+  if (conversa.automacaoAgentes === "bloqueada_temporariamente" && conversa.automacaoAgentesBloqueadaAte) {
+    const bloqueadaAte = new Date(conversa.automacaoAgentesBloqueadaAte);
+    if (!Number.isNaN(bloqueadaAte.getTime()) && bloqueadaAte.getTime() > agora.getTime()) return "bloqueada_temporariamente";
+  }
+  return "ativa";
+}
+
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
@@ -549,11 +565,24 @@ export async function getInboxConversaById(id: number) {
     : [];
   return {
     ...conversa,
+    automacaoAgentesEfetiva: obterModoEfetivoAutomacaoAgentes(conversa),
     clienteNome: clienteRows[0]?.nome,
     clienteQtdServicos: clienteRows[0]?.qtdServicosFinalizados,
     clienteUltimoAtendimento: clienteRows[0]?.ultimoAtendimento,
     candidatosCliente,
   };
+}
+
+/** Atualiza o modo de automação; a suspensão temporária expira em duas horas. */
+export async function definirAutomacaoAgentesInboxConversa(id: number, modo: ModoAutomacaoAgentes) {
+  const db = await getDb();
+  if (!db) throw new Error("Banco indisponível");
+  const bloqueadaAte = modo === "bloqueada_temporariamente" ? new Date(Date.now() + DUAS_HORAS_MS) : null;
+  await db.update(inboxConversas).set({
+    automacaoAgentes: modo,
+    automacaoAgentesBloqueadaAte: bloqueadaAte,
+  }).where(eq(inboxConversas.id, id));
+  return { modo, bloqueadaAte };
 }
 
 /** "Vincular a este cliente" no painel do Inbox — resolve o caso de telefone compartilhado entre clientes distintos (ex.: mãe/filha) sem criar um cadastro duplicado nem adivinhar sozinho. */

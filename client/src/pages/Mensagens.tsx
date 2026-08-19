@@ -359,6 +359,16 @@ export default function Mensagens() {
     onError: (error) => toast.error(error.message),
   });
 
+  const definirAutomacaoAgentesMutation = trpc.inbox.conversas.definirAutomacaoAgentes.useMutation({
+    onSuccess: () => {
+      utils.inbox.conversas.get.invalidate({ id: conversaSelecionadaId ?? 0 });
+      utils.inbox.conversas.list.invalidate();
+      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+      toast.success("Configuração de automação atualizada.");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   const definirEtiquetasMutation = trpc.inbox.conversas.definirEtiquetas.useMutation({
     onSuccess: () => {
       utils.inbox.conversas.get.invalidate({ id: conversaSelecionadaId ?? 0 });
@@ -574,6 +584,10 @@ export default function Mensagens() {
   const sugestaoFoiEditada = !!sugestaoEmRevisao && texto.trim() !== sugestaoEmRevisao.textoOriginal.trim();
   const fluxoPendenteNome = sugestaoEmRevisao?.acaoPendente?.startsWith("script_fluxo:")
     ? sugestaoEmRevisao.fluxoPendenteNome ?? "Fluxo configurado"
+    : null;
+  const modoAutomacaoAgentes = conversaSelecionada?.automacaoAgentesEfetiva ?? "ativa";
+  const automacaoBloqueadaAte = conversaSelecionada?.automacaoAgentesBloqueadaAte
+    ? formatHora(conversaSelecionada.automacaoAgentesBloqueadaAte)
     : null;
 
   function enviarRascunhoRevisado() {
@@ -1566,6 +1580,25 @@ export default function Mensagens() {
                       </Button>
                     )}
                   </div>
+                </div>
+
+                <div className="space-y-2 rounded-lg border border-dashed border-[#8d6a2b]/35 bg-[#fffdf7] p-2.5 dark:bg-amber-950/10">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Automação</p>
+                    <span className={`h-1.5 w-1.5 rounded-full ${modoAutomacaoAgentes === "ativa" ? "bg-emerald-500" : modoAutomacaoAgentes === "bloqueada_temporariamente" ? "bg-amber-500" : "bg-rose-500"}`} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-1" role="group" aria-label="Controle de automação da conversa">
+                    <Button type="button" variant={modoAutomacaoAgentes === "ativa" ? "default" : "outline"} size="sm" className="h-6 px-1 text-[9px]" title="Automação ativa: novas mensagens podem receber sugestão dos agentes." onClick={() => conversaSelecionadaId && definirAutomacaoAgentesMutation.mutate({ id: conversaSelecionadaId, modo: "ativa" })} disabled={definirAutomacaoAgentesMutation.isPending}>Ativa</Button>
+                    <Button type="button" variant={modoAutomacaoAgentes === "bloqueada_temporariamente" ? "secondary" : "outline"} size="sm" className="h-6 px-1 text-[9px]" title="Bloquear por 2 horas: nenhuma nova sugestão automática será gerada até o prazo expirar." onClick={() => conversaSelecionadaId && definirAutomacaoAgentesMutation.mutate({ id: conversaSelecionadaId, modo: "bloqueada_temporariamente" })} disabled={definirAutomacaoAgentesMutation.isPending}>2 horas</Button>
+                    <Button type="button" variant={modoAutomacaoAgentes === "bloqueada_permanentemente" ? "destructive" : "outline"} size="sm" className="h-6 px-1 text-[9px]" title="Bloquear permanentemente: a recepção poderá atender manualmente, mas os agentes não gerarão novas sugestões até a reativação." onClick={() => conversaSelecionadaId && definirAutomacaoAgentesMutation.mutate({ id: conversaSelecionadaId, modo: "bloqueada_permanentemente" })} disabled={definirAutomacaoAgentesMutation.isPending}>Permanente</Button>
+                  </div>
+                  <p className="text-[10px] leading-4 text-muted-foreground">
+                    {modoAutomacaoAgentes === "ativa"
+                      ? "Agentes podem sugerir respostas."
+                      : modoAutomacaoAgentes === "bloqueada_temporariamente"
+                        ? `Pausada até ${automacaoBloqueadaAte ?? "o fim do período"}.`
+                        : "Pausada até ser reativada manualmente."}
+                  </p>
                 </div>
 
                 <Separator />

@@ -481,6 +481,10 @@ export const inboxConversas = mysqlTable("inbox_conversas", {
   // ficam disponíveis para ele, exceto para administradores.
   atendenteResponsavelId: int("atendenteResponsavelId"),
   status: mysqlEnum("status", ["aberta", "aguardando", "respondida", "encerrada"]).default("aberta").notNull(),
+  // Controle individual da geração automática de sugestões: a suspensão
+  // temporária é resolvida por data no próprio webhook, sem job recorrente.
+  automacaoAgentes: mysqlEnum("automacaoAgentes", ["ativa", "bloqueada_temporariamente", "bloqueada_permanentemente"]).default("ativa").notNull(),
+  automacaoAgentesBloqueadaAte: timestamp("automacaoAgentesBloqueadaAte"),
   ultimaMensagemEm: timestamp("ultimaMensagemEm").defaultNow().notNull(),
   ultimaMensagemTexto: text("ultimaMensagemTexto"),
   naoLidas: int("naoLidas").default(0).notNull(),

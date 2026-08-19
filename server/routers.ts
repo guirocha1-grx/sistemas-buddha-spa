@@ -895,6 +895,13 @@ Diretrizes:
         return { success: true };
       }),
 
+      definirAutomacaoAgentes: protectedProcedure.input(z.object({
+        id: z.number(),
+        modo: z.enum(["ativa", "bloqueada_temporariamente", "bloqueada_permanentemente"]),
+      })).mutation(async ({ input }) => {
+        return db.definirAutomacaoAgentesInboxConversa(input.id, input.modo);
+      }),
+
       definirEtiquetas: protectedProcedure.input(z.object({
         id: z.number(),
         etiquetas: z.array(z.string()),

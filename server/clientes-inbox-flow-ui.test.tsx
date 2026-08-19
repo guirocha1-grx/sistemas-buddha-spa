@@ -42,6 +42,8 @@ const state = vi.hoisted(() => {
     isLidPendente: "false",
     etiquetas: null,
     resumoConversa: null,
+    automacaoAgentesEfetiva: "ativa",
+    automacaoAgentesBloqueadaAte: null,
   };
   const conversaAlternativa = {
     ...conversa,
@@ -54,7 +56,7 @@ const state = vi.hoisted(() => {
   const conversas = [conversa, conversaAlternativa];
   const page = { location: "/clientes", setLocation: vi.fn(), openMutation: vi.fn() };
   const diagnosticos: any[] = [];
-  const revisaoAgente = { pendente: null as any, aprovarMutation: vi.fn(), liberarMutation: vi.fn() };
+  const revisaoAgente = { pendente: null as any, aprovarMutation: vi.fn(), liberarMutation: vi.fn(), automacaoMutation: vi.fn() };
   const mutation = (options: any = {}) => ({ mutate: vi.fn(), isPending: false, ...options });
   const trpc = {
     useUtils: () => ({
@@ -91,6 +93,13 @@ const state = vi.hoisted(() => {
         get: { useQuery: (input: { id: number }) => ({ data: input.id === 42 ? conversaAlternativa : conversa, isLoading: false }) },
         atualizarNome: { useMutation: () => mutation() },
         alterarStatus: { useMutation: () => mutation() },
+        definirAutomacaoAgentes: { useMutation: (options: any) => ({
+          mutate: (input: any) => {
+            revisaoAgente.automacaoMutation(input);
+            options.onSuccess?.();
+          },
+          isPending: false,
+        }) },
         definirEtiquetas: { useMutation: () => mutation() },
         excluir: { useMutation: () => mutation() },
         criarClienteRapido: { useMutation: () => mutation() },
@@ -207,6 +216,7 @@ beforeEach(() => {
   state.revisaoAgente.pendente = null;
   state.revisaoAgente.aprovarMutation.mockReset();
   state.revisaoAgente.liberarMutation.mockReset();
+  state.revisaoAgente.automacaoMutation.mockReset();
   sessionStorage.clear();
   Element.prototype.scrollIntoView = vi.fn();
 });
@@ -281,6 +291,20 @@ describe("fluxo completo Clientes → Inbox", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Rejeitar$/i }));
     expect(screen.getByText("Rejeitar sugestão do agente")).toBeTruthy();
     expect((screen.getByRole("button", { name: /Confirmar rejeição/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("permite bloquear a automação da conversa por duas horas ou permanentemente", async () => {
+    state.page.location = "/mensagens?conversaId=41";
+    render(<Mensagens />);
+
+    const botaoDuasHoras = await screen.findByRole("button", { name: "2 horas" });
+    expect(botaoDuasHoras.getAttribute("title")).toContain("2 horas");
+    fireEvent.click(botaoDuasHoras);
+    expect(state.revisaoAgente.automacaoMutation).toHaveBeenCalledWith({ id: 41, modo: "bloqueada_temporariamente" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Permanente" }));
+    expect(state.revisaoAgente.automacaoMutation).toHaveBeenCalledWith({ id: 41, modo: "bloqueada_permanentemente" });
+    expect(screen.getByRole("button", { name: "Ativa" }).getAttribute("title")).toContain("Automação ativa");
   });
 
   it("resolve a sugestão como editada quando a recepção envia pelo botão principal", async () => {

@@ -389,6 +389,9 @@ export async function processarMensagemRecebida(params: { conversaId: number; me
   if (existente) return { status: "duplicada" as const };
   const contexto = await agentesDb.obterContextoConversa(params.conversaId);
   if (!contexto?.conversa.unidadeId) return { status: "sem_unidade" as const };
+  if (contexto.conversa.automacaoAgentesEfetiva !== undefined && contexto.conversa.automacaoAgentesEfetiva !== "ativa") {
+    return { status: "automacao_bloqueada" as const };
+  }
   const unidadeId = contexto.conversa.unidadeId;
   const receptores = await agentesDb.listarAgentesAtivosComPrompt(unidadeId, "receptor");
   const especialistas = await agentesDb.listarAgentesAtivosComPrompt(unidadeId, "especialista");

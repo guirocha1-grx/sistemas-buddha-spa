@@ -62,8 +62,8 @@ const respostaSemIntervencao = (summary: string, variables: Record<string, strin
   excecaoOperacional: false,
 });
 
-const contexto = (texto: string) => ({
-  conversa: { id: 10, unidadeId: 1, canal: "zapi", nomeContato: "Carla", telefone: "5516999999999" },
+const contexto = (texto: string, automacaoAgentesEfetiva?: "bloqueada_temporariamente" | "bloqueada_permanentemente") => ({
+  conversa: { id: 10, unidadeId: 1, canal: "zapi", nomeContato: "Carla", telefone: "5516999999999", automacaoAgentesEfetiva },
   unidadeNome: "Ribeirão Shopping",
   clienteNome: "Carla",
   mensagens: [{ direcao: "recebida", conteudo: texto, transcricao: null, createdAt: new Date() }],
@@ -156,6 +156,16 @@ describe("orquestrador de agentes", () => {
       agenteAtualId: 1,
       etapa: "aguardando_intencao",
     }));
+  });
+
+  it.each(["bloqueada_temporariamente", "bloqueada_permanentemente"] as const)("não executa os agentes quando a automação está %s", async (modo) => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quero saber sobre massagens", modo));
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: modo === "bloqueada_temporariamente" ? 474 : 475 })).resolves.toEqual({ status: "automacao_bloqueada" });
+
+    expect(agentesDb.criarExecucao).not.toHaveBeenCalled();
+    expect(invokeLLM).not.toHaveBeenCalled();
+    expect(agentesDb.criarSugestao).not.toHaveBeenCalled();
   });
 
   it.each([
