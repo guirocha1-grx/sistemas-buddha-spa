@@ -310,3 +310,5 @@
 - [x] Preencher o compositor do Inbox com a sugestão de IA como rascunho editável
 - [x] Criar ações de aceitar e enviar, editar, e rejeitar com motivo obrigatório para sugestões de agentes
 - [x] Registrar as decisões e alterações de sugestões para revisão futura dos prompts
+- [x] Carregar automaticamente a sugestão pendente do agente no compositor central do Inbox
+- [x] Manter o Log dos Agentes apenas como histórico administrativo, sem ação necessária da equipe

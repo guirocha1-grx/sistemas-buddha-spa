@@ -171,6 +171,7 @@ export default function Mensagens() {
   const [modalRejeitarSugestao, setModalRejeitarSugestao] = useState(false);
   const [motivoRejeicao, setMotivoRejeicao] = useState<MotivoAvaliacao | "">("");
   const [comentarioRejeicao, setComentarioRejeicao] = useState("");
+  const [sugestaoDispensadaId, setSugestaoDispensadaId] = useState<number | null>(null);
   const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
   const [midiasComFalha, setMidiasComFalha] = useState<Set<number>>(() => new Set());
   // Autocomplete de @menção em grupo — mentionInicio é o índice do "@" no
@@ -205,6 +206,10 @@ export default function Mensagens() {
   const diagnosticoAgentes = trpc.agentes.diagnostico.conversa.useQuery(
     { conversaId: conversaSelecionadaId ?? 0, limite: 25 },
     { enabled: user?.role === "admin" && !!conversaSelecionadaId, refetchInterval: 8000 },
+  );
+  const sugestaoPendenteAgente = trpc.agentes.fila.pendenteConversa.useQuery(
+    { conversaId: conversaSelecionadaId ?? 0 },
+    { enabled: !!conversaSelecionadaId, refetchInterval: 8000 },
   );
 
   const ehGrupo = conversaSelecionada?.isGrupo === "true";
@@ -257,7 +262,9 @@ export default function Mensagens() {
       toast.success("Sugestão enviada ao cliente.");
       setTexto("");
       setSugestaoEmRevisao(null);
+      setSugestaoDispensadaId(sugestaoEmRevisao?.id ?? null);
       utils.agentes.diagnostico.conversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
       utils.inbox.mensagens.list.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
       utils.inbox.conversas.list.invalidate();
     },
@@ -272,7 +279,9 @@ export default function Mensagens() {
       setComentarioRejeicao("");
       setTexto("");
       setSugestaoEmRevisao(null);
+      setSugestaoDispensadaId(sugestaoEmRevisao?.id ?? null);
       utils.agentes.diagnostico.conversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
     },
     onError: (error) => toast.error(error.message),
   });
@@ -427,7 +436,20 @@ export default function Mensagens() {
     setMentionInicio(null);
     setMentionados(new Set());
     setSugestaoEmRevisao(null);
+    setSugestaoDispensadaId(null);
   }, [conversaSelecionadaId, conversaSelecionada?.nomeContato]);
+
+  useEffect(() => {
+    const sugestao = sugestaoPendenteAgente.data;
+    if (!conversaSelecionadaId || !sugestao || !sugestao.texto.trim()) return;
+    if (sugestaoDispensadaId === sugestao.id || sugestaoEmRevisao?.id === sugestao.id || texto.trim()) return;
+    setTexto(sugestao.texto);
+    setSugestaoEmRevisao({ id: sugestao.id, textoOriginal: sugestao.texto, agente: sugestao.agenteNome });
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(sugestao.texto.length, sugestao.texto.length);
+    });
+  }, [conversaSelecionadaId, sugestaoPendenteAgente.data, sugestaoDispensadaId, sugestaoEmRevisao?.id, texto]);
 
   function toggleSom() {
     const novo = !somAtivo;
@@ -450,21 +472,6 @@ export default function Mensagens() {
 
   const etiquetasAtuais = parseEtiquetas(conversaSelecionada?.etiquetas ?? null);
   const sugestaoFoiEditada = !!sugestaoEmRevisao && texto.trim() !== sugestaoEmRevisao.textoOriginal.trim();
-
-  function carregarSugestaoNoRascunho(sugestao: { id: number; texto: string; agente: string | null }) {
-    if (!conversaSelecionadaId || !sugestao.texto.trim()) return;
-    if (texto.trim() && (!sugestaoEmRevisao || sugestaoEmRevisao.id !== sugestao.id)) {
-      toast.error("Envie, descarte ou limpe o rascunho atual antes de abrir outra sugestão.");
-      return;
-    }
-    setTexto(sugestao.texto);
-    setSugestaoEmRevisao({ id: sugestao.id, textoOriginal: sugestao.texto, agente: sugestao.agente });
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      const tamanho = sugestao.texto.length;
-      textareaRef.current?.setSelectionRange(tamanho, tamanho);
-    });
-  }
 
   function enviarRascunhoRevisado() {
     if (!sugestaoEmRevisao || !texto.trim()) return;
@@ -1494,16 +1501,7 @@ export default function Mensagens() {
                             {evento.sugestao && evento.sugestao.avaliacao === "pendente" && !evento.sugestao.enviadaEm ? (
                               <div className="rounded border border-emerald-200 bg-emerald-50/60 p-1.5 space-y-1.5">
                                 <p className="text-emerald-900 whitespace-pre-wrap">{evento.sugestao.texto || "(sem texto)"}</p>
-                                <div className="flex gap-1.5">
-                                  <Button
-                                    size="sm"
-                                    className="h-6 px-2 text-[10px] bg-emerald-600 hover:bg-emerald-700"
-                                    disabled={aprovarSugestaoAgenteMutation.isPending || reprovarSugestaoAgenteMutation.isPending}
-                                    onClick={() => carregarSugestaoNoRascunho({ id: evento.sugestao!.id, texto: evento.sugestao!.texto, agente: evento.especialista?.nome ?? null })}
-                                  >
-                                    <Pencil className="mr-1 h-3 w-3" /> Revisar no rascunho
-                                  </Button>
-                                </div>
+                                <p className="text-[9px] text-emerald-800">Disponibilizada automaticamente no compositor da conversa.</p>
                               </div>
                             ) : evento.sugestao && (
                               <p className="text-emerald-700">Sugestão: {evento.sugestao.avaliacao}{evento.sugestao.acaoPendente ? ` · ação ${evento.sugestao.acaoPendente}` : ""}</p>

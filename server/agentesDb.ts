@@ -512,6 +512,27 @@ export async function listarFilaSugestoes(unidadeId?: number, atendenteResponsav
     .orderBy(desc(agentesSugestoes.createdAt));
 }
 
+/** Sugestão mais recente ainda pendente para a conversa aberta no Inbox. */
+export async function obterSugestaoPendenteConversa(conversaId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select({
+    id: agentesSugestoes.id,
+    texto: agentesSugestoes.sugestao,
+    agenteNome: agentesAtendimento.nome,
+    createdAt: agentesSugestoes.createdAt,
+  }).from(agentesSugestoes)
+    .innerJoin(agentesAtendimento, eq(agentesSugestoes.agenteId, agentesAtendimento.id))
+    .where(and(
+      eq(agentesSugestoes.conversaId, conversaId),
+      eq(agentesSugestoes.avaliacao, "pendente"),
+      isNull(agentesSugestoes.enviadaEm),
+    ))
+    .orderBy(desc(agentesSugestoes.createdAt))
+    .limit(1);
+  return rows[0];
+}
+
 export async function avaliarSugestao(params: {
   sugestaoId: number;
   avaliacao: "aprovada" | "reprovada";

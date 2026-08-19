@@ -45,6 +45,7 @@ const state = vi.hoisted(() => {
   };
   const page = { location: "/clientes", setLocation: vi.fn(), openMutation: vi.fn() };
   const diagnosticos: any[] = [];
+  const revisaoAgente = { pendente: null as any };
   const mutation = (options: any = {}) => ({ mutate: vi.fn(), isPending: false, ...options });
   const trpc = {
     useUtils: () => ({
@@ -118,12 +119,13 @@ const state = vi.hoisted(() => {
         conversa: { useQuery: () => ({ data: diagnosticos, isLoading: false }) },
       },
       fila: {
+        pendenteConversa: { useQuery: () => ({ data: revisaoAgente.pendente, isLoading: false }) },
         aprovarEEnviar: { useMutation: () => mutation() },
         reprovar: { useMutation: () => mutation() },
       },
     },
   };
-  return { cliente, conversa, page, diagnosticos, trpc };
+  return { cliente, conversa, page, diagnosticos, revisaoAgente, trpc };
 });
 
 vi.mock("@/lib/trpc", () => ({ trpc: state.trpc }));
@@ -160,6 +162,7 @@ beforeEach(() => {
   state.conversa.fotoUrl = null;
   state.conversa.isGrupo = "false";
   state.diagnosticos.splice(0);
+  state.revisaoAgente.pendente = null;
   Element.prototype.scrollIntoView = vi.fn();
 });
 
@@ -199,30 +202,17 @@ describe("fluxo completo Clientes → Inbox", () => {
 
   it("leva uma sugestão pendente do agente para o rascunho editável do Inbox", async () => {
     state.page.location = "/mensagens?conversaId=41";
-    state.diagnosticos.push({
-      id: 91,
+    state.revisaoAgente.pendente = {
+      id: 44,
+      texto: "Posso preparar as opções de voucher para você.",
+      agenteNome: "Diana",
       createdAt: new Date().toISOString(),
-      status: "concluida",
-      classificacao: "diana",
-      confianca: 98,
-      receptor: { nome: "Aurea" },
-      especialista: { nome: "Diana" },
-      rastro: null,
-      erro: null,
-      sugestao: {
-        id: 44,
-        texto: "Posso preparar as opções de voucher para você.",
-        avaliacao: "pendente",
-        enviadaEm: null,
-        acaoPendente: null,
-      },
-    });
+    };
 
     render(<Mensagens />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Revisar no rascunho/i }));
     const compositor = screen.getAllByPlaceholderText("Digite uma mensagem, / para scripts ou cole um print...").at(-1) as HTMLTextAreaElement;
-    expect(compositor.value).toBe("Posso preparar as opções de voucher para você.");
+    await waitFor(() => expect(compositor.value).toBe("Posso preparar as opções de voucher para você."));
     expect(screen.getByText("Sugestão de Diana em revisão")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Aceitar como está e enviar/i })).toBeTruthy();
 

@@ -68,6 +68,8 @@ export const agentesRouter = router({
   fila: router({
     list: adminProcedure.input(z.object({ unidadeId: z.number().optional() }).optional())
       .query(({ input }) => agentesDb.listarFilaSugestoes(input?.unidadeId)),
+    pendenteConversa: protectedProcedure.input(z.object({ conversaId: z.number() }))
+      .query(({ input }) => agentesDb.obterSugestaoPendenteConversa(input.conversaId)),
     aprovarEEnviar: adminProcedure.input(z.object({
       sugestaoId: z.number(),
       textoFinal: z.string().trim().min(1).max(4000).optional(),
