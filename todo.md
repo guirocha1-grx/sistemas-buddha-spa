@@ -348,3 +348,4 @@
 - [x] Auditar e corrigir, se confirmado, lançamentos de adquirente replicados entre unidades
 - [x] Confirmar e isolar cobranças de equipamento Point que não correspondem a vendas das unidades
 - [x] Registrar as duas compras Point de R$ 199,90 como despesas nos extratos das unidades
+- [x] Encerrar e sincronizar decisões de sugestão entre pessoas usando o mesmo login no Inbox

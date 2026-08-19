@@ -683,3 +683,23 @@ export async function reprovarSugestao(params: { sugestaoId: number; comentario?
   await agentesDb.avaliarSugestao({ ...params, avaliacao: "reprovada", tipoRevisao: "rejeitada", textoFinal: null });
   return { success: true };
 }
+
+/**
+ * A edição é uma decisão terminal da revisão, mas não envia a mensagem.
+ * Assim o texto segue livre no compositor e ninguém em outra sessão pode
+ * aceitar/rejeitar o mesmo cartão enquanto a recepção o altera.
+ */
+export async function liberarSugestaoParaEdicao(params: { sugestaoId: number; textoBase?: string | null; userId: number; atendenteId?: number | null }) {
+  const registro = await agentesDb.buscarSugestao(params.sugestaoId);
+  if (!registro) throw new Error("Sugestão não encontrada");
+  await agentesDb.avaliarSugestao({
+    sugestaoId: params.sugestaoId,
+    avaliacao: "aprovada",
+    tipoRevisao: "editada",
+    textoFinal: params.textoBase?.trim() || registro.sugestao.sugestao,
+    comentario: "Edição iniciada no Inbox",
+    userId: params.userId,
+    atendenteId: params.atendenteId,
+  });
+  return { success: true };
+}

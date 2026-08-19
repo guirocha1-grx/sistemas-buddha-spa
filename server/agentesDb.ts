@@ -634,7 +634,7 @@ export async function avaliarSugestao(params: {
   const atual = await db.select().from(agentesSugestoes).where(eq(agentesSugestoes.id, params.sugestaoId)).limit(1);
   if (!atual[0]) throw new Error("Sugestão não encontrada");
   if (atual[0].avaliacao !== "pendente") throw new Error("Esta sugestão já foi avaliada");
-  await db.update(agentesSugestoes).set({
+  const resultado = await db.update(agentesSugestoes).set({
     avaliacao: params.avaliacao,
     tipoRevisao: params.tipoRevisao,
     textoFinal: params.textoFinal?.trim() || null,
@@ -643,7 +643,9 @@ export async function avaliarSugestao(params: {
     avaliadaPorUserId: params.userId,
     avaliadaPorAtendenteId: params.atendenteId ?? null,
     avaliadaEm: new Date(),
-  }).where(eq(agentesSugestoes.id, params.sugestaoId));
+  }).where(and(eq(agentesSugestoes.id, params.sugestaoId), eq(agentesSugestoes.avaliacao, "pendente")));
+  const afetadas = Number((resultado as any)[0]?.affectedRows ?? (resultado as any).affectedRows ?? 0);
+  if (afetadas === 0) throw new Error("Esta sugestão já foi avaliada");
 }
 
 export async function marcarSugestaoEnviada(id: number, automatico: boolean) {

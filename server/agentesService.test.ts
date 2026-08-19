@@ -41,7 +41,7 @@ vi.mock("./zapiApi", () => ({ zapiApi: { sendText, sendDocument, sendImage } }))
 vi.mock("./buddhaMktApi", () => ({ buddhaMktApi: { sendText: vi.fn() } }));
 vi.mock("./fluxos", () => ({ iniciarExecucaoFluxo }));
 
-import { aprovarEEnviarSugestao, extrairConteudoRespostaLLM, limitarMensagemCliente, processarMensagemRecebida, removerIdentificacaoAgente, reprovarSugestao } from "./agentesService";
+import { aprovarEEnviarSugestao, extrairConteudoRespostaLLM, liberarSugestaoParaEdicao, limitarMensagemCliente, processarMensagemRecebida, removerIdentificacaoAgente, reprovarSugestao } from "./agentesService";
 
 const respostaJson = (message: string, status = "in_process", action: string | null = null, excecaoOperacional: boolean = false) => JSON.stringify({
   message,
@@ -462,5 +462,21 @@ describe("orquestrador de agentes", () => {
     expect(sendImage).toHaveBeenCalledWith("instancia", "token", "client", "5516999999999", "https://spa.exemplo.com/manus-storage/quadro-dayspa.jpg", "Composição dos Day Spas — qualquer ajuste depende de confirmação da equipe.");
     expect(db.insertInboxMensagem).toHaveBeenCalledWith(expect.objectContaining({ tipo: "imagem", metadados: expect.stringContaining("quadro_dayspas_ribeirao") }));
     expect(agentesDb.registrarAcaoConversa).toHaveBeenCalledWith(10, "enviar_resumo_dayspa", 94);
+  });
+
+  it("libera a edição sem enviar mensagem nem executar uma ação pendente", async () => {
+    agentesDb.buscarSugestao.mockResolvedValue({ sugestao: { id: 95, conversaId: 10, sugestao: "Texto original", acaoPendente: "enviar_menu_servicos" } });
+
+    await expect(liberarSugestaoParaEdicao({ sugestaoId: 95, textoBase: "Texto em edição", userId: 7, atendenteId: 3 })).resolves.toEqual({ success: true });
+
+    expect(agentesDb.avaliarSugestao).toHaveBeenCalledWith(expect.objectContaining({
+      sugestaoId: 95,
+      avaliacao: "aprovada",
+      tipoRevisao: "editada",
+      textoFinal: "Texto em edição",
+    }));
+    expect(sendText).not.toHaveBeenCalled();
+    expect(sendDocument).not.toHaveBeenCalled();
+    expect(agentesDb.marcarSugestaoEnviada).not.toHaveBeenCalled();
   });
 });

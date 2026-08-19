@@ -54,7 +54,7 @@ const state = vi.hoisted(() => {
   const conversas = [conversa, conversaAlternativa];
   const page = { location: "/clientes", setLocation: vi.fn(), openMutation: vi.fn() };
   const diagnosticos: any[] = [];
-  const revisaoAgente = { pendente: null as any, aprovarMutation: vi.fn() };
+  const revisaoAgente = { pendente: null as any, aprovarMutation: vi.fn(), liberarMutation: vi.fn() };
   const mutation = (options: any = {}) => ({ mutate: vi.fn(), isPending: false, ...options });
   const trpc = {
     useUtils: () => ({
@@ -156,6 +156,13 @@ const state = vi.hoisted(() => {
           },
           isPending: false,
         }) },
+        liberarParaEdicao: { useMutation: (options: any) => ({
+          mutate: (input: any) => {
+            revisaoAgente.liberarMutation(input);
+            options.onSuccess?.();
+          },
+          isPending: false,
+        }) },
         reprovar: { useMutation: () => mutation() },
       },
     },
@@ -198,6 +205,8 @@ beforeEach(() => {
   state.conversa.isGrupo = "false";
   state.diagnosticos.splice(0);
   state.revisaoAgente.pendente = null;
+  state.revisaoAgente.aprovarMutation.mockReset();
+  state.revisaoAgente.liberarMutation.mockReset();
   sessionStorage.clear();
   Element.prototype.scrollIntoView = vi.fn();
 });
@@ -291,6 +300,28 @@ describe("fluxo completo Clientes → Inbox", () => {
       textoFinal: "Temos Mini Day Spa e Day Spa Home Vitalidade.",
       tipoRevisao: "editada",
     }));
+  });
+
+  it("libera o texto para edição e encerra a avaliação sem enviar", async () => {
+    state.page.location = "/mensagens?conversaId=41";
+    state.revisaoAgente.pendente = {
+      id: 47,
+      conversaId: 41,
+      texto: "Posso explicar as opções de Day Spa para você.",
+      agenteNome: "Fabricia",
+      createdAt: new Date().toISOString(),
+    };
+    const tela = render(<Mensagens />);
+    const inbox = within(tela.container);
+    const compositor = inbox.getAllByPlaceholderText("Digite uma mensagem, / para scripts ou cole um print...").at(-1) as HTMLTextAreaElement;
+    await waitFor(() => expect(compositor.value).toBe("Posso explicar as opções de Day Spa para você."));
+
+    fireEvent.click(inbox.getByRole("button", { name: /^Editar$/i }));
+
+    expect(state.revisaoAgente.liberarMutation).toHaveBeenCalledWith(expect.objectContaining({ sugestaoId: 47 }));
+    await waitFor(() => expect(inbox.queryByText("Sugestão em revisão")).toBeNull());
+    expect(compositor.value).toBe("Posso explicar as opções de Day Spa para você.");
+    expect(state.revisaoAgente.aprovarMutation).not.toHaveBeenCalled();
   });
 
   it("mantém o rascunho na conversa de origem ao alternar entre clientes", async () => {

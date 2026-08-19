@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import * as agentesDb from "../agentesDb";
-import { aprovarEEnviarSugestao, processarMensagemRecebida, reprovarSugestao } from "../agentesService";
+import { aprovarEEnviarSugestao, liberarSugestaoParaEdicao, processarMensagemRecebida, reprovarSugestao } from "../agentesService";
 
 const motivoAvaliacao = z.enum(["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"]);
 
@@ -107,6 +107,10 @@ export const agentesRouter = router({
     reprovar: protectedProcedure.input(z.object({ sugestaoId: z.number(), comentario: z.string().trim().max(2000).optional(), motivo: motivoAvaliacao.optional(), atendenteId: z.number().optional() }))
       .mutation(async ({ input, ctx }) => {
         return reprovarSugestao({ ...input, userId: ctx.user.id });
+      }),
+    liberarParaEdicao: protectedProcedure.input(z.object({ sugestaoId: z.number(), textoBase: z.string().trim().max(4000).optional(), atendenteId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        return liberarSugestaoParaEdicao({ ...input, userId: ctx.user.id });
       }),
   }),
   metricas: adminProcedure.input(z.object({ unidadeId: z.number().optional(), inicio: z.date().optional(), fim: z.date().optional() }).optional())

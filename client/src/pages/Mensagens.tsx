@@ -227,7 +227,7 @@ export default function Mensagens() {
   );
   const sugestaoPendenteAgente = trpc.agentes.fila.pendenteConversa.useQuery(
     { conversaId: conversaSelecionadaId ?? 0 },
-    { enabled: !!conversaSelecionadaId, refetchInterval: 8000 },
+    { enabled: !!conversaSelecionadaId, refetchInterval: 3000 },
   );
 
   const ehGrupo = conversaSelecionada?.isGrupo === "true";
@@ -302,6 +302,20 @@ export default function Mensagens() {
       utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
     },
     onError: (error) => toast.error(error.message),
+  });
+
+  const liberarSugestaoParaEdicaoMutation = trpc.agentes.fila.liberarParaEdicao.useMutation({
+    onSuccess: () => {
+      setSugestaoEmRevisao(null);
+      setSugestaoDispensadaId(null);
+      utils.agentes.diagnostico.conversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    },
+    onError: (error) => {
+      toast.error(error.message);
+      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+    },
   });
 
   const sugerirMensagemIaMutation = trpc.inbox.mensagens.sugerir.useMutation({
@@ -508,6 +522,11 @@ export default function Mensagens() {
 
   useEffect(() => {
     const sugestao = sugestaoPendenteAgente.data;
+    if (!sugestao && sugestaoEmRevisao?.conversaId === conversaSelecionadaId) {
+      setSugestaoEmRevisao(null);
+      setTexto("");
+      return;
+    }
     if (!conversaSelecionadaId || !sugestao || sugestao.conversaId !== conversaSelecionadaId || !sugestao.texto.trim()) return;
     if (sugestaoDispensadaId === sugestao.id || sugestaoEmRevisao?.id === sugestao.id || texto.trim()) return;
     setTexto(sugestao.texto);
@@ -516,7 +535,7 @@ export default function Mensagens() {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(sugestao.texto.length, sugestao.texto.length);
     });
-  }, [conversaSelecionadaId, sugestaoPendenteAgente.data, sugestaoDispensadaId, sugestaoEmRevisao?.id, texto]);
+  }, [conversaSelecionadaId, sugestaoPendenteAgente.data, sugestaoDispensadaId, sugestaoEmRevisao?.id, sugestaoEmRevisao?.conversaId, texto]);
 
   function toggleSom() {
     const novo = !somAtivo;
@@ -548,6 +567,14 @@ export default function Mensagens() {
       tipoRevisao: sugestaoFoiEditada ? "editada" : "aceita_como_esta",
       atendenteId: atendente?.id,
     });
+  }
+
+  function editarSugestaoLivremente() {
+    if (!sugestaoEmRevisao) return;
+    const sugestaoId = sugestaoEmRevisao.id;
+    setSugestaoEmRevisao(null);
+    setSugestaoDispensadaId(sugestaoId);
+    liberarSugestaoParaEdicaoMutation.mutate({ sugestaoId, textoBase: texto.trim(), atendenteId: atendente?.id });
   }
 
   function abrirRejeicaoSugestao() {
@@ -1222,7 +1249,7 @@ export default function Mensagens() {
                           {aprovarSugestaoAgenteMutation.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
                           {sugestaoFoiEditada ? "Enviar edição" : "Aceitar como está e enviar"}
                         </Button>
-                        <Button size="sm" variant="outline" className="h-7 text-xs" disabled={aprovarSugestaoAgenteMutation.isPending || reprovarSugestaoAgenteMutation.isPending} onClick={() => textareaRef.current?.focus()}>
+                        <Button size="sm" variant="outline" className="h-7 text-xs" disabled={aprovarSugestaoAgenteMutation.isPending || reprovarSugestaoAgenteMutation.isPending || liberarSugestaoParaEdicaoMutation.isPending} onClick={editarSugestaoLivremente}>
                           <Pencil className="mr-1.5 h-3.5 w-3.5" /> Editar
                         </Button>
                         <Button size="sm" variant="outline" className="h-7 border-rose-300 text-xs text-rose-700 hover:bg-rose-50" disabled={aprovarSugestaoAgenteMutation.isPending || reprovarSugestaoAgenteMutation.isPending} onClick={abrirRejeicaoSugestao}>
