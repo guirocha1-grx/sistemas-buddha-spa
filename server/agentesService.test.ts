@@ -41,7 +41,7 @@ vi.mock("./zapiApi", () => ({ zapiApi: { sendText, sendDocument, sendImage } }))
 vi.mock("./buddhaMktApi", () => ({ buddhaMktApi: { sendText: vi.fn() } }));
 vi.mock("./fluxos", () => ({ iniciarExecucaoFluxo }));
 
-import { aprovarEEnviarSugestao, extrairConteudoRespostaLLM, limitarMensagemCliente, processarMensagemRecebida, reprovarSugestao } from "./agentesService";
+import { aprovarEEnviarSugestao, extrairConteudoRespostaLLM, limitarMensagemCliente, processarMensagemRecebida, removerIdentificacaoAgente, reprovarSugestao } from "./agentesService";
 
 const respostaJson = (message: string, status = "in_process", action: string | null = null, excecaoOperacional: boolean = false) => JSON.stringify({
   message,
@@ -63,6 +63,7 @@ const receptor = { agente: { id: 1, chave: "aurea", nome: "Aurea", modelo: "gpt-
 const biancaAssistida = { agente: { id: 2, chave: "bianca", nome: "Bianca", descricao: "Terapias", modelo: "gpt-5-mini", modoOperacao: "assistido" }, prompt: { id: 12, conteudo: "Sugira." } };
 const biancaAutomatica = { ...biancaAssistida, agente: { ...biancaAssistida.agente, modoOperacao: "automatico" as const } };
 const fabriciaAssistida = { agente: { id: 3, chave: "fabricia", nome: "Fabricia", descricao: "Day Spa", modelo: "gpt-5-mini", modoOperacao: "assistido" }, prompt: { id: 13, conteudo: "Explique Day Spa." } };
+const carolAssistida = { agente: { id: 5, chave: "carol", nome: "Carol", descricao: "Agendamento", modelo: "gpt-5-mini", modoOperacao: "assistido" }, prompt: { id: 15, conteudo: "Organize agendamentos." } };
 const dianaAssistida = { agente: { id: 6, chave: "diana", nome: "Diana", descricao: "Vouchers", modelo: "gpt-5-mini", modoOperacao: "assistido" }, prompt: { id: 16, conteudo: "Prepare o voucher." } };
 
 describe("orquestrador de agentes", () => {
@@ -85,6 +86,11 @@ describe("orquestrador de agentes", () => {
     const limitada = limitarMensagemCliente("palavra ".repeat(60));
     expect(limitada.length).toBeLessThanOrEqual(351);
     expect(limitada).toMatch(/…$/);
+  });
+
+  it("remove a identificação nominal do especialista antes de sugerir o texto", () => {
+    expect(removerIdentificacaoAgente("Olá! Eu sou a Bianca, especialista em terapias. Posso ajudar você.", "Bianca")).toBe("Posso ajudar você.");
+    expect(removerIdentificacaoAgente("Boa tarde! Sou a Estela. Vou verificar os valores.", "Estela")).toBe("Vou verificar os valores.");
   });
 
   beforeEach(() => {
@@ -175,6 +181,47 @@ describe("orquestrador de agentes", () => {
       sugestao: "Claro. Vou enviar as opções gerais de Day Spa para você conhecer.",
       acaoPendente: "script_fluxo:210002",
     }));
+  });
+
+  it("pede o período antes de a recepção verificar um horário sem preferência", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Vocês têm horário para amanhã?"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 437 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
+
+    expect(invokeLLM).not.toHaveBeenCalled();
+    expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
+      agenteId: 5,
+      sugestao: "Você tem algum período de preferência? Pode me informar se seria de manhã, à tarde ou à noite? ✨",
+      variaveis: expect.objectContaining({ triagem_horario: "aguardando_periodo" }),
+    }));
+  });
+
+  it("pede que a recepção verifique quando o cliente já informou o período", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Tem horário para hoje à tarde?"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 436 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
+
+    expect(invokeLLM).not.toHaveBeenCalled();
+    expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
+      agenteId: 5,
+      sugestao: "Vou verificar para você, por favor aguarde um momento. ✨",
+      variaveis: expect.objectContaining({ triagem_horario: "verificar_disponibilidade" }),
+    }));
+  });
+
+  it("fornece a tabela comercial oficial também para Bianca ao responder sobre terapias", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quais terapias vocês têm?"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [biancaAssistida]);
+    agentesDb.listarTabelaPrecosParaAgente.mockResolvedValue([{ servico: "Massagem Relaxante", valor: "250.00" }]);
+    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("Temos Massagem Relaxante e outras terapias disponíveis.") } }] });
+
+    await processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 435 });
+
+    expect(agentesDb.listarTabelaPrecosParaAgente).toHaveBeenCalledWith(1);
+    expect(invokeLLM.mock.calls[0]?.[0].messages[0].content).toContain("REGRA DE TERAPIAS");
+    expect(invokeLLM.mock.calls[0]?.[0].messages[1].content).toContain("Massagem Relaxante");
   });
 
   it("prioriza uma pergunta explícita sobre terapias sobre o estado anterior de voucher", async () => {

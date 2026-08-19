@@ -1200,6 +1200,54 @@ export async function listInboxMensagens(conversaId: number, limit: number = 50)
   return mensagens.reverse();
 }
 
+/** Histórico do Inbox: abre leve com seis dias e busca páginas anteriores somente sob demanda. */
+export async function listInboxMensagensPaginada(params: { conversaId: number; limit?: number; antesDe?: Date | null }) {
+  const db = await getDb();
+  const limit = Math.min(Math.max(params.limit ?? 120, 1), 200);
+  if (!db) return { mensagens: [], hasMore: false, cursorConsultado: params.antesDe?.toISOString() ?? null };
+  const inicioRecente = new Date();
+  inicioRecente.setDate(inicioRecente.getDate() - 6);
+  const condicoes = [eq(inboxMensagens.conversaId, params.conversaId)];
+  if (params.antesDe) condicoes.push(lt(inboxMensagens.createdAt, params.antesDe));
+  else condicoes.push(gte(inboxMensagens.createdAt, inicioRecente));
+  const linhas = await db.select({
+    id: inboxMensagens.id,
+    conversaId: inboxMensagens.conversaId,
+    direcao: inboxMensagens.direcao,
+    tipo: inboxMensagens.tipo,
+    conteudo: inboxMensagens.conteudo,
+    metadados: inboxMensagens.metadados,
+    transcricao: inboxMensagens.transcricao,
+    enviadaPorUserId: inboxMensagens.enviadaPorUserId,
+    enviadaPorAtendenteId: inboxMensagens.enviadaPorAtendenteId,
+    enviadaPorAtendenteNome: atendentes.nome,
+    participanteTelefone: inboxMensagens.participanteTelefone,
+    participanteNome: inboxMensagens.participanteNome,
+    lida: inboxMensagens.lida,
+    statusEntrega: inboxMensagens.statusEntrega,
+    reacaoEmoji: inboxMensagens.reacaoEmoji,
+    zapiMessageId: inboxMensagens.zapiMessageId,
+    createdAt: inboxMensagens.createdAt,
+  })
+    .from(inboxMensagens)
+    .leftJoin(atendentes, eq(inboxMensagens.enviadaPorAtendenteId, atendentes.id))
+    .where(and(...condicoes))
+    .orderBy(desc(inboxMensagens.createdAt))
+    .limit(limit + 1);
+  let hasMore = linhas.length > limit;
+  if (!params.antesDe && !hasMore) {
+    const anterior = await db.select({ id: inboxMensagens.id }).from(inboxMensagens)
+      .where(and(eq(inboxMensagens.conversaId, params.conversaId), lt(inboxMensagens.createdAt, inicioRecente)))
+      .limit(1);
+    hasMore = anterior.length > 0;
+  }
+  return {
+    mensagens: linhas.slice(0, limit).reverse(),
+    hasMore,
+    cursorConsultado: params.antesDe?.toISOString() ?? null,
+  };
+}
+
 /**
  * Nome mais recente visto por telefone dentro de um grupo, a partir do
  * próprio histórico de mensagens (participanteTelefone/participanteNome

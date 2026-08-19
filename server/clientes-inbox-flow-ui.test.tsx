@@ -94,7 +94,15 @@ const state = vi.hoisted(() => {
         membrosGrupo: { useQuery: () => ({ data: [], isLoading: false }) },
       },
       mensagens: {
-        list: { useQuery: () => ({ data: [{ id: 1, direcao: "recebida", tipo: "texto", conteudo: "Olá", createdAt: new Date().toISOString() }], isLoading: false }) },
+        list: { useQuery: (input: { antesDe?: string }) => ({
+          data: {
+            mensagens: input.antesDe ? [] : [{ id: 1, direcao: "recebida", tipo: "texto", conteudo: "Olá", createdAt: new Date().toISOString() }],
+            hasMore: false,
+            cursorConsultado: input.antesDe ?? null,
+          },
+          isLoading: false,
+          isFetching: false,
+        }) },
         enviar: { useMutation: () => mutation() },
         sugerir: { useMutation: (options: any) => ({
           mutate: () => options.onSuccess?.({ sugestao: "Olá! Será um prazer ajudar você. Como posso seguir?" }),
@@ -197,6 +205,13 @@ describe("fluxo completo Clientes → Inbox", () => {
       expect(screen.getAllByText("Cliente Existente").length).toBeGreaterThan(0);
     });
     expect(screen.getAllByText("Olá").length).toBeGreaterThan(0);
+  });
+
+  it("rola até o fim quando a página recente da conversa é carregada", async () => {
+    state.page.location = "/mensagens?conversaId=41";
+    render(<Mensagens />);
+
+    await waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalled());
   });
 
   it("exibe a imagem persistida quando a conversa selecionada é um grupo", async () => {

@@ -936,9 +936,14 @@ Diretrizes:
     mensagens: router({
       list: protectedProcedure.input(z.object({
         conversaId: z.number(),
-        limit: z.number().default(50),
+        limit: z.number().int().min(1).max(200).default(120),
+        antesDe: z.string().datetime().optional(),
       })).query(async ({ input }) => {
-        return db.listInboxMensagens(input.conversaId, input.limit);
+        return db.listInboxMensagensPaginada({
+          conversaId: input.conversaId,
+          limit: input.limit,
+          antesDe: input.antesDe ? new Date(input.antesDe) : null,
+        });
       }),
 
       sugerir: protectedProcedure.input(z.object({

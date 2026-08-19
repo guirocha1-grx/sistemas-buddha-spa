@@ -186,6 +186,8 @@ export default function Mensagens() {
   const [anexoPendente, setAnexoPendente] = useState<{ file: File; tipo: "imagem" | "audio" | "documento"; previewUrl?: string; legenda: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const conversaRoladaRef = useRef<number | null>(null);
+  const preservarPosicaoAoCarregarAntigasRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const conversaDonaDoTextoRef = useRef<number | null>(null);
   const utils = trpc.useUtils();
@@ -200,10 +202,24 @@ export default function Mensagens() {
     { enabled: !!conversaSelecionadaId },
   );
 
-  const { data: mensagens, isLoading: carregandoMensagens } = trpc.inbox.mensagens.list.useQuery(
-    { conversaId: conversaSelecionadaId ?? 0 },
+  const [cursorMensagensAntigas, setCursorMensagensAntigas] = useState<string | null>(null);
+  const [cursorAntigasAplicado, setCursorAntigasAplicado] = useState<string | null>(null);
+  const [mensagensAntigas, setMensagensAntigas] = useState<any[]>([]);
+  const { data: paginaMensagensRecentes, isLoading: carregandoMensagens } = trpc.inbox.mensagens.list.useQuery(
+    { conversaId: conversaSelecionadaId ?? 0, limit: 120 },
     { enabled: !!conversaSelecionadaId, refetchInterval: 8000 },
   );
+  const { data: paginaMensagensAntigas, isFetching: carregandoMensagensAntigas } = trpc.inbox.mensagens.list.useQuery(
+    { conversaId: conversaSelecionadaId ?? 0, limit: 100, antesDe: cursorMensagensAntigas ?? undefined },
+    { enabled: !!conversaSelecionadaId && !!cursorMensagensAntigas && cursorMensagensAntigas !== cursorAntigasAplicado },
+  );
+  const mensagensRecentes = paginaMensagensRecentes?.mensagens ?? [];
+  const mensagens = useMemo(() => [...mensagensAntigas, ...mensagensRecentes]
+    .filter((mensagem, indice, lista) => lista.findIndex((item) => item.id === mensagem.id) === indice)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()), [mensagensAntigas, mensagensRecentes]);
+  const haMensagensAntigas = cursorAntigasAplicado
+    ? Boolean(paginaMensagensAntigas?.hasMore)
+    : Boolean(paginaMensagensRecentes?.hasMore);
 
   const diagnosticoAgentes = trpc.agentes.diagnostico.conversa.useQuery(
     { conversaId: conversaSelecionadaId ?? 0, limite: 25 },
@@ -437,8 +453,32 @@ export default function Mensagens() {
   }
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [mensagens]);
+    setCursorMensagensAntigas(null);
+    setCursorAntigasAplicado(null);
+    setMensagensAntigas([]);
+    conversaRoladaRef.current = null;
+  }, [conversaSelecionadaId]);
+
+  useEffect(() => {
+    if (!paginaMensagensAntigas || !cursorMensagensAntigas || paginaMensagensAntigas.cursorConsultado !== cursorMensagensAntigas) return;
+    setMensagensAntigas((anteriores) => [...paginaMensagensAntigas.mensagens, ...anteriores]
+      .filter((mensagem, indice, lista) => lista.findIndex((item) => item.id === mensagem.id) === indice));
+    setCursorAntigasAplicado(cursorMensagensAntigas);
+    preservarPosicaoAoCarregarAntigasRef.current = true;
+  }, [paginaMensagensAntigas, cursorMensagensAntigas]);
+
+  useEffect(() => {
+    if (!conversaSelecionadaId || !mensagens.length || preservarPosicaoAoCarregarAntigasRef.current) {
+      preservarPosicaoAoCarregarAntigasRef.current = false;
+      return;
+    }
+    const comportamento: ScrollBehavior = conversaRoladaRef.current === conversaSelecionadaId ? "smooth" : "auto";
+    const rolar = () => bottomRef.current?.scrollIntoView({ behavior: comportamento, block: "end" });
+    requestAnimationFrame(rolar);
+    const timer = window.setTimeout(rolar, 180);
+    conversaRoladaRef.current = conversaSelecionadaId;
+    return () => window.clearTimeout(timer);
+  }, [conversaSelecionadaId, mensagens.length, mensagens.at(-1)?.id]);
 
   useEffect(() => {
     const conversaAnterior = conversaDonaDoTextoRef.current;
@@ -492,9 +532,9 @@ export default function Mensagens() {
   });
 
   const mensagensFiltradas = useMemo(() => {
-    if (!buscaMensagem.trim()) return mensagens ?? [];
+    if (!buscaMensagem.trim()) return mensagens;
     const termo = buscaMensagem.toLowerCase();
-    return (mensagens ?? []).filter((m) => (m.conteudo ?? "").toLowerCase().includes(termo));
+    return mensagens.filter((m) => (m.conteudo ?? "").toLowerCase().includes(termo));
   }, [mensagens, buscaMensagem]);
 
   const etiquetasAtuais = parseEtiquetas(conversaSelecionada?.etiquetas ?? null);
@@ -916,6 +956,21 @@ export default function Mensagens() {
                 {carregandoMensagens && (
                   <div className="text-sm text-muted-foreground flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" /> Carregando mensagens...
+                  </div>
+                )}
+                {haMensagensAntigas && !buscaMensagem && (
+                  <div className="mb-3 flex justify-center">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs"
+                      disabled={carregandoMensagensAntigas || !mensagens[0]?.createdAt}
+                      onClick={() => setCursorMensagensAntigas(new Date(mensagens[0].createdAt).toISOString())}
+                    >
+                      {carregandoMensagensAntigas ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ArrowLeft className="mr-1.5 h-3.5 w-3.5 rotate-90" />}
+                      Carregar mensagens mais antigas
+                    </Button>
                   </div>
                 )}
                 <div className="space-y-3">

@@ -337,3 +337,9 @@
 - [x] Vincular rascunhos e sugestões ao cliente correto ao trocar de conversa no Inbox
 - [x] Fazer a Áurea acolher aberturas sem intenção com uma pergunta aberta antes do roteamento
 - [x] Priorizar o fluxo geral de Day Spa para perguntas de catálogo sem campanha, voucher ou agendamento prematuros
+- [x] Carregar inicialmente apenas o histórico recente do Inbox e permitir buscar mensagens antigas sob demanda
+- [x] Garantir rolagem até a última mensagem ao abrir ou trocar de conversa
+- [x] Impedir que especialistas se identifiquem nominalmente nas sugestões ao cliente
+- [ ] Consolidar e priorizar ajustes reportados durante o teste real de atendimento
+- [x] Usar somente a tabela comercial oficial para respostas sobre terapias, sem campanhas sazonais
+- [x] Aplicar resposta-padrão de triagem para pedidos de horário conforme o período informado
