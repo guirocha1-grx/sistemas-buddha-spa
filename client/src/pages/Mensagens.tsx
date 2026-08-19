@@ -81,7 +81,14 @@ function TickEntrega({ status }: { status?: "enviada" | "entregue" | "lida" }) {
 const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 const MOTIVOS_AVALIACAO = ["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"] as const;
 type MotivoAvaliacao = typeof MOTIVOS_AVALIACAO[number];
-type SugestaoEmRevisao = { id: number; conversaId: number; textoOriginal: string; agente: string | null };
+type SugestaoEmRevisao = {
+  id: number;
+  conversaId: number;
+  textoOriginal: string;
+  agente: string | null;
+  acaoPendente: string | null;
+  fluxoPendenteNome: string | null;
+};
 const CHAVE_RASCUNHO_CONVERSA = "buddha_inbox_rascunho";
 
 function statusDotClass(status: string) {
@@ -530,7 +537,14 @@ export default function Mensagens() {
     if (!conversaSelecionadaId || !sugestao || sugestao.conversaId !== conversaSelecionadaId || !sugestao.texto.trim()) return;
     if (sugestaoDispensadaId === sugestao.id || sugestaoEmRevisao?.id === sugestao.id || texto.trim()) return;
     setTexto(sugestao.texto);
-    setSugestaoEmRevisao({ id: sugestao.id, conversaId: sugestao.conversaId, textoOriginal: sugestao.texto, agente: sugestao.agenteNome });
+    setSugestaoEmRevisao({
+      id: sugestao.id,
+      conversaId: sugestao.conversaId,
+      textoOriginal: sugestao.texto,
+      agente: sugestao.agenteNome,
+      acaoPendente: sugestao.acaoPendente ?? null,
+      fluxoPendenteNome: sugestao.fluxoPendenteNome ?? null,
+    });
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(sugestao.texto.length, sugestao.texto.length);
@@ -558,6 +572,9 @@ export default function Mensagens() {
 
   const etiquetasAtuais = parseEtiquetas(conversaSelecionada?.etiquetas ?? null);
   const sugestaoFoiEditada = !!sugestaoEmRevisao && texto.trim() !== sugestaoEmRevisao.textoOriginal.trim();
+  const fluxoPendenteNome = sugestaoEmRevisao?.acaoPendente?.startsWith("script_fluxo:")
+    ? sugestaoEmRevisao.fluxoPendenteNome ?? "Fluxo configurado"
+    : null;
 
   function enviarRascunhoRevisado() {
     if (!sugestaoEmRevisao || !texto.trim()) return;
@@ -1244,6 +1261,15 @@ export default function Mensagens() {
                         </div>
                         <Badge variant="outline" className="shrink-0 border-amber-300 bg-white/70 text-[10px] text-amber-800">{sugestaoFoiEditada ? "Editada" : "Original"}</Badge>
                       </div>
+                      {fluxoPendenteNome && (
+                        <div className="mt-2.5 flex items-start gap-2 rounded-md border border-[#b89445]/35 bg-[#fff9e8] px-2.5 py-2 text-[11px] text-[#6f4b14] dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-100">
+                          <Sparkles className="mt-0.5 shrink-0" size={14} aria-hidden="true" />
+                          <div>
+                            <p><strong>Sugestão:</strong> Texto abaixo + Fluxo <strong>“{fluxoPendenteNome}”</strong></p>
+                            <p className="mt-0.5 opacity-80">Ao aceitar, a mensagem e o fluxo serão enviados.</p>
+                          </div>
+                        </div>
+                      )}
                       <div className="mt-2 flex flex-wrap gap-2">
                         <Button size="sm" className="h-7 text-xs bg-emerald-700 hover:bg-emerald-800" disabled={!texto.trim() || aprovarSugestaoAgenteMutation.isPending || reprovarSugestaoAgenteMutation.isPending} onClick={enviarRascunhoRevisado}>
                           {aprovarSugestaoAgenteMutation.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}

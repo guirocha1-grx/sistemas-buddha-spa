@@ -259,6 +259,8 @@ describe("fluxo completo Clientes → Inbox", () => {
       conversaId: 41,
       texto: "Posso preparar as opções de voucher para você.",
       agenteNome: "Diana",
+      acaoPendente: "script_fluxo:210001",
+      fluxoPendenteNome: "Enviar informações sobre vouchers",
       createdAt: new Date().toISOString(),
     };
 
@@ -269,6 +271,9 @@ describe("fluxo completo Clientes → Inbox", () => {
     expect(screen.getByText("Sugestão em revisão")).toBeTruthy();
     expect(screen.queryByText(/Sugestão de Diana em revisão/i)).toBeNull();
     expect(screen.getByRole("button", { name: /Aceitar como está e enviar/i })).toBeTruthy();
+    expect(screen.getByText(/Texto abaixo \+ Fluxo/i)).toBeTruthy();
+    expect(screen.getByText(/Enviar informações sobre vouchers/i)).toBeTruthy();
+    expect(screen.getByText(/mensagem e o fluxo serão enviados/i)).toBeTruthy();
 
     fireEvent.change(compositor, { target: { value: "Posso preparar um voucher virtual para você." } });
     expect(screen.getByRole("button", { name: /Enviar edição/i })).toBeTruthy();

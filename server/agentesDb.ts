@@ -605,6 +605,7 @@ export async function obterSugestaoPendenteConversa(conversaId: number) {
     conversaId: agentesSugestoes.conversaId,
     texto: agentesSugestoes.sugestao,
     agenteNome: agentesAtendimento.nome,
+    acaoPendente: agentesSugestoes.acaoPendente,
     createdAt: agentesSugestoes.createdAt,
   }).from(agentesSugestoes)
     .innerJoin(agentesAtendimento, eq(agentesSugestoes.agenteId, agentesAtendimento.id))
@@ -616,7 +617,22 @@ export async function obterSugestaoPendenteConversa(conversaId: number) {
     ))
     .orderBy(desc(agentesSugestoes.createdAt))
     .limit(1);
-  return rows[0];
+  const pendente = rows[0];
+  if (!pendente) return undefined;
+
+  const scriptId = pendente.acaoPendente?.match(/^script_fluxo:(\d+)$/)?.[1];
+  if (!scriptId) return { ...pendente, fluxoPendenteNome: null };
+  const fluxoPendente = await db.select({
+    tituloScript: scripts.titulo,
+    nomeFluxo: fluxos.nome,
+  }).from(scripts)
+    .leftJoin(fluxos, eq(scripts.fluxoId, fluxos.id))
+    .where(eq(scripts.id, Number(scriptId)))
+    .limit(1);
+  return {
+    ...pendente,
+    fluxoPendenteNome: fluxoPendente[0]?.nomeFluxo ?? fluxoPendente[0]?.tituloScript ?? null,
+  };
 }
 
 export async function avaliarSugestao(params: {

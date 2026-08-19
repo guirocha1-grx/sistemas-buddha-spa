@@ -355,3 +355,5 @@
 - [x] Aplicar o primeiro lote de cordialidade, precisão factual e transições comerciais aos prompts ativos
 - [x] Criar saída de não intervenção focalizada em Carol e Diana para impedir sugestões desnecessárias quando agendamento ou voucher já dependem da recepção ou de sistema externo
 - [x] Diagnosticar e corrigir o não encaminhamento direto da Diana para o fluxo elegível de voucher
+- [x] Confirmar em uso real que a sugestão curta da Diana envia a mensagem e inicia o fluxo oficial de vouchers após aprovação humana
+- [x] Exibir no cartão de sugestão o nome do fluxo que será iniciado após a aprovação humana
