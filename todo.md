@@ -328,3 +328,4 @@
 - [x] Auditar e corrigir candidatos duplicados ou de outra unidade no vínculo de clientes do Inbox
 - [x] Corrigir roteamento de perguntas sobre terapias e limitar respostas iniciais extensas dos agentes
 - [x] Limitar sugestões comuns dos agentes a 350 caracteres totais, incluindo espaços, com exceções operacionais
+- [x] Comparar prompts originais e ativos dos agentes e restaurar contexto operacional perdido
