@@ -43,12 +43,13 @@ vi.mock("./fluxos", () => ({ iniciarExecucaoFluxo }));
 
 import { aprovarEEnviarSugestao, extrairConteudoRespostaLLM, limitarMensagemCliente, processarMensagemRecebida, reprovarSugestao } from "./agentesService";
 
-const respostaJson = (message: string, status = "in_process", action: string | null = null) => JSON.stringify({
+const respostaJson = (message: string, status = "in_process", action: string | null = null, excecaoOperacional: boolean = false) => JSON.stringify({
   message,
   status,
   summary: "Resumo atualizado para a recepção.",
   variables: { servico_interesse: "Shiatsu 60min" },
   action,
+  excecaoOperacional,
 });
 
 const contexto = (texto: string) => ({
@@ -76,6 +77,12 @@ describe("orquestrador de agentes", () => {
     const longa = "Informação importante. ".repeat(60);
     const limitada = limitarMensagemCliente(longa, 120);
     expect(limitada.length).toBeLessThanOrEqual(121);
+    expect(limitada).toMatch(/…$/);
+  });
+
+  it("conta espaços no limite padrão de 350 caracteres", () => {
+    const limitada = limitarMensagemCliente("palavra ".repeat(60));
+    expect(limitada.length).toBeLessThanOrEqual(351);
     expect(limitada).toMatch(/…$/);
   });
 
@@ -128,6 +135,19 @@ describe("orquestrador de agentes", () => {
     expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({ agenteId: 2 }));
     expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({ classificacao: "bianca" }));
     expect(agentesDb.salvarEstadoConversa).toHaveBeenCalledWith(expect.objectContaining({ agenteAtualId: 2, variaveis: {} }));
+  });
+
+  it("permite texto maior somente quando Diana marca uma coleta operacional de voucher", async () => {
+    const coletaVoucher = "Para concluir seu voucher, preciso confirmar o tipo, a personalização, o nome do presenteado e a mensagem. ".repeat(5);
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quero concluir a emissão de um voucher"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [dianaAssistida]);
+    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaJson(coletaVoucher, "in_process", null, true) } }] });
+
+    await processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 442 });
+
+    const sugestao = agentesDb.criarSugestao.mock.calls[0]?.[0]?.sugestao as string;
+    expect(sugestao.length).toBeGreaterThan(350);
+    expect(sugestao.length).toBeLessThanOrEqual(651);
   });
 
   it("envia imediatamente apenas quando uma resposta de baixo risco da Bianca está no modo automático", async () => {
