@@ -326,3 +326,4 @@
 - [x] Corrigir a filtragem do seletor de Scripts para eliminar todos os resultados fora do termo pesquisado
 - [x] Exibir a descrição em vinho seguida da categoria entre parênteses no seletor de Scripts
 - [x] Auditar e corrigir candidatos duplicados ou de outra unidade no vínculo de clientes do Inbox
+- [x] Corrigir roteamento de perguntas sobre terapias e limitar respostas iniciais extensas dos agentes

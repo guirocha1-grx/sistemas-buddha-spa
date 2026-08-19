@@ -41,7 +41,7 @@ vi.mock("./zapiApi", () => ({ zapiApi: { sendText, sendDocument, sendImage } }))
 vi.mock("./buddhaMktApi", () => ({ buddhaMktApi: { sendText: vi.fn() } }));
 vi.mock("./fluxos", () => ({ iniciarExecucaoFluxo }));
 
-import { aprovarEEnviarSugestao, extrairConteudoRespostaLLM, processarMensagemRecebida, reprovarSugestao } from "./agentesService";
+import { aprovarEEnviarSugestao, extrairConteudoRespostaLLM, limitarMensagemCliente, processarMensagemRecebida, reprovarSugestao } from "./agentesService";
 
 const respostaJson = (message: string, status = "in_process", action: string | null = null) => JSON.stringify({
   message,
@@ -70,6 +70,13 @@ describe("orquestrador de agentes", () => {
 
   it("mantém a causa do provedor quando a resposta não traz escolhas", () => {
     expect(() => extrairConteudoRespostaLLM({ error: { message: "modelo indisponível" } })).toThrow("modelo indisponível");
+  });
+
+  it("limita uma sugestão extensa preservando um encerramento legível", () => {
+    const longa = "Informação importante. ".repeat(60);
+    const limitada = limitarMensagemCliente(longa, 120);
+    expect(limitada.length).toBeLessThanOrEqual(121);
+    expect(limitada).toMatch(/…$/);
   });
 
   beforeEach(() => {
@@ -107,6 +114,20 @@ describe("orquestrador de agentes", () => {
     expect(sendText).not.toHaveBeenCalled();
     expect(invokeLLM.mock.calls[0]?.[0]).toMatchObject({ tool_choice: "none", tools: [], reasoningEffort: "low" });
     expect(invokeLLM.mock.calls[0]?.[0]).not.toHaveProperty("response_format");
+  });
+
+  it("prioriza uma pergunta explícita sobre terapias sobre o estado anterior de voucher", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quais terapias vocês oferecem?"));
+    agentesDb.obterEstadoConversa.mockResolvedValue({ agenteAtualId: 6, resumo: "Coleta de voucher pendente", variaveis: { tipo_voucher: "virtual" } });
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [biancaAssistida, dianaAssistida]);
+    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("Claro. Temos massagens, drenagens e experiências de Day Spa. Você procura mais relaxamento, alívio de tensão ou cuidado corporal?") } }] });
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 441 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
+
+    expect(invokeLLM).toHaveBeenCalledTimes(1);
+    expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({ agenteId: 2 }));
+    expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({ classificacao: "bianca" }));
+    expect(agentesDb.salvarEstadoConversa).toHaveBeenCalledWith(expect.objectContaining({ agenteAtualId: 2, variaveis: {} }));
   });
 
   it("envia imediatamente apenas quando uma resposta de baixo risco da Bianca está no modo automático", async () => {

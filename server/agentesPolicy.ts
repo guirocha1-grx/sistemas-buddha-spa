@@ -38,7 +38,7 @@ export function rotaDeterministica(texto: string): ChaveAgente | "humano" | null
   if (/\b(agendar|agendamento|reservar|reserva|horario|horarios|disponibilidade|marcar)\b/.test(normalizado)) return "carol";
   if (/\b(voucher|vale presente|cartao presente|presentear|presente)\b/.test(normalizado)) return "diana";
   if (/\b(day spa|mini day|day spa prime|banheira|sala de casal|wellhub|totalpass|gympass|estrutura)\b/.test(normalizado)) return "fabricia";
-  if (/\b(massagem|terapia|shiatsu|relaxante|drenagem|ayurvedica|reflexologia|candle|estetica)\b/.test(normalizado)) return "bianca";
+  if (/\b(massagem|massagens|terapia|terapias|shiatsu|relaxante|drenagem|ayurvedica|reflexologia|candle|estetica)\b/.test(normalizado)) return "bianca";
   return null;
 }
 
