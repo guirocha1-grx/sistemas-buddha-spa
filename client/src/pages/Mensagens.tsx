@@ -1122,7 +1122,7 @@ export default function Mensagens() {
                     <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50/70 p-2.5 dark:bg-amber-950/20">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">Sugestão de {sugestaoEmRevisao.agente ?? "agente"} em revisão</p>
+                          <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">Sugestão em revisão</p>
                           <p className="mt-0.5 text-[11px] text-amber-800/80 dark:text-amber-200/75">{sugestaoFoiEditada ? "Texto alterado pela equipe: a edição será registrada para aperfeiçoar os prompts." : "Revise o texto antes do envio. A decisão será registrada para aperfeiçoar os prompts."}</p>
                         </div>
                         <Badge variant="outline" className="shrink-0 border-amber-300 bg-white/70 text-[10px] text-amber-800">{sugestaoFoiEditada ? "Editada" : "Original"}</Badge>

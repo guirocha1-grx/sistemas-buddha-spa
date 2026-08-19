@@ -216,7 +216,8 @@ describe("fluxo completo Clientes → Inbox", () => {
 
     const compositor = screen.getAllByPlaceholderText("Digite uma mensagem, / para scripts ou cole um print...").at(-1) as HTMLTextAreaElement;
     await waitFor(() => expect(compositor.value).toBe("Posso preparar as opções de voucher para você."));
-    expect(screen.getByText("Sugestão de Diana em revisão")).toBeTruthy();
+    expect(screen.getByText("Sugestão em revisão")).toBeTruthy();
+    expect(screen.queryByText(/Sugestão de Diana em revisão/i)).toBeNull();
     expect(screen.getByRole("button", { name: /Aceitar como está e enviar/i })).toBeTruthy();
 
     fireEvent.change(compositor, { target: { value: "Posso preparar um voucher virtual para você." } });

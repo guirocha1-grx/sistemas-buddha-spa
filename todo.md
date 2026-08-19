@@ -332,3 +332,4 @@
 - [x] Revisar os seis prompts para operação assistida real e propor ajustes por agente antes da ativação
 - [x] Implementar prioridade de resolução entre múltiplas intenções e continuidade entre agentes
 - [x] Adicionar campo administrativo para definir quais agentes podem usar cada Script
+- [x] Ocultar o nome do agente no título do cartão de sugestão em revisão do Inbox
