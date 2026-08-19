@@ -62,6 +62,7 @@ const contexto = (texto: string) => ({
 const receptor = { agente: { id: 1, chave: "aurea", nome: "Aurea", modelo: "gpt-5-mini", modoOperacao: "assistido" }, prompt: { id: 11, conteudo: "Classifique." } };
 const biancaAssistida = { agente: { id: 2, chave: "bianca", nome: "Bianca", descricao: "Terapias", modelo: "gpt-5-mini", modoOperacao: "assistido" }, prompt: { id: 12, conteudo: "Sugira." } };
 const biancaAutomatica = { ...biancaAssistida, agente: { ...biancaAssistida.agente, modoOperacao: "automatico" as const } };
+const fabriciaAssistida = { agente: { id: 3, chave: "fabricia", nome: "Fabricia", descricao: "Day Spa", modelo: "gpt-5-mini", modoOperacao: "assistido" }, prompt: { id: 13, conteudo: "Explique Day Spa." } };
 const dianaAssistida = { agente: { id: 6, chave: "diana", nome: "Diana", descricao: "Vouchers", modelo: "gpt-5-mini", modoOperacao: "assistido" }, prompt: { id: 16, conteudo: "Prepare o voucher." } };
 
 describe("orquestrador de agentes", () => {
@@ -150,6 +151,30 @@ describe("orquestrador de agentes", () => {
 
     expect(agentesDb.criarSugestao).not.toHaveBeenCalled();
     expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({ status: "erro" }));
+  });
+
+  it("usa o fluxo geral de Day Spa para pergunta de catálogo, sem voucher ou agendamento", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Boa tarde! Quais Day Spa vocês têm?"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [fabriciaAssistida]);
+    agentesDb.listarScriptsParaAgentes.mockResolvedValue([{
+      id: 210002,
+      categoriaScript: "Day Spa",
+      titulo: "Enviar e solicitar informações sobre Day Spa",
+      descricao: "Para fornecer informações gerais do Day Spa.",
+      tipo: "fluxo",
+      script: null,
+      fluxoId: 30002,
+      fluxoNome: "Enviar informações sobre dayspa",
+    }]);
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 438 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
+
+    expect(invokeLLM).not.toHaveBeenCalled();
+    expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
+      agenteId: 3,
+      sugestao: "Claro. Vou enviar as opções gerais de Day Spa para você conhecer.",
+      acaoPendente: "script_fluxo:210002",
+    }));
   });
 
   it("prioriza uma pergunta explícita sobre terapias sobre o estado anterior de voucher", async () => {

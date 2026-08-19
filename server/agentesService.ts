@@ -161,6 +161,21 @@ function ultimaMensagemCliente(contexto: ContextoConversa) {
   return [...contexto.mensagens].reverse().find((mensagem) => mensagem.direcao === "recebida");
 }
 
+function perguntaCatalogoGeralDaySpa(contexto: ContextoConversa) {
+  const texto = (ultimaMensagemCliente(contexto)?.transcricao || ultimaMensagemCliente(contexto)?.conteudo || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return /\b(day spa|dayspa|mini day)\b/.test(texto)
+    && /\b(quais|qual|tem|tipos|opcoes|opcao|conhecer|informacoes|informacao)\b/.test(texto)
+    && !/\b(valor|preco|quanto custa|agendar|agendamento|reservar|voucher|presente)\b/.test(texto);
+}
+
+function fluxoGeralDaySpa(scripts: Awaited<ReturnType<typeof agentesDb.listarScriptsParaAgentes>>) {
+  return scripts.find((script) => script.tipo === "fluxo"
+    && Boolean(script.fluxoId)
+    && /day\s*spa/i.test(`${script.categoriaScript ?? ""} ${script.titulo ?? ""} ${script.descricao ?? ""} ${script.fluxoNome ?? ""}`)
+    && /(informa|geral|opcoes|opções)/i.test(`${script.titulo ?? ""} ${script.descricao ?? ""} ${script.fluxoNome ?? ""}`));
+}
+
 function lerFilaRotas(variaveis: Record<string, unknown> | null | undefined): Array<"bianca" | "fabricia" | "estela" | "carol" | "diana"> {
   const bruto = variaveis?.rotas_pendentes;
   if (typeof bruto !== "string") return [];
@@ -214,6 +229,20 @@ async function obterRespostaEspecialista(params: {
     params.especialista.agente.chave === "estela" ? agentesDb.listarTabelaPrecosParaAgente(params.contexto.conversa.unidadeId ?? 0) : Promise.resolve([]),
     agentesDb.listarScriptsParaAgentes(params.especialista.agente.chave as "bianca" | "fabricia" | "estela" | "carol" | "diana"),
   ]);
+  const fluxoDaySpa = params.especialista.agente.chave === "fabricia" && perguntaCatalogoGeralDaySpa(params.contexto)
+    ? fluxoGeralDaySpa(scripts)
+    : undefined;
+  if (fluxoDaySpa?.fluxoId) {
+    return {
+      message: "Claro. Vou enviar as opções gerais de Day Spa para você conhecer.",
+      status: "in_process",
+      summary: "Cliente solicitou o catálogo geral de Day Spa; sugerido fluxo oficial de informações.",
+      variables: {},
+      action: `script_fluxo:${fluxoDaySpa.id}`,
+      scriptId: fluxoDaySpa.id,
+      excecaoOperacional: false,
+    };
+  }
   const resposta = await invokeLLM({
     model: params.especialista.agente.modelo,
     // O proxy pode encaminhar a chamada à Responses API com web_search

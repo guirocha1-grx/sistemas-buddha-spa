@@ -336,3 +336,4 @@
 - [x] Corrigir sugestões de agentes concluídas sem texto e restaurar o preenchimento automático do editor
 - [x] Vincular rascunhos e sugestões ao cliente correto ao trocar de conversa no Inbox
 - [x] Fazer a Áurea acolher aberturas sem intenção com uma pergunta aberta antes do roteamento
+- [x] Priorizar o fluxo geral de Day Spa para perguntas de catálogo sem campanha, voucher ou agendamento prematuros
