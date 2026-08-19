@@ -350,4 +350,5 @@
 - [x] Registrar as duas compras Point de R$ 199,90 como despesas nos extratos das unidades
 - [x] Encerrar e sincronizar decisões de sugestão entre pessoas usando o mesmo login no Inbox
 - [ ] Auditar a confiança do roteamento e definir bloqueio para sugestões de baixa certeza
-- [ ] Pesquisar boas práticas e propor um plano gradual de cordialidade e precisão para os agentes
+- [x] Pesquisar boas práticas e propor um plano gradual de cordialidade e precisão para os agentes
+- [x] Restaurar a geração de sugestão manual baseada no texto digitado pela recepção

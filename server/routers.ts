@@ -33,6 +33,20 @@ import { listarHeartbeatsSincronizacaoDiaria } from "./dailySyncReport";
 import { iniciarExecucaoFluxo } from "./fluxos";
 import { agentesRouter, tabelaPrecosRouter } from "./routers/agentes";
 
+/**
+ * A sugestão manual é uma reescrita curta do rascunho da recepção. Sem uma
+ * margem de saída, o gpt-5-mini pode consumir o limite inteiro em raciocínio
+ * interno e devolver `content` vazio. Ferramentas também não fazem sentido
+ * nesse fluxo e precisam ser desabilitadas explicitamente.
+ */
+export const INBOX_MANUAL_SUGGESTION_LLM_OPTIONS = {
+  model: "gpt-5-mini",
+  maxTokens: 1200,
+  reasoningEffort: "low" as const,
+  tools: [],
+  toolChoice: "none" as const,
+};
+
 function fmtDateIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
@@ -963,8 +977,7 @@ Diretrizes:
         const systemPrompt = promptConfigurado?.valor?.trim() || DEFAULT_INBOX_AI_MESSAGE_PROMPT;
         try {
           const response = await invokeLLM({
-            model: "gpt-5-mini",
-            maxTokens: 500,
+            ...INBOX_MANUAL_SUGGESTION_LLM_OPTIONS,
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: montarPedidoSugestaoMensagem(input.rascunho) },
