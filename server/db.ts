@@ -1562,6 +1562,49 @@ export function normalizarTipoAdquirente(
   return t || m || "desconhecido";
 }
 
+/**
+ * Registra compra operacional de equipamento Point no extrato da conta MP,
+ * sem transformá-la em receita da adquirente. O identificador externo torna
+ * a gravação idempotente em sincronizações futuras.
+ */
+export async function registrarDespesaEquipamentoPoint(input: {
+  unidadeId: number;
+  contaId: number;
+  pagamentoId: string;
+  data: string;
+  descricaoEquipamento: string;
+  valorTabela: number;
+  valorPago: number;
+  desconto: number;
+}) {
+  const db = await getDb();
+  if (!db) return false;
+
+  const idTransacao = `mp_equipamento:${input.pagamentoId}`;
+  const existente = await db.select({ id: interExtratos.id }).from(interExtratos)
+    .where(and(eq(interExtratos.unidadeId, input.unidadeId), eq(interExtratos.idTransacao, idTransacao)))
+    .limit(1);
+  if (existente[0]) return false;
+
+  await db.insert(interExtratos).values({
+    unidadeId: input.unidadeId,
+    contaId: input.contaId,
+    idTransacao,
+    dataEntrada: input.data,
+    dataTransacao: input.data,
+    tipoTransacao: "compra_equipamento_point",
+    tipoOperacao: "D",
+    valor: input.valorPago.toFixed(2),
+    titulo: "Compra de equipamento Point Smart 2",
+    descricao: `${input.descricaoEquipamento}. Preço de tabela: R$ ${input.valorTabela.toFixed(2)}; desconto Mercado Pago: R$ ${input.desconto.toFixed(2)}; valor efetivamente pago: R$ ${input.valorPago.toFixed(2)}.`,
+    detalhe: JSON.stringify({ pagamentoMercadoPagoId: input.pagamentoId, valorTabela: input.valorTabela, desconto: input.desconto, valorPago: input.valorPago }),
+    nomeDestino: "Mercado Pago Instituição",
+    origem: "mercadopago",
+    categorizacaoStatus: "pendente",
+  });
+  return true;
+}
+
 const LABEL_TIPO_ADQUIRENTE: Record<string, string> = {
   pix: "Pix",
   cartao_credito: "Crédito",

@@ -345,3 +345,6 @@
 - [x] Aplicar resposta-padrão de triagem para pedidos de horário conforme o período informado
 - [x] Encerrar automaticamente a sugestão em revisão quando o recepcionista enviar resposta diferente
 - [x] Impedir falha de interface quando uma consulta transitória retornar objeto em vez de lista
+- [x] Auditar e corrigir, se confirmado, lançamentos de adquirente replicados entre unidades
+- [x] Confirmar e isolar cobranças de equipamento Point que não correspondem a vendas das unidades
+- [x] Registrar as duas compras Point de R$ 199,90 como despesas nos extratos das unidades

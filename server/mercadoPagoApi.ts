@@ -40,6 +40,12 @@ export interface MpPagamento {
   money_release_date?: string | null; // ISO 8601 — quando o valor é liberado/cai
   description?: string;
   external_reference?: string;
+  coupon_amount?: number;
+  shipping_amount?: number;
+  order?: { id?: string; type?: string };
+  additional_info?: {
+    items?: Array<{ title?: string; quantity?: number; unit_price?: number }>;
+  };
   financing_group?: string; // ex.: "PSJ_LINK_HASTA_3X" — parcelamento sem juros
 }
 
@@ -80,6 +86,26 @@ export async function consultarPagamentos(
     limit: String(limit),
   });
   return mpRequest<MpPaymentsSearchResponse>(`/v1/payments/search?${params.toString()}`, accessToken);
+}
+
+/**
+ * Compra do próprio equipamento Point não é venda da unidade. A API usa
+ * transaction_amount como preço de tabela (R$ 840,80), enquanto
+ * transaction_details.total_paid_amount traz o débito real após cupom
+ * (R$ 199,90). Sem este filtro, a compra aparece como receita de Pix.
+ */
+export function ehCompraEquipamentoPoint(pagamento: MpPagamento): boolean {
+  const descricao = (pagamento.description ?? "").toLowerCase();
+  const valorTabela = Number(pagamento.transaction_amount ?? 0);
+  const valorPago = Number(pagamento.transaction_details?.total_paid_amount ?? 0);
+  const desconto = Number(pagamento.coupon_amount ?? 0);
+
+  return descricao.includes("point smart")
+    && pagamento.order?.type === "mercadopago"
+    && valorTabela > 0
+    && valorPago > 0
+    && valorPago < valorTabela
+    && desconto > 0;
 }
 
 /**

@@ -3217,12 +3217,14 @@ Diretrizes:
       }
 
       let totalInseridos = 0;
+      let totalEquipamentos = 0;
       let totalNaApi = 0;
       let offset = 0;
       const limit = 50;
       let amostraBruta: string | null = null;
 
       try {
+        const contaMercadoPago = await db.getOrCreateContaMercadoPago(input.unidadeId);
         while (true) {
           const pagina = await consultarPagamentos(unidade.mpAccessToken, input.dataInicio, input.dataFim, offset, limit);
           totalNaApi = pagina.paging.total;
@@ -3245,7 +3247,27 @@ Diretrizes:
             }))).slice(0, 4000);
           }
 
-          const linhas = pagina.results.map((p) => {
+          const comprasPoint = pagina.results.filter(ehCompraEquipamentoPoint);
+          for (const compra of comprasPoint) {
+            if (!contaMercadoPago) continue;
+            const valorPago = Number(compra.transaction_details?.total_paid_amount ?? 0);
+            const valorTabela = Number(compra.transaction_amount ?? 0);
+            const desconto = Number(compra.coupon_amount ?? 0);
+            if (valorPago <= 0 || valorTabela <= 0) continue;
+            const criada = await db.registrarDespesaEquipamentoPoint({
+              unidadeId: input.unidadeId,
+              contaId: contaMercadoPago.id,
+              pagamentoId: String(compra.id),
+              data: (compra.date_approved ?? "").slice(0, 10),
+              descricaoEquipamento: compra.description ?? "Compra de equipamento Point",
+              valorTabela,
+              valorPago,
+              desconto,
+            });
+            if (criada) totalEquipamentos++;
+          }
+
+          const linhas = pagina.results.filter((p) => !ehCompraEquipamentoPoint(p)).map((p) => {
             const { bruto, taxa, antecipacao, liquido } = extrairValoresMp(p);
             return {
               unidadeId: input.unidadeId,
@@ -3274,7 +3296,7 @@ Diretrizes:
           tipo: "mercadopago_vendas",
           status: "sucesso",
           registrosProcessados: totalInseridos,
-          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Total API: ${totalNaApi}. Novos: ${totalInseridos}.${amostraBruta ? ` Amostra bruta: ${amostraBruta}` : ""}`,
+          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Total API: ${totalNaApi}. Novos: ${totalInseridos}. Compras Point registradas como despesa: ${totalEquipamentos}.${amostraBruta ? ` Amostra bruta: ${amostraBruta}` : ""}`,
         });
 
         return { success: true, totalInseridos, totalNaApi };
