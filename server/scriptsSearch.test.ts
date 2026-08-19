@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scriptCorrespondeBusca } from "../client/src/lib/scriptsSearch";
+import { descricaoExibicaoScript, filtrarScriptsPorBusca, scriptCorrespondeBusca } from "../client/src/lib/scriptsSearch";
 
 describe("scriptCorrespondeBusca", () => {
   it("retorna somente itens cujo título, descrição ou conteúdo corresponde ao termo", () => {
@@ -26,5 +26,19 @@ describe("scriptCorrespondeBusca", () => {
 
   it("faz a correspondência ignorando acentos", () => {
     expect(scriptCorrespondeBusca({ titulo: "Promoção de setembro" }, "promocao")).toBe(true);
+  });
+
+  it("filtra a lista localmente sem incluir itens apenas pela categoria", () => {
+    const scripts = [
+      { titulo: "Campanha mensal", descricao: "Comunicar promoção vigente.", script: "Oferta válida este mês.", categoriaScript: "Preços" },
+      { titulo: "Yin-Yang", descricao: "Apresentar a terapia.", script: "Massagem relaxante e Shiatsu.", categoriaScript: "Terapias (descrição)" },
+    ];
+
+    expect(filtrarScriptsPorBusca(scripts, "promo")).toEqual([scripts[0]]);
+  });
+
+  it("prioriza o título como descrição visual e mantém a categoria separada", () => {
+    expect(descricaoExibicaoScript({ titulo: "Encerramento por falta de interação", descricao: "Mensagem de despedida" }))
+      .toBe("Encerramento por falta de interação");
   });
 });

@@ -23,3 +23,13 @@ export function scriptCorrespondeBusca(script: ScriptPesquisavel, busca: string)
   return [script.titulo, script.descricao, script.script]
     .some((campo) => normalizarBusca(campo ?? "").includes(termo));
 }
+
+/** O catálogo é pequeno; filtrar localmente evita exibir dados anteriores enquanto uma consulta remota é renovada. */
+export function filtrarScriptsPorBusca<T extends ScriptPesquisavel>(scripts: T[], busca: string) {
+  return scripts.filter((script) => scriptCorrespondeBusca(script, busca));
+}
+
+/** Rótulo compacto e descritivo exibido antes do conteúdo completo do Script. */
+export function descricaoExibicaoScript(script: ScriptPesquisavel) {
+  return script.titulo?.trim() || script.descricao?.trim() || "Sem descrição";
+}

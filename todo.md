@@ -323,3 +323,5 @@
 - [x] Integrar Scripts e fluxos aos agentes como base factual com transição cordial condicional
 - [x] Aplicar em todos os prompts perguntas abertas e progressivas, com exceção para agendamento, nota fiscal e voucher
 - [x] Corrigir o filtro do seletor de Scripts para buscar somente título, descrição e conteúdo correspondentes ao termo digitado
+- [x] Corrigir a filtragem do seletor de Scripts para eliminar todos os resultados fora do termo pesquisado
+- [x] Exibir a descrição em vinho seguida da categoria entre parênteses no seletor de Scripts

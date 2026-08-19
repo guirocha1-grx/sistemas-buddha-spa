@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Zap, MessageSquare, Workflow, Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { scriptCorrespondeBusca } from "@/lib/scriptsSearch";
+import { descricaoExibicaoScript, filtrarScriptsPorBusca } from "@/lib/scriptsSearch";
 import { toast } from "sonner";
 
 interface ScriptRow {
@@ -63,7 +63,7 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
 
   const categoriasQuery = trpc.scripts.listCategorias.useQuery(undefined, { enabled: open });
   const scriptsQuery = trpc.scripts.list.useQuery(
-    { busca: busca || undefined, categoria: categoriaFiltro || undefined },
+    { categoria: categoriaFiltro || undefined },
     { enabled: open },
   );
   const recentesQuery = trpc.scripts.listRecentes.useQuery(undefined, { enabled: open });
@@ -106,8 +106,11 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
     fechar();
   };
 
-  const listaFiltrada = (scriptsQuery.data ?? [])
-    .filter((script) => visivelNaUnidade(script) && scriptCorrespondeBusca(script, busca)) as ScriptRow[];
+  // O catálogo inteiro é carregado por categoria e filtrado imediatamente no
+  // cliente. Isso impede que o React Query mostre resultados de uma pesquisa
+  // anterior enquanto a requisição com o novo termo ainda está em trânsito.
+  const listaFiltrada = filtrarScriptsPorBusca(scriptsQuery.data ?? [], busca)
+    .filter(visivelNaUnidade) as ScriptRow[];
   const recentesFiltrados = (recentesQuery.data ?? []).filter(visivelNaUnidade) as ScriptRow[];
 
   return (
@@ -161,8 +164,10 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
                 >
                   {s.tipo === "fluxo" ? <Workflow className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" /> : <MessageSquare className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />}
                   <span className="flex-1 min-w-0">
-                    <span className="font-medium text-xs text-muted-foreground block">{s.categoriaScript} · {s.titulo || "Sem título"}</span>
-                    <span className="line-clamp-2">{s.descricao || (s.tipo === "fluxo" ? (s.fluxoNome || "(fluxo removido)") : s.script?.slice(0, 140))}</span>
+                    <span className="font-semibold text-sm leading-5 text-primary block truncate">
+                      {descricaoExibicaoScript(s)} <span className="font-normal text-muted-foreground">({s.categoriaScript})</span>
+                    </span>
+                    <span className="line-clamp-2">{s.tipo === "fluxo" ? (s.descricao || s.fluxoNome || "(fluxo removido)") : s.script?.slice(0, 140)}</span>
                   </span>
                   {s.tipo === "fluxo" && s.fluxoId && <MiniaturaFluxo fluxoId={s.fluxoId} />}
                 </button>
@@ -183,8 +188,10 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
               >
                 {s.tipo === "fluxo" ? <Workflow className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" /> : <MessageSquare className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />}
                 <span className="flex-1 min-w-0">
-                  <span className="font-medium text-xs text-muted-foreground block">{s.categoriaScript} · {s.titulo || "Sem título"}</span>
-                  <span className="line-clamp-2">{s.descricao || (s.tipo === "fluxo" ? (s.fluxoNome || "(fluxo removido)") : s.script?.slice(0, 140))}</span>
+                  <span className="font-semibold text-sm leading-5 text-primary block truncate">
+                    {descricaoExibicaoScript(s)} <span className="font-normal text-muted-foreground">({s.categoriaScript})</span>
+                  </span>
+                  <span className="line-clamp-2">{s.tipo === "fluxo" ? (s.descricao || s.fluxoNome || "(fluxo removido)") : s.script?.slice(0, 140)}</span>
                 </span>
                 {s.tipo === "fluxo" && s.fluxoId && <MiniaturaFluxo fluxoId={s.fluxoId} />}
                 {iniciarFluxoMutation.isPending && s.tipo === "fluxo" && <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />}
