@@ -218,6 +218,30 @@ describe("orquestrador de agentes", () => {
     }));
   });
 
+  it("encaminha o pedido inicial de voucher ao fluxo oficial antes de gerar texto livre", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quero entender como funciona o voucher para presentear."));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [dianaAssistida]);
+    agentesDb.listarScriptsParaAgentes.mockResolvedValue([{
+      id: 210001,
+      categoriaScript: "Solicitação de informações",
+      titulo: "Informações e envio de vouchers",
+      descricao: "Fluxo para orientar clientes sobre uso e solicitação de vouchers e para encaminhar o envio.",
+      tipo: "fluxo",
+      script: null,
+      fluxoId: 30001,
+      fluxoNome: "Enviar informações sobre vouchers",
+    }]);
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 473 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
+
+    expect(invokeLLM).not.toHaveBeenCalled();
+    expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
+      agenteId: 6,
+      sugestao: "Claro. Vou encaminhar as informações sobre vouchers para você.",
+      acaoPendente: "script_fluxo:210001",
+    }));
+  });
+
   it("pede o período antes de a recepção verificar um horário sem preferência", async () => {
     agentesDb.obterContextoConversa.mockResolvedValue(contexto("Vocês têm horário para amanhã?"));
     agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);

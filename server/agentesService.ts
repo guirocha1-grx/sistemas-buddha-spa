@@ -213,6 +213,22 @@ function fluxoGeralDaySpa(scripts: Awaited<ReturnType<typeof agentesDb.listarScr
     && /(informa|geral|opcoes|opções)/i.test(`${script.titulo ?? ""} ${script.descricao ?? ""} ${script.fluxoNome ?? ""}`));
 }
 
+/** Pedido inicial de explicação, compra ou emissão — não vale para a simples conferência de um voucher já existente. */
+function pedidoInformacoesVoucher(contexto: ContextoConversa) {
+  const texto = (ultimaMensagemCliente(contexto)?.transcricao || ultimaMensagemCliente(contexto)?.conteudo || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (!/\b(voucher|vale presente|cartao presente)\b/.test(texto)) return false;
+  if (/\b(foto|comprovante|ja tenho|tenho um voucher|usar meu voucher|validade)\b/.test(texto)) return false;
+  return /\b(quero|gostaria|preciso|como|funciona|informacoes|informacao|emitir|emissao|comprar|adquirir|fazer|enviar|receber|presentear)\b/.test(texto);
+}
+
+function fluxoInformacoesVoucher(scripts: Awaited<ReturnType<typeof agentesDb.listarScriptsParaAgentes>>) {
+  return scripts.find((script) => script.tipo === "fluxo"
+    && Boolean(script.fluxoId)
+    && /voucher|vale presente|cartao presente/i.test(`${script.categoriaScript ?? ""} ${script.titulo ?? ""} ${script.descricao ?? ""} ${script.fluxoNome ?? ""}`)
+    && /(informa|envio|solicit)/i.test(`${script.titulo ?? ""} ${script.descricao ?? ""} ${script.fluxoNome ?? ""}`));
+}
+
 function pedidoDisponibilidade(contexto: ContextoConversa) {
   const texto = (ultimaMensagemCliente(contexto)?.transcricao || ultimaMensagemCliente(contexto)?.conteudo || "")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -319,6 +335,20 @@ async function obterRespostaEspecialista(params: {
       variables: {},
       action: `script_fluxo:${fluxoDaySpa.id}`,
       scriptId: fluxoDaySpa.id,
+      excecaoOperacional: false,
+    };
+  }
+  const fluxoVoucher = params.especialista.agente.chave === "diana" && pedidoInformacoesVoucher(params.contexto)
+    ? fluxoInformacoesVoucher(scripts)
+    : undefined;
+  if (fluxoVoucher?.fluxoId && !(await agentesDb.acaoJaRegistrada(params.contexto.conversa.id, `script_fluxo:${fluxoVoucher.id}`))) {
+    return {
+      message: "Claro. Vou encaminhar as informações sobre vouchers para você.",
+      status: "in_process",
+      summary: "Cliente solicitou informações ou emissão de voucher; sugerido fluxo oficial de vouchers.",
+      variables: {},
+      action: `script_fluxo:${fluxoVoucher.id}`,
+      scriptId: fluxoVoucher.id,
       excecaoOperacional: false,
     };
   }

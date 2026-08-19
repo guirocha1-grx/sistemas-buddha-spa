@@ -354,3 +354,4 @@
 - [x] Restaurar a geração de sugestão manual baseada no texto digitado pela recepção
 - [x] Aplicar o primeiro lote de cordialidade, precisão factual e transições comerciais aos prompts ativos
 - [x] Criar saída de não intervenção focalizada em Carol e Diana para impedir sugestões desnecessárias quando agendamento ou voucher já dependem da recepção ou de sistema externo
+- [x] Diagnosticar e corrigir o não encaminhamento direto da Diana para o fluxo elegível de voucher
