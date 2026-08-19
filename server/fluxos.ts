@@ -27,6 +27,7 @@ import {
 import { zapiApi } from "./zapiApi";
 import { buddhaMktApi } from "./buddhaMktApi";
 import { storageGetBase64, storageGetSignedUrl } from "./storage";
+import { obterCampanhaMensal } from "./agentesDb";
 
 // Limite de passos processados em sequência numa única chamada
 // (mensagem/condicional/salvar_variavel/webhook/randomizador/midia
@@ -75,9 +76,10 @@ function avaliarCondicoes(
  * `nome` também pra não quebrar fluxo já montado antes dessa mudança.
  */
 export async function computarVariaveisSistema(execucao: FluxoExecucao, fluxo: Fluxo): Promise<Record<string, string>> {
-  const [conversa, unidade] = await Promise.all([
+  const [conversa, unidade, campanha] = await Promise.all([
     getInboxConversaById(execucao.conversaId),
     getUnidadeById(fluxo.unidadeId),
+    obterCampanhaMensal(fluxo.unidadeId),
   ]);
   const nomeCliente = conversa?.clienteNome || conversa?.nomeContato || "";
   return {
@@ -86,6 +88,7 @@ export async function computarVariaveisSistema(execucao: FluxoExecucao, fluxo: F
     telefone: conversa?.telefone || "",
     email: "",
     unidade: unidade?.nome || "",
+    campanha_do_mes: campanha?.ativo ? (campanha.conteudo || "") : "",
   };
 }
 

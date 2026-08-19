@@ -7,6 +7,9 @@
  * um nível abaixo). Chave sempre "modulo:subsecao".
  */
 export const SUBSECOES: Record<string, { chave: string; label: string }[]> = {
+  tabela_precos: [
+    { chave: "tabela_precos:campanha_mes", label: "Gerenciar Campanha do Mês" },
+  ],
   financeiro: [
     { chave: "financeiro:visao-geral", label: "Visão Geral" },
     { chave: "financeiro:contas", label: "Contas" },

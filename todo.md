@@ -312,3 +312,7 @@
 - [x] Registrar as decisões e alterações de sugestões para revisão futura dos prompts
 - [x] Carregar automaticamente a sugestão pendente do agente no compositor central do Inbox
 - [x] Manter o Log dos Agentes apenas como histórico administrativo, sem ação necessária da equipe
+- [x] Criar Campanha do Mês por unidade, com texto livre e vigência mensal
+- [x] Adicionar permissão separada para gerir a Campanha do Mês
+- [x] Exibir a Campanha do Mês como segunda aba da Tabela de Preços
+- [x] Disponibilizar a variável {{campanha_do_mes}} nos fluxos de mensagens

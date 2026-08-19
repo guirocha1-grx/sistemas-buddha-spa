@@ -1,9 +1,17 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import * as agentesDb from "../agentesDb";
 import { aprovarEEnviarSugestao, processarMensagemRecebida, reprovarSugestao } from "../agentesService";
 
 const motivoAvaliacao = z.enum(["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"]);
+
+function podeGerirCampanhaMes(ctx: { user: { role: string }; permissoesSubsecoes?: Set<string> }) {
+  if (ctx.user.role === "admin") return true;
+  const subsecoes = ctx.permissoesSubsecoes ?? new Set<string>();
+  const possuiRestricaoNaTabela = Array.from(subsecoes).some((chave) => chave.startsWith("tabela_precos:"));
+  return !possuiRestricaoNaTabela || subsecoes.has("tabela_precos:campanha_mes");
+}
 
 export const tabelaPrecosRouter = router({
   list: protectedProcedure.input(z.object({
@@ -11,6 +19,17 @@ export const tabelaPrecosRouter = router({
     busca: z.string().trim().max(100).optional(),
     categoria: z.string().trim().max(80).optional(),
   })).query(({ input }) => agentesDb.listarTabelaPrecos(input)),
+  campanhaMes: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input, ctx }) => ({
+    campanha: await agentesDb.obterCampanhaMensal(input.unidadeId),
+    podeEditar: podeGerirCampanhaMes(ctx),
+  })),
+  salvarCampanhaMes: protectedProcedure.input(z.object({
+    unidadeId: z.number(),
+    conteudo: z.string().trim().min(1, "Informe o texto da campanha.").max(20000),
+  })).mutation(async ({ input, ctx }) => {
+    if (!podeGerirCampanhaMes(ctx)) throw new TRPCError({ code: "FORBIDDEN", message: "Sem permissão para gerenciar a Campanha do Mês" });
+    return agentesDb.salvarCampanhaMensal(input);
+  }),
 });
 
 export const agentesRouter = router({

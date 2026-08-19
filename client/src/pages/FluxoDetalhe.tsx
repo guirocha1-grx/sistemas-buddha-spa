@@ -700,6 +700,7 @@ const VARIAVEIS_BUILTIN = [
   { nome: "nome", dica: "nome do cliente/contato" },
   { nome: "telefone", dica: "telefone do contato" },
   { nome: "email", dica: "email do cliente" },
+  { nome: "campanha_do_mes", dica: "texto atual da Campanha do Mês da unidade" },
 ];
 
 /** Botão que abre uma lista das variáveis conhecidas (cliente + salvar_variavel do fluxo) e insere `{{nome}}` no texto ao clicar. */

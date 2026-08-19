@@ -418,6 +418,38 @@ export async function listarRecursosAgentes(unidadeId: number) {
     .orderBy(desc(agentesRecursos.updatedAt));
 }
 
+/** Conteúdo único, editável e vigente da campanha mensal de cada unidade. */
+export async function obterCampanhaMensal(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(agentesRecursos)
+    .where(and(eq(agentesRecursos.unidadeId, unidadeId), eq(agentesRecursos.chave, "campanha_do_mes")))
+    .limit(1);
+  return rows[0];
+}
+
+export async function salvarCampanhaMensal(params: { unidadeId: number; conteudo: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Banco indisponível");
+  const campanhaAtual = await obterCampanhaMensal(params.unidadeId);
+  const dados = {
+    chave: "campanha_do_mes",
+    tipo: "promocao" as const,
+    titulo: "Campanha do Mês",
+    conteudo: params.conteudo.trim(),
+    url: null,
+    vigenciaInicio: null,
+    vigenciaFim: null,
+    ativo: true,
+  };
+  if (campanhaAtual) {
+    await db.update(agentesRecursos).set(dados).where(eq(agentesRecursos.id, campanhaAtual.id));
+    return { id: campanhaAtual.id };
+  }
+  const result = await db.insert(agentesRecursos).values({ unidadeId: params.unidadeId, ...dados }).$returningId();
+  return { id: result[0]?.id };
+}
+
 export async function listarTabelaPrecos(params: { unidadeId: number; busca?: string; categoria?: string; apenasAtivos?: boolean }) {
   const db = await getDb();
   if (!db) return [];

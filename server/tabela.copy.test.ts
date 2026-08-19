@@ -7,5 +7,11 @@ describe("Tabela de Preços", () => {
 
     expect(source).toContain("Valores oficiais para consulta manual da equipe.");
     expect(source).not.toContain("também é a referência comercial usada pelo agente Estela");
+    expect(source).toContain("Campanha do Mês");
+    expect(source).toContain("{{campanha_do_mes}}");
+
+    const fluxosSource = readFileSync(new URL("./fluxos.ts", import.meta.url), "utf8");
+    expect(fluxosSource).toContain("campanha_do_mes");
+    expect(fluxosSource).toContain("obterCampanhaMensal");
   });
 });

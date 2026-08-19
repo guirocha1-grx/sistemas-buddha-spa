@@ -52,4 +52,15 @@ describe("agentes: acesso administrativo", () => {
       code: "FORBIDDEN",
     });
   });
+
+  it("bloqueia a edição da campanha mensal sem a subpermissão específica", async () => {
+    const ctx = createUserContext();
+    ctx.permissoesModulos = new Set(["tabela_precos"]);
+    ctx.permissoesSubsecoes = new Set(["tabela_precos:outra_secao"]);
+    const caller = appRouter.createCaller(ctx);
+
+    await expect(caller.tabelaPrecos.salvarCampanhaMes({ unidadeId: 1, conteudo: "Promoção teste" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
 });
