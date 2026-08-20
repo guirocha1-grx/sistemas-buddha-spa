@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Zap, MessageSquare, Workflow, Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { descricaoExibicaoScript, filtrarScriptsPorBusca, filtrarScriptsPorTipo } from "@/lib/scriptsSearch";
+import { descricaoExibicaoScript, filtrarScriptsPorBusca, filtrarScriptsPorTiposSelecionados } from "@/lib/scriptsSearch";
 import { toast } from "sonner";
 
 interface ScriptRow {
@@ -113,15 +113,15 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
   // O catálogo inteiro é carregado por categoria e filtrado imediatamente no
   // cliente. Isso impede que o React Query mostre resultados de uma pesquisa
   // anterior enquanto a requisição com o novo termo ainda está em trânsito.
-  const listaFiltrada = filtrarScriptsPorTipo(
+  const listaFiltrada = filtrarScriptsPorTiposSelecionados(
     filtrarScriptsPorBusca(scriptsQuery.data ?? [], busca).filter(visivelNaUnidade) as ScriptRow[],
-    incluirTexto ? "sim" : "nao",
-    incluirFluxo ? "sim" : "nao",
+    incluirTexto,
+    incluirFluxo,
   );
-  const recentesFiltrados = filtrarScriptsPorTipo(
+  const recentesFiltrados = filtrarScriptsPorTiposSelecionados(
     (recentesQuery.data ?? []).filter(visivelNaUnidade) as ScriptRow[],
-    incluirTexto ? "sim" : "nao",
-    incluirFluxo ? "sim" : "nao",
+    incluirTexto,
+    incluirFluxo,
   );
 
   return (
