@@ -349,7 +349,7 @@
 - [x] Confirmar e isolar cobranças de equipamento Point que não correspondem a vendas das unidades
 - [x] Registrar as duas compras Point de R$ 199,90 como despesas nos extratos das unidades
 - [x] Encerrar e sincronizar decisões de sugestão entre pessoas usando o mesmo login no Inbox
-- [ ] Auditar a confiança do roteamento e definir bloqueio para sugestões de baixa certeza
+- [x] Auditar a confiança do roteamento e definir bloqueio: não ativar bloqueio enquanto a métrica estiver nula ou zero
 - [x] Pesquisar boas práticas e propor um plano gradual de cordialidade e precisão para os agentes
 - [x] Restaurar a geração de sugestão manual baseada no texto digitado pela recepção
 - [x] Aplicar o primeiro lote de cordialidade, precisão factual e transições comerciais aos prompts ativos
@@ -366,3 +366,4 @@
 - [x] Corrigir as caixas Texto e Fluxo para que ambas marcadas exibam todos os Scripts
 - [x] Adicionar os filtros discretos Texto e Fluxo, marcados por padrão, à tela de gestão de Scripts
 - [x] Ampliar a área vertical do histórico de mensagens no Inbox para aproveitar o espaço inferior disponível
+- [x] Produzir análise Pareto das divergências entre mensagens, sugestões dos agentes e decisões da recepção
