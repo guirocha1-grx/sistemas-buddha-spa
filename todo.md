@@ -367,3 +367,5 @@
 - [x] Adicionar os filtros discretos Texto e Fluxo, marcados por padrão, à tela de gestão de Scripts
 - [x] Ampliar a área vertical do histórico de mensagens no Inbox para aproveitar o espaço inferior disponível
 - [x] Produzir análise Pareto das divergências entre mensagens, sugestões dos agentes e decisões da recepção
+- [x] Criar guardas determinísticas de contexto para Carol em confirmação, período informado, agradecimento, recusa e disponibilidade externa
+- [x] Restringir Bianca à referência comercial oficial e encaminhar voucher existente para a triagem de agendamento

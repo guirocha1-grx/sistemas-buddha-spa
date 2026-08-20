@@ -26,6 +26,8 @@ describe("regras híbridas de atendimento", () => {
     expect(rotasDeterministicas("Quero agendar uma massagem, quanto custa?")).toEqual(["bianca", "estela", "carol"]);
     expect(rotasDeterministicas("Quero presentear com um Day Spa, qual o valor?")).toEqual(["fabricia", "diana", "estela"]);
     expect(rotasDeterministicas("Quero emitir um voucher de massagem, quanto custa?")).toEqual(["bianca", "diana", "estela", "diana"]);
+    expect(rotasDeterministicas("Tenho voucher e quero agendar para sábado")).toEqual(["carol"]);
+    expect(rotasDeterministicas("Ganhei um voucher de massagem e quero usar")).toEqual(["bianca", "carol"]);
     expect(rotasDeterministicas("Preciso de nota fiscal e quero saber o valor")).toEqual(["humano"]);
   });
 

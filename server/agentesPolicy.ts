@@ -42,10 +42,17 @@ export function rotasDeterministicas(texto: string): Array<ChaveAgente | "humano
   if (/\b(massagem|massagens|terapia|terapias|shiatsu|relaxante|drenagem|ayurvedica|reflexologia|candle|estetica)\b/.test(normalizado)) rotas.push("bianca");
   if (/\b(day spa|mini day|day spa prime|banheira|sala de casal|wellhub|totalpass|gympass|estrutura)\b/.test(normalizado)) rotas.push("fabricia");
   const mencionaVoucher = /\b(voucher|vale presente|cartao presente|presentear|presente)\b/.test(normalizado);
-  const querEmitirVoucher = /\b(emitir|emissao|gerar|comprar|adquirir|fazer)\b/.test(normalizado) && mencionaVoucher;
-  if (mencionaVoucher) rotas.push("diana");
+  const possuiVoucherExistente = mencionaVoucher && (
+    /\b(ja|tenho|possuo|ganhei|recebi|usar|utilizar|agendar|marcar)\b[^.!?\n]{0,50}\b(voucher|vale presente|cartao presente)\b/.test(normalizado)
+    || /\b(voucher|vale presente|cartao presente)\b[^.!?\n]{0,50}\b(ja|tenho|possuo|ganhei|recebi|usar|utilizar|agendar|marcar)\b/.test(normalizado)
+  );
+  const querEmitirVoucher = !possuiVoucherExistente && /\b(emitir|emissao|gerar|comprar|adquirir|fazer)\b/.test(normalizado) && mencionaVoucher;
+  if (mencionaVoucher && !possuiVoucherExistente) rotas.push("diana");
   if (/\b(preco|precos|valor|valores|quanto custa|promocao|promocoes|desconto|descontos|oferta|ofertas|combo|campanha)\b/.test(normalizado)) rotas.push("estela");
   if (/\b(agendar|agendamento|reservar|reserva|horario|horarios|disponibilidade|marcar)\b/.test(normalizado)) rotas.push("carol");
+  // Quem já possui voucher não está pedindo emissão. O próximo passo é a
+  // triagem de uso/agendamento, depois das explicações eventualmente pedidas.
+  if (possuiVoucherExistente && !rotas.includes("carol")) rotas.push("carol");
   // Diana pode aparecer de novo no fim: primeiro explica voucher, depois de
   // preço/experiência a emissão é preparada sem atropelar as etapas anteriores.
   if (querEmitirVoucher && rotas.length > 1) rotas.push("diana");
