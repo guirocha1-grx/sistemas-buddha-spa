@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Zap, MessageSquare, Workflow, Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { descricaoExibicaoScript, filtrarScriptsPorBusca, filtrarScriptsPorTipo, type FiltroSimNao } from "@/lib/scriptsSearch";
+import { descricaoExibicaoScript, filtrarScriptsPorBusca, filtrarScriptsPorTipo } from "@/lib/scriptsSearch";
 import { toast } from "sonner";
 
 interface ScriptRow {
@@ -60,8 +60,8 @@ function MiniaturaFluxo({ fluxoId }: { fluxoId: number }) {
 export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaId, clienteId, unidadeId, variaveis }: ScriptPickerProps) {
   const [busca, setBusca] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState<string | null>(null);
-  const [textoFiltro, setTextoFiltro] = useState<FiltroSimNao>("todos");
-  const [fluxoFiltro, setFluxoFiltro] = useState<FiltroSimNao>("todos");
+  const [incluirTexto, setIncluirTexto] = useState(true);
+  const [incluirFluxo, setIncluirFluxo] = useState(true);
 
   const categoriasQuery = trpc.scripts.listCategorias.useQuery(undefined, { enabled: open });
   const scriptsQuery = trpc.scripts.list.useQuery(
@@ -88,8 +88,8 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
     onOpenChange(false);
     setBusca("");
     setCategoriaFiltro(null);
-    setTextoFiltro("todos");
-    setFluxoFiltro("todos");
+    setIncluirTexto(true);
+    setIncluirFluxo(true);
   };
 
   const handleSelect = (script: ScriptRow) => {
@@ -115,13 +115,13 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
   // anterior enquanto a requisição com o novo termo ainda está em trânsito.
   const listaFiltrada = filtrarScriptsPorTipo(
     filtrarScriptsPorBusca(scriptsQuery.data ?? [], busca).filter(visivelNaUnidade) as ScriptRow[],
-    textoFiltro,
-    fluxoFiltro,
+    incluirTexto ? "sim" : "nao",
+    incluirFluxo ? "sim" : "nao",
   );
   const recentesFiltrados = filtrarScriptsPorTipo(
     (recentesQuery.data ?? []).filter(visivelNaUnidade) as ScriptRow[],
-    textoFiltro,
-    fluxoFiltro,
+    incluirTexto ? "sim" : "nao",
+    incluirFluxo ? "sim" : "nao",
   );
 
   return (
@@ -133,13 +133,23 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
       </PopoverTrigger>
       <PopoverContent className="w-[calc(100vw-2rem)] max-w-[640px] p-0" side="top" align="start" sideOffset={8}>
         <div className="p-3 border-b space-y-2.5">
-          <Input
-            autoFocus
-            placeholder="Buscar script..."
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            className="h-9 text-sm"
-          />
+          <div className="flex items-center gap-3">
+            <Input
+              autoFocus
+              placeholder="Buscar script..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              className="h-9 min-w-0 flex-1 text-sm"
+            />
+            <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground" title="Incluir Scripts de texto">
+              <input type="checkbox" checked={incluirTexto} onChange={(e) => setIncluirTexto(e.target.checked)} className="h-3.5 w-3.5 accent-primary" />
+              Texto
+            </label>
+            <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground" title="Incluir Scripts que iniciam fluxos">
+              <input type="checkbox" checked={incluirFluxo} onChange={(e) => setIncluirFluxo(e.target.checked)} className="h-3.5 w-3.5 accent-primary" />
+              Fluxo
+            </label>
+          </div>
           {(categoriasQuery.data?.length ?? 0) > 0 && (
             <div className="flex flex-wrap gap-1.5">
               <Badge
@@ -161,32 +171,9 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
               ))}
             </div>
           )}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-0.5" aria-label="Filtros de tipo de Script">
-            {([
-              ["Texto", textoFiltro, setTextoFiltro],
-              ["Fluxo", fluxoFiltro, setFluxoFiltro],
-            ] as const).map(([rotulo, filtroAtual, definirFiltro]) => (
-              <div key={rotulo} className="flex items-center gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{rotulo}</span>
-                {(["todos", "sim", "nao"] as const).map((opcao) => (
-                  <Button
-                    key={opcao}
-                    type="button"
-                    size="sm"
-                    variant={filtroAtual === opcao ? "secondary" : "ghost"}
-                    className="h-6 px-2 text-[10px]"
-                    onClick={() => definirFiltro(opcao)}
-                    title={`${rotulo}: ${opcao === "todos" ? "todos" : opcao}`}
-                  >
-                    {opcao === "todos" ? "Todos" : opcao === "sim" ? "Sim" : "Não"}
-                  </Button>
-                ))}
-              </div>
-            ))}
-          </div>
         </div>
         <div className="max-h-[420px] overflow-y-auto p-1.5">
-          {!busca && !categoriaFiltro && textoFiltro === "todos" && fluxoFiltro === "todos" && recentesFiltrados.length > 0 && (
+          {!busca && !categoriaFiltro && incluirTexto && incluirFluxo && recentesFiltrados.length > 0 && (
             <div className="mb-1.5">
               <p className="px-2.5 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Recentes</p>
               {recentesFiltrados.map((s) => (
