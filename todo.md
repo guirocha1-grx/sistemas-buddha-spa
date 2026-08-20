@@ -364,3 +364,4 @@
 - [x] Simplificar os filtros para caixas Texto e Fluxo discretas ao lado da busca, ambas marcadas por padrão
 - [x] Limpar o contexto operacional dos agentes ao bloquear permanentemente uma conversa, preservando mensagens do Inbox
 - [x] Corrigir as caixas Texto e Fluxo para que ambas marcadas exibam todos os Scripts
+- [x] Adicionar os filtros discretos Texto e Fluxo, marcados por padrão, à tela de gestão de Scripts

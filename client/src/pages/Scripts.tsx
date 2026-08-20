@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { filtrarScriptsPorTiposSelecionados } from "@/lib/scriptsSearch";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import UnidadeSelector from "@/components/UnidadeSelector";
@@ -139,6 +140,8 @@ export default function Scripts() {
 
   const [busca, setBusca] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState<string | null>(null);
+  const [incluirTexto, setIncluirTexto] = useState(true);
+  const [incluirFluxo, setIncluirFluxo] = useState(true);
   const [modalAberto, setModalAberto] = useState(false);
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [form, setForm] = useState<ScriptForm>(FORM_VAZIO);
@@ -213,7 +216,7 @@ export default function Scripts() {
     toast.success("Copiado.");
   };
 
-  const scripts = scriptsQuery.data ?? [];
+  const scripts = filtrarScriptsPorTiposSelecionados(scriptsQuery.data ?? [], incluirTexto, incluirFluxo);
   const categorias = categoriasQuery.data ?? [];
   const salvando = createMutation.isPending || updateMutation.isPending;
   const podeSalvar = form.categoriaScript.trim() && form.titulo.trim() && form.descricao.trim() && (form.tipo === "texto" ? form.script.trim() : form.fluxoId) && !salvando;
@@ -239,12 +242,22 @@ export default function Scripts() {
 
       <Card className="border-border/50 shadow-sm">
         <CardHeader className="pb-3 space-y-3">
-          <Input
-            placeholder="Buscar script..."
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            className="max-w-sm"
-          />
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <Input
+              placeholder="Buscar script..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              className="w-full sm:w-72"
+            />
+            <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none">
+              <Checkbox checked={incluirTexto} onCheckedChange={(marcado) => setIncluirTexto(marcado === true)} aria-label="Incluir Scripts de texto" />
+              Texto
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none">
+              <Checkbox checked={incluirFluxo} onCheckedChange={(marcado) => setIncluirFluxo(marcado === true)} aria-label="Incluir Scripts de fluxo" />
+              Fluxo
+            </label>
+          </div>
           {categorias.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               <Badge
