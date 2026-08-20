@@ -206,15 +206,16 @@ async function extrairVariavelViaIa(conversaId: number, promptIa: string, nomeVa
  * oficial) não tem credencial Z-API nenhuma — usa a conta global lida
  * de `configuracoes` (ver server/buddhaMktApi.ts).
  */
-export async function enviarPelaUnidade(unidade: Unidade, telefone: string, texto: string): Promise<void> {
+export async function enviarPelaUnidade(unidade: Unidade, telefone: string, texto: string): Promise<{ zapiMessageId: string | null }> {
   if (unidade.canal === "buddha_mkt") {
     await buddhaMktApi.sendText(telefone, texto);
-    return;
+    return { zapiMessageId: null };
   }
   if (!unidade.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) {
     throw new Error("Z-API não configurado para a unidade do fluxo");
   }
-  await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, telefone, texto);
+  const resultado = await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, telefone, texto);
+  return { zapiMessageId: resultado.messageId ?? null };
 }
 
 /**
@@ -285,10 +286,11 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
         const variaveisComSistema = { ...variaveis, ...(await computarVariaveisSistema(execucao, fluxo)) };
         const texto = interpolarVariaveis(config.texto, variaveisComSistema);
         if (conversa?.telefone) {
+          let zapiMessageId: string | null = null;
           const unidade = await getUnidadeById(fluxo.unidadeId);
           if (unidade) {
             try {
-              await enviarPelaUnidade(unidade, conversa.telefone, texto);
+              ({ zapiMessageId } = await enviarPelaUnidade(unidade, conversa.telefone, texto));
             } catch (e) {
               console.error(`[Fluxos] Erro ao enviar mensagem (execução ${execucaoId}):`, e);
             }
@@ -299,6 +301,7 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
             tipo: "texto",
             conteudo: texto,
             enviadaPorIa: true,
+            zapiMessageId,
           });
         }
         await avancar(execucaoId, no.proximoNoOrdem, profundidade);
@@ -356,6 +359,7 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
         const config = no.config as Extract<FluxoNoConfig, { tipoMidia: "imagem" | "audio" | "documento"; storageKey: string }>;
         const conversa = await getInboxConversaById(execucao.conversaId);
         if (conversa?.telefone && config.storageKey) {
+          let zapiMessageId: string | null = null;
           const unidade = await getUnidadeById(fluxo.unidadeId);
           if (unidade?.canal === "buddha_mkt") {
             // Envio de mídia pela Cloud API oficial exige upload prévio
@@ -376,13 +380,16 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
               // Áudio continua por URL (sem sendAudioBase64 ainda).
               if (config.tipoMidia === "imagem") {
                 const base64 = await storageGetBase64(config.storageKey);
-                await zapiApi.sendImageBase64(creds.instanceId, creds.token, creds.clientToken, conversa.telefone, base64, "image/jpeg", config.legenda);
+                const resultado = await zapiApi.sendImageBase64(creds.instanceId, creds.token, creds.clientToken, conversa.telefone, base64, "image/jpeg", config.legenda);
+                zapiMessageId = resultado.messageId ?? null;
               } else if (config.tipoMidia === "audio") {
                 const url = await storageGetSignedUrl(config.storageKey);
-                await zapiApi.sendAudio(creds.instanceId, creds.token, creds.clientToken, conversa.telefone, url);
+                const resultado = await zapiApi.sendAudio(creds.instanceId, creds.token, creds.clientToken, conversa.telefone, url);
+                zapiMessageId = resultado.messageId ?? null;
               } else {
                 const base64 = await storageGetBase64(config.storageKey);
-                await zapiApi.sendDocumentBase64(creds.instanceId, creds.token, creds.clientToken, conversa.telefone, base64, "application/octet-stream", config.nomeArquivo);
+                const resultado = await zapiApi.sendDocumentBase64(creds.instanceId, creds.token, creds.clientToken, conversa.telefone, base64, "application/octet-stream", config.nomeArquivo);
+                zapiMessageId = resultado.messageId ?? null;
               }
             } catch (e) {
               console.error(`[Fluxos] Erro ao enviar mídia (execução ${execucaoId}):`, e);
@@ -394,6 +401,8 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
             tipo: config.tipoMidia,
             conteudo: config.legenda || config.nomeArquivo || config.tipoMidia,
             enviadaPorIa: true,
+            zapiMessageId,
+            metadados: JSON.stringify({ storageKey: config.storageKey, legenda: config.legenda ?? null, fileName: config.nomeArquivo ?? null }),
           });
         }
         await avancar(execucaoId, no.proximoNoOrdem, profundidade);

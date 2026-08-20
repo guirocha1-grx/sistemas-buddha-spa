@@ -359,3 +359,4 @@
 - [x] Exibir no cartão de sugestão o nome do fluxo que será iniciado após a aprovação humana
 - [x] Criar controle individual de automação por conversa: ativa, bloqueada por 2 horas ou bloqueada permanentemente
 - [x] Manter somente a sugestão automática mais recente por conversa e encerrar pendências obsoletas sem avaliação
+- [x] Corrigir duplicações e associações incorretas de texto e mídia no espelho interno dos fluxos do Inbox
