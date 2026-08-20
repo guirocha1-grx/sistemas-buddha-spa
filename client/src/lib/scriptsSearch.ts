@@ -4,6 +4,9 @@ export type ScriptPesquisavel = {
   script?: string | null;
 };
 
+export type FiltroSimNao = "todos" | "sim" | "nao";
+type ScriptComTipo = ScriptPesquisavel & { tipo: "texto" | "fluxo" };
+
 function normalizarBusca(texto: string) {
   return texto
     .normalize("NFD")
@@ -27,6 +30,13 @@ export function scriptCorrespondeBusca(script: ScriptPesquisavel, busca: string)
 /** O catálogo é pequeno; filtrar localmente evita exibir dados anteriores enquanto uma consulta remota é renovada. */
 export function filtrarScriptsPorBusca<T extends ScriptPesquisavel>(scripts: T[], busca: string) {
   return scripts.filter((script) => scriptCorrespondeBusca(script, busca));
+}
+
+/** Filtros combináveis por tipo; "todos" mantém aquele tipo sem restrição. */
+export function filtrarScriptsPorTipo<T extends ScriptComTipo>(scripts: T[], texto: FiltroSimNao, fluxo: FiltroSimNao) {
+  const aceita = (tipo: "texto" | "fluxo", filtro: FiltroSimNao, esperado: "texto" | "fluxo") =>
+    filtro === "todos" || (filtro === "sim" ? tipo === esperado : tipo !== esperado);
+  return scripts.filter((script) => aceita(script.tipo, texto, "texto") && aceita(script.tipo, fluxo, "fluxo"));
 }
 
 /** Rótulo compacto e descritivo exibido antes do conteúdo completo do Script. */

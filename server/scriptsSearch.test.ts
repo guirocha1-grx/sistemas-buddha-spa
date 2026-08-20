@@ -1,44 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { descricaoExibicaoScript, filtrarScriptsPorBusca, scriptCorrespondeBusca } from "../client/src/lib/scriptsSearch";
+import { filtrarScriptsPorTipo } from "../client/src/lib/scriptsSearch";
 
-describe("scriptCorrespondeBusca", () => {
-  it("retorna somente itens cujo título, descrição ou conteúdo corresponde ao termo", () => {
-    const promocao = {
-      titulo: "Inserir campanha do mês",
-      descricao: "Usar quando houver promoção ou condição mensal.",
-      script: "Confira a oferta vigente para este mês.",
-    };
-    const daySpa = {
-      titulo: "Day Spa Prime",
-      descricao: "Pacote de tratamentos e alimentação.",
-      script: "Experiência de quatro horas e meia no spa.",
-    };
-    const categoriaComNomePromocional = {
-      titulo: "Mensagem de boas-vindas",
-      descricao: "Saudação inicial para novos contatos.",
-      script: "Olá, seja bem-vindo ao Buddha Spa.",
-    };
+const scripts = [
+  { id: 1, titulo: "Mensagem", tipo: "texto" as const },
+  { id: 2, titulo: "Fluxo", tipo: "fluxo" as const },
+];
 
-    expect(scriptCorrespondeBusca(promocao, "promo")).toBe(true);
-    expect(scriptCorrespondeBusca(daySpa, "promo")).toBe(false);
-    expect(scriptCorrespondeBusca(categoriaComNomePromocional, "promo")).toBe(false);
+describe("filtrarScriptsPorTipo", () => {
+  it("mantém todos os scripts quando os dois filtros estão em todos", () => {
+    expect(filtrarScriptsPorTipo(scripts, "todos", "todos").map((script) => script.id)).toEqual([1, 2]);
   });
 
-  it("faz a correspondência ignorando acentos", () => {
-    expect(scriptCorrespondeBusca({ titulo: "Promoção de setembro" }, "promocao")).toBe(true);
-  });
-
-  it("filtra a lista localmente sem incluir itens apenas pela categoria", () => {
-    const scripts = [
-      { titulo: "Campanha mensal", descricao: "Comunicar promoção vigente.", script: "Oferta válida este mês.", categoriaScript: "Preços" },
-      { titulo: "Yin-Yang", descricao: "Apresentar a terapia.", script: "Massagem relaxante e Shiatsu.", categoriaScript: "Terapias (descrição)" },
-    ];
-
-    expect(filtrarScriptsPorBusca(scripts, "promo")).toEqual([scripts[0]]);
-  });
-
-  it("prioriza o título como descrição visual e mantém a categoria separada", () => {
-    expect(descricaoExibicaoScript({ titulo: "Encerramento por falta de interação", descricao: "Mensagem de despedida" }))
-      .toBe("Encerramento por falta de interação");
+  it("combina texto e fluxo com opções sim e não", () => {
+    expect(filtrarScriptsPorTipo(scripts, "sim", "todos").map((script) => script.id)).toEqual([1]);
+    expect(filtrarScriptsPorTipo(scripts, "nao", "sim").map((script) => script.id)).toEqual([2]);
+    expect(filtrarScriptsPorTipo(scripts, "nao", "nao")).toEqual([]);
   });
 });

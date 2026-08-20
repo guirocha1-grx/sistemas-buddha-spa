@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Zap, MessageSquare, Workflow, Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { descricaoExibicaoScript, filtrarScriptsPorBusca } from "@/lib/scriptsSearch";
+import { descricaoExibicaoScript, filtrarScriptsPorBusca, filtrarScriptsPorTipo, type FiltroSimNao } from "@/lib/scriptsSearch";
 import { toast } from "sonner";
 
 interface ScriptRow {
@@ -60,6 +60,8 @@ function MiniaturaFluxo({ fluxoId }: { fluxoId: number }) {
 export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaId, clienteId, unidadeId, variaveis }: ScriptPickerProps) {
   const [busca, setBusca] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState<string | null>(null);
+  const [textoFiltro, setTextoFiltro] = useState<FiltroSimNao>("todos");
+  const [fluxoFiltro, setFluxoFiltro] = useState<FiltroSimNao>("todos");
 
   const categoriasQuery = trpc.scripts.listCategorias.useQuery(undefined, { enabled: open });
   const scriptsQuery = trpc.scripts.list.useQuery(
@@ -86,6 +88,8 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
     onOpenChange(false);
     setBusca("");
     setCategoriaFiltro(null);
+    setTextoFiltro("todos");
+    setFluxoFiltro("todos");
   };
 
   const handleSelect = (script: ScriptRow) => {
@@ -109,9 +113,16 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
   // O catálogo inteiro é carregado por categoria e filtrado imediatamente no
   // cliente. Isso impede que o React Query mostre resultados de uma pesquisa
   // anterior enquanto a requisição com o novo termo ainda está em trânsito.
-  const listaFiltrada = filtrarScriptsPorBusca(scriptsQuery.data ?? [], busca)
-    .filter(visivelNaUnidade) as ScriptRow[];
-  const recentesFiltrados = (recentesQuery.data ?? []).filter(visivelNaUnidade) as ScriptRow[];
+  const listaFiltrada = filtrarScriptsPorTipo(
+    filtrarScriptsPorBusca(scriptsQuery.data ?? [], busca).filter(visivelNaUnidade) as ScriptRow[],
+    textoFiltro,
+    fluxoFiltro,
+  );
+  const recentesFiltrados = filtrarScriptsPorTipo(
+    (recentesQuery.data ?? []).filter(visivelNaUnidade) as ScriptRow[],
+    textoFiltro,
+    fluxoFiltro,
+  );
 
   return (
     <Popover open={open} onOpenChange={(v) => (v ? onOpenChange(true) : fechar())}>
@@ -150,9 +161,32 @@ export function ScriptPicker({ onSelect, disabled, open, onOpenChange, conversaI
               ))}
             </div>
           )}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-0.5" aria-label="Filtros de tipo de Script">
+            {([
+              ["Texto", textoFiltro, setTextoFiltro],
+              ["Fluxo", fluxoFiltro, setFluxoFiltro],
+            ] as const).map(([rotulo, filtroAtual, definirFiltro]) => (
+              <div key={rotulo} className="flex items-center gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{rotulo}</span>
+                {(["todos", "sim", "nao"] as const).map((opcao) => (
+                  <Button
+                    key={opcao}
+                    type="button"
+                    size="sm"
+                    variant={filtroAtual === opcao ? "secondary" : "ghost"}
+                    className="h-6 px-2 text-[10px]"
+                    onClick={() => definirFiltro(opcao)}
+                    title={`${rotulo}: ${opcao === "todos" ? "todos" : opcao}`}
+                  >
+                    {opcao === "todos" ? "Todos" : opcao === "sim" ? "Sim" : "Não"}
+                  </Button>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
         <div className="max-h-[420px] overflow-y-auto p-1.5">
-          {!busca && !categoriaFiltro && recentesFiltrados.length > 0 && (
+          {!busca && !categoriaFiltro && textoFiltro === "todos" && fluxoFiltro === "todos" && recentesFiltrados.length > 0 && (
             <div className="mb-1.5">
               <p className="px-2.5 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Recentes</p>
               {recentesFiltrados.map((s) => (

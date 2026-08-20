@@ -360,3 +360,4 @@
 - [x] Criar controle individual de automação por conversa: ativa, bloqueada por 2 horas ou bloqueada permanentemente
 - [x] Manter somente a sugestão automática mais recente por conversa e encerrar pendências obsoletas sem avaliação
 - [x] Corrigir duplicações e associações incorretas de texto e mídia no espelho interno dos fluxos do Inbox
+- [x] Adicionar filtros combináveis Texto e Fluxo (Sim/Não) ao seletor de Scripts, iniciando em Todos
