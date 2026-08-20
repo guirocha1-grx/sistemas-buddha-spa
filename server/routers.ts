@@ -32,6 +32,7 @@ import { upsertHeartbeatJob } from "./_core/heartbeat";
 import { listarHeartbeatsSincronizacaoDiaria } from "./dailySyncReport";
 import { iniciarExecucaoFluxo } from "./fluxos";
 import { agentesRouter, tabelaPrecosRouter } from "./routers/agentes";
+import * as agentesDb from "./agentesDb";
 
 /**
  * A sugestão manual é uma reescrita curta do rascunho da recepção. Sem uma
@@ -899,7 +900,11 @@ Diretrizes:
         id: z.number(),
         modo: z.enum(["ativa", "bloqueada_temporariamente", "bloqueada_permanentemente"]),
       })).mutation(async ({ input }) => {
-        return db.definirAutomacaoAgentesInboxConversa(input.id, input.modo);
+        const resultado = await db.definirAutomacaoAgentesInboxConversa(input.id, input.modo);
+        if (input.modo === "bloqueada_permanentemente") {
+          await agentesDb.reiniciarEstadoConversa(input.id);
+        }
+        return resultado;
       }),
 
       definirEtiquetas: protectedProcedure.input(z.object({

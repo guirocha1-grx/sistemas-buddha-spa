@@ -485,6 +485,10 @@ export const inboxConversas = mysqlTable("inbox_conversas", {
   // temporária é resolvida por data no próprio webhook, sem job recorrente.
   automacaoAgentes: mysqlEnum("automacaoAgentes", ["ativa", "bloqueada_temporariamente", "bloqueada_permanentemente"]).default("ativa").notNull(),
   automacaoAgentesBloqueadaAte: timestamp("automacaoAgentesBloqueadaAte"),
+  // Marco de reinício da memória operacional dos agentes. As mensagens
+  // anteriores continuam visíveis no Inbox, mas deixam de compor o contexto
+  // enviado ao modelo depois de um bloqueio permanente.
+  automacaoAgentesContextoAPartirDe: timestamp("automacaoAgentesContextoAPartirDe"),
   ultimaMensagemEm: timestamp("ultimaMensagemEm").defaultNow().notNull(),
   ultimaMensagemTexto: text("ultimaMensagemTexto"),
   naoLidas: int("naoLidas").default(0).notNull(),

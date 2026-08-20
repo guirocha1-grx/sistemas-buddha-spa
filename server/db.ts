@@ -578,11 +578,13 @@ export async function definirAutomacaoAgentesInboxConversa(id: number, modo: Mod
   const db = await getDb();
   if (!db) throw new Error("Banco indisponível");
   const bloqueadaAte = modo === "bloqueada_temporariamente" ? new Date(Date.now() + DUAS_HORAS_MS) : null;
+  const contextoAPartirDe = modo === "bloqueada_permanentemente" ? new Date() : null;
   await db.update(inboxConversas).set({
     automacaoAgentes: modo,
     automacaoAgentesBloqueadaAte: bloqueadaAte,
+    ...(contextoAPartirDe ? { automacaoAgentesContextoAPartirDe: contextoAPartirDe } : {}),
   }).where(eq(inboxConversas.id, id));
-  return { modo, bloqueadaAte };
+  return { modo, bloqueadaAte, contextoAPartirDe };
 }
 
 /** "Vincular a este cliente" no painel do Inbox — resolve o caso de telefone compartilhado entre clientes distintos (ex.: mãe/filha) sem criar um cadastro duplicado nem adivinhar sozinho. */

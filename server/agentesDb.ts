@@ -410,6 +410,16 @@ export async function salvarEstadoConversa(params: {
   return existente.id;
 }
 
+/**
+ * Limpa somente a memória operacional dos agentes. O histórico de mensagens,
+ * sugestões e auditoria permanece intacto no Inbox para a equipe.
+ */
+export async function reiniciarEstadoConversa(conversaId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco indisponível");
+  await db.delete(agentesConversas).where(eq(agentesConversas.conversaId, conversaId));
+}
+
 export async function acaoJaRegistrada(conversaId: number, chaveAcao: string) {
   const db = await getDb();
   if (!db) return false;
@@ -709,8 +719,12 @@ export async function obterContextoConversa(conversaId: number) {
     .leftJoin(clientes, eq(inboxConversas.clienteId, clientes.id))
     .where(eq(inboxConversas.id, conversaId)).limit(1);
   if (!conversa[0]) return undefined;
+  const condicoesMensagens = [eq(inboxMensagens.conversaId, conversaId)];
+  if (conversa[0].conversa.automacaoAgentesContextoAPartirDe) {
+    condicoesMensagens.push(gte(inboxMensagens.createdAt, conversa[0].conversa.automacaoAgentesContextoAPartirDe));
+  }
   const mensagens = await db.select({ direcao: inboxMensagens.direcao, conteudo: inboxMensagens.conteudo, transcricao: inboxMensagens.transcricao, createdAt: inboxMensagens.createdAt })
-    .from(inboxMensagens).where(eq(inboxMensagens.conversaId, conversaId))
+    .from(inboxMensagens).where(and(...condicoesMensagens))
     .orderBy(desc(inboxMensagens.createdAt)).limit(12);
   return {
     ...conversa[0],

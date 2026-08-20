@@ -1590,14 +1590,14 @@ export default function Mensagens() {
                   <div className="grid grid-cols-3 gap-1" role="group" aria-label="Controle de automação da conversa">
                     <Button type="button" variant={modoAutomacaoAgentes === "ativa" ? "default" : "outline"} size="sm" className="h-6 px-1 text-[9px]" title="Automação ativa: novas mensagens podem receber sugestão dos agentes." onClick={() => conversaSelecionadaId && definirAutomacaoAgentesMutation.mutate({ id: conversaSelecionadaId, modo: "ativa" })} disabled={definirAutomacaoAgentesMutation.isPending}>Ativa</Button>
                     <Button type="button" variant={modoAutomacaoAgentes === "bloqueada_temporariamente" ? "secondary" : "outline"} size="sm" className="h-6 px-1 text-[9px]" title="Bloquear por 2 horas: nenhuma nova sugestão automática será gerada até o prazo expirar." onClick={() => conversaSelecionadaId && definirAutomacaoAgentesMutation.mutate({ id: conversaSelecionadaId, modo: "bloqueada_temporariamente" })} disabled={definirAutomacaoAgentesMutation.isPending}>2 horas</Button>
-                    <Button type="button" variant={modoAutomacaoAgentes === "bloqueada_permanentemente" ? "destructive" : "outline"} size="sm" className="h-6 px-1 text-[9px]" title="Bloquear permanentemente: a recepção poderá atender manualmente, mas os agentes não gerarão novas sugestões até a reativação." onClick={() => conversaSelecionadaId && definirAutomacaoAgentesMutation.mutate({ id: conversaSelecionadaId, modo: "bloqueada_permanentemente" })} disabled={definirAutomacaoAgentesMutation.isPending}>Permanente</Button>
+                    <Button type="button" variant={modoAutomacaoAgentes === "bloqueada_permanentemente" ? "destructive" : "outline"} size="sm" className="h-6 px-1 text-[9px]" title="Bloquear permanentemente e reiniciar o contexto dos agentes: mensagens permanecem no Inbox, mas o próximo teste após reativar começa sem a memória operacional anterior." onClick={() => conversaSelecionadaId && definirAutomacaoAgentesMutation.mutate({ id: conversaSelecionadaId, modo: "bloqueada_permanentemente" })} disabled={definirAutomacaoAgentesMutation.isPending}>Permanente</Button>
                   </div>
                   <p className="text-[10px] leading-4 text-muted-foreground">
                     {modoAutomacaoAgentes === "ativa"
                       ? "Agentes podem sugerir respostas."
                       : modoAutomacaoAgentes === "bloqueada_temporariamente"
                         ? `Pausada até ${automacaoBloqueadaAte ?? "o fim do período"}.`
-                        : "Pausada até ser reativada manualmente."}
+                        : "Pausada; contexto dos agentes reiniciado para o próximo teste."}
                   </p>
                 </div>
 
