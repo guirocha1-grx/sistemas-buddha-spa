@@ -29,7 +29,7 @@ function blobParaBase64(blob: Blob): Promise<string> {
   });
 }
 
-async function requisicaoAtendimentos<T>(caminho: "parte" | "processar", dados: Record<string, unknown>): Promise<T> {
+async function requisicaoAtendimentos<T>(caminho: "parte" | "processar" | "processar-lote" | "concluir", dados: Record<string, unknown>): Promise<T> {
   const resposta = await fetch(`/api/importacoes/atendimentos/${caminho}`, {
     method: "POST",
     credentials: "include",
@@ -90,6 +90,7 @@ export default function ManutencaoDados() {
   const [selecionadoPorPlano, setSelecionadoPorPlano] = useState<Record<number, string>>({});
   const [importacaoPendente, setImportacaoPendente] = useState<ImportacaoPendente | null>(null);
   const [uploadAtendimentosEmCurso, setUploadAtendimentosEmCurso] = useState(false);
+  const [progressoAtendimentos, setProgressoAtendimentos] = useState<{ atual: number; total: number } | null>(null);
   // O seletor do frontend não expõe `canal`; as duas unidades físicas são os
   // IDs estáveis 1 (SSU) e 2 (RBS). Qualquer outra origem permanece bloqueada.
   const unidadeId = unidadeSelecionada && [1, 2].includes(unidadeSelecionada.id) ? unidadeSelecionada.id : null;
@@ -178,8 +179,24 @@ export default function ManutencaoDados() {
           const parte = await requisicaoAtendimentos<{ storageKey: string }>("parte", { unidadeId, uploadId, indice, totalPartes, conteudoBase64 });
           storageKeys.push(parte.storageKey);
         }
-        const resultado = await requisicaoAtendimentos<{ inseridos: number; atualizados: number; vinculadosComSeguranca: number }>("processar", { unidadeId, uploadId, storageKeys });
-        toast.success(`Atendimentos processados: ${resultado.inseridos + resultado.atualizados}; ${resultado.vinculadosComSeguranca} vínculo(s) seguro(s).`);
+        const tamanhoLote = 250;
+        let lote = 0;
+        let inseridos = 0;
+        let atualizados = 0;
+        let vinculadosComSeguranca = 0;
+        let totalLinhas = 0;
+        while (true) {
+          const resultado = await requisicaoAtendimentos<{ totalLinhas: number; fim: number; possuiProximo: boolean; inseridos: number; atualizados: number; vinculadosComSeguranca: number }>("processar-lote", { unidadeId, uploadId, storageKeys, lote, tamanhoLote });
+          totalLinhas = resultado.totalLinhas;
+          inseridos += resultado.inseridos;
+          atualizados += resultado.atualizados;
+          vinculadosComSeguranca += resultado.vinculadosComSeguranca;
+          setProgressoAtendimentos({ atual: resultado.fim, total: resultado.totalLinhas });
+          if (!resultado.possuiProximo) break;
+          lote += 1;
+        }
+        await requisicaoAtendimentos("concluir", { unidadeId, uploadId, storageKeys, totalLinhas, inseridos, atualizados });
+        toast.success(`Atendimentos processados: ${inseridos + atualizados}; ${vinculadosComSeguranca} vínculo(s) seguro(s).`);
         utils.clientes.historicoAtendimentosBelle.invalidate();
         utils.clientes.statusImportacoesDados.invalidate();
       } else {
@@ -196,6 +213,7 @@ export default function ManutencaoDados() {
       utils.clientes.statusImportacoesDados.invalidate();
     } finally {
       setUploadAtendimentosEmCurso(false);
+      setProgressoAtendimentos(null);
     }
   }
 
@@ -229,6 +247,7 @@ export default function ManutencaoDados() {
                   <CardDescription>{arquivo.descricao}</CardDescription>
                   <div className="space-y-1 pt-1 text-xs leading-5 text-muted-foreground">
                     <p>{textoUltimaSincronizacao(statusImportacoesQuery.data?.[arquivo.tipo]?.createdAt)}</p>
+                    {arquivo.tipo === "atendimentos" && progressoAtendimentos && <p className="font-medium text-primary">Processando: {progressoAtendimentos.atual.toLocaleString("pt-BR")} de {progressoAtendimentos.total.toLocaleString("pt-BR")} atendimentos</p>}
                     <p className={statusImportacoesQuery.data?.[arquivo.tipo]?.status === "erro" ? "text-destructive" : "text-emerald-700"}>{textoResultadoImportacao(statusImportacoesQuery.data?.[arquivo.tipo])}</p>
                     {arquivo.tipo !== "clientes" && <p>{textoPeriodoImportado(statusImportacoesQuery.data?.[arquivo.tipo]?.periodo)}</p>}
                     <p>Caminho: <span className="text-foreground/80">{arquivo.caminho}</span></p>
