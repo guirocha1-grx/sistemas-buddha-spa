@@ -21,6 +21,7 @@ import { parseFaturaInterPdf } from "./interFaturaPdfParser";
 import { parseFaturaSicrediPdf } from "./sicrediFaturaPdfParser";
 import { parseClientesXlsx } from "./clientesXlsxParser";
 import { parseAtendimentosBelleXlsx } from "./atendimentosBelleXlsxParser";
+import { parsePlanosBelleXls } from "./planosBelleXlsParser";
 import { parseComandaVirtualXlsx } from "./comandaVirtualXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
@@ -359,11 +360,31 @@ export const appRouter = router({
       return { success: true, totalLinhas: linhas.length, ...resultado };
     }),
 
+    /** Espelha planos, sessões e saldos da exportação Belle da unidade escolhida. */
+    importarPlanosXls: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      xlsxBase64: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) throw new Error("Unidade não encontrada.");
+      if (unidade.canal !== "zapi") throw new Error("Selecione uma unidade física para importar planos.");
+      const relatorio = parsePlanosBelleXls(Buffer.from(input.xlsxBase64, "base64"));
+      const resultado = await db.upsertPlanosBelleImportados(input.unidadeId, relatorio);
+      return { success: true, totalPlanos: relatorio.planos.length, totalServicos: relatorio.servicos.length, ...resultado };
+    }),
+
     historicoAtendimentosBelle: protectedProcedure.input(z.object({
       unidadeId: z.number(),
       clienteId: z.number(),
     })).query(async ({ input }) => {
       return db.listarAtendimentosBellePorCliente(input.unidadeId, input.clienteId);
+    }),
+
+    planosBelle: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      clienteId: z.number(),
+    })).query(async ({ input }) => {
+      return db.listarPlanosBellePorCliente(input.unidadeId, input.clienteId);
     }),
 
     resumoImportados: protectedProcedure.query(async () => {

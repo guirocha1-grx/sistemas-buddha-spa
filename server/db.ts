@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
 import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, lidMapping, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, bellePlanosClientes, bellePlanosServicos, lidMapping, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertBellePlanoCliente, type InsertBellePlanoServico, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import type { LinhaAtendimentoBelleImportada } from "./atendimentosBelleXlsxParser";
+import type { RelatorioPlanosBelleImportado } from "./planosBelleXlsParser";
 import { normalizarTelefone, variantesTelefone, telefoneCanonico } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
@@ -3585,6 +3586,151 @@ export async function listarAtendimentosBellePorCliente(unidadeId: number, clien
     .where(and(eq(belleAtendimentos.unidadeId, unidadeId), eq(belleAtendimentos.clienteId, clienteId)))
     .orderBy(desc(belleAtendimentos.dataAtendimento), desc(belleAtendimentos.horario))
     .limit(limite);
+}
+
+export interface ResultadoImportacaoPlanosBelle {
+  planosInseridos: number;
+  planosAtualizados: number;
+  servicosInseridos: number;
+  servicosAtualizados: number;
+  planosVinculadosComSeguranca: number;
+  planosSemVinculo: number;
+  planosAmbiguos: number;
+}
+
+function nomeCanonicoParaVinculo(nome: string | null): string | null {
+  const resultado = (nome ?? "").trim().toLocaleLowerCase("pt-BR").normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+  return resultado || null;
+}
+
+/**
+ * Espelha planos e seus serviços por unidade. Como o relatório de planos não
+ * contém telefone nem ID Belle do cliente, só vincula nomes únicos após
+ * normalização; qualquer homônimo fica explicitamente sem vínculo.
+ */
+export async function upsertPlanosBelleImportados(
+  unidadeId: number,
+  relatorio: RelatorioPlanosBelleImportado,
+): Promise<ResultadoImportacaoPlanosBelle> {
+  const db = await getDb();
+  if (!db || relatorio.planos.length === 0) {
+    return { planosInseridos: 0, planosAtualizados: 0, servicosInseridos: 0, servicosAtualizados: 0, planosVinculadosComSeguranca: 0, planosSemVinculo: 0, planosAmbiguos: 0 };
+  }
+  const campoUnidade = unidadeId === 1 ? clientes.clienteSsu : unidadeId === 2 ? clientes.clienteRbs : null;
+  if (!campoUnidade) throw new Error("Unidade física inválida para importação de planos.");
+
+  const [clientesDaUnidade, planosExistentes, servicosExistentes] = await Promise.all([
+    db.select({ id: clientes.id, nome: clientes.nome }).from(clientes).where(eq(campoUnidade, true)),
+    db.select({ planoBelleId: bellePlanosClientes.planoBelleId }).from(bellePlanosClientes)
+      .where(and(eq(bellePlanosClientes.unidadeId, unidadeId), inArray(bellePlanosClientes.planoBelleId, relatorio.planos.map((plano) => plano.planoBelleId)))),
+    db.select({ planoBelleId: bellePlanosServicos.planoBelleId, servicoCodigo: bellePlanosServicos.servicoCodigo }).from(bellePlanosServicos)
+      .where(and(eq(bellePlanosServicos.unidadeId, unidadeId), inArray(bellePlanosServicos.planoBelleId, relatorio.planos.map((plano) => plano.planoBelleId)))),
+  ]);
+  const clientesPorNome = new Map<string, Set<number>>();
+  for (const cliente of clientesDaUnidade) {
+    const nome = nomeCanonicoParaVinculo(cliente.nome);
+    if (!nome) continue;
+    const candidatos = clientesPorNome.get(nome) ?? new Set<number>();
+    candidatos.add(cliente.id);
+    clientesPorNome.set(nome, candidatos);
+  }
+  const planosExistentesIds = new Set(planosExistentes.map((plano) => plano.planoBelleId));
+  const servicosExistentesIds = new Set(servicosExistentes.map((servico) => `${servico.planoBelleId}:${servico.servicoCodigo}`));
+  let planosInseridos = 0;
+  let planosAtualizados = 0;
+  let planosVinculadosComSeguranca = 0;
+  let planosSemVinculo = 0;
+  let planosAmbiguos = 0;
+
+  for (const plano of relatorio.planos) {
+    const candidatos = clientesPorNome.get(nomeCanonicoParaVinculo(plano.clienteNome) ?? "");
+    const clienteId = candidatos?.size === 1 ? [...candidatos][0] : null;
+    if (clienteId) planosVinculadosComSeguranca++;
+    else if (candidatos && candidatos.size > 1) planosAmbiguos++;
+    else planosSemVinculo++;
+    const valores: InsertBellePlanoCliente = {
+      unidadeId,
+      planoBelleId: plano.planoBelleId,
+      clienteId,
+      clienteNome: plano.clienteNome,
+      pagadorNome: plano.pagadorNome,
+      status: plano.status,
+      dataVenda: plano.dataVenda,
+      validade: plano.validade,
+      valor: plano.valor,
+      desconto: plano.desconto,
+      valorFinal: plano.valorFinal,
+      tipo: plano.tipo,
+      origem: plano.origem,
+      campanha: plano.campanha,
+      vendedorNome: plano.vendedorNome,
+      importadoEm: new Date(),
+    };
+    await db.insert(bellePlanosClientes).values(valores).onDuplicateKeyUpdate({
+      set: {
+        clienteId: valores.clienteId,
+        clienteNome: valores.clienteNome,
+        pagadorNome: valores.pagadorNome,
+        status: valores.status,
+        dataVenda: valores.dataVenda,
+        validade: valores.validade,
+        valor: valores.valor,
+        desconto: valores.desconto,
+        valorFinal: valores.valorFinal,
+        tipo: valores.tipo,
+        origem: valores.origem,
+        campanha: valores.campanha,
+        vendedorNome: valores.vendedorNome,
+        importadoEm: valores.importadoEm,
+      },
+    });
+    if (planosExistentesIds.has(plano.planoBelleId)) planosAtualizados++;
+    else planosInseridos++;
+  }
+
+  const servicosUnicos = new Map<string, RelatorioPlanosBelleImportado["servicos"][number]>();
+  for (const servico of relatorio.servicos) servicosUnicos.set(`${servico.planoBelleId}:${servico.servicoCodigo}`, servico);
+  let servicosInseridos = 0;
+  let servicosAtualizados = 0;
+  for (const servico of servicosUnicos.values()) {
+    const valores: InsertBellePlanoServico = {
+      unidadeId,
+      planoBelleId: servico.planoBelleId,
+      servicoCodigo: servico.servicoCodigo,
+      servicoNome: servico.servicoNome,
+      sessoes: servico.sessoes,
+      restantes: servico.restantes,
+      agendados: servico.agendados,
+      importadoEm: new Date(),
+    };
+    await db.insert(bellePlanosServicos).values(valores).onDuplicateKeyUpdate({
+      set: {
+        servicoNome: valores.servicoNome,
+        sessoes: valores.sessoes,
+        restantes: valores.restantes,
+        agendados: valores.agendados,
+        importadoEm: valores.importadoEm,
+      },
+    });
+    if (servicosExistentesIds.has(`${servico.planoBelleId}:${servico.servicoCodigo}`)) servicosAtualizados++;
+    else servicosInseridos++;
+  }
+  return { planosInseridos, planosAtualizados, servicosInseridos, servicosAtualizados, planosVinculadosComSeguranca, planosSemVinculo, planosAmbiguos };
+}
+
+export async function listarPlanosBellePorCliente(unidadeId: number, clienteId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const planos = await db.select().from(bellePlanosClientes)
+    .where(and(eq(bellePlanosClientes.unidadeId, unidadeId), eq(bellePlanosClientes.clienteId, clienteId)))
+    .orderBy(desc(bellePlanosClientes.validade), desc(bellePlanosClientes.dataVenda));
+  if (planos.length === 0) return [];
+  const ids = planos.map((plano) => plano.planoBelleId);
+  const servicos = await db.select().from(bellePlanosServicos)
+    .where(and(eq(bellePlanosServicos.unidadeId, unidadeId), inArray(bellePlanosServicos.planoBelleId, ids)))
+    .orderBy(bellePlanosServicos.servicoNome);
+  return planos.map((plano) => ({ ...plano, servicos: servicos.filter((servico) => servico.planoBelleId === plano.planoBelleId) }));
 }
 
 export interface RelatorioReindexTelefones {

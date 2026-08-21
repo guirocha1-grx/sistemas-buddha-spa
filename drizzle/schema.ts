@@ -422,6 +422,56 @@ export const belleAtendimentos = mysqlTable("belle_atendimentos", {
 export type BelleAtendimento = typeof belleAtendimentos.$inferSelect;
 export type InsertBelleAtendimento = typeof belleAtendimentos.$inferInsert;
 
+/** Cabeçalho de cada plano exportado pelo Belle, isolado por unidade. */
+export const bellePlanosClientes = mysqlTable("belle_planos_clientes", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  planoBelleId: bigint("planoBelleId", { mode: "number" }).notNull(),
+  clienteId: int("clienteId"),
+  clienteNome: varchar("clienteNome", { length: 200 }).notNull(),
+  pagadorNome: varchar("pagadorNome", { length: 200 }),
+  status: varchar("status", { length: 80 }).notNull(),
+  dataVenda: varchar("dataVenda", { length: 10 }),
+  validade: varchar("validade", { length: 10 }),
+  valor: decimal("valor", { precision: 12, scale: 2 }),
+  desconto: decimal("desconto", { precision: 12, scale: 2 }),
+  valorFinal: decimal("valorFinal", { precision: 12, scale: 2 }),
+  tipo: varchar("tipo", { length: 100 }),
+  origem: varchar("origem", { length: 120 }),
+  campanha: varchar("campanha", { length: 200 }),
+  vendedorNome: varchar("vendedorNome", { length: 200 }),
+  importadoEm: timestamp("importadoEm").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadePlanoUnico: uniqueIndex("belle_planos_clientes_unidade_externo_idx").on(table.unidadeId, table.planoBelleId),
+  unidadeClienteValidadeIdx: index("belle_planos_clientes_unidade_cliente_validade_idx").on(table.unidadeId, table.clienteId, table.validade),
+}));
+
+export type BellePlanoCliente = typeof bellePlanosClientes.$inferSelect;
+export type InsertBellePlanoCliente = typeof bellePlanosClientes.$inferInsert;
+
+/** Sessões e saldo por serviço dentro de cada plano espelhado. */
+export const bellePlanosServicos = mysqlTable("belle_planos_servicos", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  planoBelleId: bigint("planoBelleId", { mode: "number" }).notNull(),
+  servicoCodigo: int("servicoCodigo").notNull(),
+  servicoNome: varchar("servicoNome", { length: 250 }).notNull(),
+  sessoes: int("sessoes").default(0).notNull(),
+  restantes: int("restantes").default(0).notNull(),
+  agendados: int("agendados").default(0).notNull(),
+  importadoEm: timestamp("importadoEm").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadePlanoServicoUnico: uniqueIndex("belle_planos_servicos_unidade_plano_servico_idx").on(table.unidadeId, table.planoBelleId, table.servicoCodigo),
+  unidadePlanoIdx: index("belle_planos_servicos_unidade_plano_idx").on(table.unidadeId, table.planoBelleId),
+}));
+
+export type BellePlanoServico = typeof bellePlanosServicos.$inferSelect;
+export type InsertBellePlanoServico = typeof bellePlanosServicos.$inferInsert;
+
 /**
  * Índice de telefones em forma canônica (55+DDD+9+número, ver
  * shared/telefone.ts:telefoneCanonico) — um cliente pode ter até 3

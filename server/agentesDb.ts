@@ -10,6 +10,9 @@ import {
   agentesSugestoes,
   agentesTabelaPrecos,
   atendentes,
+  belleAtendimentos,
+  bellePlanosClientes,
+  bellePlanosServicos,
   clientes,
   inboxConversas,
   inboxMensagens,
@@ -707,6 +710,60 @@ export async function registrarErroEnvioSugestao(id: number, erro: string) {
   await db.update(agentesSugestoes).set({ erroEnvio: erro.slice(0, 4000) }).where(eq(agentesSugestoes.id, id));
 }
 
+async function obterContextoBelleCliente(unidadeId: number, clienteId: number | null) {
+  const db = await getDb();
+  if (!db || !clienteId) return null;
+  const hoje = new Date().toISOString().slice(0, 10);
+  const [planos, ultimoAtendimento] = await Promise.all([
+    db.select({
+      planoBelleId: bellePlanosClientes.planoBelleId,
+      validade: bellePlanosClientes.validade,
+      status: bellePlanosClientes.status,
+    }).from(bellePlanosClientes)
+      .where(and(
+        eq(bellePlanosClientes.unidadeId, unidadeId),
+        eq(bellePlanosClientes.clienteId, clienteId),
+        eq(bellePlanosClientes.status, "Aprovado"),
+        gte(bellePlanosClientes.validade, hoje),
+      ))
+      .orderBy(desc(bellePlanosClientes.validade)).limit(4),
+    db.select({
+      dataAtendimento: belleAtendimentos.dataAtendimento,
+      servicoNome: belleAtendimentos.servicoNome,
+      profissionalNome: belleAtendimentos.profissionalNome,
+      temPreferencia: belleAtendimentos.temPreferencia,
+    }).from(belleAtendimentos)
+      .where(and(
+        eq(belleAtendimentos.unidadeId, unidadeId),
+        eq(belleAtendimentos.clienteId, clienteId),
+        eq(belleAtendimentos.status, "Atendido"),
+      ))
+      .orderBy(desc(belleAtendimentos.dataAtendimento), desc(belleAtendimentos.horario)).limit(1),
+  ]);
+  if (planos.length === 0 && ultimoAtendimento.length === 0) return null;
+  const servicos = planos.length === 0 ? [] : await db.select({
+    planoBelleId: bellePlanosServicos.planoBelleId,
+    servicoNome: bellePlanosServicos.servicoNome,
+    restantes: bellePlanosServicos.restantes,
+    agendados: bellePlanosServicos.agendados,
+  }).from(bellePlanosServicos)
+    .where(and(
+      eq(bellePlanosServicos.unidadeId, unidadeId),
+      inArray(bellePlanosServicos.planoBelleId, planos.map((plano) => plano.planoBelleId)),
+      gte(bellePlanosServicos.restantes, 0),
+    ))
+    .orderBy(desc(bellePlanosServicos.restantes), bellePlanosServicos.servicoNome)
+    .limit(12);
+  return {
+    planos: planos.map((plano) => ({
+      validade: plano.validade,
+      status: plano.status,
+      servicos: servicos.filter((servico) => servico.planoBelleId === plano.planoBelleId),
+    })),
+    ultimoAtendimento: ultimoAtendimento[0] ?? null,
+  };
+}
+
 export async function obterContextoConversa(conversaId: number) {
   const db = await getDb();
   if (!db) return undefined;
@@ -726,6 +783,7 @@ export async function obterContextoConversa(conversaId: number) {
   const mensagens = await db.select({ direcao: inboxMensagens.direcao, conteudo: inboxMensagens.conteudo, transcricao: inboxMensagens.transcricao, createdAt: inboxMensagens.createdAt })
     .from(inboxMensagens).where(and(...condicoesMensagens))
     .orderBy(desc(inboxMensagens.createdAt)).limit(12);
+  const contextoBelleCliente = await obterContextoBelleCliente(conversa[0].conversa.unidadeId, conversa[0].conversa.clienteId);
   return {
     ...conversa[0],
     conversa: {
@@ -733,6 +791,7 @@ export async function obterContextoConversa(conversaId: number) {
       automacaoAgentesEfetiva: obterModoEfetivoAutomacaoAgentes(conversa[0].conversa),
     },
     mensagens: mensagens.reverse(),
+    contextoBelleCliente,
   };
 }
 

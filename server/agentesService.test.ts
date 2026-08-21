@@ -42,7 +42,7 @@ vi.mock("./zapiApi", () => ({ zapiApi: { sendText, sendDocument, sendImage } }))
 vi.mock("./buddhaMktApi", () => ({ buddhaMktApi: { sendText: vi.fn() } }));
 vi.mock("./fluxos", () => ({ iniciarExecucaoFluxo }));
 
-import { aprovarEEnviarSugestao, extrairConteudoRespostaLLM, liberarSugestaoParaEdicao, limitarMensagemCliente, processarMensagemRecebida, removerIdentificacaoAgente, reprovarSugestao } from "./agentesService";
+import { aprovarEEnviarSugestao, extrairConteudoRespostaLLM, instrucaoContextoRelacionamento, liberarSugestaoParaEdicao, limitarMensagemCliente, processarMensagemRecebida, removerIdentificacaoAgente, reprovarSugestao } from "./agentesService";
 
 const respostaJson = (message: string, status = "in_process", action: string | null = null, excecaoOperacional: boolean = false) => JSON.stringify({
   message,
@@ -604,5 +604,15 @@ describe("orquestrador de agentes", () => {
     expect(sendText).not.toHaveBeenCalled();
     expect(sendDocument).not.toHaveBeenCalled();
     expect(agentesDb.marcarSugestaoEnviada).not.toHaveBeenCalled();
+  });
+});
+
+describe("contexto de continuidade da Carol", () => {
+  it("autoriza a Carol a usar plano e último atendimento apenas como referência de agendamento", () => {
+    const instrucao = instrucaoContextoRelacionamento("carol");
+    expect(instrucao).toContain("saldo de sessões");
+    expect(instrucao).toContain("Nunca afirme que existe horário");
+    expect(instrucaoContextoRelacionamento("bianca")).toBe("");
+    expect(instrucaoContextoRelacionamento("diana")).toBe("");
   });
 });

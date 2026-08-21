@@ -1,0 +1,41 @@
+CREATE TABLE `belle_planos_clientes` (
+  `id` int AUTO_INCREMENT NOT NULL,
+  `unidadeId` int NOT NULL,
+  `planoBelleId` bigint NOT NULL,
+  `clienteId` int,
+  `clienteNome` varchar(200) NOT NULL,
+  `pagadorNome` varchar(200),
+  `status` varchar(80) NOT NULL,
+  `dataVenda` varchar(10),
+  `validade` varchar(10),
+  `valor` decimal(12,2),
+  `desconto` decimal(12,2),
+  `valorFinal` decimal(12,2),
+  `tipo` varchar(100),
+  `origem` varchar(120),
+  `campanha` varchar(200),
+  `vendedorNome` varchar(200),
+  `importadoEm` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `belle_planos_clientes_id` PRIMARY KEY(`id`),
+  CONSTRAINT `belle_planos_clientes_unidade_externo_idx` UNIQUE(`unidadeId`,`planoBelleId`),
+  KEY `belle_planos_clientes_unidade_cliente_validade_idx` (`unidadeId`,`clienteId`,`validade`)
+);
+
+CREATE TABLE `belle_planos_servicos` (
+  `id` int AUTO_INCREMENT NOT NULL,
+  `unidadeId` int NOT NULL,
+  `planoBelleId` bigint NOT NULL,
+  `servicoCodigo` int NOT NULL,
+  `servicoNome` varchar(250) NOT NULL,
+  `sessoes` int NOT NULL DEFAULT 0,
+  `restantes` int NOT NULL DEFAULT 0,
+  `agendados` int NOT NULL DEFAULT 0,
+  `importadoEm` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `belle_planos_servicos_id` PRIMARY KEY(`id`),
+  CONSTRAINT `belle_planos_servicos_unidade_plano_servico_idx` UNIQUE(`unidadeId`,`planoBelleId`,`servicoCodigo`),
+  KEY `belle_planos_servicos_unidade_plano_idx` (`unidadeId`,`planoBelleId`)
+);

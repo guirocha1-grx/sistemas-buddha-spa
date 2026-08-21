@@ -369,6 +369,6 @@
 - [x] Produzir análise Pareto das divergências entre mensagens, sugestões dos agentes e decisões da recepção
 - [x] Criar guardas determinísticas de contexto para Carol em confirmação, período informado, agradecimento, recusa e disponibilidade externa
 - [x] Restringir Bianca à referência comercial oficial e encaminhar voucher existente para a triagem de agendamento
-- [ ] Mapear e propor módulos de clientes com plano, última terapia e terapeuta preferencial para dar contexto à Carol
-- [ ] Diagnosticar e corrigir a consulta de Planos & Sessões por cliente e unidade no Belle
+- [x] Importar planos e sessões do Ribeirão Shopping, incluindo validade e saldo por serviço, para dar contexto à Carol
+- [x] Diagnosticar e corrigir a consulta de Planos & Sessões por cliente e unidade no Belle com espelho local seguro
 - [x] Espelhar o relatório de atendimentos do Ribeirão Shopping em tabela local com vínculo seguro ao cliente

@@ -34,6 +34,7 @@ function ImportarClientesCard() {
   const { unidadeSelecionada } = useUnidade();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const atendimentosFileInputRef = useRef<HTMLInputElement>(null);
+  const planosFileInputRef = useRef<HTMLInputElement>(null);
   const [unidadeImport, setUnidadeImport] = useState<"rbs" | "ssu">("ssu");
   const [relatorioReindex, setRelatorioReindex] = useState<{
     totalClientes: number;
@@ -73,6 +74,15 @@ function ImportarClientesCard() {
       utils.clientes.historicoAtendimentosBelle.invalidate();
     },
     onError: (err) => toast.error(`Erro ao importar atendimentos: ${err.message}`),
+  });
+
+  const importarPlanosMutation = trpc.clientes.importarPlanosXls.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Planos espelhados: ${data.planosInseridos} novo(s), ${data.planosAtualizados} atualizado(s), ${data.planosVinculadosComSeguranca} vínculo(s) seguro(s).`);
+      toast.message(`${data.totalServicos} serviço(s) de plano processado(s); ${data.planosAmbiguos} ambíguo(s) e ${data.planosSemVinculo} sem vínculo foram preservados para revisão.`);
+      utils.clientes.planosBelle.invalidate();
+    },
+    onError: (err) => toast.error(`Erro ao importar planos: ${err.message}`),
   });
 
   const reindexarMutation = trpc.clientes.reindexarTelefones.useMutation({
@@ -116,6 +126,19 @@ function ImportarClientesCard() {
     }
   }
 
+  async function handleImportarPlanos(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !unidadeSelecionada) return;
+    try {
+      const xlsxBase64 = await fileParaBase64(file);
+      importarPlanosMutation.mutate({ unidadeId: unidadeSelecionada.id, xlsxBase64 });
+    } catch (err: any) {
+      toast.error(err.message ?? "Falha ao ler o relatório de planos");
+    } finally {
+      e.target.value = "";
+    }
+  }
+
   const resumo = resumoQuery.data;
 
   return (
@@ -147,6 +170,7 @@ function ImportarClientesCard() {
           </Select>
           <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportar} />
           <input ref={atendimentosFileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportarAtendimentos} />
+          <input ref={planosFileInputRef} type="file" accept=".xls,.xlsx" className="hidden" onChange={handleImportarPlanos} />
           <Button
             size="sm"
             variant="outline"
@@ -164,6 +188,15 @@ function ImportarClientesCard() {
           >
             {importarAtendimentosMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Calendar className="h-3.5 w-3.5 mr-1.5" />}
             Importar atendimentos ({unidadeSelecionada?.nome ?? "selecione a unidade"})
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={importarPlanosMutation.isPending || !unidadeSelecionada}
+            onClick={() => planosFileInputRef.current?.click()}
+          >
+            {importarPlanosMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <ClipboardList className="h-3.5 w-3.5 mr-1.5" />}
+            Importar planos ({unidadeSelecionada?.nome ?? "selecione a unidade"})
           </Button>
           <Button
             size="sm"
@@ -200,6 +233,10 @@ function ImportarClientesCard() {
         <p className="text-xs text-muted-foreground">
           "Importar atendimentos" espelha o relatório operacional da unidade escolhida e só vincula um registro quando o telefone
           corresponde a um único cliente nessa unidade; divergências ficam sem vínculo para revisão.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          "Importar planos" espelha validade e saldo por serviço. Como esse relatório não traz telefone, o vínculo é feito somente
+          quando o nome do cliente é único na unidade; nomes repetidos continuam sem vínculo para revisão.
         </p>
       </CardContent>
       <Dialog open={!!relatorioReindex} onOpenChange={(open) => !open && setRelatorioReindex(null)}>
@@ -341,6 +378,9 @@ export default function Clientes() {
     clienteId: selectedCliente?.id ?? 0,
   }), [unidadeSelecionada?.id, selectedCliente?.id]);
   const historicoAtendimentosQuery = trpc.clientes.historicoAtendimentosBelle.useQuery(historicoAtendimentosInput, {
+    enabled: !!unidadeSelecionada && !!selectedCliente,
+  });
+  const planosBelleQuery = trpc.clientes.planosBelle.useQuery(historicoAtendimentosInput, {
     enabled: !!unidadeSelecionada && !!selectedCliente,
   });
 
@@ -621,6 +661,40 @@ export default function Clientes() {
                                 <div className="shrink-0 text-right text-muted-foreground">
                                   <p>{fmtDataBr(atendimento.dataAtendimento)} {atendimento.horario || ""}</p>
                                   <p>{atendimento.status}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="rounded-lg border border-border/60 bg-muted/10 p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="font-medium text-sm">Planos & sessões</h3>
+                          <span className="text-xs text-muted-foreground">Espelho Belle</span>
+                        </div>
+                        {planosBelleQuery.isLoading ? (
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando planos...</div>
+                        ) : (planosBelleQuery.data?.length ?? 0) === 0 ? (
+                          <p className="text-xs text-muted-foreground">Nenhum plano espelhado para este cliente nesta unidade.</p>
+                        ) : (
+                          <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                            {planosBelleQuery.data?.map((plano) => (
+                              <div key={plano.id} className="border-b border-border/40 pb-3 last:border-0 last:pb-0">
+                                <div className="flex flex-wrap items-start justify-between gap-2 text-xs">
+                                  <div>
+                                    <p className="font-medium">Plano #{plano.planoBelleId}</p>
+                                    <p className="text-muted-foreground">Validade: {fmtDataBr(plano.validade)} · {plano.status}</p>
+                                  </div>
+                                  <Badge variant="outline" className="text-[10px]">{plano.tipo || "Plano"}</Badge>
+                                </div>
+                                <div className="mt-2 space-y-1">
+                                  {plano.servicos.map((servico) => (
+                                    <div key={servico.id} className="flex items-center justify-between gap-3 text-xs">
+                                      <span className="truncate">{servico.servicoNome}</span>
+                                      <span className="shrink-0 text-muted-foreground">{servico.restantes} restante(s) · {servico.agendados} agendado(s)</span>
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
                             ))}
