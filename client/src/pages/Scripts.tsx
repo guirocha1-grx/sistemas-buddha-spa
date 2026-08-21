@@ -23,6 +23,7 @@ import { Loader2, Plus, Copy, Pencil, Trash2, ScrollText, Workflow, Volume2, Fil
 import { toast } from "sonner";
 
 type Tipo = "texto" | "fluxo";
+type ChaveAgenteScript = "bianca" | "fabricia" | "estela" | "carol" | "diana";
 
 interface ScriptForm {
   categoriaScript: string;
@@ -32,7 +33,7 @@ interface ScriptForm {
   script: string;
   fluxoId: number | null;
   observacoes: string;
-  agentesPermitidos: string[];
+  agentesPermitidos: ChaveAgenteScript[];
 }
 
 const AGENTES_SCRIPT = [
@@ -41,7 +42,7 @@ const AGENTES_SCRIPT = [
   { chave: "estela", nome: "Estela", descricao: "Preços" },
   { chave: "carol", nome: "Carol", descricao: "Agendamento" },
   { chave: "diana", nome: "Diana", descricao: "Voucher" },
-];
+] as const satisfies ReadonlyArray<{ chave: ChaveAgenteScript; nome: string; descricao: string }>;
 const TODAS_CHAVES_AGENTES = AGENTES_SCRIPT.map((agente) => agente.chave);
 const FORM_VAZIO: ScriptForm = { categoriaScript: "", titulo: "", descricao: "", tipo: "texto", script: "", fluxoId: null, observacoes: "", agentesPermitidos: TODAS_CHAVES_AGENTES };
 
@@ -180,7 +181,7 @@ export default function Scripts() {
   });
 
   const abrirNovo = () => { setEditandoId(null); setForm(FORM_VAZIO); setModalAberto(true); };
-  const abrirEdicao = (s: { id: number; categoriaScript: string; titulo: string | null; descricao: string | null; tipo: Tipo; script: string | null; fluxoId: number | null; observacoes: string | null; agentesPermitidos?: string[] | null }) => {
+  const abrirEdicao = (s: { id: number; categoriaScript: string; titulo: string | null; descricao: string | null; tipo: Tipo; script: string | null; fluxoId: number | null; observacoes: string | null; agentesPermitidos?: ChaveAgenteScript[] | null }) => {
     setEditandoId(s.id);
     setForm({
       categoriaScript: s.categoriaScript,

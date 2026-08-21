@@ -3494,7 +3494,7 @@ export async function upsertAtendimentosBelleImportados(
 
   const unicosPorAtendimento = new Map<number, LinhaAtendimentoBelleImportada>();
   for (const linha of linhas) unicosPorAtendimento.set(linha.atendimentoBelleId, linha);
-  const registros = [...unicosPorAtendimento.values()];
+  const registros = Array.from(unicosPorAtendimento.values());
 
   const [clientesDaUnidade, existentes] = await Promise.all([
     db.select({
@@ -3529,7 +3529,7 @@ export async function upsertAtendimentosBelleImportados(
   for (const linha of registros) {
     const canonico = telefoneCanonico(linha.telefone);
     const candidatos = canonico ? candidatosPorTelefone.get(canonico) : undefined;
-    const clienteId = candidatos?.size === 1 ? [...candidatos][0] : null;
+    const clienteId = candidatos?.size === 1 ? Array.from(candidatos)[0] : null;
     if (clienteId) vinculadosComSeguranca++;
     else if (candidatos && candidatos.size > 1) ambiguos++;
     else semVinculo++;
@@ -3645,7 +3645,7 @@ export async function upsertPlanosBelleImportados(
 
   for (const plano of relatorio.planos) {
     const candidatos = clientesPorNome.get(nomeCanonicoParaVinculo(plano.clienteNome) ?? "");
-    const clienteId = candidatos?.size === 1 ? [...candidatos][0] : null;
+    const clienteId = candidatos?.size === 1 ? Array.from(candidatos)[0] : null;
     if (clienteId) planosVinculadosComSeguranca++;
     else if (candidatos && candidatos.size > 1) planosAmbiguos++;
     else planosSemVinculo++;
@@ -3693,7 +3693,7 @@ export async function upsertPlanosBelleImportados(
   for (const servico of relatorio.servicos) servicosUnicos.set(`${servico.planoBelleId}:${servico.servicoCodigo}`, servico);
   let servicosInseridos = 0;
   let servicosAtualizados = 0;
-  for (const servico of servicosUnicos.values()) {
+  for (const servico of Array.from(servicosUnicos.values())) {
     const valores: InsertBellePlanoServico = {
       unidadeId,
       planoBelleId: servico.planoBelleId,

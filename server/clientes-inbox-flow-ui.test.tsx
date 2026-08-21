@@ -75,8 +75,12 @@ const state = vi.hoisted(() => {
       resumoImportados: { useQuery: () => ({ data: { total: 1, ssu: 1, rbs: 0, ambas: 0 }, isLoading: false }) },
       listImportados: { useQuery: () => ({ data: [cliente], isLoading: false }) },
       importarXlsx: { useMutation: () => mutation() },
+      importarAtendimentosXlsx: { useMutation: () => mutation() },
+      importarPlanosXls: { useMutation: () => mutation() },
       reindexarTelefones: { useMutation: () => mutation() },
       resolverLids: { useMutation: () => mutation() },
+      historicoAtendimentosBelle: { useQuery: () => ({ data: [], isLoading: false }) },
+      planosBelle: { useQuery: () => ({ data: [], isLoading: false }) },
     },
     inbox: {
       conversas: {

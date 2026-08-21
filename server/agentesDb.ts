@@ -710,9 +710,9 @@ export async function registrarErroEnvioSugestao(id: number, erro: string) {
   await db.update(agentesSugestoes).set({ erroEnvio: erro.slice(0, 4000) }).where(eq(agentesSugestoes.id, id));
 }
 
-async function obterContextoBelleCliente(unidadeId: number, clienteId: number | null) {
+async function obterContextoBelleCliente(unidadeId: number | null, clienteId: number | null) {
   const db = await getDb();
-  if (!db || !clienteId) return null;
+  if (!db || !unidadeId || !clienteId) return null;
   const hoje = new Date().toISOString().slice(0, 10);
   const [planos, ultimoAtendimento] = await Promise.all([
     db.select({
