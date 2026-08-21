@@ -25,7 +25,7 @@ type ImportacaoPendente = { tipo: ArquivoTipo; arquivo: File };
 
 const ARQUIVOS: Array<{ tipo: ArquivoTipo; titulo: string; descricao: string; formatos: string; formatoBelle: string; caminho: string }> = [
   { tipo: "clientes", titulo: "Base de clientes", descricao: "Cadastro mestre do Belle; deve ser enviado primeiro.", formatos: ".xlsx", formatoBelle: "[Buddha] Clientes", caminho: "Belle > BI (Business Intelligence) > [Buddha] Clientes" },
-  { tipo: "planos", titulo: "Planos & sessões", descricao: "Validade e saldo por serviço. Aceita exportação XLS/XLSX do Belle.", formatos: ".xls,.xlsx", formatoBelle: "Relatório de Planos", caminho: "Belle > BI (Business Intelligence) > Relatório de Planos" },
+  { tipo: "planos", titulo: "Planos & sessões", descricao: "Validade e saldo por serviço. Aceita exportação XLS/XLSX do Belle.", formatos: ".xls,.xlsx", formatoBelle: "Relatório de Planos", caminho: "Belle > Venda de Planos > Exportar > Gerar Excel" },
   { tipo: "vinculos", titulo: "Elo cliente–plano", descricao: "Relatório com ID Belle do cliente e ID do plano; prioriza vínculo direto.", formatos: ".xlsx", formatoBelle: "Relatório de Sessões de Planos", caminho: "Belle > BI (Business Intelligence) > Relatório de Sessões de Planos" },
   { tipo: "atendimentos", titulo: "Atendimentos", descricao: "Histórico de serviço, data, profissional e status da unidade.", formatos: ".xlsx", formatoBelle: "Relatório de Atendimentos", caminho: "Belle > BI (Business Intelligence) > Relatório de Atendimentos" },
 ];
