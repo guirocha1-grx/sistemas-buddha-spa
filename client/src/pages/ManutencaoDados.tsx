@@ -29,6 +29,24 @@ function blobParaBase64(blob: Blob): Promise<string> {
   });
 }
 
+async function requisicaoAtendimentos<T>(caminho: "parte" | "processar", dados: Record<string, unknown>): Promise<T> {
+  const resposta = await fetch(`/api/importacoes/atendimentos/${caminho}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(dados),
+  });
+  const bruto = await resposta.text();
+  let corpo: { success?: boolean; error?: string } & T;
+  try {
+    corpo = JSON.parse(bruto) as { success?: boolean; error?: string } & T;
+  } catch {
+    throw new Error(`A rota de atendimentos respondeu ${resposta.status} em formato inválido: ${bruto.slice(0, 120)}`);
+  }
+  if (!resposta.ok || !corpo.success) throw new Error(corpo.error ?? `Falha HTTP ${resposta.status} ao importar atendimentos.`);
+  return corpo;
+}
+
 type ArquivoTipo = "clientes" | "planos" | "vinculos" | "atendimentos";
 type ImportacaoPendente = { tipo: ArquivoTipo; arquivo: File };
 
@@ -71,6 +89,7 @@ export default function ManutencaoDados() {
   const refs = useRef<Record<ArquivoTipo, HTMLInputElement | null>>({ clientes: null, planos: null, vinculos: null, atendimentos: null });
   const [selecionadoPorPlano, setSelecionadoPorPlano] = useState<Record<number, string>>({});
   const [importacaoPendente, setImportacaoPendente] = useState<ImportacaoPendente | null>(null);
+  const [uploadAtendimentosEmCurso, setUploadAtendimentosEmCurso] = useState(false);
   // O seletor do frontend não expõe `canal`; as duas unidades físicas são os
   // IDs estáveis 1 (SSU) e 2 (RBS). Qualquer outra origem permanece bloqueada.
   const unidadeId = unidadeSelecionada && [1, 2].includes(unidadeSelecionada.id) ? unidadeSelecionada.id : null;
@@ -115,23 +134,6 @@ export default function ManutencaoDados() {
     },
     onError: (error) => toast.error(`Falha ao importar elo cliente–plano: ${error.message}`),
   });
-  const importarAtendimentos = trpc.clientes.importarAtendimentosXlsx.useMutation({
-    onSuccess: (data) => {
-      toast.success(`Atendimentos processados: ${data.inseridos + data.atualizados}; ${data.vinculadosComSeguranca} vínculo(s) seguro(s).`);
-      utils.clientes.historicoAtendimentosBelle.invalidate();
-      utils.clientes.statusImportacoesDados.invalidate();
-    },
-    onError: (error) => toast.error(`Falha ao importar atendimentos: ${error.message}`),
-  });
-  const enviarParteAtendimentos = trpc.clientes.enviarParteAtendimentos.useMutation();
-  const processarPartesAtendimentos = trpc.clientes.processarPartesAtendimentos.useMutation({
-    onSuccess: (data) => {
-      toast.success(`Atendimentos processados: ${data.inseridos + data.atualizados}; ${data.vinculadosComSeguranca} vínculo(s) seguro(s).`);
-      utils.clientes.historicoAtendimentosBelle.invalidate();
-      utils.clientes.statusImportacoesDados.invalidate();
-    },
-    onError: (error) => toast.error(`Falha ao importar atendimentos: ${error.message}`),
-  });
   const vincularManual = trpc.clientes.vincularPlanoManualmente.useMutation({
     onSuccess: () => {
       toast.success("Plano vinculado ao cliente da unidade selecionada.");
@@ -145,7 +147,7 @@ export default function ManutencaoDados() {
     clientes: importarClientes.isPending,
     planos: importarPlanos.isPending,
     vinculos: importarVinculos.isPending,
-    atendimentos: importarAtendimentos.isPending || enviarParteAtendimentos.isPending || processarPartesAtendimentos.isPending,
+    atendimentos: uploadAtendimentosEmCurso,
   };
   const carregando = Object.values(carregandoPorTipo).some(Boolean);
   const resumoPendente = useMemo(() => ({
@@ -165,6 +167,7 @@ export default function ManutencaoDados() {
     const { tipo, arquivo } = importacaoPendente;
     try {
       if (tipo === "atendimentos") {
+        setUploadAtendimentosEmCurso(true);
         const tamanhoParte = 512 * 1024;
         const totalPartes = Math.ceil(arquivo.size / tamanhoParte);
         const uploadId = crypto.randomUUID();
@@ -172,10 +175,13 @@ export default function ManutencaoDados() {
         for (let indice = 0; indice < totalPartes; indice++) {
           const inicio = indice * tamanhoParte;
           const conteudoBase64 = await blobParaBase64(arquivo.slice(inicio, Math.min(inicio + tamanhoParte, arquivo.size)));
-          const parte = await enviarParteAtendimentos.mutateAsync({ unidadeId, uploadId, indice, totalPartes, conteudoBase64 });
+          const parte = await requisicaoAtendimentos<{ storageKey: string }>("parte", { unidadeId, uploadId, indice, totalPartes, conteudoBase64 });
           storageKeys.push(parte.storageKey);
         }
-        await processarPartesAtendimentos.mutateAsync({ unidadeId, uploadId, storageKeys });
+        const resultado = await requisicaoAtendimentos<{ inseridos: number; atualizados: number; vinculadosComSeguranca: number }>("processar", { unidadeId, uploadId, storageKeys });
+        toast.success(`Atendimentos processados: ${resultado.inseridos + resultado.atualizados}; ${resultado.vinculadosComSeguranca} vínculo(s) seguro(s).`);
+        utils.clientes.historicoAtendimentosBelle.invalidate();
+        utils.clientes.statusImportacoesDados.invalidate();
       } else {
         const xlsxBase64 = await fileParaBase64(arquivo);
         if (tipo === "clientes") await importarClientes.mutateAsync({ unidade: unidadeSlug, xlsxBase64 });
@@ -188,6 +194,8 @@ export default function ManutencaoDados() {
       toast.error(mensagem);
       await registrarFalhaImportacao.mutateAsync({ unidadeId, tipo, mensagem }).catch(() => undefined);
       utils.clientes.statusImportacoesDados.invalidate();
+    } finally {
+      setUploadAtendimentosEmCurso(false);
     }
   }
 

@@ -387,3 +387,4 @@
 - [x] Corrigir o retorno HTML inválido ao importar atendimentos pela Manutenção de dados
 - [x] Implementar upload robusto de relatórios grandes de atendimentos sem transporte JSON em lote
 - [x] Substituir o upload direto bloqueado por CORS por transferência autenticada de relatórios grandes
+- [x] Substituir as chamadas tRPC de atendimentos por rota HTTP autenticada com diagnóstico de resposta
