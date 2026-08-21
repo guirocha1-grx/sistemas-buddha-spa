@@ -386,6 +386,43 @@ export type Cliente = typeof clientes.$inferSelect;
 export type InsertCliente = typeof clientes.$inferInsert;
 
 /**
+ * Espelho local de atendimentos exportados do Belle. Diferente de
+ * `atendimentos`, que registra a atuação comercial interna, esta tabela
+ * preserva a agenda/histórico operacional da unidade para consulta do perfil
+ * e contexto dos agentes. A chave externa é estável por unidade, permitindo
+ * reimportar um relatório sem duplicar sessões.
+ */
+export const belleAtendimentos = mysqlTable("belle_atendimentos", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  atendimentoBelleId: bigint("atendimentoBelleId", { mode: "number" }).notNull(),
+  clienteId: int("clienteId"),
+  clienteNome: varchar("clienteNome", { length: 200 }).notNull(),
+  telefone: varchar("telefone", { length: 30 }),
+  dataAtendimento: varchar("dataAtendimento", { length: 10 }).notNull(),
+  horario: varchar("horario", { length: 8 }),
+  servicoCodigo: int("servicoCodigo"),
+  servicoNome: varchar("servicoNome", { length: 250 }),
+  duracaoMinutos: int("duracaoMinutos"),
+  profissionalNome: varchar("profissionalNome", { length: 200 }),
+  temPreferencia: boolean("temPreferencia").default(false).notNull(),
+  planoBelleId: bigint("planoBelleId", { mode: "number" }),
+  areaAplicacao: text("areaAplicacao"),
+  tipo: varchar("tipo", { length: 80 }),
+  status: varchar("status", { length: 80 }).notNull(),
+  importadoEm: timestamp("importadoEm").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeAtendimentoUnico: uniqueIndex("belle_atendimentos_unidade_externo_idx").on(table.unidadeId, table.atendimentoBelleId),
+  unidadeClienteDataIdx: index("belle_atendimentos_unidade_cliente_data_idx").on(table.unidadeId, table.clienteId, table.dataAtendimento),
+  unidadeDataIdx: index("belle_atendimentos_unidade_data_idx").on(table.unidadeId, table.dataAtendimento),
+}));
+
+export type BelleAtendimento = typeof belleAtendimentos.$inferSelect;
+export type InsertBelleAtendimento = typeof belleAtendimentos.$inferInsert;
+
+/**
  * Índice de telefones em forma canônica (55+DDD+9+número, ver
  * shared/telefone.ts:telefoneCanonico) — um cliente pode ter até 3
  * entradas (celular/celular2/telefone). Populado no write-time (import

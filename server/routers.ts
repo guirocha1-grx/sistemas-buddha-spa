@@ -20,6 +20,7 @@ import { parseExtratoInterPdf } from "./interExtratoPdfParser";
 import { parseFaturaInterPdf } from "./interFaturaPdfParser";
 import { parseFaturaSicrediPdf } from "./sicrediFaturaPdfParser";
 import { parseClientesXlsx } from "./clientesXlsxParser";
+import { parseAtendimentosBelleXlsx } from "./atendimentosBelleXlsxParser";
 import { parseComandaVirtualXlsx } from "./comandaVirtualXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
@@ -338,6 +339,31 @@ export const appRouter = router({
       }
 
       return { success: true, totalLinhas: linhas.length, ...resultado, lids };
+    }),
+
+    /**
+     * Espelha o relatório operacional de atendimentos exportado do Belle.
+     * A unidade é escolhida explicitamente pela recepção para impedir mistura
+     * de bases; o vínculo ao cliente só ocorre quando o telefone é único nela.
+     */
+    importarAtendimentosXlsx: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      xlsxBase64: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) throw new Error("Unidade não encontrada.");
+      if (unidade.canal !== "zapi") throw new Error("Selecione uma unidade física para importar atendimentos.");
+      const linhas = parseAtendimentosBelleXlsx(Buffer.from(input.xlsxBase64, "base64"));
+      if (linhas.length === 0) throw new Error("Nenhum atendimento válido foi encontrado no relatório.");
+      const resultado = await db.upsertAtendimentosBelleImportados(input.unidadeId, linhas);
+      return { success: true, totalLinhas: linhas.length, ...resultado };
+    }),
+
+    historicoAtendimentosBelle: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      clienteId: z.number(),
+    })).query(async ({ input }) => {
+      return db.listarAtendimentosBellePorCliente(input.unidadeId, input.clienteId);
     }),
 
     resumoImportados: protectedProcedure.query(async () => {

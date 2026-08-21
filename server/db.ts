@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
 import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, lidMapping, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, lidMapping, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
+import type { LinhaAtendimentoBelleImportada } from "./atendimentosBelleXlsxParser";
 import { normalizarTelefone, variantesTelefone, telefoneCanonico } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
@@ -3462,6 +3463,128 @@ export async function upsertClientesImportados(
   }
 
   return { inseridos, atualizados, promovidosDeLead };
+}
+
+export interface ResultadoImportacaoAtendimentosBelle {
+  inseridos: number;
+  atualizados: number;
+  vinculadosComSeguranca: number;
+  semVinculo: number;
+  ambiguos: number;
+}
+
+/**
+ * Espelha atendimentos exportados do Belle sem cruzar as duas unidades.
+ * O vínculo só é criado quando o telefone do relatório corresponde a um único
+ * cliente cadastrado na mesma unidade; homônimos e telefones compartilhados
+ * ficam sem clienteId para uma revisão posterior, nunca ligados por suposição.
+ */
+export async function upsertAtendimentosBelleImportados(
+  unidadeId: number,
+  linhas: LinhaAtendimentoBelleImportada[],
+): Promise<ResultadoImportacaoAtendimentosBelle> {
+  const db = await getDb();
+  if (!db || linhas.length === 0) {
+    return { inseridos: 0, atualizados: 0, vinculadosComSeguranca: 0, semVinculo: 0, ambiguos: 0 };
+  }
+
+  const campoUnidade = unidadeId === 1 ? clientes.clienteSsu : unidadeId === 2 ? clientes.clienteRbs : null;
+  if (!campoUnidade) throw new Error("Unidade física inválida para importação de atendimentos.");
+
+  const unicosPorAtendimento = new Map<number, LinhaAtendimentoBelleImportada>();
+  for (const linha of linhas) unicosPorAtendimento.set(linha.atendimentoBelleId, linha);
+  const registros = [...unicosPorAtendimento.values()];
+
+  const [clientesDaUnidade, existentes] = await Promise.all([
+    db.select({
+      id: clientes.id,
+      celular: clientes.celular,
+      celular2: clientes.celular2,
+      telefone: clientes.telefone,
+    }).from(clientes).where(eq(campoUnidade, true)),
+    db.select({ atendimentoBelleId: belleAtendimentos.atendimentoBelleId })
+      .from(belleAtendimentos)
+      .where(and(eq(belleAtendimentos.unidadeId, unidadeId), inArray(belleAtendimentos.atendimentoBelleId, registros.map((linha) => linha.atendimentoBelleId)))),
+  ]);
+
+  const candidatosPorTelefone = new Map<string, Set<number>>();
+  for (const cliente of clientesDaUnidade) {
+    for (const telefone of [cliente.celular, cliente.celular2, cliente.telefone]) {
+      const canonico = telefoneCanonico(telefone);
+      if (!canonico) continue;
+      const candidatos = candidatosPorTelefone.get(canonico) ?? new Set<number>();
+      candidatos.add(cliente.id);
+      candidatosPorTelefone.set(canonico, candidatos);
+    }
+  }
+
+  const existentesIds = new Set(existentes.map((linha) => linha.atendimentoBelleId));
+  let inseridos = 0;
+  let atualizados = 0;
+  let vinculadosComSeguranca = 0;
+  let semVinculo = 0;
+  let ambiguos = 0;
+
+  for (const linha of registros) {
+    const canonico = telefoneCanonico(linha.telefone);
+    const candidatos = canonico ? candidatosPorTelefone.get(canonico) : undefined;
+    const clienteId = candidatos?.size === 1 ? [...candidatos][0] : null;
+    if (clienteId) vinculadosComSeguranca++;
+    else if (candidatos && candidatos.size > 1) ambiguos++;
+    else semVinculo++;
+
+    const valores: InsertBelleAtendimento = {
+      unidadeId,
+      atendimentoBelleId: linha.atendimentoBelleId,
+      clienteId,
+      clienteNome: linha.clienteNome,
+      telefone: linha.telefone,
+      dataAtendimento: linha.dataAtendimento,
+      horario: linha.horario,
+      servicoCodigo: linha.servicoCodigo,
+      servicoNome: linha.servicoNome,
+      duracaoMinutos: linha.duracaoMinutos,
+      profissionalNome: linha.profissionalNome,
+      temPreferencia: linha.temPreferencia,
+      planoBelleId: linha.planoBelleId,
+      areaAplicacao: linha.areaAplicacao,
+      tipo: linha.tipo,
+      status: linha.status,
+      importadoEm: new Date(),
+    };
+    await db.insert(belleAtendimentos).values(valores).onDuplicateKeyUpdate({
+      set: {
+        clienteId: valores.clienteId,
+        clienteNome: valores.clienteNome,
+        telefone: valores.telefone,
+        dataAtendimento: valores.dataAtendimento,
+        horario: valores.horario,
+        servicoCodigo: valores.servicoCodigo,
+        servicoNome: valores.servicoNome,
+        duracaoMinutos: valores.duracaoMinutos,
+        profissionalNome: valores.profissionalNome,
+        temPreferencia: valores.temPreferencia,
+        planoBelleId: valores.planoBelleId,
+        areaAplicacao: valores.areaAplicacao,
+        tipo: valores.tipo,
+        status: valores.status,
+        importadoEm: valores.importadoEm,
+      },
+    });
+    if (existentesIds.has(linha.atendimentoBelleId)) atualizados++;
+    else inseridos++;
+  }
+
+  return { inseridos, atualizados, vinculadosComSeguranca, semVinculo, ambiguos };
+}
+
+export async function listarAtendimentosBellePorCliente(unidadeId: number, clienteId: number, limite = 12) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(belleAtendimentos)
+    .where(and(eq(belleAtendimentos.unidadeId, unidadeId), eq(belleAtendimentos.clienteId, clienteId)))
+    .orderBy(desc(belleAtendimentos.dataAtendimento), desc(belleAtendimentos.horario))
+    .limit(limite);
 }
 
 export interface RelatorioReindexTelefones {

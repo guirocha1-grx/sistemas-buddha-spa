@@ -33,6 +33,7 @@ function ImportarClientesCard() {
   const utils = trpc.useUtils();
   const { unidadeSelecionada } = useUnidade();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const atendimentosFileInputRef = useRef<HTMLInputElement>(null);
   const [unidadeImport, setUnidadeImport] = useState<"rbs" | "ssu">("ssu");
   const [relatorioReindex, setRelatorioReindex] = useState<{
     totalClientes: number;
@@ -63,6 +64,17 @@ function ImportarClientesCard() {
     onError: (err) => toast.error(`Erro ao importar planilha: ${err.message}`),
   });
 
+  const importarAtendimentosMutation = trpc.clientes.importarAtendimentosXlsx.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Atendimentos espelhados: ${data.inseridos} novo(s), ${data.atualizados} atualizado(s), ${data.vinculadosComSeguranca} vínculo(s) seguro(s).`);
+      if (data.ambiguos || data.semVinculo) {
+        toast.message(`${data.ambiguos} ambíguo(s) e ${data.semVinculo} sem vínculo foram preservados para revisão.`);
+      }
+      utils.clientes.historicoAtendimentosBelle.invalidate();
+    },
+    onError: (err) => toast.error(`Erro ao importar atendimentos: ${err.message}`),
+  });
+
   const reindexarMutation = trpc.clientes.reindexarTelefones.useMutation({
     onSuccess: (data) => setRelatorioReindex(data),
     onError: (err) => toast.error(`Erro ao reindexar telefones: ${err.message}`),
@@ -86,6 +98,19 @@ function ImportarClientesCard() {
       importarMutation.mutate({ unidade: unidadeImport, xlsxBase64 });
     } catch (err: any) {
       toast.error(err.message ?? "Falha ao ler o arquivo");
+    } finally {
+      e.target.value = "";
+    }
+  }
+
+  async function handleImportarAtendimentos(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !unidadeSelecionada) return;
+    try {
+      const xlsxBase64 = await fileParaBase64(file);
+      importarAtendimentosMutation.mutate({ unidadeId: unidadeSelecionada.id, xlsxBase64 });
+    } catch (err: any) {
+      toast.error(err.message ?? "Falha ao ler o relatório de atendimentos");
     } finally {
       e.target.value = "";
     }
@@ -121,6 +146,7 @@ function ImportarClientesCard() {
             </SelectContent>
           </Select>
           <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportar} />
+          <input ref={atendimentosFileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportarAtendimentos} />
           <Button
             size="sm"
             variant="outline"
@@ -129,6 +155,15 @@ function ImportarClientesCard() {
           >
             {importarMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
             Importar planilha (.xlsx)
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={importarAtendimentosMutation.isPending || !unidadeSelecionada}
+            onClick={() => atendimentosFileInputRef.current?.click()}
+          >
+            {importarAtendimentosMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Calendar className="h-3.5 w-3.5 mr-1.5" />}
+            Importar atendimentos ({unidadeSelecionada?.nome ?? "selecione a unidade"})
           </Button>
           <Button
             size="sm"
@@ -161,6 +196,10 @@ function ImportarClientesCard() {
           "Resolver LIDs" consulta o WhatsApp da unidade selecionada (seletor no topo da página) e guarda o identificador oculto
           (@lid) de cada telefone já cadastrado — isso permite ao Inbox identificar automaticamente o cliente mesmo quando o
           WhatsApp esconde o número real (ex.: confirmação de agendamento do Belle).
+        </p>
+        <p className="text-xs text-muted-foreground">
+          "Importar atendimentos" espelha o relatório operacional da unidade escolhida e só vincula um registro quando o telefone
+          corresponde a um único cliente nessa unidade; divergências ficam sem vínculo para revisão.
         </p>
       </CardContent>
       <Dialog open={!!relatorioReindex} onOpenChange={(open) => !open && setRelatorioReindex(null)}>
@@ -297,6 +336,13 @@ export default function Clientes() {
   const [page, setPage] = useState(1);
 
   const clientesQuery = trpc.clientes.listImportados.useQuery(undefined, { enabled: !!unidadeSelecionada });
+  const historicoAtendimentosInput = useMemo(() => ({
+    unidadeId: unidadeSelecionada?.id ?? 0,
+    clienteId: selectedCliente?.id ?? 0,
+  }), [unidadeSelecionada?.id, selectedCliente?.id]);
+  const historicoAtendimentosQuery = trpc.clientes.historicoAtendimentosBelle.useQuery(historicoAtendimentosInput, {
+    enabled: !!unidadeSelecionada && !!selectedCliente,
+  });
 
   function toggleSort(col: OrderCol) {
     if (orderBy === col) setOrderDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -552,6 +598,33 @@ export default function Clientes() {
                         )}
                         {selectedCliente.clienteRbs && (
                           <Badge variant="outline" className="border-blue-300 text-blue-700">Ribeirão Shopping</Badge>
+                        )}
+                      </div>
+
+                      <div className="rounded-lg border border-border/60 bg-muted/10 p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="font-medium text-sm">Últimos atendimentos</h3>
+                          <span className="text-xs text-muted-foreground">Espelho Belle</span>
+                        </div>
+                        {historicoAtendimentosQuery.isLoading ? (
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando histórico...</div>
+                        ) : (historicoAtendimentosQuery.data?.length ?? 0) === 0 ? (
+                          <p className="text-xs text-muted-foreground">Nenhum atendimento espelhado para este cliente nesta unidade.</p>
+                        ) : (
+                          <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                            {historicoAtendimentosQuery.data?.map((atendimento) => (
+                              <div key={atendimento.id} className="flex items-start justify-between gap-3 text-xs border-b border-border/40 pb-2 last:border-0 last:pb-0">
+                                <div className="min-w-0">
+                                  <p className="font-medium truncate">{atendimento.servicoNome || "Serviço não informado"}</p>
+                                  <p className="text-muted-foreground truncate">{atendimento.profissionalNome || "Profissional não informado"}</p>
+                                </div>
+                                <div className="shrink-0 text-right text-muted-foreground">
+                                  <p>{fmtDataBr(atendimento.dataAtendimento)} {atendimento.horario || ""}</p>
+                                  <p>{atendimento.status}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </div>
