@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import React from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => {
@@ -44,6 +44,19 @@ const state = vi.hoisted(() => {
     resumoConversa: null,
     automacaoAgentesEfetiva: "ativa",
     automacaoAgentesBloqueadaAte: null,
+    clienteId: 10,
+    unidadeId: 1,
+    clienteQtdServicos: 1,
+    clienteUltimoAtendimento: "2026-08-10",
+    resumoRelacionamento: {
+      plano: null,
+      ultimoAtendimento: {
+        dataAtendimento: "2026-08-10",
+        horario: "14:00",
+        servicoNome: "Massagem Relaxante",
+        profissionalNome: "Terapeuta Teste",
+      },
+    },
   };
   const conversaAlternativa = {
     ...conversa,
@@ -301,6 +314,9 @@ describe("fluxo completo Clientes → Inbox", () => {
     state.page.location = "/mensagens?conversaId=41";
     render(<Mensagens />);
 
+    const botaoAutomacao = await screen.findByRole("button", { name: "Configurar automação da conversa" });
+    expect(botaoAutomacao.getAttribute("title")).toContain("Automação ativa");
+    fireEvent.click(botaoAutomacao);
     const botaoDuasHoras = await screen.findByRole("button", { name: "2 horas" });
     expect(botaoDuasHoras.getAttribute("title")).toContain("2 horas");
     fireEvent.click(botaoDuasHoras);
@@ -308,7 +324,17 @@ describe("fluxo completo Clientes → Inbox", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Permanente" }));
     expect(state.revisaoAgente.automacaoMutation).toHaveBeenCalledWith({ id: 41, modo: "bloqueada_permanentemente" });
-    expect(screen.getByRole("button", { name: "Ativa" }).getAttribute("title")).toContain("Automação ativa");
+    expect(screen.getByRole("button", { name: "Ativa" }).getAttribute("title")).toContain("Ativa");
+  });
+
+  it("exibe data, terapia e terapeuta no último atendimento abaixo do relacionamento", async () => {
+    state.page.location = "/mensagens?conversaId=41";
+    cleanup();
+    render(<Mensagens />);
+
+    expect(await screen.findByText("Último atendimento")).toBeTruthy();
+    expect(screen.getByText(/10\/08\/2026 · Massagem Relaxante/i)).toBeTruthy();
+    expect(screen.getByText("Terapeuta: Terapeuta Teste")).toBeTruthy();
   });
 
   it("resolve a sugestão como editada quando a recepção envia pelo botão principal", async () => {

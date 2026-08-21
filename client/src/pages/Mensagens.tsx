@@ -20,7 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
   Pencil, Check, CheckCheck, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
-  UserPlus, SmilePlus, Users, Download, ZoomIn, FileText,
+  UserPlus, SmilePlus, Users, Download, ZoomIn, FileText, Bot,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useSearch } from "wouter";
@@ -983,6 +983,42 @@ export default function Mensagens() {
                   )}
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
+                  <Button
+                    variant={buscaMensagemAtiva ? "secondary" : "ghost"}
+                    size="icon"
+                    className="h-7 w-7"
+                    title="Buscar nas mensagens"
+                    onClick={() => { setBuscaMensagemAtiva((v) => !v); setBuscaMensagem(""); }}
+                  >
+                    <Search size={13} />
+                  </Button>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="relative h-7 w-7"
+                        title={`Automação ${modoAutomacaoAgentes === "ativa" ? "ativa" : modoAutomacaoAgentes === "bloqueada_temporariamente" ? "pausada por 2 horas" : "pausada permanentemente"}. Clique para ajustar.`}
+                        aria-label="Configurar automação da conversa"
+                      >
+                        <Bot size={13} />
+                        <span className={`absolute right-1 top-1 h-1.5 w-1.5 rounded-full ${modoAutomacaoAgentes === "ativa" ? "bg-emerald-500" : modoAutomacaoAgentes === "bloqueada_temporariamente" ? "bg-amber-500" : "bg-rose-500"}`} />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56 p-2.5" align="end">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold">Automação</p>
+                          <span className={`h-1.5 w-1.5 rounded-full ${modoAutomacaoAgentes === "ativa" ? "bg-emerald-500" : modoAutomacaoAgentes === "bloqueada_temporariamente" ? "bg-amber-500" : "bg-rose-500"}`} />
+                        </div>
+                        <div className="grid grid-cols-3 gap-1" role="group" aria-label="Controle de automação da conversa">
+                          <Button type="button" variant={modoAutomacaoAgentes === "ativa" ? "default" : "outline"} size="sm" className="h-7 px-1 text-[9px]" title="Ativa: novas mensagens podem receber sugestões dos agentes." onClick={() => conversaSelecionadaId && definirAutomacaoAgentesMutation.mutate({ id: conversaSelecionadaId, modo: "ativa" })} disabled={definirAutomacaoAgentesMutation.isPending}>Ativa</Button>
+                          <Button type="button" variant={modoAutomacaoAgentes === "bloqueada_temporariamente" ? "secondary" : "outline"} size="sm" className="h-7 px-1 text-[9px]" title="Pausar por 2 horas: não serão geradas novas sugestões até o prazo expirar." onClick={() => conversaSelecionadaId && definirAutomacaoAgentesMutation.mutate({ id: conversaSelecionadaId, modo: "bloqueada_temporariamente" })} disabled={definirAutomacaoAgentesMutation.isPending}>2 horas</Button>
+                          <Button type="button" variant={modoAutomacaoAgentes === "bloqueada_permanentemente" ? "destructive" : "outline"} size="sm" className="h-7 px-1 text-[9px]" title="Pausar permanentemente e reiniciar o contexto operacional dos agentes." onClick={() => conversaSelecionadaId && definirAutomacaoAgentesMutation.mutate({ id: conversaSelecionadaId, modo: "bloqueada_permanentemente" })} disabled={definirAutomacaoAgentesMutation.isPending}>Permanente</Button>
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                   {conversaSelecionada && (
                     <Button
                       size="sm"
@@ -999,15 +1035,6 @@ export default function Mensagens() {
                       {statusLabel(conversaSelecionada.status)}
                     </Button>
                   )}
-                  <Button
-                    variant={buscaMensagemAtiva ? "secondary" : "ghost"}
-                    size="icon"
-                    className="h-7 w-7"
-                    title="Buscar nas mensagens"
-                    onClick={() => { setBuscaMensagemAtiva((v) => !v); setBuscaMensagem(""); }}
-                  >
-                    <Search size={13} />
-                  </Button>
                   {user?.role === "admin" && (
                     <Button
                       variant="ghost"
@@ -1633,25 +1660,6 @@ export default function Mensagens() {
                     </Button>
                   </div>
                 )}
-
-                <div className="space-y-2 rounded-lg border border-dashed border-[#8d6a2b]/35 bg-[#fffdf7] p-2.5 dark:bg-amber-950/10">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Automação</p>
-                    <span className={`h-1.5 w-1.5 rounded-full ${modoAutomacaoAgentes === "ativa" ? "bg-emerald-500" : modoAutomacaoAgentes === "bloqueada_temporariamente" ? "bg-amber-500" : "bg-rose-500"}`} />
-                  </div>
-                  <div className="grid grid-cols-3 gap-1" role="group" aria-label="Controle de automação da conversa">
-                    <Button type="button" variant={modoAutomacaoAgentes === "ativa" ? "default" : "outline"} size="sm" className="h-6 px-1 text-[9px]" title="Automação ativa: novas mensagens podem receber sugestão dos agentes." onClick={() => conversaSelecionadaId && definirAutomacaoAgentesMutation.mutate({ id: conversaSelecionadaId, modo: "ativa" })} disabled={definirAutomacaoAgentesMutation.isPending}>Ativa</Button>
-                    <Button type="button" variant={modoAutomacaoAgentes === "bloqueada_temporariamente" ? "secondary" : "outline"} size="sm" className="h-6 px-1 text-[9px]" title="Bloquear por 2 horas: nenhuma nova sugestão automática será gerada até o prazo expirar." onClick={() => conversaSelecionadaId && definirAutomacaoAgentesMutation.mutate({ id: conversaSelecionadaId, modo: "bloqueada_temporariamente" })} disabled={definirAutomacaoAgentesMutation.isPending}>2 horas</Button>
-                    <Button type="button" variant={modoAutomacaoAgentes === "bloqueada_permanentemente" ? "destructive" : "outline"} size="sm" className="h-6 px-1 text-[9px]" title="Bloquear permanentemente e reiniciar o contexto dos agentes: mensagens permanecem no Inbox, mas o próximo teste após reativar começa sem a memória operacional anterior." onClick={() => conversaSelecionadaId && definirAutomacaoAgentesMutation.mutate({ id: conversaSelecionadaId, modo: "bloqueada_permanentemente" })} disabled={definirAutomacaoAgentesMutation.isPending}>Permanente</Button>
-                  </div>
-                  <p className="text-[10px] leading-4 text-muted-foreground">
-                    {modoAutomacaoAgentes === "ativa"
-                      ? "Agentes podem sugerir respostas."
-                      : modoAutomacaoAgentes === "bloqueada_temporariamente"
-                        ? `Pausada até ${automacaoBloqueadaAte ?? "o fim do período"}.`
-                        : "Pausada; contexto dos agentes reiniciado para o próximo teste."}
-                  </p>
-                </div>
 
                 <Separator />
 

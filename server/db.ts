@@ -586,8 +586,11 @@ export function classificarPlanosRelacionamento(
 async function obterResumoRelacionamentoInbox(unidadeId: number, clienteId: number) {
   const db = await getDb();
   if (!db) return { plano: null, ultimoAtendimento: null };
-  const [planos, ultimoAtendimento] = await Promise.all([
+  const [planos, clienteLocal, ultimoAtendimentoVinculado] = await Promise.all([
     listarPlanosBellePorCliente(unidadeId, clienteId),
+    db.select({ nome: clientes.nome, ultimoAtendimento: clientes.ultimoAtendimento }).from(clientes)
+      .where(eq(clientes.id, clienteId))
+      .limit(1),
     db.select({
       dataAtendimento: belleAtendimentos.dataAtendimento,
       horario: belleAtendimentos.horario,
@@ -602,10 +605,34 @@ async function obterResumoRelacionamentoInbox(unidadeId: number, clienteId: numb
       .orderBy(desc(belleAtendimentos.dataAtendimento), desc(belleAtendimentos.horario))
       .limit(1),
   ]);
+  const cliente = clienteLocal[0];
+  // Relatórios importados antes do vínculo por ID podem conter o atendimento
+  // correto, mas sem clienteId. Usa o nome exato apenas como fallback dentro
+  // da mesma unidade; o vínculo direto continua tendo prioridade.
+  const ultimoAtendimentoPorNome = !ultimoAtendimentoVinculado[0] && cliente?.nome
+    ? await db.select({
+      dataAtendimento: belleAtendimentos.dataAtendimento,
+      horario: belleAtendimentos.horario,
+      servicoNome: belleAtendimentos.servicoNome,
+      profissionalNome: belleAtendimentos.profissionalNome,
+    }).from(belleAtendimentos)
+      .where(and(
+        eq(belleAtendimentos.unidadeId, unidadeId),
+        eq(belleAtendimentos.clienteNome, cliente.nome),
+        eq(belleAtendimentos.status, "Atendido"),
+      ))
+      .orderBy(desc(belleAtendimentos.dataAtendimento), desc(belleAtendimentos.horario))
+      .limit(1)
+    : [];
+  const ultimoAtendimento = ultimoAtendimentoVinculado[0]
+    ?? ultimoAtendimentoPorNome[0]
+    ?? (cliente?.ultimoAtendimento
+      ? { dataAtendimento: cliente.ultimoAtendimento, horario: null, servicoNome: null, profissionalNome: null }
+      : null);
   const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
   return {
     plano: classificarPlanosRelacionamento(planos, hojeBrt),
-    ultimoAtendimento: ultimoAtendimento[0] ?? null,
+    ultimoAtendimento,
   };
 }
 
