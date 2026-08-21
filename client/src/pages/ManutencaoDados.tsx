@@ -20,6 +20,15 @@ function fileParaBase64(file: File): Promise<string> {
   });
 }
 
+function blobParaBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1] ?? "");
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 type ArquivoTipo = "clientes" | "planos" | "vinculos" | "atendimentos";
 type ImportacaoPendente = { tipo: ArquivoTipo; arquivo: File };
 
@@ -114,8 +123,8 @@ export default function ManutencaoDados() {
     },
     onError: (error) => toast.error(`Falha ao importar atendimentos: ${error.message}`),
   });
-  const prepararUploadAtendimentos = trpc.clientes.prepararUploadAtendimentos.useMutation();
-  const importarAtendimentosStorage = trpc.clientes.importarAtendimentosStorage.useMutation({
+  const enviarParteAtendimentos = trpc.clientes.enviarParteAtendimentos.useMutation();
+  const processarPartesAtendimentos = trpc.clientes.processarPartesAtendimentos.useMutation({
     onSuccess: (data) => {
       toast.success(`Atendimentos processados: ${data.inseridos + data.atualizados}; ${data.vinculadosComSeguranca} vínculo(s) seguro(s).`);
       utils.clientes.historicoAtendimentosBelle.invalidate();
@@ -136,7 +145,7 @@ export default function ManutencaoDados() {
     clientes: importarClientes.isPending,
     planos: importarPlanos.isPending,
     vinculos: importarVinculos.isPending,
-    atendimentos: importarAtendimentos.isPending || prepararUploadAtendimentos.isPending || importarAtendimentosStorage.isPending,
+    atendimentos: importarAtendimentos.isPending || enviarParteAtendimentos.isPending || processarPartesAtendimentos.isPending,
   };
   const carregando = Object.values(carregandoPorTipo).some(Boolean);
   const resumoPendente = useMemo(() => ({
@@ -156,14 +165,17 @@ export default function ManutencaoDados() {
     const { tipo, arquivo } = importacaoPendente;
     try {
       if (tipo === "atendimentos") {
-        const { storageKey, uploadUrl } = await prepararUploadAtendimentos.mutateAsync({ unidadeId, nomeArquivo: arquivo.name });
-        const upload = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: { "Content-Type": arquivo.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
-          body: arquivo,
-        });
-        if (!upload.ok) throw new Error(`Não foi possível transferir o relatório grande (${upload.status}).`);
-        await importarAtendimentosStorage.mutateAsync({ unidadeId, storageKey });
+        const tamanhoParte = 512 * 1024;
+        const totalPartes = Math.ceil(arquivo.size / tamanhoParte);
+        const uploadId = crypto.randomUUID();
+        const storageKeys: string[] = [];
+        for (let indice = 0; indice < totalPartes; indice++) {
+          const inicio = indice * tamanhoParte;
+          const conteudoBase64 = await blobParaBase64(arquivo.slice(inicio, Math.min(inicio + tamanhoParte, arquivo.size)));
+          const parte = await enviarParteAtendimentos.mutateAsync({ unidadeId, uploadId, indice, totalPartes, conteudoBase64 });
+          storageKeys.push(parte.storageKey);
+        }
+        await processarPartesAtendimentos.mutateAsync({ unidadeId, uploadId, storageKeys });
       } else {
         const xlsxBase64 = await fileParaBase64(arquivo);
         if (tipo === "clientes") await importarClientes.mutateAsync({ unidade: unidadeSlug, xlsxBase64 });

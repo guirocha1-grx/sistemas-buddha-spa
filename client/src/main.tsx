@@ -70,7 +70,11 @@ const trpcClient = trpc.createClient({
   links: [
     splitLink({
       condition(op) {
-        return op.type === "mutation" && op.path.startsWith("clientes.importar");
+        return op.type === "mutation" && (
+          op.path.startsWith("clientes.importar") ||
+          op.path === "clientes.enviarParteAtendimentos" ||
+          op.path === "clientes.processarPartesAtendimentos"
+        );
       },
       true: httpLink({ url: "/api/trpc", transformer: superjson, headers: trpcHeaders, fetch: trpcFetch }),
       false: httpBatchLink({ url: "/api/trpc", transformer: superjson, headers: trpcHeaders, fetch: trpcFetch }),

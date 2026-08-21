@@ -12,7 +12,7 @@ import { buddhaMktApi } from "./buddhaMktApi";
 import { metaTemplatesApi } from "./metaTemplatesApi";
 import { validarCorpo, validarCabecalho, extrairVariaveis } from "@shared/templateVariaveis";
 import { telefoneCanonico } from "@shared/telefone";
-import { storagePut, storageGetSignedUrl, storageCreateUploadUrl, normalizeStorageKey } from "./storage";
+import { storagePut, storageGetSignedUrl, normalizeStorageKey } from "./storage";
 import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
 import { sicrediApi, getSicrediAccessToken, isSicrediTokenValid } from "./sicrediApi";
@@ -383,34 +383,52 @@ export const appRouter = router({
       return { success: true, totalLinhas: linhas.length, ...resultado };
     }),
 
-    /** Reserva um upload direto ao storage para relatórios que excedem o limite do proxy HTTP. */
-    prepararUploadAtendimentos: adminProcedure.input(z.object({
+    /**
+     * Recebe uma parte de até 512 KB pelo domínio autenticado da aplicação.
+     * Cada parte é imediatamente armazenada, evitando limites de proxy e CORS.
+     */
+    enviarParteAtendimentos: adminProcedure.input(z.object({
       unidadeId: z.number(),
-      nomeArquivo: z.string().min(1).max(180),
+      uploadId: z.string().uuid(),
+      indice: z.number().int().min(0).max(199),
+      totalPartes: z.number().int().min(1).max(200),
+      conteudoBase64: z.string().min(1).max(1_100_000),
     })).mutation(async ({ input, ctx }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
       if (!unidade || unidade.canal !== "zapi") throw new Error("Selecione uma unidade física para importar atendimentos.");
-      const nomeLimpo = normalizeStorageKey(input.nomeArquivo);
-      return storageCreateUploadUrl(`importacoes/atendimentos/${ctx.user.id}/unidade-${input.unidadeId}/${Date.now()}-${nomeLimpo}`);
+      if (input.indice >= input.totalPartes) throw new Error("Índice de parte inválido.");
+      const buffer = Buffer.from(input.conteudoBase64, "base64");
+      if (buffer.length === 0 || buffer.length > 600_000) throw new Error("Parte do relatório fora do tamanho permitido.");
+      const { key } = await storagePut(
+        `importacoes/atendimentos-chunks/${ctx.user.id}/unidade-${input.unidadeId}/${input.uploadId}/parte-${input.indice}.bin`,
+        buffer,
+        "application/octet-stream",
+      );
+      return { storageKey: key };
     }),
 
-    /** Processa o relatório após o navegador transferi-lo diretamente ao storage. */
-    importarAtendimentosStorage: adminProcedure.input(z.object({
+    /** Recompõe e processa as partes já enviadas pelo domínio autenticado. */
+    processarPartesAtendimentos: adminProcedure.input(z.object({
       unidadeId: z.number(),
-      storageKey: z.string().min(1),
+      uploadId: z.string().uuid(),
+      storageKeys: z.array(z.string().min(1)).min(1).max(200),
     })).mutation(async ({ input, ctx }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
       if (!unidade || unidade.canal !== "zapi") throw new Error("Selecione uma unidade física para importar atendimentos.");
-      const prefixoPermitido = `importacoes/atendimentos/${ctx.user.id}/unidade-${input.unidadeId}/`;
-      if (!input.storageKey.startsWith(prefixoPermitido)) throw new Error("Arquivo de atendimentos inválido para a unidade selecionada.");
-      const signedUrl = await storageGetSignedUrl(input.storageKey);
-      const arquivo = await fetch(signedUrl);
-      if (!arquivo.ok) throw new Error(`Não foi possível recuperar o relatório enviado (${arquivo.status}).`);
-      const buffer = Buffer.from(await arquivo.arrayBuffer());
+      const prefixoPermitido = `importacoes/atendimentos-chunks/${ctx.user.id}/unidade-${input.unidadeId}/${input.uploadId}/`;
+      if (input.storageKeys.some((key) => !key.startsWith(prefixoPermitido))) throw new Error("Partes de relatório inválidas para a unidade selecionada.");
+      const partes: Buffer[] = [];
+      for (const storageKey of input.storageKeys) {
+        const arquivo = await fetch(await storageGetSignedUrl(storageKey));
+        if (!arquivo.ok) throw new Error(`Não foi possível recuperar uma parte do relatório (${arquivo.status}).`);
+        partes.push(Buffer.from(await arquivo.arrayBuffer()));
+      }
+      const buffer = Buffer.concat(partes);
+      if (buffer.length > 50 * 1024 * 1024) throw new Error("Relatório excede o limite de 50 MB.");
       const linhas = parseAtendimentosBelleXlsx(buffer);
       if (linhas.length === 0) throw new Error("Nenhum atendimento válido foi encontrado no relatório.");
       const resultado = await db.upsertAtendimentosBelleImportados(input.unidadeId, linhas);
-      await db.createSyncLog({ unidadeId: input.unidadeId, tipo: "importacao_atendimentos", status: "sucesso", registrosProcessados: linhas.length, detalhes: `Relatório de Atendimentos importado via storage (${input.storageKey}).` });
+      await db.createSyncLog({ unidadeId: input.unidadeId, tipo: "importacao_atendimentos", status: "sucesso", registrosProcessados: linhas.length, detalhes: `Relatório de Atendimentos importado em ${input.storageKeys.length} parte(s) autenticadas.` });
       return { success: true, totalLinhas: linhas.length, ...resultado };
     }),
 

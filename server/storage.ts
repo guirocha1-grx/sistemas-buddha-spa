@@ -29,29 +29,6 @@ export function normalizeStorageKey(relKey: string): string {
     .replace(/[^A-Za-z0-9._/-]/g, "_");
 }
 
-/**
- * Reserva um destino temporário para o navegador enviar arquivos grandes
- * diretamente ao storage, sem atravessar o limite do proxy da aplicação.
- */
-export async function storageCreateUploadUrl(relKey: string): Promise<{ key: string; uploadUrl: string }> {
-  const { forgeUrl, forgeKey } = getForgeConfig();
-  const key = appendHashSuffix(normalizeStorageKey(relKey));
-  const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
-  presignUrl.searchParams.set("path", key);
-
-  const presignResp = await fetch(presignUrl, {
-    headers: { Authorization: `Bearer ${forgeKey}` },
-  });
-  if (!presignResp.ok) {
-    const msg = await presignResp.text().catch(() => presignResp.statusText);
-    throw new Error(`Storage presign failed (${presignResp.status}): ${msg}`);
-  }
-
-  const { url } = (await presignResp.json()) as { url: string };
-  if (!url) throw new Error("Forge returned empty presign URL");
-  return { key, uploadUrl: url };
-}
-
 function appendHashSuffix(relKey: string): string {
   const hash = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
   const lastDot = relKey.lastIndexOf(".");

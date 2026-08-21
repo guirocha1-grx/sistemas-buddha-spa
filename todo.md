@@ -386,3 +386,4 @@
 - [x] Exibir o período importado nos cartões de Planos, Elo cliente–plano e Atendimentos, separado por unidade
 - [x] Corrigir o retorno HTML inválido ao importar atendimentos pela Manutenção de dados
 - [x] Implementar upload robusto de relatórios grandes de atendimentos sem transporte JSON em lote
+- [x] Substituir o upload direto bloqueado por CORS por transferência autenticada de relatórios grandes
