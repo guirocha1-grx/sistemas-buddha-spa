@@ -1,7 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { COOKIE_NAME, UNAUTHED_ERR_MSG } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, TRPCClientError } from "@trpc/client";
+import { httpBatchLink, httpLink, splitLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
@@ -38,12 +38,7 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
-const trpcClient = trpc.createClient({
-  links: [
-    httpBatchLink({
-      url: "/api/trpc",
-      transformer: superjson,
-      headers() {
+const trpcHeaders = () => {
         // Preview auto-login fallback: when the browser blocks iframe cookies
         // (Safari ITP / private browsing / WebView), the runtime mirrors the
         // session into sessionStorage so we can forward it as a Bearer token.
@@ -62,13 +57,23 @@ const trpcClient = trpc.createClient({
           // sessionStorage unavailable
         }
         return {};
-      },
-      fetch(input, init) {
+};
+
+const trpcFetch = (input: RequestInfo | URL, init?: RequestInit) => {
         return globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
         });
+};
+
+const trpcClient = trpc.createClient({
+  links: [
+    splitLink({
+      condition(op) {
+        return op.type === "mutation" && op.path.startsWith("clientes.importar");
       },
+      true: httpLink({ url: "/api/trpc", transformer: superjson, headers: trpcHeaders, fetch: trpcFetch }),
+      false: httpBatchLink({ url: "/api/trpc", transformer: superjson, headers: trpcHeaders, fetch: trpcFetch }),
     }),
   ],
 });
