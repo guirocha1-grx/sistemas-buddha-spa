@@ -388,13 +388,13 @@ async function obterRespostaEspecialista(params: {
   if (fluxoDaySpa?.fluxoId) {
     return {
       message: "Claro. Vou enviar as opções gerais de Day Spa para você conhecer.",
-      status: "in_process",
+      status: "in_process" as const,
       summary: "Cliente solicitou o catálogo geral de Day Spa; sugerido fluxo oficial de informações.",
       variables: {},
       action: `script_fluxo:${fluxoDaySpa.id}`,
       scriptId: fluxoDaySpa.id,
       excecaoOperacional: false,
-    };
+    } satisfies RespostaEspecialista;
   }
   const fluxoVoucher = params.especialista.agente.chave === "diana" && pedidoInformacoesVoucher(params.contexto)
     ? fluxoInformacoesVoucher(scripts)
@@ -402,13 +402,13 @@ async function obterRespostaEspecialista(params: {
   if (fluxoVoucher?.fluxoId && !(await agentesDb.acaoJaRegistrada(params.contexto.conversa.id, `script_fluxo:${fluxoVoucher.id}`))) {
     return {
       message: "Claro. Vou encaminhar as informações sobre vouchers para você.",
-      status: "in_process",
+      status: "in_process" as const,
       summary: "Cliente solicitou informações ou emissão de voucher; sugerido fluxo oficial de vouchers.",
       variables: {},
       action: `script_fluxo:${fluxoVoucher.id}`,
       scriptId: fluxoVoucher.id,
       excecaoOperacional: false,
-    };
+    } satisfies RespostaEspecialista;
   }
   const resposta = await invokeLLM({
     model: params.especialista.agente.modelo,
