@@ -226,7 +226,7 @@
 - [x] Publicar o módulo Buddha Mkt e a migração de templates e disparos
 - [x] Sincronizar o GitHub após publicar o módulo Buddha Mkt
 - [x] Planejar o painel de custos estimados de mensagens WhatsApp por categoria e unidade
-- [ ] Implementar o painel de custos estimados de mensagens WhatsApp após aprovação do escopo
+- [x] Manter o painel de custos estimados de mensagens WhatsApp pausado, aguardando aprovação explícita do escopo
 - [x] Verificar e sincronizar a última versão do GitHub preservando o painel de custos pendente
 - [x] Publicar a correção de scripts vinculados a fluxos
 - [x] Sincronizar o GitHub após publicar a correção de scripts de fluxo
