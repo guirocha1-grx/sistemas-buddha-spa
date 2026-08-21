@@ -381,3 +381,4 @@
 - [x] Desativar a criação automática de regras de match ao categorizar lançamentos de extrato
 - [x] Restaurar a inicialização de produção após a referência ausente de receita de cartão de crédito
 - [x] Corrigir a importação da base de clientes, isolar carregamentos e exigir confirmação de relatório e unidade
+- [x] Exibir resultado persistente de cada importação, com sucesso ou erro, horário, quantidade e detalhes por unidade

@@ -404,7 +404,7 @@ export async function getStatusImportacoesDados(unidadeId: number) {
   const vazio = { clientes: null, planos: null, vinculos: null, atendimentos: null };
   if (!db) return vazio;
 
-  const logs = await db.select({ tipo: syncLogs.tipo, createdAt: syncLogs.createdAt, detalhes: syncLogs.detalhes })
+  const logs = await db.select({ tipo: syncLogs.tipo, status: syncLogs.status, registrosProcessados: syncLogs.registrosProcessados, createdAt: syncLogs.createdAt, detalhes: syncLogs.detalhes })
     .from(syncLogs)
     .where(and(eq(syncLogs.unidadeId, unidadeId), inArray(syncLogs.tipo, [...TIPOS_IMPORTACAO_DADOS])))
     .orderBy(desc(syncLogs.createdAt));
@@ -417,10 +417,10 @@ export async function getStatusImportacoesDados(unidadeId: number) {
   const [atendimentosImportados] = await db.select({ data: sql<Date | null>`max(${belleAtendimentos.importadoEm})` }).from(belleAtendimentos).where(eq(belleAtendimentos.unidadeId, unidadeId));
 
   return {
-    clientes: maisRecente("importacao_clientes") ?? (clientesImportados?.data ? { createdAt: clientesImportados.data, detalhes: "Base local existente" } : null),
-    planos: maisRecente("importacao_planos") ?? (planosImportados?.data ? { createdAt: planosImportados.data, detalhes: "Espelho de planos existente" } : null),
-    vinculos: maisRecente("importacao_vinculos_planos") ?? (vinculosImportados?.data ? { createdAt: vinculosImportados.data, detalhes: "Vínculos de planos existentes" } : null),
-    atendimentos: maisRecente("importacao_atendimentos") ?? (atendimentosImportados?.data ? { createdAt: atendimentosImportados.data, detalhes: "Espelho de atendimentos existente" } : null),
+    clientes: maisRecente("importacao_clientes") ?? (clientesImportados?.data ? { status: "sucesso" as const, registrosProcessados: 0, createdAt: clientesImportados.data, detalhes: "Base local existente antes do painel de importações" } : null),
+    planos: maisRecente("importacao_planos") ?? (planosImportados?.data ? { status: "sucesso" as const, registrosProcessados: 0, createdAt: planosImportados.data, detalhes: "Espelho de planos existente antes do painel de importações" } : null),
+    vinculos: maisRecente("importacao_vinculos_planos") ?? (vinculosImportados?.data ? { status: "sucesso" as const, registrosProcessados: 0, createdAt: vinculosImportados.data, detalhes: "Vínculos de planos existentes antes do painel de importações" } : null),
+    atendimentos: maisRecente("importacao_atendimentos") ?? (atendimentosImportados?.data ? { status: "sucesso" as const, registrosProcessados: 0, createdAt: atendimentosImportados.data, detalhes: "Espelho de atendimentos existente antes do painel de importações" } : null),
   };
 }
 

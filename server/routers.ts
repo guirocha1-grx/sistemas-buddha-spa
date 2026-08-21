@@ -352,6 +352,18 @@ export const appRouter = router({
       return db.getStatusImportacoesDados(input.unidadeId);
     }),
 
+    registrarFalhaImportacaoDados: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      tipo: z.enum(["clientes", "planos", "vinculos", "atendimentos"]),
+      mensagem: z.string().min(1).max(2000),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade || unidade.canal !== "zapi") throw new Error("Selecione uma unidade física.");
+      const tipos = { clientes: "importacao_clientes", planos: "importacao_planos", vinculos: "importacao_vinculos_planos", atendimentos: "importacao_atendimentos" } as const;
+      await db.createSyncLog({ unidadeId: input.unidadeId, tipo: tipos[input.tipo], status: "erro", registrosProcessados: 0, detalhes: input.mensagem });
+      return { success: true };
+    }),
+
     /**
      * Espelha o relatório operacional de atendimentos exportado do Belle.
      * A unidade é escolhida explicitamente pela recepção para impedir mistura

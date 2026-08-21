@@ -43,6 +43,13 @@ function textoUltimaSincronizacao(valor: Date | string | null | undefined) {
   return `Data da última sincronização: ${data.toLocaleDateString("pt-BR")} (${relativo})`;
 }
 
+function textoResultadoImportacao(item: any) {
+  if (!item) return "Resultado: aguardando a primeira importação";
+  if (item.status === "erro") return `Última tentativa com erro: ${item.detalhes ?? "verifique o arquivo"}`;
+  const quantidade = Number(item.registrosProcessados ?? 0);
+  return quantidade > 0 ? `Último resultado: sucesso · ${quantidade} registro(s) processado(s)` : "Último resultado: sucesso";
+}
+
 export default function ManutencaoDados() {
   const { unidadeSelecionada } = useUnidade();
   const utils = trpc.useUtils();
@@ -62,6 +69,7 @@ export default function ManutencaoDados() {
     { unidadeId: unidadeId ?? 0 },
     { enabled: !!unidadeId },
   );
+  const registrarFalhaImportacao = trpc.clientes.registrarFalhaImportacaoDados.useMutation();
 
   const importarClientes = trpc.clientes.importarXlsx.useMutation({
     onSuccess: (data) => {
@@ -139,7 +147,10 @@ export default function ManutencaoDados() {
       if (tipo === "atendimentos") await importarAtendimentos.mutateAsync({ unidadeId, xlsxBase64 });
       setImportacaoPendente(null);
     } catch (error: any) {
-      toast.error(error?.message ?? "Não foi possível ler o arquivo selecionado.");
+      const mensagem = error?.message ?? "Não foi possível ler o arquivo selecionado.";
+      toast.error(mensagem);
+      await registrarFalhaImportacao.mutateAsync({ unidadeId, tipo, mensagem }).catch(() => undefined);
+      utils.clientes.statusImportacoesDados.invalidate();
     }
   }
 
@@ -173,6 +184,7 @@ export default function ManutencaoDados() {
                   <CardDescription>{arquivo.descricao}</CardDescription>
                   <div className="space-y-1 pt-1 text-xs leading-5 text-muted-foreground">
                     <p>{textoUltimaSincronizacao(statusImportacoesQuery.data?.[arquivo.tipo]?.createdAt)}</p>
+                    <p className={statusImportacoesQuery.data?.[arquivo.tipo]?.status === "erro" ? "text-destructive" : "text-emerald-700"}>{textoResultadoImportacao(statusImportacoesQuery.data?.[arquivo.tipo])}</p>
                     <p>Caminho: <span className="text-foreground/80">{arquivo.caminho}</span></p>
                   </div>
                 </CardHeader>
