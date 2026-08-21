@@ -50,6 +50,12 @@ function textoResultadoImportacao(item: any) {
   return quantidade > 0 ? `Último resultado: sucesso · ${quantidade} registro(s) processado(s)` : "Último resultado: sucesso";
 }
 
+function textoPeriodoImportado(periodo: { inicio?: string | null; fim?: string | null } | null | undefined) {
+  if (!periodo?.inicio && !periodo?.fim) return "Período importado: indisponível";
+  const formatar = (valor?: string | null) => valor ? new Date(`${valor}T12:00:00`).toLocaleDateString("pt-BR") : "—";
+  return `Período importado: ${formatar(periodo.inicio)} até ${formatar(periodo.fim)}`;
+}
+
 export default function ManutencaoDados() {
   const { unidadeSelecionada } = useUnidade();
   const utils = trpc.useUtils();
@@ -185,6 +191,7 @@ export default function ManutencaoDados() {
                   <div className="space-y-1 pt-1 text-xs leading-5 text-muted-foreground">
                     <p>{textoUltimaSincronizacao(statusImportacoesQuery.data?.[arquivo.tipo]?.createdAt)}</p>
                     <p className={statusImportacoesQuery.data?.[arquivo.tipo]?.status === "erro" ? "text-destructive" : "text-emerald-700"}>{textoResultadoImportacao(statusImportacoesQuery.data?.[arquivo.tipo])}</p>
+                    {arquivo.tipo !== "clientes" && <p>{textoPeriodoImportado(statusImportacoesQuery.data?.[arquivo.tipo]?.periodo)}</p>}
                     <p>Caminho: <span className="text-foreground/80">{arquivo.caminho}</span></p>
                   </div>
                 </CardHeader>

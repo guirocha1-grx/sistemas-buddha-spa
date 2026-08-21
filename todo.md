@@ -383,3 +383,4 @@
 - [x] Corrigir a importação da base de clientes, isolar carregamentos e exigir confirmação de relatório e unidade
 - [x] Exibir resultado persistente de cada importação, com sucesso ou erro, horário, quantidade e detalhes por unidade
 - [x] Atualizar o caminho confirmado de exportação de Planos & Sessões na Manutenção de dados
+- [x] Exibir o período importado nos cartões de Planos, Elo cliente–plano e Atendimentos, separado por unidade
