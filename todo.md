@@ -379,3 +379,5 @@
 - [x] Corrigir a referência indefinida ehCompraEquipamentoPoint no sincronizador de vendas aprovadas do Mercado Pago
 - [x] Corrigir a paginação do Mercado Pago para sincronizar todo o intervalo em uma única execução
 - [x] Desativar a criação automática de regras de match ao categorizar lançamentos de extrato
+- [x] Restaurar a inicialização de produção após a referência ausente de receita de cartão de crédito
+- [x] Corrigir a importação da base de clientes, isolar carregamentos e exigir confirmação de relatório e unidade

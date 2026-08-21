@@ -5,6 +5,7 @@ import UnidadeSelector from "@/components/UnidadeSelector";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertTriangle, CheckCircle2, Database, FileUp, Link2, Loader2, UsersRound } from "lucide-react";
@@ -20,19 +21,34 @@ function fileParaBase64(file: File): Promise<string> {
 }
 
 type ArquivoTipo = "clientes" | "planos" | "vinculos" | "atendimentos";
+type ImportacaoPendente = { tipo: ArquivoTipo; arquivo: File };
 
-const ARQUIVOS: Array<{ tipo: ArquivoTipo; titulo: string; descricao: string; formatos: string }> = [
-  { tipo: "clientes", titulo: "Base de clientes", descricao: "Cadastro mestre do Belle; deve ser enviado primeiro.", formatos: ".xlsx" },
-  { tipo: "planos", titulo: "Planos & sessões", descricao: "Validade e saldo por serviço. Aceita exportação XLS/XLSX do Belle.", formatos: ".xls,.xlsx" },
-  { tipo: "vinculos", titulo: "Elo cliente–plano", descricao: "Relatório com ID Belle do cliente e ID do plano; prioriza vínculo direto.", formatos: ".xlsx" },
-  { tipo: "atendimentos", titulo: "Atendimentos", descricao: "Histórico de serviço, data, profissional e status da unidade.", formatos: ".xlsx" },
+const ARQUIVOS: Array<{ tipo: ArquivoTipo; titulo: string; descricao: string; formatos: string; formatoBelle: string; caminho: string }> = [
+  { tipo: "clientes", titulo: "Base de clientes", descricao: "Cadastro mestre do Belle; deve ser enviado primeiro.", formatos: ".xlsx", formatoBelle: "[Buddha] Clientes", caminho: "Belle > BI (Business Intelligence) > [Buddha] Clientes" },
+  { tipo: "planos", titulo: "Planos & sessões", descricao: "Validade e saldo por serviço. Aceita exportação XLS/XLSX do Belle.", formatos: ".xls,.xlsx", formatoBelle: "Relatório de Planos", caminho: "Belle > BI (Business Intelligence) > Relatório de Planos" },
+  { tipo: "vinculos", titulo: "Elo cliente–plano", descricao: "Relatório com ID Belle do cliente e ID do plano; prioriza vínculo direto.", formatos: ".xlsx", formatoBelle: "Relatório de Sessões de Planos", caminho: "Belle > BI (Business Intelligence) > Relatório de Sessões de Planos" },
+  { tipo: "atendimentos", titulo: "Atendimentos", descricao: "Histórico de serviço, data, profissional e status da unidade.", formatos: ".xlsx", formatoBelle: "Relatório de Atendimentos", caminho: "Belle > BI (Business Intelligence) > Relatório de Atendimentos" },
 ];
+
+function textoUltimaSincronizacao(valor: Date | string | null | undefined) {
+  if (!valor) return "Data da última sincronização: ainda não importado";
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) return "Data da última sincronização: indisponível";
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const referencia = new Date(data);
+  referencia.setHours(0, 0, 0, 0);
+  const dias = Math.max(0, Math.round((hoje.getTime() - referencia.getTime()) / 86_400_000));
+  const relativo = dias === 0 ? "hoje" : dias === 1 ? "1 dia atrás" : `${dias} dias atrás`;
+  return `Data da última sincronização: ${data.toLocaleDateString("pt-BR")} (${relativo})`;
+}
 
 export default function ManutencaoDados() {
   const { unidadeSelecionada } = useUnidade();
   const utils = trpc.useUtils();
   const refs = useRef<Record<ArquivoTipo, HTMLInputElement | null>>({ clientes: null, planos: null, vinculos: null, atendimentos: null });
   const [selecionadoPorPlano, setSelecionadoPorPlano] = useState<Record<number, string>>({});
+  const [importacaoPendente, setImportacaoPendente] = useState<ImportacaoPendente | null>(null);
   // O seletor do frontend não expõe `canal`; as duas unidades físicas são os
   // IDs estáveis 1 (SSU) e 2 (RBS). Qualquer outra origem permanece bloqueada.
   const unidadeId = unidadeSelecionada && [1, 2].includes(unidadeSelecionada.id) ? unidadeSelecionada.id : null;
@@ -42,11 +58,16 @@ export default function ManutencaoDados() {
     { unidadeId: unidadeId ?? 0 },
     { enabled: !!unidadeId },
   );
+  const statusImportacoesQuery = trpc.clientes.statusImportacoesDados.useQuery(
+    { unidadeId: unidadeId ?? 0 },
+    { enabled: !!unidadeId },
+  );
 
   const importarClientes = trpc.clientes.importarXlsx.useMutation({
     onSuccess: (data) => {
       toast.success(`Base atualizada: ${data.inseridos} novo(s) e ${data.atualizados} atualizado(s).`);
       utils.clientes.planosPendentesVinculo.invalidate();
+      utils.clientes.statusImportacoesDados.invalidate();
     },
     onError: (error) => toast.error(`Falha ao importar clientes: ${error.message}`),
   });
@@ -55,6 +76,7 @@ export default function ManutencaoDados() {
       toast.success(`Planos processados: ${data.planosInseridos + data.planosAtualizados}; ${data.planosVinculadosComSeguranca} vínculo(s) seguro(s).`);
       utils.clientes.planosPendentesVinculo.invalidate();
       utils.clientes.planosBelle.invalidate();
+      utils.clientes.statusImportacoesDados.invalidate();
     },
     onError: (error) => toast.error(`Falha ao importar planos: ${error.message}`),
   });
@@ -66,6 +88,7 @@ export default function ManutencaoDados() {
       }
       utils.clientes.planosPendentesVinculo.invalidate();
       utils.clientes.planosBelle.invalidate();
+      utils.clientes.statusImportacoesDados.invalidate();
     },
     onError: (error) => toast.error(`Falha ao importar elo cliente–plano: ${error.message}`),
   });
@@ -73,6 +96,7 @@ export default function ManutencaoDados() {
     onSuccess: (data) => {
       toast.success(`Atendimentos processados: ${data.inseridos + data.atualizados}; ${data.vinculadosComSeguranca} vínculo(s) seguro(s).`);
       utils.clientes.historicoAtendimentosBelle.invalidate();
+      utils.clientes.statusImportacoesDados.invalidate();
     },
     onError: (error) => toast.error(`Falha ao importar atendimentos: ${error.message}`),
   });
@@ -85,22 +109,35 @@ export default function ManutencaoDados() {
     onError: (error) => toast.error(`Falha ao confirmar vínculo: ${error.message}`),
   });
 
-  const carregando = importarClientes.isPending || importarPlanos.isPending || importarVinculos.isPending || importarAtendimentos.isPending;
+  const carregandoPorTipo: Record<ArquivoTipo, boolean> = {
+    clientes: importarClientes.isPending,
+    planos: importarPlanos.isPending,
+    vinculos: importarVinculos.isPending,
+    atendimentos: importarAtendimentos.isPending,
+  };
+  const carregando = Object.values(carregandoPorTipo).some(Boolean);
   const resumoPendente = useMemo(() => ({
     total: pendentesQuery.data?.length ?? 0,
     comCandidatos: pendentesQuery.data?.filter((item) => item.candidatos.length > 0).length ?? 0,
   }), [pendentesQuery.data]);
 
-  async function importar(tipo: ArquivoTipo, event: React.ChangeEvent<HTMLInputElement>) {
+  function prepararImportacao(tipo: ArquivoTipo, event: React.ChangeEvent<HTMLInputElement>) {
     const arquivo = event.target.files?.[0];
     event.target.value = "";
     if (!arquivo || !unidadeId || !unidadeSlug) return;
+    setImportacaoPendente({ tipo, arquivo });
+  }
+
+  async function confirmarImportacao() {
+    if (!importacaoPendente || !unidadeId || !unidadeSlug) return;
+    const { tipo, arquivo } = importacaoPendente;
     try {
       const xlsxBase64 = await fileParaBase64(arquivo);
-      if (tipo === "clientes") importarClientes.mutate({ unidade: unidadeSlug, xlsxBase64 });
-      if (tipo === "planos") importarPlanos.mutate({ unidadeId, xlsxBase64 });
-      if (tipo === "vinculos") importarVinculos.mutate({ unidadeId, xlsxBase64 });
-      if (tipo === "atendimentos") importarAtendimentos.mutate({ unidadeId, xlsxBase64 });
+      if (tipo === "clientes") await importarClientes.mutateAsync({ unidade: unidadeSlug, xlsxBase64 });
+      if (tipo === "planos") await importarPlanos.mutateAsync({ unidadeId, xlsxBase64 });
+      if (tipo === "vinculos") await importarVinculos.mutateAsync({ unidadeId, xlsxBase64 });
+      if (tipo === "atendimentos") await importarAtendimentos.mutateAsync({ unidadeId, xlsxBase64 });
+      setImportacaoPendente(null);
     } catch (error: any) {
       toast.error(error?.message ?? "Não foi possível ler o arquivo selecionado.");
     }
@@ -134,12 +171,16 @@ export default function ManutencaoDados() {
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2 text-base" style={{ fontFamily: "'Cormorant Garamond', serif" }}><FileUp className="h-4 w-4 text-primary" />{arquivo.titulo}</CardTitle>
                   <CardDescription>{arquivo.descricao}</CardDescription>
+                  <div className="space-y-1 pt-1 text-xs leading-5 text-muted-foreground">
+                    <p>{textoUltimaSincronizacao(statusImportacoesQuery.data?.[arquivo.tipo]?.createdAt)}</p>
+                    <p>Caminho: <span className="text-foreground/80">{arquivo.caminho}</span></p>
+                  </div>
                 </CardHeader>
                 <CardContent className="flex items-center justify-between gap-3">
-                  <input ref={(node) => { refs.current[arquivo.tipo] = node; }} type="file" className="hidden" accept={arquivo.formatos} onChange={(event) => importar(arquivo.tipo, event)} />
+                  <input ref={(node) => { refs.current[arquivo.tipo] = node; }} type="file" className="hidden" accept={arquivo.formatos} onChange={(event) => prepararImportacao(arquivo.tipo, event)} />
                   <span className="text-xs text-muted-foreground">{arquivo.formatos}</span>
-                  <Button size="sm" variant="outline" disabled={carregando} onClick={() => refs.current[arquivo.tipo]?.click()}>
-                    {carregando ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileUp className="mr-1.5 h-3.5 w-3.5" />}Importar
+                  <Button size="sm" variant="outline" disabled={carregando || !!importacaoPendente} onClick={() => refs.current[arquivo.tipo]?.click()}>
+                    {carregandoPorTipo[arquivo.tipo] ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileUp className="mr-1.5 h-3.5 w-3.5" />}Importar
                   </Button>
                 </CardContent>
               </Card>
@@ -180,6 +221,27 @@ export default function ManutencaoDados() {
                 </div>}
             </CardContent>
           </Card>
+          {importacaoPendente && (() => {
+            const configuracao = ARQUIVOS.find((arquivo) => arquivo.tipo === importacaoPendente.tipo)!;
+            return <Dialog open onOpenChange={(aberto) => { if (!aberto && !carregando) setImportacaoPendente(null); }}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Confirmar importação</DialogTitle>
+                  <DialogDescription>Revise o tipo de relatório e a unidade antes de gravar dados na base local.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3 rounded-lg border bg-muted/30 p-4 text-sm">
+                  <p><span className="text-muted-foreground">Arquivo:</span> <strong>{importacaoPendente.arquivo.name}</strong></p>
+                  <p><span className="text-muted-foreground">Formato esperado:</span> <strong>{configuracao.formatoBelle}</strong></p>
+                  <p><span className="text-muted-foreground">Unidade de destino:</span> <strong>{unidadeSelecionada?.nome}</strong></p>
+                  <p><span className="text-muted-foreground">Caminho no Belle:</span> <strong>{configuracao.caminho}</strong></p>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" disabled={carregando} onClick={() => setImportacaoPendente(null)}>Cancelar</Button>
+                  <Button disabled={carregando} onClick={confirmarImportacao}>{carregando ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FileUp className="mr-1.5 h-4 w-4" />}Confirmar importação</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>;
+          })()}
         </>
       )}
     </div>

@@ -9,7 +9,7 @@ import { normalizarTelefone, variantesTelefone, telefoneCanonico } from "@shared
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
-import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
+import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
 import { storageGetSignedUrl } from "./storage";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -390,6 +390,38 @@ export async function getSyncLogs(unidadeId: number, limit: number = 20) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(syncLogs).where(eq(syncLogs.unidadeId, unidadeId)).orderBy(desc(syncLogs.createdAt)).limit(limit);
+}
+
+const TIPOS_IMPORTACAO_DADOS = [
+  "importacao_clientes",
+  "importacao_planos",
+  "importacao_vinculos_planos",
+  "importacao_atendimentos",
+] as const;
+
+export async function getStatusImportacoesDados(unidadeId: number) {
+  const db = await getDb();
+  const vazio = { clientes: null, planos: null, vinculos: null, atendimentos: null };
+  if (!db) return vazio;
+
+  const logs = await db.select({ tipo: syncLogs.tipo, createdAt: syncLogs.createdAt, detalhes: syncLogs.detalhes })
+    .from(syncLogs)
+    .where(and(eq(syncLogs.unidadeId, unidadeId), inArray(syncLogs.tipo, [...TIPOS_IMPORTACAO_DADOS])))
+    .orderBy(desc(syncLogs.createdAt));
+
+  const maisRecente = (tipo: string) => logs.find((log) => log.tipo === tipo) ?? null;
+  const clientePorUnidade = unidadeId === 1 ? eq(clientes.clienteSsu, 1) : eq(clientes.clienteRbs, 1);
+  const [clientesImportados] = await db.select({ data: sql<Date | null>`max(${clientes.updatedAt})` }).from(clientes).where(clientePorUnidade);
+  const [planosImportados] = await db.select({ data: sql<Date | null>`max(${bellePlanosClientes.importadoEm})` }).from(bellePlanosClientes).where(eq(bellePlanosClientes.unidadeId, unidadeId));
+  const [vinculosImportados] = await db.select({ data: sql<Date | null>`max(${bellePlanosClientes.vinculadoEm})` }).from(bellePlanosClientes).where(eq(bellePlanosClientes.unidadeId, unidadeId));
+  const [atendimentosImportados] = await db.select({ data: sql<Date | null>`max(${belleAtendimentos.importadoEm})` }).from(belleAtendimentos).where(eq(belleAtendimentos.unidadeId, unidadeId));
+
+  return {
+    clientes: maisRecente("importacao_clientes") ?? (clientesImportados?.data ? { createdAt: clientesImportados.data, detalhes: "Base local existente" } : null),
+    planos: maisRecente("importacao_planos") ?? (planosImportados?.data ? { createdAt: planosImportados.data, detalhes: "Espelho de planos existente" } : null),
+    vinculos: maisRecente("importacao_vinculos_planos") ?? (vinculosImportados?.data ? { createdAt: vinculosImportados.data, detalhes: "Vínculos de planos existentes" } : null),
+    atendimentos: maisRecente("importacao_atendimentos") ?? (atendimentosImportados?.data ? { createdAt: atendimentosImportados.data, detalhes: "Espelho de atendimentos existente" } : null),
+  };
 }
 
 // ===== Copilot Conversas =====

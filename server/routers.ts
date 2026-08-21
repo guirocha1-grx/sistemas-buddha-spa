@@ -325,6 +325,10 @@ export const appRouter = router({
         throw new Error("Nenhum cliente encontrado na planilha.");
       }
       const resultado = await db.upsertClientesImportados(input.unidade, linhas);
+      const unidadeFisica = await db.getUnidadeFisicaPorFlag(input.unidade);
+      if (unidadeFisica) {
+        await db.createSyncLog({ unidadeId: unidadeFisica.id, tipo: "importacao_clientes", status: "sucesso", registrosProcessados: linhas.length, detalhes: "Relatório [Buddha] Clientes importado pela Manutenção de dados." });
+      }
 
       // Reconciliação de @lid (2026-08-15): best-effort, nunca falha o
       // import — cobre o cliente lançado direto no Belle no balcão
@@ -342,6 +346,12 @@ export const appRouter = router({
       return { success: true, totalLinhas: linhas.length, ...resultado, lids };
     }),
 
+    statusImportacoesDados: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade || unidade.canal !== "zapi") throw new Error("Selecione uma unidade física.");
+      return db.getStatusImportacoesDados(input.unidadeId);
+    }),
+
     /**
      * Espelha o relatório operacional de atendimentos exportado do Belle.
      * A unidade é escolhida explicitamente pela recepção para impedir mistura
@@ -357,6 +367,7 @@ export const appRouter = router({
       const linhas = parseAtendimentosBelleXlsx(Buffer.from(input.xlsxBase64, "base64"));
       if (linhas.length === 0) throw new Error("Nenhum atendimento válido foi encontrado no relatório.");
       const resultado = await db.upsertAtendimentosBelleImportados(input.unidadeId, linhas);
+      await db.createSyncLog({ unidadeId: input.unidadeId, tipo: "importacao_atendimentos", status: "sucesso", registrosProcessados: linhas.length, detalhes: "Relatório de Atendimentos importado pela Manutenção de dados." });
       return { success: true, totalLinhas: linhas.length, ...resultado };
     }),
 
@@ -370,6 +381,7 @@ export const appRouter = router({
       if (unidade.canal !== "zapi") throw new Error("Selecione uma unidade física para importar planos.");
       const relatorio = parsePlanosBelleXls(Buffer.from(input.xlsxBase64, "base64"));
       const resultado = await db.upsertPlanosBelleImportados(input.unidadeId, relatorio);
+      await db.createSyncLog({ unidadeId: input.unidadeId, tipo: "importacao_planos", status: "sucesso", registrosProcessados: relatorio.planos.length, detalhes: "Relatório de Planos & Sessões importado pela Manutenção de dados." });
       return { success: true, totalPlanos: relatorio.planos.length, totalServicos: relatorio.servicos.length, ...resultado };
     }),
 
@@ -383,6 +395,7 @@ export const appRouter = router({
       if (unidade.canal !== "zapi") throw new Error("Selecione uma unidade física para importar vínculos de planos.");
       const vinculos = parseVinculosPlanosBelleXlsx(Buffer.from(input.xlsxBase64, "base64"));
       const resultado = await db.aplicarVinculosPlanosBelle(input.unidadeId, vinculos);
+      await db.createSyncLog({ unidadeId: input.unidadeId, tipo: "importacao_vinculos_planos", status: "sucesso", registrosProcessados: vinculos.length, detalhes: "Relatório de Sessões de Planos importado pela Manutenção de dados." });
       return { success: true, totalVinculos: vinculos.length, ...resultado };
     }),
 
