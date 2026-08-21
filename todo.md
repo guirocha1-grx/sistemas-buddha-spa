@@ -378,3 +378,4 @@
 - [x] Criar a tela Manutenção de dados para importações semanais por unidade e revisão de correspondências ambíguas
 - [x] Corrigir a referência indefinida ehCompraEquipamentoPoint no sincronizador de vendas aprovadas do Mercado Pago
 - [x] Corrigir a paginação do Mercado Pago para sincronizar todo o intervalo em uma única execução
+- [x] Desativar a criação automática de regras de match ao categorizar lançamentos de extrato

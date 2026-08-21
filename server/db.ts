@@ -9,7 +9,7 @@ import { normalizarTelefone, variantesTelefone, telefoneCanonico } from "@shared
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
-import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, extrairPadraoContraparte, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
+import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
 import { storageGetSignedUrl } from "./storage";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -2737,14 +2737,9 @@ export async function reprocessarPendentes(
 /**
  * Decisão humana: usuário escolhe (ou corrige) a descrição de uma
  * transação pelo seletor (a categoria vem por herança da descrição).
- * Marca como "confirmada" direto (não precisa de segundo clique) e, se
- * a descrição não for nula, tenta "aprender" uma regra nova a partir da
- * contraparte dessa transação — pra próxima vez que aparecer um
- * pagamento parecido, o sistema já sugerir sozinho.
- *
- * Regra aprendida é aplicada de imediato nas outras transações
- * "pendente" da unidade (via reprocessarPendentes), viram "sugerida" —
- * o usuário confirma cada uma com 1 clique, não fica automático demais.
+ * Marca como "confirmada" direto, sem criar ou alterar regras de match.
+ * Padrões de extrato devem ser cadastrados manualmente na administração,
+ * evitando que uma contraparte genérica contamine categorizações futuras.
  */
 export async function categorizarManual(transacaoId: number, dreDescricaoId: number | null): Promise<{ regraAprendida: boolean }> {
   const db = await getDb();
@@ -2757,20 +2752,7 @@ export async function categorizarManual(transacaoId: number, dreDescricaoId: num
 
   const [transacao] = await db.select().from(interExtratos).where(eq(interExtratos.id, transacaoId)).limit(1);
   await db.update(interExtratos).set({ dreDescricaoId, categorizacaoStatus: "confirmada" }).where(eq(interExtratos.id, transacaoId));
-  if (!transacao) return { regraAprendida: false };
-
-  const textoContraparte = transacao.titulo || transacao.descricao || "";
-  const padrao = extrairPadraoContraparte(textoContraparte);
-  if (!padrao) return { regraAprendida: false };
-
-  const jaExiste = await db.select({ id: dreRegras.id }).from(dreRegras)
-    .where(and(eq(dreRegras.padrao, padrao), eq(dreRegras.ativa, "true")))
-    .limit(1);
-  if (jaExiste.length > 0) return { regraAprendida: false };
-
-  await db.insert(dreRegras).values({ padrao, dreDescricaoId, origem: "aprendida" });
-  await reprocessarPendentes(transacao.unidadeId);
-  return { regraAprendida: true };
+  return { regraAprendida: false };
 }
 
 /**
