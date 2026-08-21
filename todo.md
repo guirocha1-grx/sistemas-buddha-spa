@@ -396,3 +396,4 @@
 - [x] Implementar plano condicional, último atendimento e status no cabeçalho, preservando o quadro de visitas atual
 - [x] Corrigir a exibição do cartão Último atendimento abaixo de Plano, com data, terapia e terapeuta
 - [x] Mover o controle de automação para o cabeçalho do Inbox como menu discreto com indicador de estado
+- [x] Remover o bloco residual de automação do painel direito, mantendo somente o controle no cabeçalho
