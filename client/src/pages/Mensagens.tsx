@@ -105,6 +105,15 @@ function statusLabel(status: string) {
   return "Aberta";
 }
 
+function formatarDataRelacao(data: string | Date | null | undefined) {
+  if (!data) return "—";
+  const valor = typeof data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data)
+    ? new Date(`${data}T12:00:00`)
+    : new Date(data);
+  if (Number.isNaN(valor.getTime())) return "—";
+  return valor.toLocaleDateString("pt-BR");
+}
+
 function parseMetadados(metadados: string | null): InboxAttachmentMetadata {
   if (!metadados) return {};
   try {
@@ -974,6 +983,22 @@ export default function Mensagens() {
                   )}
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
+                  {conversaSelecionada && (
+                    <Button
+                      size="sm"
+                      variant={conversaSelecionada.status === "encerrada" ? "outline" : "secondary"}
+                      className="h-7 px-2 gap-1 text-[10px]"
+                      title={`Status: ${statusLabel(conversaSelecionada.status)}. Clique para ${conversaSelecionada.status === "encerrada" ? "reabrir" : "concluir"}.`}
+                      onClick={() => alterarStatusMutation.mutate({
+                        id: conversaSelecionadaId,
+                        status: conversaSelecionada.status === "encerrada" ? "aberta" : "encerrada",
+                      })}
+                      disabled={alterarStatusMutation.isPending}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass(conversaSelecionada.status)}`} />
+                      {statusLabel(conversaSelecionada.status)}
+                    </Button>
+                  )}
                   <Button
                     variant={buscaMensagemAtiva ? "secondary" : "ghost"}
                     size="icon"
@@ -1492,6 +1517,60 @@ export default function Mensagens() {
                   </div>
                 )}
 
+                {conversaSelecionada?.resumoRelacionamento?.plano && (
+                  <div className={`rounded-lg border p-2.5 space-y-1.5 ${
+                    conversaSelecionada.resumoRelacionamento.plano.status === "ativo"
+                      ? "border-[#8d6a2b]/35 bg-[#fffdf7]"
+                      : "border-muted bg-muted/20"
+                  }`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Plano</p>
+                      <Badge variant="outline" className={`h-5 text-[9px] ${
+                        conversaSelecionada.resumoRelacionamento.plano.status === "ativo"
+                          ? "border-emerald-300 text-emerald-700 bg-emerald-50"
+                          : conversaSelecionada.resumoRelacionamento.plano.status === "expirado"
+                            ? "border-amber-300 text-amber-700 bg-amber-50"
+                            : "border-muted-foreground/30 text-muted-foreground"
+                      }`}>
+                        {conversaSelecionada.resumoRelacionamento.plano.status === "ativo"
+                          ? "Ativo"
+                          : conversaSelecionada.resumoRelacionamento.plano.status === "expirado"
+                            ? "Expirado"
+                            : "Finalizado"}
+                      </Badge>
+                    </div>
+                    {conversaSelecionada.resumoRelacionamento.plano.status === "ativo" ? (
+                      <p className="text-xs font-medium">
+                        {conversaSelecionada.resumoRelacionamento.plano.sessoesDisponiveis} sessão(ões) disponível(is)
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground">
+                        {conversaSelecionada.resumoRelacionamento.plano.status === "expirado" ? "Validade encerrada" : "Sessões concluídas"}
+                      </p>
+                    )}
+                    {conversaSelecionada.resumoRelacionamento.plano.validade && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Validade: {formatarDataRelacao(conversaSelecionada.resumoRelacionamento.plano.validade)}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {conversaSelecionada?.resumoRelacionamento?.ultimoAtendimento && (
+                  <div className="rounded-lg border border-muted bg-background p-2.5 space-y-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Último atendimento</p>
+                    <p className="text-xs font-medium">
+                      {formatarDataRelacao(conversaSelecionada.resumoRelacionamento.ultimoAtendimento.dataAtendimento)}
+                      {conversaSelecionada.resumoRelacionamento.ultimoAtendimento.servicoNome ? ` · ${conversaSelecionada.resumoRelacionamento.ultimoAtendimento.servicoNome}` : ""}
+                    </p>
+                    {conversaSelecionada.resumoRelacionamento.ultimoAtendimento.profissionalNome && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Terapeuta: {conversaSelecionada.resumoRelacionamento.ultimoAtendimento.profissionalNome}
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {conversaSelecionada && !conversaSelecionada.clienteId && conversaSelecionada.isGrupo !== "true" && (conversaSelecionada.candidatosCliente?.length ?? 0) > 0 && (
                   <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-2">
                     <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-500">
@@ -1555,33 +1634,6 @@ export default function Mensagens() {
                   </div>
                 )}
 
-                <Separator />
-
-                <div className="space-y-2">
-                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Status</p>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${statusDotClass(conversaSelecionada?.status || "")}`} />
-                      <span className="text-xs">{statusLabel(conversaSelecionada?.status || "")}</span>
-                    </div>
-                    {conversaSelecionada && (
-                      <Button
-                        size="sm"
-                        variant={conversaSelecionada.status === "encerrada" ? "outline" : "default"}
-                        className="h-6 text-[10px] px-2 gap-1"
-                        onClick={() => alterarStatusMutation.mutate({
-                          id: conversaSelecionadaId,
-                          status: conversaSelecionada.status === "encerrada" ? "aberta" : "encerrada",
-                        })}
-                        disabled={alterarStatusMutation.isPending}
-                      >
-                        <CheckCircle2 size={10} />
-                        {conversaSelecionada.status === "encerrada" ? "Reabrir" : "Concluir"}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
                 <div className="space-y-2 rounded-lg border border-dashed border-[#8d6a2b]/35 bg-[#fffdf7] p-2.5 dark:bg-amber-950/10">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Automação</p>
@@ -1630,22 +1682,6 @@ export default function Mensagens() {
                     <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={adicionarEtiqueta} disabled={!novaEtiqueta.trim()}>
                       +
                     </Button>
-                  </div>
-                </div>
-
-                <Separator />
-
-                <div className="rounded-lg border border-primary/20 bg-primary/5 overflow-hidden">
-                  <div className="flex items-center gap-1.5 px-3 py-2">
-                    <Sparkles size={11} className="text-primary" />
-                    <span className="text-[10px] font-semibold text-primary">Análise IA</span>
-                  </div>
-                  <div className="px-3 pb-2.5">
-                    {conversaSelecionada?.resumoConversa ? (
-                      <p className="text-[11px] text-muted-foreground whitespace-pre-wrap">{conversaSelecionada.resumoConversa}</p>
-                    ) : (
-                      <p className="text-[10px] text-muted-foreground/60 italic">Sem análise ainda — recurso em breve.</p>
-                    )}
                   </div>
                 </div>
 

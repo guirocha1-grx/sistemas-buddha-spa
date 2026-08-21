@@ -539,6 +539,76 @@ export async function listInboxConversas(filtros: { unidadeId?: number; canal?: 
   return rows;
 }
 
+export type StatusPlanoRelacionamento = "ativo" | "expirado" | "finalizado";
+
+export interface PlanoRelacionamentoEntrada {
+  validade: string | null;
+  importadoEm: Date | string | null;
+  servicos: Array<{ restantes: number }>;
+}
+
+/**
+ * Resume somente o necessário para a recepção: não transforma o painel em
+ * prontuário e torna explícita a diferença entre plano ativo, expirado e
+ * finalizado. A validade é ISO (YYYY-MM-DD), logo pode ser comparada como
+ * texto sem ambiguidade de timezone.
+ */
+export function classificarPlanosRelacionamento(
+  planos: PlanoRelacionamentoEntrada[],
+  hojeBrt: string,
+) {
+  if (planos.length === 0) return null;
+
+  const planosComSaldo = planos.map((plano) => ({
+    ...plano,
+    sessoesRestantes: plano.servicos.reduce((total, servico) => total + Math.max(0, servico.restantes ?? 0), 0),
+  }));
+  const planosVigentes = planosComSaldo.filter((plano) => !plano.validade || plano.validade >= hojeBrt);
+  const planosAtivos = planosVigentes.filter((plano) => plano.sessoesRestantes > 0);
+  const status: StatusPlanoRelacionamento = planosAtivos.length > 0
+    ? "ativo"
+    : planosVigentes.length > 0
+      ? "finalizado"
+      : "expirado";
+  const referencia = status === "ativo" ? planosAtivos : status === "finalizado" ? planosVigentes : planosComSaldo;
+  const validade = referencia.map((plano) => plano.validade).filter((data): data is string => Boolean(data)).sort().pop() ?? null;
+  const atualizadoEm = planos.map((plano) => plano.importadoEm).filter((data): data is Date | string => Boolean(data))
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
+
+  return {
+    status,
+    sessoesDisponiveis: status === "ativo" ? planosAtivos.reduce((total, plano) => total + plano.sessoesRestantes, 0) : 0,
+    validade,
+    atualizadoEm,
+  };
+}
+
+async function obterResumoRelacionamentoInbox(unidadeId: number, clienteId: number) {
+  const db = await getDb();
+  if (!db) return { plano: null, ultimoAtendimento: null };
+  const [planos, ultimoAtendimento] = await Promise.all([
+    listarPlanosBellePorCliente(unidadeId, clienteId),
+    db.select({
+      dataAtendimento: belleAtendimentos.dataAtendimento,
+      horario: belleAtendimentos.horario,
+      servicoNome: belleAtendimentos.servicoNome,
+      profissionalNome: belleAtendimentos.profissionalNome,
+    }).from(belleAtendimentos)
+      .where(and(
+        eq(belleAtendimentos.unidadeId, unidadeId),
+        eq(belleAtendimentos.clienteId, clienteId),
+        eq(belleAtendimentos.status, "Atendido"),
+      ))
+      .orderBy(desc(belleAtendimentos.dataAtendimento), desc(belleAtendimentos.horario))
+      .limit(1),
+  ]);
+  const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return {
+    plano: classificarPlanosRelacionamento(planos, hojeBrt),
+    ultimoAtendimento: ultimoAtendimento[0] ?? null,
+  };
+}
+
 /**
  * Conversas presas em @lid (isLidPendente="true") — nunca chegou uma
  * mensagem, em nenhuma direção, que revelasse o telefone real pro
@@ -600,12 +670,16 @@ export async function getInboxConversaById(id: number) {
         ultimoAtendimento: clientes.ultimoAtendimento,
       }).from(clientes).where(eq(clientes.id, conversa.clienteId)).limit(1)
     : [];
+  const resumoRelacionamento = conversa.clienteId && typeof conversa.unidadeId === "number"
+    ? await obterResumoRelacionamentoInbox(conversa.unidadeId, conversa.clienteId)
+    : { plano: null, ultimoAtendimento: null };
   return {
     ...conversa,
     automacaoAgentesEfetiva: obterModoEfetivoAutomacaoAgentes(conversa),
     clienteNome: clienteRows[0]?.nome,
     clienteQtdServicos: clienteRows[0]?.qtdServicosFinalizados,
     clienteUltimoAtendimento: clienteRows[0]?.ultimoAtendimento,
+    resumoRelacionamento,
     candidatosCliente,
   };
 }
