@@ -88,6 +88,63 @@ export async function consultarPagamentos(
   return mpRequest<MpPaymentsSearchResponse>(`/v1/payments/search?${params.toString()}`, accessToken);
 }
 
+export interface ColetaPagamentosMp {
+  pagamentos: MpPagamento[];
+  totalNaApi: number;
+  paginasConsultadas: number;
+  varreduras: number;
+}
+
+/**
+ * O endpoint de pagamentos pode devolver um conjunto incompleto logo após
+ * movimentações recentes da conta (inclusive `paging.total` menor que o
+ * conjunto que passa a aparecer segundos depois). Uma única ação do usuário
+ * faz até quatro varreduras curtas, une por ID e só então entrega as vendas.
+ * Cada varredura ainda pagina normalmente quando há mais de uma página.
+ */
+export async function coletarPagamentosEstaveis(
+  carregarPagina: (offset: number, limit: number) => Promise<MpPaymentsSearchResponse>,
+  options: { limit?: number; varreduras?: number; esperaEntreVarredurasMs?: number } = {},
+): Promise<ColetaPagamentosMp> {
+  const limit = options.limit ?? 50;
+  const varreduras = options.varreduras ?? 4;
+  const esperaEntreVarredurasMs = options.esperaEntreVarredurasMs ?? 650;
+  const porId = new Map<number, MpPagamento>();
+  let totalNaApi = 0;
+  let paginasConsultadas = 0;
+
+  for (let tentativa = 0; tentativa < varreduras; tentativa++) {
+    let offset = 0;
+    while (true) {
+      const pagina = await carregarPagina(offset, limit);
+      paginasConsultadas++;
+      totalNaApi = Math.max(totalNaApi, Number(pagina.paging.total) || 0);
+      for (const pagamento of pagina.results) porId.set(pagamento.id, pagamento);
+
+      // Página curta encerra a varredura atual. A próxima varredura volta ao
+      // offset zero para capturar pagamentos que a API ainda estava indexando.
+      if (pagina.results.length < limit) break;
+      offset += limit;
+      if (offset >= totalNaApi) break;
+    }
+    if (tentativa < varreduras - 1 && esperaEntreVarredurasMs > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, esperaEntreVarredurasMs));
+    }
+  }
+
+  return { pagamentos: Array.from(porId.values()), totalNaApi, paginasConsultadas, varreduras };
+}
+
+export async function consultarTodosPagamentos(
+  accessToken: string,
+  dataInicio: string,
+  dataFim: string,
+): Promise<ColetaPagamentosMp> {
+  return coletarPagamentosEstaveis(
+    (offset, limit) => consultarPagamentos(accessToken, dataInicio, dataFim, offset, limit),
+  );
+}
+
 /**
  * Compra do próprio equipamento Point não é venda da unidade. A API usa
  * transaction_amount como preço de tabela (R$ 840,80), enquanto

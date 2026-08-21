@@ -377,3 +377,4 @@
 - [x] Criar vínculo permanente de plano por ID Belle, sempre isolado por unidade e com fallback seguro por nome
 - [x] Criar a tela Manutenção de dados para importações semanais por unidade e revisão de correspondências ambíguas
 - [x] Corrigir a referência indefinida ehCompraEquipamentoPoint no sincronizador de vendas aprovadas do Mercado Pago
+- [x] Corrigir a paginação do Mercado Pago para sincronizar todo o intervalo em uma única execução

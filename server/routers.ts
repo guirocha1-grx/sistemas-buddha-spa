@@ -24,7 +24,7 @@ import { parseAtendimentosBelleXlsx } from "./atendimentosBelleXlsxParser";
 import { parsePlanosBelleXls, parseVinculosPlanosBelleXlsx } from "./planosBelleXlsParser";
 import { parseComandaVirtualXlsx } from "./comandaVirtualXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
-import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp, ehCompraEquipamentoPoint } from "./mercadoPagoApi";
+import { consultarTodosPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp, ehCompraEquipamentoPoint } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet } from "./googleSheets";
 import { transcribeAudio } from "./_core/voiceTranscription";
@@ -3316,16 +3316,14 @@ Diretrizes:
       let totalInseridos = 0;
       let totalEquipamentos = 0;
       let totalNaApi = 0;
-      let offset = 0;
-      const limit = 50;
       let amostraBruta: string | null = null;
 
       try {
         const contaMercadoPago = await db.getOrCreateContaMercadoPago(input.unidadeId);
-        while (true) {
-          const pagina = await consultarPagamentos(unidade.mpAccessToken, input.dataInicio, input.dataFim, offset, limit);
-          totalNaApi = pagina.paging.total;
-          if (offset === 0 && pagina.results.length > 0) {
+        const coleta = await consultarTodosPagamentos(unidade.mpAccessToken, input.dataInicio, input.dataFim);
+        totalNaApi = coleta.totalNaApi;
+        const pagamentos = coleta.pagamentos;
+        if (pagamentos.length > 0) {
             // Amostra focada em TODAS as vendas da 1ª página (não só a
             // primeira) — o objeto de pagamento completo tem tanta coisa
             // (payer, additional_info, order...) que fee_details ficaria
@@ -3333,7 +3331,7 @@ Diretrizes:
             // porque o fee_details muda conforme parcelas/tipo — já vi
             // 1 caso onde bruto - taxa não bate com net_received_amount,
             // então tem algo em outra transação que ainda não vi.
-            amostraBruta = JSON.stringify(pagina.results.map((p) => ({
+            amostraBruta = JSON.stringify(pagamentos.slice(0, 50).map((p) => ({
               id: p.id,
               installments: p.installments,
               transaction_amount: p.transaction_amount,
@@ -3344,7 +3342,7 @@ Diretrizes:
             }))).slice(0, 4000);
           }
 
-          const comprasPoint = pagina.results.filter(ehCompraEquipamentoPoint);
+        const comprasPoint = pagamentos.filter(ehCompraEquipamentoPoint);
           for (const compra of comprasPoint) {
             if (!contaMercadoPago) continue;
             const valorPago = Number(compra.transaction_details?.total_paid_amount ?? 0);
@@ -3364,7 +3362,7 @@ Diretrizes:
             if (criada) totalEquipamentos++;
           }
 
-          const linhas = pagina.results.filter((p) => !ehCompraEquipamentoPoint(p)).map((p) => {
+        const linhas = pagamentos.filter((p) => !ehCompraEquipamentoPoint(p)).map((p) => {
             const { bruto, taxa, antecipacao, liquido } = extrairValoresMp(p);
             return {
               unidadeId: input.unidadeId,
@@ -3383,17 +3381,14 @@ Diretrizes:
             };
           });
 
-          totalInseridos += await db.upsertAdquirenteVendas(input.unidadeId, linhas);
-          offset += limit;
-          if (offset >= totalNaApi) break;
-        }
+        totalInseridos += await db.upsertAdquirenteVendas(input.unidadeId, linhas);
 
         await db.createSyncLog({
           unidadeId: input.unidadeId,
           tipo: "mercadopago_vendas",
           status: "sucesso",
           registrosProcessados: totalInseridos,
-          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Total API: ${totalNaApi}. Novos: ${totalInseridos}. Compras Point registradas como despesa: ${totalEquipamentos}.${amostraBruta ? ` Amostra bruta: ${amostraBruta}` : ""}`,
+          detalhes: `Período: ${input.dataInicio} a ${input.dataFim}. Total API: ${totalNaApi}. Vendas únicas coletadas: ${pagamentos.length}. Varreduras: ${coleta.varreduras}; páginas: ${coleta.paginasConsultadas}. Novos: ${totalInseridos}. Compras Point registradas como despesa: ${totalEquipamentos}.${amostraBruta ? ` Amostra bruta: ${amostraBruta}` : ""}`,
         });
 
         return { success: true, totalInseridos, totalNaApi };
