@@ -376,3 +376,4 @@
 - [x] Avaliar se o Copilot atual mantém função distinta do Inbox assistido antes de propor remoção
 - [x] Criar vínculo permanente de plano por ID Belle, sempre isolado por unidade e com fallback seguro por nome
 - [x] Criar a tela Manutenção de dados para importações semanais por unidade e revisão de correspondências ambíguas
+- [x] Corrigir a referência indefinida ehCompraEquipamentoPoint no sincronizador de vendas aprovadas do Mercado Pago
