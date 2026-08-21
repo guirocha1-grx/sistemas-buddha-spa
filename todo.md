@@ -392,3 +392,4 @@
 - [x] Reduzir a pressão do processamento incremental e repetir automaticamente chamadas 503 transitórias
 - [x] Exibir barra de evolução da importação de atendimentos com percentual e quantidade processada
 - [x] Fechar o modal de confirmação logo após iniciar a importação para expor a barra de progresso
+- [x] Propor a apresentação de planos e último atendimento no painel direito do Inbox, com status realocado e aviso provisório removido
