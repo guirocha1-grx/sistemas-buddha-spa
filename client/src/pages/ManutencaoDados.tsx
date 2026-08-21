@@ -178,6 +178,7 @@ export default function ManutencaoDados() {
   async function confirmarImportacao() {
     if (!importacaoPendente || !unidadeId || !unidadeSlug) return;
     const { tipo, arquivo } = importacaoPendente;
+    setImportacaoPendente(null);
     try {
       if (tipo === "atendimentos") {
         setUploadAtendimentosEmCurso(true);
@@ -218,7 +219,6 @@ export default function ManutencaoDados() {
         if (tipo === "planos") await importarPlanos.mutateAsync({ unidadeId, xlsxBase64 });
         if (tipo === "vinculos") await importarVinculos.mutateAsync({ unidadeId, xlsxBase64 });
       }
-      setImportacaoPendente(null);
     } catch (error: any) {
       const mensagem = error?.message ?? "Não foi possível ler o arquivo selecionado.";
       toast.error(mensagem);

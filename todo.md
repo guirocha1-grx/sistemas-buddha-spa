@@ -391,3 +391,4 @@
 - [x] Processar relatórios grandes de atendimentos em blocos curtos pela tela para eliminar timeout 524
 - [x] Reduzir a pressão do processamento incremental e repetir automaticamente chamadas 503 transitórias
 - [x] Exibir barra de evolução da importação de atendimentos com percentual e quantidade processada
+- [x] Fechar o modal de confirmação logo após iniciar a importação para expor a barra de progresso
