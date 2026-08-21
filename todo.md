@@ -385,3 +385,4 @@
 - [x] Atualizar o caminho confirmado de exportação de Planos & Sessões na Manutenção de dados
 - [x] Exibir o período importado nos cartões de Planos, Elo cliente–plano e Atendimentos, separado por unidade
 - [x] Corrigir o retorno HTML inválido ao importar atendimentos pela Manutenção de dados
+- [x] Implementar upload robusto de relatórios grandes de atendimentos sem transporte JSON em lote

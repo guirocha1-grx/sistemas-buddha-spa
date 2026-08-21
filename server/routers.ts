@@ -12,7 +12,7 @@ import { buddhaMktApi } from "./buddhaMktApi";
 import { metaTemplatesApi } from "./metaTemplatesApi";
 import { validarCorpo, validarCabecalho, extrairVariaveis } from "@shared/templateVariaveis";
 import { telefoneCanonico } from "@shared/telefone";
-import { storagePut, storageGetSignedUrl, normalizeStorageKey } from "./storage";
+import { storagePut, storageGetSignedUrl, storageCreateUploadUrl, normalizeStorageKey } from "./storage";
 import { invokeLLM } from "./_core/llm";
 import { interApi, getInterAccessToken, isTokenValid, dataEntradaDe, extrairContraparte, type InterTransacaoCompleta } from "./interApi";
 import { sicrediApi, getSicrediAccessToken, isSicrediTokenValid } from "./sicrediApi";
@@ -380,6 +380,37 @@ export const appRouter = router({
       if (linhas.length === 0) throw new Error("Nenhum atendimento válido foi encontrado no relatório.");
       const resultado = await db.upsertAtendimentosBelleImportados(input.unidadeId, linhas);
       await db.createSyncLog({ unidadeId: input.unidadeId, tipo: "importacao_atendimentos", status: "sucesso", registrosProcessados: linhas.length, detalhes: "Relatório de Atendimentos importado pela Manutenção de dados." });
+      return { success: true, totalLinhas: linhas.length, ...resultado };
+    }),
+
+    /** Reserva um upload direto ao storage para relatórios que excedem o limite do proxy HTTP. */
+    prepararUploadAtendimentos: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      nomeArquivo: z.string().min(1).max(180),
+    })).mutation(async ({ input, ctx }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade || unidade.canal !== "zapi") throw new Error("Selecione uma unidade física para importar atendimentos.");
+      const nomeLimpo = normalizeStorageKey(input.nomeArquivo);
+      return storageCreateUploadUrl(`importacoes/atendimentos/${ctx.user.id}/unidade-${input.unidadeId}/${Date.now()}-${nomeLimpo}`);
+    }),
+
+    /** Processa o relatório após o navegador transferi-lo diretamente ao storage. */
+    importarAtendimentosStorage: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      storageKey: z.string().min(1),
+    })).mutation(async ({ input, ctx }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade || unidade.canal !== "zapi") throw new Error("Selecione uma unidade física para importar atendimentos.");
+      const prefixoPermitido = `importacoes/atendimentos/${ctx.user.id}/unidade-${input.unidadeId}/`;
+      if (!input.storageKey.startsWith(prefixoPermitido)) throw new Error("Arquivo de atendimentos inválido para a unidade selecionada.");
+      const signedUrl = await storageGetSignedUrl(input.storageKey);
+      const arquivo = await fetch(signedUrl);
+      if (!arquivo.ok) throw new Error(`Não foi possível recuperar o relatório enviado (${arquivo.status}).`);
+      const buffer = Buffer.from(await arquivo.arrayBuffer());
+      const linhas = parseAtendimentosBelleXlsx(buffer);
+      if (linhas.length === 0) throw new Error("Nenhum atendimento válido foi encontrado no relatório.");
+      const resultado = await db.upsertAtendimentosBelleImportados(input.unidadeId, linhas);
+      await db.createSyncLog({ unidadeId: input.unidadeId, tipo: "importacao_atendimentos", status: "sucesso", registrosProcessados: linhas.length, detalhes: `Relatório de Atendimentos importado via storage (${input.storageKey}).` });
       return { success: true, totalLinhas: linhas.length, ...resultado };
     }),
 

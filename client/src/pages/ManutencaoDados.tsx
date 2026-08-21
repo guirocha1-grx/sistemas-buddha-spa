@@ -114,6 +114,15 @@ export default function ManutencaoDados() {
     },
     onError: (error) => toast.error(`Falha ao importar atendimentos: ${error.message}`),
   });
+  const prepararUploadAtendimentos = trpc.clientes.prepararUploadAtendimentos.useMutation();
+  const importarAtendimentosStorage = trpc.clientes.importarAtendimentosStorage.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Atendimentos processados: ${data.inseridos + data.atualizados}; ${data.vinculadosComSeguranca} vínculo(s) seguro(s).`);
+      utils.clientes.historicoAtendimentosBelle.invalidate();
+      utils.clientes.statusImportacoesDados.invalidate();
+    },
+    onError: (error) => toast.error(`Falha ao importar atendimentos: ${error.message}`),
+  });
   const vincularManual = trpc.clientes.vincularPlanoManualmente.useMutation({
     onSuccess: () => {
       toast.success("Plano vinculado ao cliente da unidade selecionada.");
@@ -127,7 +136,7 @@ export default function ManutencaoDados() {
     clientes: importarClientes.isPending,
     planos: importarPlanos.isPending,
     vinculos: importarVinculos.isPending,
-    atendimentos: importarAtendimentos.isPending,
+    atendimentos: importarAtendimentos.isPending || prepararUploadAtendimentos.isPending || importarAtendimentosStorage.isPending,
   };
   const carregando = Object.values(carregandoPorTipo).some(Boolean);
   const resumoPendente = useMemo(() => ({
@@ -146,11 +155,21 @@ export default function ManutencaoDados() {
     if (!importacaoPendente || !unidadeId || !unidadeSlug) return;
     const { tipo, arquivo } = importacaoPendente;
     try {
-      const xlsxBase64 = await fileParaBase64(arquivo);
-      if (tipo === "clientes") await importarClientes.mutateAsync({ unidade: unidadeSlug, xlsxBase64 });
-      if (tipo === "planos") await importarPlanos.mutateAsync({ unidadeId, xlsxBase64 });
-      if (tipo === "vinculos") await importarVinculos.mutateAsync({ unidadeId, xlsxBase64 });
-      if (tipo === "atendimentos") await importarAtendimentos.mutateAsync({ unidadeId, xlsxBase64 });
+      if (tipo === "atendimentos") {
+        const { storageKey, uploadUrl } = await prepararUploadAtendimentos.mutateAsync({ unidadeId, nomeArquivo: arquivo.name });
+        const upload = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": arquivo.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+          body: arquivo,
+        });
+        if (!upload.ok) throw new Error(`Não foi possível transferir o relatório grande (${upload.status}).`);
+        await importarAtendimentosStorage.mutateAsync({ unidadeId, storageKey });
+      } else {
+        const xlsxBase64 = await fileParaBase64(arquivo);
+        if (tipo === "clientes") await importarClientes.mutateAsync({ unidade: unidadeSlug, xlsxBase64 });
+        if (tipo === "planos") await importarPlanos.mutateAsync({ unidadeId, xlsxBase64 });
+        if (tipo === "vinculos") await importarVinculos.mutateAsync({ unidadeId, xlsxBase64 });
+      }
       setImportacaoPendente(null);
     } catch (error: any) {
       const mensagem = error?.message ?? "Não foi possível ler o arquivo selecionado.";
