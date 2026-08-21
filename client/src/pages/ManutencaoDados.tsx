@@ -30,21 +30,33 @@ function blobParaBase64(blob: Blob): Promise<string> {
 }
 
 async function requisicaoAtendimentos<T>(caminho: "parte" | "processar" | "processar-lote" | "concluir", dados: Record<string, unknown>): Promise<T> {
-  const resposta = await fetch(`/api/importacoes/atendimentos/${caminho}`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(dados),
-  });
-  const bruto = await resposta.text();
-  let corpo: { success?: boolean; error?: string } & T;
-  try {
-    corpo = JSON.parse(bruto) as { success?: boolean; error?: string } & T;
-  } catch {
-    throw new Error(`A rota de atendimentos respondeu ${resposta.status} em formato inválido: ${bruto.slice(0, 120)}`);
+  for (let tentativa = 0; tentativa < 4; tentativa++) {
+    try {
+      const resposta = await fetch(`/api/importacoes/atendimentos/${caminho}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dados),
+      });
+      const bruto = await resposta.text();
+      if ([502, 503, 504].includes(resposta.status) && tentativa < 3) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1_000 * (tentativa + 1)));
+        continue;
+      }
+      let corpo: { success?: boolean; error?: string } & T;
+      try {
+        corpo = JSON.parse(bruto) as { success?: boolean; error?: string } & T;
+      } catch {
+        throw new Error(`A rota de atendimentos respondeu ${resposta.status} em formato inválido: ${bruto.slice(0, 120)}`);
+      }
+      if (!resposta.ok || !corpo.success) throw new Error(corpo.error ?? `Falha HTTP ${resposta.status} ao importar atendimentos.`);
+      return corpo;
+    } catch (error) {
+      if (tentativa === 3) throw error;
+      await new Promise((resolve) => window.setTimeout(resolve, 1_000 * (tentativa + 1)));
+    }
   }
-  if (!resposta.ok || !corpo.success) throw new Error(corpo.error ?? `Falha HTTP ${resposta.status} ao importar atendimentos.`);
-  return corpo;
+  throw new Error("Não foi possível completar a requisição de atendimentos.");
 }
 
 type ArquivoTipo = "clientes" | "planos" | "vinculos" | "atendimentos";
@@ -179,7 +191,7 @@ export default function ManutencaoDados() {
           const parte = await requisicaoAtendimentos<{ storageKey: string }>("parte", { unidadeId, uploadId, indice, totalPartes, conteudoBase64 });
           storageKeys.push(parte.storageKey);
         }
-        const tamanhoLote = 250;
+        const tamanhoLote = 750;
         let lote = 0;
         let inseridos = 0;
         let atualizados = 0;
@@ -194,6 +206,7 @@ export default function ManutencaoDados() {
           setProgressoAtendimentos({ atual: resultado.fim, total: resultado.totalLinhas });
           if (!resultado.possuiProximo) break;
           lote += 1;
+          await new Promise((resolve) => window.setTimeout(resolve, 150));
         }
         await requisicaoAtendimentos("concluir", { unidadeId, uploadId, storageKeys, totalLinhas, inseridos, atualizados });
         toast.success(`Atendimentos processados: ${inseridos + atualizados}; ${vinculadosComSeguranca} vínculo(s) seguro(s).`);
@@ -247,7 +260,8 @@ export default function ManutencaoDados() {
                   <CardDescription>{arquivo.descricao}</CardDescription>
                   <div className="space-y-1 pt-1 text-xs leading-5 text-muted-foreground">
                     <p>{textoUltimaSincronizacao(statusImportacoesQuery.data?.[arquivo.tipo]?.createdAt)}</p>
-                    {arquivo.tipo === "atendimentos" && progressoAtendimentos && <p className="font-medium text-primary">Processando: {progressoAtendimentos.atual.toLocaleString("pt-BR")} de {progressoAtendimentos.total.toLocaleString("pt-BR")} atendimentos</p>}
+                    {arquivo.tipo === "atendimentos" && progressoAtendimentos && <p className="font-medium text-primary">Processando: {progressoAtendimentos.atual.toLocaleString("pt-BR")} de {progressoAtendimentos.total.toLocaleString("pt-BR")} atendimentos ({Math.min(100, Math.round((progressoAtendimentos.atual / progressoAtendimentos.total) * 100))}%)</p>}
+                    {arquivo.tipo === "atendimentos" && progressoAtendimentos && <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${Math.min(100, Math.round((progressoAtendimentos.atual / progressoAtendimentos.total) * 100))}%` }} /></div>}
                     <p className={statusImportacoesQuery.data?.[arquivo.tipo]?.status === "erro" ? "text-destructive" : "text-emerald-700"}>{textoResultadoImportacao(statusImportacoesQuery.data?.[arquivo.tipo])}</p>
                     {arquivo.tipo !== "clientes" && <p>{textoPeriodoImportado(statusImportacoesQuery.data?.[arquivo.tipo]?.periodo)}</p>}
                     <p>Caminho: <span className="text-foreground/80">{arquivo.caminho}</span></p>

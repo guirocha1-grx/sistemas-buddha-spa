@@ -389,3 +389,5 @@
 - [x] Substituir o upload direto bloqueado por CORS por transferência autenticada de relatórios grandes
 - [x] Substituir as chamadas tRPC de atendimentos por rota HTTP autenticada com diagnóstico de resposta
 - [x] Processar relatórios grandes de atendimentos em blocos curtos pela tela para eliminar timeout 524
+- [x] Reduzir a pressão do processamento incremental e repetir automaticamente chamadas 503 transitórias
+- [x] Exibir barra de evolução da importação de atendimentos com percentual e quantidade processada

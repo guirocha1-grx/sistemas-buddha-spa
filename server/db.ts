@@ -3543,6 +3543,7 @@ export async function upsertAtendimentosBelleImportados(
   let semVinculo = 0;
   let ambiguos = 0;
 
+  const valoresParaGravar: InsertBelleAtendimento[] = [];
   for (const linha of registros) {
     const canonico = telefoneCanonico(linha.telefone);
     const candidatos = canonico ? candidatosPorTelefone.get(canonico) : undefined;
@@ -3570,27 +3571,31 @@ export async function upsertAtendimentosBelleImportados(
       status: linha.status,
       importadoEm: new Date(),
     };
-    await db.insert(belleAtendimentos).values(valores).onDuplicateKeyUpdate({
-      set: {
-        clienteId: valores.clienteId,
-        clienteNome: valores.clienteNome,
-        telefone: valores.telefone,
-        dataAtendimento: valores.dataAtendimento,
-        horario: valores.horario,
-        servicoCodigo: valores.servicoCodigo,
-        servicoNome: valores.servicoNome,
-        duracaoMinutos: valores.duracaoMinutos,
-        profissionalNome: valores.profissionalNome,
-        temPreferencia: valores.temPreferencia,
-        planoBelleId: valores.planoBelleId,
-        areaAplicacao: valores.areaAplicacao,
-        tipo: valores.tipo,
-        status: valores.status,
-        importadoEm: valores.importadoEm,
-      },
-    });
+    valoresParaGravar.push(valores);
     if (existentesIds.has(linha.atendimentoBelleId)) atualizados++;
     else inseridos++;
+  }
+
+  for (let inicio = 0; inicio < valoresParaGravar.length; inicio += 250) {
+    await db.insert(belleAtendimentos).values(valoresParaGravar.slice(inicio, inicio + 250)).onDuplicateKeyUpdate({
+      set: {
+        clienteId: sql`VALUES(clienteId)`,
+        clienteNome: sql`VALUES(clienteNome)`,
+        telefone: sql`VALUES(telefone)`,
+        dataAtendimento: sql`VALUES(dataAtendimento)`,
+        horario: sql`VALUES(horario)`,
+        servicoCodigo: sql`VALUES(servicoCodigo)`,
+        servicoNome: sql`VALUES(servicoNome)`,
+        duracaoMinutos: sql`VALUES(duracaoMinutos)`,
+        profissionalNome: sql`VALUES(profissionalNome)`,
+        temPreferencia: sql`VALUES(temPreferencia)`,
+        planoBelleId: sql`VALUES(planoBelleId)`,
+        areaAplicacao: sql`VALUES(areaAplicacao)`,
+        tipo: sql`VALUES(tipo)`,
+        status: sql`VALUES(status)`,
+        importadoEm: sql`VALUES(importadoEm)`,
+      },
+    });
   }
 
   return { inseridos, atualizados, vinculadosComSeguranca, semVinculo, ambiguos };

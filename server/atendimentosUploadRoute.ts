@@ -110,7 +110,7 @@ export function registerAtendimentosUploadRoute(app: Express) {
       const acesso = await autorizar(req, res);
       if ("erro" in acesso) return erro(res, 401, acesso.erro);
       const input = req.body as ProcessarLotePayload;
-      if (!numeroInteiro(input.lote, 0, 500) || !numeroInteiro(input.tamanhoLote, 50, 500)) return erro(res, 400, "Lote de processamento inválido.");
+      if (!numeroInteiro(input.lote, 0, 500) || !numeroInteiro(input.tamanhoLote, 50, 1_000)) return erro(res, 400, "Lote de processamento inválido.");
       const { linhas, unidadeId } = await carregarLinhasImportacao(input, acesso.user.id);
       const inicio = input.lote * input.tamanhoLote;
       if (inicio >= linhas.length) return erro(res, 400, "O lote solicitado está fora do relatório.");
