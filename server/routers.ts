@@ -21,7 +21,7 @@ import { parseFaturaInterPdf } from "./interFaturaPdfParser";
 import { parseFaturaSicrediPdf } from "./sicrediFaturaPdfParser";
 import { parseClientesXlsx } from "./clientesXlsxParser";
 import { parseAtendimentosBelleXlsx } from "./atendimentosBelleXlsxParser";
-import { parsePlanosBelleXls } from "./planosBelleXlsParser";
+import { parsePlanosBelleXls, parseVinculosPlanosBelleXlsx } from "./planosBelleXlsParser";
 import { parseComandaVirtualXlsx } from "./comandaVirtualXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp } from "./mercadoPagoApi";
@@ -371,6 +371,31 @@ export const appRouter = router({
       const relatorio = parsePlanosBelleXls(Buffer.from(input.xlsxBase64, "base64"));
       const resultado = await db.upsertPlanosBelleImportados(input.unidadeId, relatorio);
       return { success: true, totalPlanos: relatorio.planos.length, totalServicos: relatorio.servicos.length, ...resultado };
+    }),
+
+    /** Aplica uma exportação Belle que contém o elo explícito cliente–ID do plano. */
+    importarVinculosPlanosXlsx: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      xlsxBase64: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) throw new Error("Unidade não encontrada.");
+      if (unidade.canal !== "zapi") throw new Error("Selecione uma unidade física para importar vínculos de planos.");
+      const vinculos = parseVinculosPlanosBelleXlsx(Buffer.from(input.xlsxBase64, "base64"));
+      const resultado = await db.aplicarVinculosPlanosBelle(input.unidadeId, vinculos);
+      return { success: true, totalVinculos: vinculos.length, ...resultado };
+    }),
+
+    planosPendentesVinculo: adminProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      return db.listarPlanosBellePendentesVinculo(input.unidadeId);
+    }),
+
+    vincularPlanoManualmente: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      planoBelleId: z.number(),
+      clienteId: z.number(),
+    })).mutation(async ({ input }) => {
+      return db.vincularPlanoBelleManualmente(input.unidadeId, input.planoBelleId, input.clienteId);
     }),
 
     historicoAtendimentosBelle: protectedProcedure.input(z.object({

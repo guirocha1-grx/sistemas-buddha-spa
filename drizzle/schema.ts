@@ -428,6 +428,9 @@ export const bellePlanosClientes = mysqlTable("belle_planos_clientes", {
   unidadeId: int("unidadeId").notNull(),
   planoBelleId: bigint("planoBelleId", { mode: "number" }).notNull(),
   clienteId: int("clienteId"),
+  clienteBelleId: bigint("clienteBelleId", { mode: "number" }),
+  vinculoOrigem: mysqlEnum("vinculoOrigem", ["nome", "id_belle", "manual"]),
+  vinculadoEm: timestamp("vinculadoEm"),
   clienteNome: varchar("clienteNome", { length: 200 }).notNull(),
   pagadorNome: varchar("pagadorNome", { length: 200 }),
   status: varchar("status", { length: 80 }).notNull(),
@@ -446,6 +449,7 @@ export const bellePlanosClientes = mysqlTable("belle_planos_clientes", {
 }, (table) => ({
   unidadePlanoUnico: uniqueIndex("belle_planos_clientes_unidade_externo_idx").on(table.unidadeId, table.planoBelleId),
   unidadeClienteValidadeIdx: index("belle_planos_clientes_unidade_cliente_validade_idx").on(table.unidadeId, table.clienteId, table.validade),
+  unidadeClienteBelleIdx: index("belle_planos_clientes_unidade_cliente_belle_idx").on(table.unidadeId, table.clienteBelleId),
 }));
 
 export type BellePlanoCliente = typeof bellePlanosClientes.$inferSelect;

@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import { describe, expect, it } from "vitest";
-import { parsePlanosBelleXls } from "./planosBelleXlsParser";
+import { parsePlanosBelleXls, parseVinculosPlanosBelleXlsx } from "./planosBelleXlsParser";
 
 function criarRelatorio(rows: unknown[][]): Buffer {
   const workbook = XLSX.utils.book_new();
@@ -56,5 +56,20 @@ describe("parser do relatório de planos Belle", () => {
     expect(resultado.planos).toHaveLength(2);
     expect(resultado.servicos).toHaveLength(2);
     expect(resultado.servicos.map((servico) => servico.planoBelleId)).toEqual([409500001, 409500002]);
+  });
+
+  it("extrai o elo explícito entre ID Belle do cliente e ID do plano", () => {
+    const resultado = parseVinculosPlanosBelleXlsx(criarRelatorio([
+      ["ID Plano", "Nome Plano", "Cliente", "Status"],
+      ["409514640", "Plano Personalizado", "10728064-Larissa risques", "Aprovado"],
+      ["409514640", "Plano Personalizado", "10728064-Larissa risques", "Aprovado"],
+      ["Cliente", "Data de Venda", "Plano", "Status"],
+      ["16929492-Rodrigo Brasão", "01/08/2026", "409464870-Plano Personalizado", "Aprovado"],
+    ]));
+
+    expect(resultado).toEqual([
+      { planoBelleId: 409514640, clienteBelleId: 10728064, clienteNome: "Larissa risques" },
+      { planoBelleId: 409464870, clienteBelleId: 16929492, clienteNome: "Rodrigo Brasão" },
+    ]);
   });
 });

@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, bellePlanosClientes, bellePlanosServicos, lidMapping, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertBellePlanoCliente, type InsertBellePlanoServico, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import type { LinhaAtendimentoBelleImportada } from "./atendimentosBelleXlsxParser";
-import type { RelatorioPlanosBelleImportado } from "./planosBelleXlsParser";
+import type { RelatorioPlanosBelleImportado, VinculoPlanoBelleImportado } from "./planosBelleXlsParser";
 import { normalizarTelefone, variantesTelefone, telefoneCanonico } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
@@ -3605,9 +3605,8 @@ function nomeCanonicoParaVinculo(nome: string | null): string | null {
 }
 
 /**
- * Espelha planos e seus serviços por unidade. Como o relatório de planos não
- * contém telefone nem ID Belle do cliente, só vincula nomes únicos após
- * normalização; qualquer homônimo fica explicitamente sem vínculo.
+ * Espelha planos e seus serviços por unidade. O ID Belle do cliente, quando
+ * disponível, prevalece; nomes únicos são apenas fallback para arquivos legados.
  */
 export async function upsertPlanosBelleImportados(
   unidadeId: number,
@@ -3621,14 +3620,16 @@ export async function upsertPlanosBelleImportados(
   if (!campoUnidade) throw new Error("Unidade física inválida para importação de planos.");
 
   const [clientesDaUnidade, planosExistentes, servicosExistentes] = await Promise.all([
-    db.select({ id: clientes.id, nome: clientes.nome }).from(clientes).where(eq(campoUnidade, true)),
+    db.select({ id: clientes.id, nome: clientes.nome, belleId: clientes.belleId }).from(clientes).where(eq(campoUnidade, true)),
     db.select({ planoBelleId: bellePlanosClientes.planoBelleId }).from(bellePlanosClientes)
       .where(and(eq(bellePlanosClientes.unidadeId, unidadeId), inArray(bellePlanosClientes.planoBelleId, relatorio.planos.map((plano) => plano.planoBelleId)))),
     db.select({ planoBelleId: bellePlanosServicos.planoBelleId, servicoCodigo: bellePlanosServicos.servicoCodigo }).from(bellePlanosServicos)
       .where(and(eq(bellePlanosServicos.unidadeId, unidadeId), inArray(bellePlanosServicos.planoBelleId, relatorio.planos.map((plano) => plano.planoBelleId)))),
   ]);
   const clientesPorNome = new Map<string, Set<number>>();
+  const clientesPorBelleId = new Map<number, number>();
   for (const cliente of clientesDaUnidade) {
+    clientesPorBelleId.set(cliente.belleId, cliente.id);
     const nome = nomeCanonicoParaVinculo(cliente.nome);
     if (!nome) continue;
     const candidatos = clientesPorNome.get(nome) ?? new Set<number>();
@@ -3645,7 +3646,10 @@ export async function upsertPlanosBelleImportados(
 
   for (const plano of relatorio.planos) {
     const candidatos = clientesPorNome.get(nomeCanonicoParaVinculo(plano.clienteNome) ?? "");
-    const clienteId = candidatos?.size === 1 ? [...candidatos][0] : null;
+    const clienteIdPorBelle = plano.clienteBelleId ? clientesPorBelleId.get(plano.clienteBelleId) ?? null : null;
+    const clienteIdPorNome = candidatos?.size === 1 ? [...candidatos][0] : null;
+    const clienteId = clienteIdPorBelle ?? clienteIdPorNome;
+    const vinculoOrigem = clienteIdPorBelle ? "id_belle" as const : clienteIdPorNome ? "nome" as const : null;
     if (clienteId) planosVinculadosComSeguranca++;
     else if (candidatos && candidatos.size > 1) planosAmbiguos++;
     else planosSemVinculo++;
@@ -3653,6 +3657,9 @@ export async function upsertPlanosBelleImportados(
       unidadeId,
       planoBelleId: plano.planoBelleId,
       clienteId,
+      clienteBelleId: plano.clienteBelleId,
+      vinculoOrigem,
+      vinculadoEm: clienteId ? new Date() : null,
       clienteNome: plano.clienteNome,
       pagadorNome: plano.pagadorNome,
       status: plano.status,
@@ -3670,6 +3677,9 @@ export async function upsertPlanosBelleImportados(
     await db.insert(bellePlanosClientes).values(valores).onDuplicateKeyUpdate({
       set: {
         clienteId: valores.clienteId,
+        clienteBelleId: valores.clienteBelleId,
+        vinculoOrigem: valores.vinculoOrigem,
+        vinculadoEm: valores.vinculadoEm,
         clienteNome: valores.clienteNome,
         pagadorNome: valores.pagadorNome,
         status: valores.status,
@@ -3717,6 +3727,94 @@ export async function upsertPlanosBelleImportados(
     else servicosInseridos++;
   }
   return { planosInseridos, planosAtualizados, servicosInseridos, servicosAtualizados, planosVinculadosComSeguranca, planosSemVinculo, planosAmbiguos };
+}
+
+export interface ResultadoVinculosPlanosBelle {
+  vinculadosPorId: number;
+  planosNaoEncontrados: number;
+  clientesNaoEncontrados: number;
+}
+
+/** Aplica a ponte cliente–plano exportada pelo Belle, sempre dentro da unidade. */
+export async function aplicarVinculosPlanosBelle(
+  unidadeId: number,
+  vinculos: VinculoPlanoBelleImportado[],
+): Promise<ResultadoVinculosPlanosBelle> {
+  const db = await getDb();
+  if (!db || vinculos.length === 0) return { vinculadosPorId: 0, planosNaoEncontrados: 0, clientesNaoEncontrados: 0 };
+  const campoUnidade = unidadeId === 1 ? clientes.clienteSsu : unidadeId === 2 ? clientes.clienteRbs : null;
+  if (!campoUnidade) throw new Error("Unidade física inválida para vincular planos.");
+  const idsCliente = [...new Set(vinculos.map((item) => item.clienteBelleId))];
+  const idsPlano = [...new Set(vinculos.map((item) => item.planoBelleId))];
+  const [clientesDaUnidade, planosDaUnidade] = await Promise.all([
+    db.select({ id: clientes.id, belleId: clientes.belleId }).from(clientes)
+      .where(and(eq(campoUnidade, true), inArray(clientes.belleId, idsCliente))),
+    db.select({ id: bellePlanosClientes.id, planoBelleId: bellePlanosClientes.planoBelleId }).from(bellePlanosClientes)
+      .where(and(eq(bellePlanosClientes.unidadeId, unidadeId), inArray(bellePlanosClientes.planoBelleId, idsPlano))),
+  ]);
+  const clientePorBelleId = new Map(clientesDaUnidade.map((cliente) => [cliente.belleId, cliente.id]));
+  const planoPorBelleId = new Map(planosDaUnidade.map((plano) => [plano.planoBelleId, plano.id]));
+  let vinculadosPorId = 0;
+  let planosNaoEncontrados = 0;
+  let clientesNaoEncontrados = 0;
+
+  for (const vinculo of vinculos) {
+    const clienteId = clientePorBelleId.get(vinculo.clienteBelleId);
+    const planoId = planoPorBelleId.get(vinculo.planoBelleId);
+    if (!planoId) {
+      planosNaoEncontrados++;
+      continue;
+    }
+    if (!clienteId) {
+      clientesNaoEncontrados++;
+      continue;
+    }
+    await db.update(bellePlanosClientes).set({
+      clienteId,
+      clienteBelleId: vinculo.clienteBelleId,
+      clienteNome: vinculo.clienteNome,
+      vinculoOrigem: "id_belle",
+      vinculadoEm: new Date(),
+    }).where(and(eq(bellePlanosClientes.id, planoId), eq(bellePlanosClientes.unidadeId, unidadeId)));
+    vinculadosPorId++;
+  }
+  return { vinculadosPorId, planosNaoEncontrados, clientesNaoEncontrados };
+}
+
+export async function listarPlanosBellePendentesVinculo(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const campoUnidade = unidadeId === 1 ? clientes.clienteSsu : unidadeId === 2 ? clientes.clienteRbs : null;
+  if (!campoUnidade) return [];
+  const [planosPendentes, clientesDaUnidade] = await Promise.all([
+    db.select().from(bellePlanosClientes)
+      .where(and(eq(bellePlanosClientes.unidadeId, unidadeId), isNull(bellePlanosClientes.clienteId)))
+      .orderBy(desc(bellePlanosClientes.importadoEm)),
+    db.select({ id: clientes.id, belleId: clientes.belleId, nome: clientes.nome, celular: clientes.celular, cpf: clientes.cpf })
+      .from(clientes).where(eq(campoUnidade, true)),
+  ]);
+  return planosPendentes.map((plano) => {
+    const nome = nomeCanonicoParaVinculo(plano.clienteNome);
+    const candidatos = clientesDaUnidade.filter((cliente) => nomeCanonicoParaVinculo(cliente.nome) === nome);
+    return { ...plano, candidatos };
+  });
+}
+
+export async function vincularPlanoBelleManualmente(unidadeId: number, planoBelleId: number, clienteId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Banco indisponível");
+  const campoUnidade = unidadeId === 1 ? clientes.clienteSsu : unidadeId === 2 ? clientes.clienteRbs : null;
+  if (!campoUnidade) throw new Error("Unidade física inválida para vincular planos.");
+  const cliente = (await db.select({ id: clientes.id, belleId: clientes.belleId }).from(clientes)
+    .where(and(eq(clientes.id, clienteId), eq(campoUnidade, true))).limit(1))[0];
+  if (!cliente) throw new Error("O cliente não pertence à unidade selecionada.");
+  await db.update(bellePlanosClientes).set({
+    clienteId: cliente.id,
+    clienteBelleId: cliente.belleId,
+    vinculoOrigem: "manual",
+    vinculadoEm: new Date(),
+  }).where(and(eq(bellePlanosClientes.unidadeId, unidadeId), eq(bellePlanosClientes.planoBelleId, planoBelleId)));
+  return { success: true };
 }
 
 export async function listarPlanosBellePorCliente(unidadeId: number, clienteId: number) {

@@ -374,3 +374,5 @@
 - [x] Espelhar o relatório de atendimentos do Ribeirão Shopping em tabela local com vínculo seguro ao cliente
 - [x] Propor a reestruturação de Planos & Sessões, histórico de atendimentos, vínculos por nome e tela única de integrações semanais
 - [x] Avaliar se o Copilot atual mantém função distinta do Inbox assistido antes de propor remoção
+- [x] Criar vínculo permanente de plano por ID Belle, sempre isolado por unidade e com fallback seguro por nome
+- [x] Criar a tela Manutenção de dados para importações semanais por unidade e revisão de correspondências ambíguas

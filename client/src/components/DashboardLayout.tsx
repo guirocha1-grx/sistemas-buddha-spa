@@ -26,7 +26,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { startGoogleLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText, Repeat, Users2, Loader2, Workflow, Megaphone, AlertTriangle, BookOpenCheck } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText, Repeat, Users2, Loader2, Workflow, Megaphone, AlertTriangle, BookOpenCheck, Database } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -79,6 +79,7 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
   { icon: Users2, label: "Usuários", path: "/usuarios", adminOnly: true },
   { icon: ScrollText, label: "Log de Auditoria", path: "/auditoria", adminOnly: true },
   { icon: AlertTriangle, label: "Tratamento de erros", path: "/tratamento-erros", adminOnly: true },
+  { icon: Database, label: "Manutenção de dados", path: "/manutencao-dados", adminOnly: true },
 ];
 
 function GoogleIcon({ className }: { className?: string }) {

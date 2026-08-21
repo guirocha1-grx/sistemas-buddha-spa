@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 
 export interface LinhaPlanoBelleImportada {
   planoBelleId: number;
+  clienteBelleId: number | null;
   clienteNome: string;
   pagadorNome: string | null;
   status: string;
@@ -30,6 +31,12 @@ export interface RelatorioPlanosBelleImportado {
   servicos: LinhaPlanoServicoBelleImportada[];
 }
 
+export interface VinculoPlanoBelleImportado {
+  planoBelleId: number;
+  clienteBelleId: number;
+  clienteNome: string;
+}
+
 function normalizar(valor: unknown): string {
   return (valor ?? "").toString().toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
@@ -48,6 +55,14 @@ function dataBr(valor: unknown): string | null {
 function inteiro(valor: unknown): number | null {
   const resultado = Number((valor ?? "").toString().trim());
   return Number.isFinite(resultado) ? resultado : null;
+}
+
+function idENome(valor: unknown): { id: number; nome: string } | null {
+  const bruto = texto(valor);
+  const partes = bruto?.match(/^\s*(\d+)\s*[-–]\s*(.+?)\s*$/);
+  if (!partes) return null;
+  const id = inteiro(partes[1]);
+  return id && partes[2] ? { id, nome: partes[2].trim() } : null;
 }
 
 function decimalBr(valor: unknown): string | null {
@@ -89,6 +104,7 @@ export function parsePlanosBelleXls(buffer: Buffer): RelatorioPlanosBelleImporta
       }
       planoAtual = {
         planoBelleId,
+        clienteBelleId: idENome(clienteNome)?.id ?? null,
         clienteNome,
         pagadorNome: texto(proxima[3]),
         status: texto(proxima[4]) ?? "Não informado",
@@ -126,4 +142,48 @@ export function parsePlanosBelleXls(buffer: Buffer): RelatorioPlanosBelleImporta
 
   if (planos.length === 0) throw new Error("Nenhum plano válido foi encontrado no relatório.");
   return { planos, servicos };
+}
+
+/**
+ * Lê relatórios tabulares em que o Belle traz explicitamente os pares
+ * `clienteBelleId–nome` e `planoBelleId–nome`. Esses arquivos funcionam como
+ * ponte de vínculo e não sobrescrevem saldo/sessões de um relatório completo.
+ */
+export function parseVinculosPlanosBelleXlsx(buffer: Buffer): VinculoPlanoBelleImportado[] {
+  const workbook = XLSX.read(buffer, { type: "buffer" });
+  const abaNome = workbook.SheetNames[0];
+  if (!abaNome) throw new Error("Planilha sem abas");
+  const rows = XLSX.utils.sheet_to_json(workbook.Sheets[abaNome], { header: 1, raw: false, defval: "" }) as unknown[][];
+  const vinculados = new Map<string, VinculoPlanoBelleImportado>();
+
+  for (const row of rows) {
+    const primeiro = normalizar(row?.[0]);
+    const segundo = normalizar(row?.[1]);
+    const terceiro = normalizar(row?.[2]);
+    if (!row?.length || primeiro.startsWith("total geral")) continue;
+
+    const planoNaPrimeiraColuna = inteiro(row[0]);
+    const clienteNaTerceiraColuna = idENome(row[2]);
+    if (planoNaPrimeiraColuna && clienteNaTerceiraColuna && primeiro !== "id plano") {
+      vinculados.set(`${planoNaPrimeiraColuna}:${clienteNaTerceiraColuna.id}`, {
+        planoBelleId: planoNaPrimeiraColuna,
+        clienteBelleId: clienteNaTerceiraColuna.id,
+        clienteNome: clienteNaTerceiraColuna.nome,
+      });
+      continue;
+    }
+
+    const clienteNaPrimeiraColuna = idENome(row[0]);
+    const planoNaTerceiraColuna = idENome(row[2]);
+    if (clienteNaPrimeiraColuna && planoNaTerceiraColuna && segundo !== "data de venda" && terceiro !== "plano") {
+      vinculados.set(`${planoNaTerceiraColuna.id}:${clienteNaPrimeiraColuna.id}`, {
+        planoBelleId: planoNaTerceiraColuna.id,
+        clienteBelleId: clienteNaPrimeiraColuna.id,
+        clienteNome: clienteNaPrimeiraColuna.nome,
+      });
+    }
+  }
+
+  if (vinculados.size === 0) throw new Error("O arquivo não possui pares válidos de cliente e plano do Belle.");
+  return [...vinculados.values()];
 }

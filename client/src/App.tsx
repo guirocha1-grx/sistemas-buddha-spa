@@ -32,6 +32,7 @@ import ConfigInbox from "@/pages/ConfigInbox";
 import AuditLog from "@/pages/AuditLog";
 import Usuarios from "@/pages/Usuarios";
 import TratamentoErros from "@/pages/TratamentoErros";
+import ManutencaoDados from "@/pages/ManutencaoDados";
 import PoliticaPrivacidade from "@/pages/PoliticaPrivacidade";
 import { AdminOnly } from "./components/AdminOnly";
 
@@ -66,6 +67,7 @@ function Router() {
         <Route path="/usuarios" component={Usuarios} />
         <Route path="/auditoria" component={AuditLog} />
         <Route path="/tratamento-erros" component={TratamentoErros} />
+        <Route path="/manutencao-dados">{() => <AdminOnly rota="/manutencao-dados"><ManutencaoDados /></AdminOnly>}</Route>
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>
