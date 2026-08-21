@@ -372,3 +372,5 @@
 - [x] Importar planos e sessões do Ribeirão Shopping, incluindo validade e saldo por serviço, para dar contexto à Carol
 - [x] Diagnosticar e corrigir a consulta de Planos & Sessões por cliente e unidade no Belle com espelho local seguro
 - [x] Espelhar o relatório de atendimentos do Ribeirão Shopping em tabela local com vínculo seguro ao cliente
+- [x] Propor a reestruturação de Planos & Sessões, histórico de atendimentos, vínculos por nome e tela única de integrações semanais
+- [x] Avaliar se o Copilot atual mantém função distinta do Inbox assistido antes de propor remoção
