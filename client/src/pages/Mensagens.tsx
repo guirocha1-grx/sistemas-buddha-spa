@@ -17,6 +17,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
   Pencil, Check, CheckCheck, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
@@ -1545,42 +1546,89 @@ export default function Mensagens() {
                 )}
 
                 {conversaSelecionada?.resumoRelacionamento?.plano && (
-                  <div className={`rounded-lg border p-2.5 space-y-1.5 ${
-                    conversaSelecionada.resumoRelacionamento.plano.status === "ativo"
-                      ? "border-[#8d6a2b]/35 bg-[#fffdf7]"
-                      : "border-muted bg-muted/20"
-                  }`}>
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Plano</p>
-                      <Badge variant="outline" className={`h-5 text-[9px] ${
-                        conversaSelecionada.resumoRelacionamento.plano.status === "ativo"
-                          ? "border-emerald-300 text-emerald-700 bg-emerald-50"
-                          : conversaSelecionada.resumoRelacionamento.plano.status === "expirado"
-                            ? "border-amber-300 text-amber-700 bg-amber-50"
-                            : "border-muted-foreground/30 text-muted-foreground"
-                      }`}>
-                        {conversaSelecionada.resumoRelacionamento.plano.status === "ativo"
-                          ? "Ativo"
-                          : conversaSelecionada.resumoRelacionamento.plano.status === "expirado"
-                            ? "Expirado"
-                            : "Finalizado"}
-                      </Badge>
-                    </div>
-                    {conversaSelecionada.resumoRelacionamento.plano.status === "ativo" ? (
-                      <p className="text-xs font-medium">
-                        {conversaSelecionada.resumoRelacionamento.plano.sessoesDisponiveis} sessão(ões) disponível(is)
-                      </p>
-                    ) : (
-                      <p className="text-[11px] text-muted-foreground">
-                        {conversaSelecionada.resumoRelacionamento.plano.status === "expirado" ? "Validade encerrada" : "Sessões concluídas"}
-                      </p>
-                    )}
-                    {conversaSelecionada.resumoRelacionamento.plano.validade && (
-                      <p className="text-[10px] text-muted-foreground">
-                        Validade: {formatarDataRelacao(conversaSelecionada.resumoRelacionamento.plano.validade)}
-                      </p>
-                    )}
-                  </div>
+                  <HoverCard openDelay={180} closeDelay={120}>
+                    <HoverCardTrigger asChild>
+                      <div
+                        tabIndex={0}
+                        aria-label="Detalhes do plano"
+                        className={`cursor-help rounded-lg border p-2.5 space-y-1.5 transition-colors hover:border-[#8d6a2b]/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                          conversaSelecionada.resumoRelacionamento.plano.status === "ativo"
+                            ? "border-[#8d6a2b]/35 bg-[#fffdf7]"
+                            : "border-muted bg-muted/20"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Plano</p>
+                          <Badge variant="outline" className={`h-5 text-[9px] ${
+                            conversaSelecionada.resumoRelacionamento.plano.status === "ativo"
+                              ? "border-emerald-300 text-emerald-700 bg-emerald-50"
+                              : conversaSelecionada.resumoRelacionamento.plano.status === "expirado"
+                                ? "border-amber-300 text-amber-700 bg-amber-50"
+                                : "border-muted-foreground/30 text-muted-foreground"
+                          }`}>
+                            {conversaSelecionada.resumoRelacionamento.plano.status === "ativo"
+                              ? "Ativo"
+                              : conversaSelecionada.resumoRelacionamento.plano.status === "expirado"
+                                ? "Expirado"
+                                : "Finalizado"}
+                          </Badge>
+                        </div>
+                        {conversaSelecionada.resumoRelacionamento.plano.status === "ativo" ? (
+                          <p className="text-xs font-medium">
+                            {conversaSelecionada.resumoRelacionamento.plano.sessoesDisponiveis} sessão(ões) disponível(is)
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-muted-foreground">
+                            {conversaSelecionada.resumoRelacionamento.plano.status === "expirado" ? "Validade encerrada" : "Sessões concluídas"}
+                          </p>
+                        )}
+                        {conversaSelecionada.resumoRelacionamento.plano.validade && (
+                          <p className="text-[10px] text-muted-foreground">
+                            Validade: {formatarDataRelacao(conversaSelecionada.resumoRelacionamento.plano.validade)}
+                          </p>
+                        )}
+                        <p className="text-[9px] text-muted-foreground/80">Passe o mouse para ver as terapias</p>
+                      </div>
+                    </HoverCardTrigger>
+                    <HoverCardContent side="left" align="start" className="w-80 max-h-[420px] overflow-y-auto p-0">
+                      <div className="border-b border-[#8d6a2b]/15 bg-[#fffdf7] px-3 py-2.5">
+                        <p className="text-xs font-semibold text-[#6f2025]">Detalhes do plano</p>
+                        <p className="mt-0.5 text-[10px] text-muted-foreground">Terapias, saldo e utilização registrados no Belle</p>
+                      </div>
+                      <div className="space-y-3 p-3">
+                        {conversaSelecionada.resumoRelacionamento.plano.detalhes?.map((plano: any, indice: number) => (
+                          <section key={plano.planoBelleId ?? indice} className="space-y-2 border-b border-border/60 pb-3 last:border-b-0 last:pb-0">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-[11px] font-semibold leading-tight">{plano.tipo || `Plano ${plano.planoBelleId ? `#${plano.planoBelleId}` : ""}`}</p>
+                                {(plano.campanha || plano.dataVenda) && (
+                                  <p className="mt-0.5 text-[10px] text-muted-foreground">
+                                    {[plano.campanha, plano.dataVenda ? `Venda: ${formatarDataRelacao(plano.dataVenda)}` : null].filter(Boolean).join(" · ")}
+                                  </p>
+                                )}
+                              </div>
+                              <Badge variant="outline" className="h-5 shrink-0 text-[9px]">{plano.status === "ativo" ? "Ativo" : plano.status === "expirado" ? "Expirado" : "Finalizado"}</Badge>
+                            </div>
+                            {plano.servicos?.map((servico: any, servicoIndice: number) => (
+                              <div key={`${servico.nome}-${servicoIndice}`} className="rounded-md bg-muted/45 px-2 py-1.5">
+                                <p className="text-[10px] font-medium leading-snug">{servico.nome}</p>
+                                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                                  {servico.restantes} restantes · {servico.utilizadas} utilizadas · {servico.agendados} agendada(s)
+                                </p>
+                                <p className="text-[9px] text-muted-foreground/80">Total contratado: {servico.sessoes}</p>
+                              </div>
+                            ))}
+                            {plano.validade && <p className="text-[10px] text-muted-foreground">Validade: {formatarDataRelacao(plano.validade)}</p>}
+                            {plano.vendedorNome && <p className="text-[10px] text-muted-foreground">Vendedor: {plano.vendedorNome}</p>}
+                          </section>
+                        ))}
+                        {!conversaSelecionada.resumoRelacionamento.plano.detalhes?.length && (
+                          <p className="text-xs text-muted-foreground">Ainda não há detalhamento de terapias no relatório importado.</p>
+                        )}
+                        <p className="text-[9px] leading-3 text-muted-foreground/80">Utilizadas = total contratado − restantes − agendadas.</p>
+                      </div>
+                    </HoverCardContent>
+                  </HoverCard>
                 )}
 
                 {conversaSelecionada?.resumoRelacionamento?.ultimoAtendimento && (

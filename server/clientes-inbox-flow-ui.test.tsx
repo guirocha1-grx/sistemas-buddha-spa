@@ -49,7 +49,21 @@ const state = vi.hoisted(() => {
     clienteQtdServicos: 1,
     clienteUltimoAtendimento: "2026-08-10",
     resumoRelacionamento: {
-      plano: null,
+      plano: {
+        status: "ativo",
+        sessoesDisponiveis: 7,
+        validade: "2026-09-30",
+        detalhes: [{
+          planoBelleId: 1901,
+          status: "ativo",
+          validade: "2026-09-30",
+          dataVenda: "2026-07-15",
+          tipo: "Plano de massagens",
+          campanha: null,
+          vendedorNome: "Consultora Teste",
+          servicos: [{ nome: "Massagem Relaxante", sessoes: 10, restantes: 4, utilizadas: 4, agendados: 2 }],
+        }],
+      },
       ultimoAtendimento: {
         dataAtendimento: "2026-08-10",
         horario: "14:00",
@@ -335,6 +349,19 @@ describe("fluxo completo Clientes → Inbox", () => {
     expect(await screen.findByText("Último atendimento")).toBeTruthy();
     expect(screen.getByText(/10\/08\/2026 · Massagem Relaxante/i)).toBeTruthy();
     expect(screen.getByText("Terapeuta: Terapeuta Teste")).toBeTruthy();
+  });
+
+  it("abre o detalhamento do plano com terapias, sessões e utilização ao passar o mouse", async () => {
+    state.page.location = "/mensagens?conversaId=41";
+    cleanup();
+    render(<Mensagens />);
+
+    const cartaoPlano = await screen.findByLabelText("Detalhes do plano");
+    fireEvent.pointerEnter(cartaoPlano);
+    expect(await screen.findByText("Detalhes do plano")).toBeTruthy();
+    expect(screen.getByText("Massagem Relaxante")).toBeTruthy();
+    expect(screen.getByText("4 restantes · 4 utilizadas · 2 agendada(s)")).toBeTruthy();
+    expect(screen.getByText("Total contratado: 10")).toBeTruthy();
   });
 
   it("resolve a sugestão como editada quando a recepção envia pelo botão principal", async () => {

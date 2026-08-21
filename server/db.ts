@@ -542,9 +542,19 @@ export async function listInboxConversas(filtros: { unidadeId?: number; canal?: 
 export type StatusPlanoRelacionamento = "ativo" | "expirado" | "finalizado";
 
 export interface PlanoRelacionamentoEntrada {
+  planoBelleId?: number;
   validade: string | null;
+  dataVenda?: string | null;
+  tipo?: string | null;
+  campanha?: string | null;
+  vendedorNome?: string | null;
   importadoEm: Date | string | null;
-  servicos: Array<{ restantes: number }>;
+  servicos: Array<{
+    servicoNome?: string;
+    sessoes?: number;
+    restantes: number;
+    agendados?: number;
+  }>;
 }
 
 /**
@@ -574,12 +584,41 @@ export function classificarPlanosRelacionamento(
   const validade = referencia.map((plano) => plano.validade).filter((data): data is string => Boolean(data)).sort().pop() ?? null;
   const atualizadoEm = planos.map((plano) => plano.importadoEm).filter((data): data is Date | string => Boolean(data))
     .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
+  const detalhes = planosComSaldo.map((plano) => {
+    const statusPlano: StatusPlanoRelacionamento = !plano.validade || plano.validade >= hojeBrt
+      ? plano.sessoesRestantes > 0 ? "ativo" : "finalizado"
+      : "expirado";
+    return {
+      planoBelleId: plano.planoBelleId ?? null,
+      status: statusPlano,
+      validade: plano.validade,
+      dataVenda: plano.dataVenda ?? null,
+      tipo: plano.tipo ?? null,
+      campanha: plano.campanha ?? null,
+      vendedorNome: plano.vendedorNome ?? null,
+      servicos: plano.servicos.map((servico) => {
+        const sessoes = Math.max(0, servico.sessoes ?? 0);
+        const restantes = Math.max(0, servico.restantes ?? 0);
+        const agendados = Math.max(0, servico.agendados ?? 0);
+        return {
+          nome: servico.servicoNome ?? "Serviço não identificado",
+          sessoes,
+          restantes,
+          agendados,
+          // O Belle fornece total, saldo e agendadas; a utilização é derivada
+          // sem contar as sessões que já estão reservadas para o cliente.
+          utilizadas: Math.max(0, sessoes - restantes - agendados),
+        };
+      }),
+    };
+  });
 
   return {
     status,
     sessoesDisponiveis: status === "ativo" ? planosAtivos.reduce((total, plano) => total + plano.sessoesRestantes, 0) : 0,
     validade,
     atualizadoEm,
+    detalhes,
   };
 }
 
