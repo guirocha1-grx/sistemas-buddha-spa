@@ -398,3 +398,4 @@
 - [x] Mover o controle de automação para o cabeçalho do Inbox como menu discreto com indicador de estado
 - [x] Remover o bloco residual de automação do painel direito, mantendo somente o controle no cabeçalho
 - [x] Exibir detalhes de cada plano no Inbox ao passar o mouse: terapias, sessões restantes, utilizadas e dados disponíveis
+- [x] Reavaliar a efetividade das sugestões dos agentes após os ajustes recentes, comparando decisões da recepção e qualidade por agente
