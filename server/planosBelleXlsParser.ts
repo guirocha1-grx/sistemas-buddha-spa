@@ -185,5 +185,5 @@ export function parseVinculosPlanosBelleXlsx(buffer: Buffer): VinculoPlanoBelleI
   }
 
   if (vinculados.size === 0) throw new Error("O arquivo não possui pares válidos de cliente e plano do Belle.");
-  return [...vinculados.values()];
+  return Array.from(vinculados.values());
 }

@@ -410,7 +410,7 @@ export async function getStatusImportacoesDados(unidadeId: number) {
     .orderBy(desc(syncLogs.createdAt));
 
   const maisRecente = (tipo: string) => logs.find((log) => log.tipo === tipo) ?? null;
-  const clientePorUnidade = unidadeId === 1 ? eq(clientes.clienteSsu, 1) : eq(clientes.clienteRbs, 1);
+  const clientePorUnidade = unidadeId === 1 ? eq(clientes.clienteSsu, true) : eq(clientes.clienteRbs, true);
   const [clientesImportados] = await db.select({ data: sql<Date | null>`max(${clientes.updatedAt})` }).from(clientes).where(clientePorUnidade);
   const [planosImportados] = await db.select({ data: sql<Date | null>`max(${bellePlanosClientes.importadoEm})` }).from(bellePlanosClientes).where(eq(bellePlanosClientes.unidadeId, unidadeId));
   const [vinculosImportados] = await db.select({ data: sql<Date | null>`max(${bellePlanosClientes.vinculadoEm})` }).from(bellePlanosClientes).where(eq(bellePlanosClientes.unidadeId, unidadeId));
@@ -3809,7 +3809,7 @@ export async function upsertPlanosBelleImportados(
   for (const plano of relatorio.planos) {
     const candidatos = clientesPorNome.get(nomeCanonicoParaVinculo(plano.clienteNome) ?? "");
     const clienteIdPorBelle = plano.clienteBelleId ? clientesPorBelleId.get(plano.clienteBelleId) ?? null : null;
-    const clienteIdPorNome = candidatos?.size === 1 ? [...candidatos][0] : null;
+    const clienteIdPorNome = candidatos?.size === 1 ? Array.from(candidatos)[0] : null;
     const clienteId = clienteIdPorBelle ?? clienteIdPorNome;
     const vinculoOrigem = clienteIdPorBelle ? "id_belle" as const : clienteIdPorNome ? "nome" as const : null;
     if (clienteId) planosVinculadosComSeguranca++;
@@ -3906,8 +3906,8 @@ export async function aplicarVinculosPlanosBelle(
   if (!db || vinculos.length === 0) return { vinculadosPorId: 0, planosNaoEncontrados: 0, clientesNaoEncontrados: 0 };
   const campoUnidade = unidadeId === 1 ? clientes.clienteSsu : unidadeId === 2 ? clientes.clienteRbs : null;
   if (!campoUnidade) throw new Error("Unidade física inválida para vincular planos.");
-  const idsCliente = [...new Set(vinculos.map((item) => item.clienteBelleId))];
-  const idsPlano = [...new Set(vinculos.map((item) => item.planoBelleId))];
+  const idsCliente = Array.from(new Set(vinculos.map((item) => item.clienteBelleId)));
+  const idsPlano = Array.from(new Set(vinculos.map((item) => item.planoBelleId)));
   const [clientesDaUnidade, planosDaUnidade] = await Promise.all([
     db.select({ id: clientes.id, belleId: clientes.belleId }).from(clientes)
       .where(and(eq(campoUnidade, true), inArray(clientes.belleId, idsCliente))),

@@ -3,6 +3,7 @@ import { createContext } from "./_core/context";
 import * as db from "./db";
 import { parseAtendimentosBelleXlsx } from "./atendimentosBelleXlsxParser";
 import { storageGetSignedUrl, storagePut } from "./storage";
+import type { User } from "../drizzle/schema";
 
 type PartePayload = {
   unidadeId?: unknown;
@@ -33,14 +34,18 @@ function erro(res: Response, status: number, mensagem: string) {
   return res.status(status).json({ success: false, error: mensagem });
 }
 
-async function autorizar(req: Request, res: Response) {
-  const ctx = await createContext({ req, res });
-  if (!ctx.user) return { erro: "Sessão expirada. Entre novamente para importar o relatório." } as const;
-  if (ctx.user.role !== "admin") return { erro: "Somente administradores podem importar relatórios." } as const;
-  return { user: ctx.user } as const;
+async function autorizar(req: Request, res: Response): Promise<{ erro: string } | { user: User }> {
+  // Chamado fora do middleware real do tRPC (rota Express dedicada, pra
+  // aceitar corpo bruto em vez de payload em lote) — createContext só usa
+  // req/res (ver server/_core/context.ts), o campo `info` exigido pelo tipo
+  // do tRPC v11 não é lido por ela.
+  const ctx = await createContext({ req, res } as unknown as Parameters<typeof createContext>[0]);
+  if (!ctx.user) return { erro: "Sessão expirada. Entre novamente para importar o relatório." };
+  if (ctx.user.role !== "admin") return { erro: "Somente administradores podem importar relatórios." };
+  return { user: ctx.user };
 }
 
-function numeroInteiro(valor: unknown, minimo: number, maximo: number) {
+function numeroInteiro(valor: unknown, minimo: number, maximo: number): valor is number {
   return typeof valor === "number" && Number.isInteger(valor) && valor >= minimo && valor <= maximo;
 }
 
