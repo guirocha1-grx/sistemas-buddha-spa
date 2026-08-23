@@ -2,11 +2,16 @@ export const ENV = {
   appId: process.env.VITE_APP_ID ?? "",
   cookieSecret: process.env.JWT_SECRET ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",
-  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
+  // Só usado pra promover automaticamente um usuário a admin na primeira vez
+  // que o banco é criado (ver upsertUser em server/db.ts) — sem efeito
+  // depois que já existem usuários/papéis definidos.
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
   isProduction: process.env.NODE_ENV === "production",
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+  r2AccountId: process.env.R2_ACCOUNT_ID ?? "",
+  r2AccessKeyId: process.env.R2_ACCESS_KEY_ID ?? "",
+  r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? "",
+  r2BucketName: process.env.R2_BUCKET_NAME ?? "",
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
   googleSheetsClientEmail: process.env.GOOGLE_SHEETS_CLIENT_EMAIL ?? "",

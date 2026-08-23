@@ -57,73 +57,13 @@ async function getGoogleUserInfo(accessToken: string): Promise<{ sub: string; em
 }
 
 export function registerOAuthRoutes(app: Express) {
-  app.get("/api/oauth/callback", async (req: Request, res: Response) => {
-    const code = getQueryParam(req, "code");
-    const state = getQueryParam(req, "state");
-
-    if (!code || !state) {
-      res.status(400).json({ error: "code and state are required" });
-      return;
-    }
-
-    // CSRF guard: the nonce in `state` must match the one-time cookie that
-    // startLogin set in the browser that began this login. An attacker can
-    // forge `state`, but cannot plant this cookie in the victim's browser.
-    const { nonce } = decodeOAuthState(state);
-    const expectedNonce = parseCookieHeader(req.headers.cookie ?? "")[OAUTH_STATE_COOKIE];
-    if (!nonce || nonce !== expectedNonce) {
-      res.status(403).json({ error: "invalid oauth state" });
-      return;
-    }
-    res.clearCookie(OAUTH_STATE_COOKIE, { path: "/", secure: true, sameSite: "none" });
-
-    try {
-      const tokenResponse = await sdk.exchangeCodeForToken(code, state);
-      const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
-
-      if (!userInfo.openId) {
-        res.status(400).json({ error: "openId missing from user info" });
-        return;
-      }
-
-      await db.upsertUser({
-        openId: userInfo.openId,
-        name: userInfo.name || null,
-        email: userInfo.email ?? null,
-        loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-        lastSignedIn: new Date(),
-      });
-
-      const sessionToken = await sdk.createSessionToken(userInfo.openId, {
-        name: userInfo.name || "",
-        expiresInMs: ONE_YEAR_MS,
-      });
-
-      const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-
-      res.redirect(302, "/");
-    } catch (error) {
-      console.error("[OAuth] Callback failed", error);
-      res.status(500).json({ error: "OAuth callback failed" });
-    }
-  });
-
   /**
-   * Login direto com Google — alternativa ao portal do Manus acima,
-   * adicionada em 2026-08-09 porque a recepção usa uma conta Google
-   * compartilhada e o login via Manus não deixava claro/restrito que é
-   * uma conta Google. Reaproveita o MESMO Client ID/Secret já usado no
-   * mobai-crm (GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET) — só precisa
-   * cadastrar esta URL de callback como redirect URI autorizado
-   * adicional no mesmo OAuth Client no Google Cloud Console, sem
-   * afetar o mobai-crm. Nasce toda no servidor (inclusive o passo de
-   * iniciar o redirect pro Google) pra não precisar de uma env var
-   * VITE_ duplicada só pra expor o client id no bundle do client.
-   *
-   * Reaproveita a sessão do Manus (sdk.createSessionToken + cookie
-   * COOKIE_NAME) depois de resolver o usuário via Google — nada mais
-   * no resto do app (trpc.ts, context.ts, requireUser) precisa mudar.
+   * Login direto com Google — único fluxo de login em uso. Reaproveita o
+   * MESMO Client ID/Secret já usado no mobai-crm
+   * (GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET). Nasce toda no servidor
+   * (inclusive o passo de iniciar o redirect pro Google) pra não precisar
+   * de uma env var VITE_ duplicada só pra expor o client id no bundle do
+   * client.
    */
   app.get("/api/oauth/google/start", (req: Request, res: Response) => {
     if (!ENV.googleClientId) {
@@ -180,8 +120,6 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
-      // Prefixado pra nunca colidir com um openId vindo do portal do
-      // Manus acima (namespace diferente, mesmo `users.openId` único).
       const openId = `google:${googleUser.sub}`;
 
       // Se um admin já convidou esse e-mail (Usuários → Convidar),
@@ -192,10 +130,6 @@ export function registerOAuthRoutes(app: Express) {
         : false;
 
       if (!reivindicou) {
-        // A promoção automática a admin por ENV.ownerOpenId (upsertUser)
-        // só bate pro openId do portal do Manus — esse aqui é outro. Sem
-        // isso, a mesma pessoa que já era admin pelo Manus nasceria como
-        // "user" comum ao entrar pela primeira vez pelo Google.
         const roleHerdado = googleUser.email ? await db.getRoleByEmail(googleUser.email) : null;
 
         await db.upsertUser({

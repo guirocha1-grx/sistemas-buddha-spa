@@ -30,8 +30,6 @@ import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConso
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTelegramParaRecepcao } from "./telegramApi";
 import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY, montarPedidoSugestaoMensagem } from "@shared/inboxAi";
-import { upsertHeartbeatJob } from "./_core/heartbeat";
-import { listarHeartbeatsSincronizacaoDiaria } from "./dailySyncReport";
 import { iniciarExecucaoFluxo } from "./fluxos";
 import { agentesRouter, tabelaPrecosRouter } from "./routers/agentes";
 import * as agentesDb from "./agentesDb";
@@ -1579,44 +1577,20 @@ Diretrizes:
       }),
     }),
 
-    // upsertHeartbeatJob espera a sessão da PLATAFORMA Manus, não o
-    // cookie de login deste app (COOKIE_NAME/app_session_id é um JWT
-    // que o próprio buddha-spa emite via sdk.createSessionToken — o
-    // Heartbeat não reconhece esse token e rejeita com 401 "invalid
-    // user session", confirmado no Log de Auditoria). String vazia cai
-    // na "identidade do dono do projeto" (ver server/_core/heartbeat.ts),
-    // que é o caso certo aqui — não existe sessão de plataforma pra
-    // repassar dentro de uma mutation tRPC comum.
+    // Esses três crons rodam automaticamente dentro do próprio processo
+    // desde o boot (ver server/_core/scheduler.ts) — não dependem mais do
+    // Heartbeat da Manus nem de um botão pra "ativar". As mutations abaixo
+    // ficam só pra não quebrar os botões existentes no admin; retornam
+    // sucesso na hora, sem fazer nada.
     registrarHeartbeat: adminProcedure.mutation(async () => {
-      await upsertHeartbeatJob({
-        name: "cron-retomar-fluxos",
-        cron: "0 * * * * *",
-        path: "/api/scheduled/retomar-fluxos",
-        method: "POST",
-        description: "Fluxos: retoma execuções pausadas (nó aguardar) e trata timeout de menu aguardando resposta.",
-      }, "");
       return { success: true };
     }),
 
     registrarHeartbeatGatilhosAgendados: adminProcedure.mutation(async () => {
-      await upsertHeartbeatJob({
-        name: "cron-disparar-fluxos-agendados",
-        cron: "0 0 6 * * *",
-        path: "/api/scheduled/disparar-fluxos-agendados",
-        method: "POST",
-        description: "Fluxos: varredura diária do gatilho dias_sem_contato.",
-      }, "");
       return { success: true };
     }),
 
     registrarHeartbeatBuddhaMktAlerta: adminProcedure.mutation(async () => {
-      await upsertHeartbeatJob({
-        name: "cron-alertar-buddha-mkt-sem-retorno",
-        cron: "0 * * * * *",
-        path: "/api/scheduled/alertar-buddha-mkt-sem-retorno",
-        method: "POST",
-        description: "Buddha Mkt: avisa a recepção no Telegram quando o cliente não segue o link de unidade em 10min.",
-      }, "");
       return { success: true };
     }),
   }),
@@ -2907,16 +2881,13 @@ Diretrizes:
     }),
 
     /**
-     * Registra a rotina diária (server/dailySyncReport.ts): roda a
-     * mesma sincronização do botão "Sincronizar tudo" todo dia às 7h
-     * BRT (10h UTC) e manda um relatório pro Telegram do Guilherme.
-     * Mesmo padrão de fluxos.registrarHeartbeat (upsertHeartbeatJob
-     * espera a sessão da plataforma Manus, não a do usuário logado).
+     * A rotina diária (server/dailySyncReport.ts) roda automaticamente
+     * dentro do próprio processo desde o boot (ver
+     * server/_core/scheduler.ts), sem depender do Heartbeat da Manus.
+     * Mutation mantida só pra não quebrar o botão existente no admin.
      */
     registrarHeartbeatSincronizacaoDiaria: adminProcedure.mutation(async () => {
-      const jobs = listarHeartbeatsSincronizacaoDiaria();
-      await Promise.all(jobs.map((job) => upsertHeartbeatJob(job, "")));
-      return { success: true, totalJobs: jobs.length };
+      return { success: true };
     }),
   }),
 

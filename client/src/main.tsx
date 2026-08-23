@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { COOKIE_NAME, UNAUTHED_ERR_MSG } from '@shared/const';
+import { UNAUTHED_ERR_MSG } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, httpLink, splitLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
@@ -38,32 +38,11 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
-const trpcHeaders = () => {
-        // Preview auto-login fallback: when the browser blocks iframe cookies
-        // (Safari ITP / private browsing / WebView), the runtime mirrors the
-        // session into sessionStorage so we can forward it as a Bearer token.
-        // The regular OAuth cookie flow keeps working and takes priority server-side.
-        try {
-          const raw = sessionStorage.getItem("manus-cookie");
-          if (raw) {
-            const prefix = `${COOKIE_NAME}=`;
-            const pair = raw.split(";").find(s => s.trim().startsWith(prefix));
-            const token = pair?.trim().slice(prefix.length);
-            if (token) {
-              return { Authorization: `Bearer ${token}` };
-            }
-          }
-        } catch {
-          // sessionStorage unavailable
-        }
-        return {};
-};
-
 const trpcFetch = (input: RequestInfo | URL, init?: RequestInit) => {
-        return globalThis.fetch(input, {
-          ...(init ?? {}),
-          credentials: "include",
-        });
+  return globalThis.fetch(input, {
+    ...(init ?? {}),
+    credentials: "include",
+  });
 };
 
 const trpcClient = trpc.createClient({
@@ -76,8 +55,8 @@ const trpcClient = trpc.createClient({
           op.path === "clientes.processarPartesAtendimentos"
         );
       },
-      true: httpLink({ url: "/api/trpc", transformer: superjson, headers: trpcHeaders, fetch: trpcFetch }),
-      false: httpBatchLink({ url: "/api/trpc", transformer: superjson, headers: trpcHeaders, fetch: trpcFetch }),
+      true: httpLink({ url: "/api/trpc", transformer: superjson, fetch: trpcFetch }),
+      false: httpBatchLink({ url: "/api/trpc", transformer: superjson, fetch: trpcFetch }),
     }),
   ],
 });

@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { Readable } from "node:stream";
-import { ENV } from "./env";
+import { storageGetSignedUrl } from "../storage";
 
 export function registerStorageProxy(app: Express) {
   app.get("/manus-storage/*", async (req, res) => {
@@ -10,39 +10,13 @@ export function registerStorageProxy(app: Express) {
       return;
     }
 
-    if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
-      res.status(500).send("Storage proxy not configured");
-      return;
-    }
-
     try {
-      const forgeUrl = new URL(
-        "v1/storage/presign/get",
-        ENV.forgeApiUrl.replace(/\/+$/, "") + "/",
-      );
-      forgeUrl.searchParams.set("path", key);
+      const url = await storageGetSignedUrl(key);
 
-      const forgeResp = await fetch(forgeUrl, {
-        headers: { Authorization: `Bearer ${ENV.forgeApiKey}` },
-      });
-
-      if (!forgeResp.ok) {
-        const body = await forgeResp.text().catch(() => "");
-        console.error(`[StorageProxy] forge error: ${forgeResp.status} ${body}`);
-        res.status(502).send("Storage backend error");
-        return;
-      }
-
-      const { url } = (await forgeResp.json()) as { url: string };
-      if (!url) {
-        res.status(502).send("Empty signed URL from backend");
-        return;
-      }
-
-      // Não redirecione mídias embutidas ao CloudFront. O navegador pode
-      // alterar a URL assinada no redirecionamento e bloquear a prévia;
-      // transmitindo os bytes pelo mesmo domínio, <img> e <audio> ficam
-      // estáveis dentro do histórico do Inbox.
+      // Não redirecione mídias embutidas ao CDN. O navegador pode alterar a
+      // URL assinada no redirecionamento e bloquear a prévia; transmitindo
+      // os bytes pelo mesmo domínio, <img> e <audio> ficam estáveis dentro
+      // do histórico do Inbox.
       const fileResp = await fetch(url);
       if (!fileResp.ok || !fileResp.body) {
         const body = await fileResp.text().catch(() => "");

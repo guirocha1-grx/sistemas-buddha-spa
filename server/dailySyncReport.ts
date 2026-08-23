@@ -1,12 +1,12 @@
 /**
- * Sincronização diária — inicia às 7h BRT (10h UTC) em etapas independentes.
- * Cada callback Heartbeat tem limite de 2 minutos; por isso não executamos as
- * 14 integrações em uma única requisição. As etapas são idempotentes, recebem
- * retry da plataforma e o relatório é enviado somente após a janela completa.
+ * Sincronização diária — inicia às 7h BRT (10h UTC) em etapas independentes,
+ * chamadas pelo agendador em processo (server/_core/scheduler.ts). As etapas
+ * continuam separadas (em vez de uma única chamada) porque já nasceram assim
+ * pra caber no limite de 2 minutos por callback do antigo Heartbeat da Manus,
+ * e não há necessidade de juntar tudo de novo agora — são independentes e
+ * idempotentes.
  */
-import type { Express, Request, Response } from "express";
-import type { HeartbeatJob } from "./_core/heartbeat";
-import { sdk } from "./_core/sdk";
+import type { Request, Response } from "express";
 import { ENV } from "./_core/env";
 import { appRouter } from "./routers";
 import type { User } from "../drizzle/schema";
@@ -17,6 +17,14 @@ import {
   calcularConciliacaoPorDia,
 } from "./db";
 import { sendTelegramMessage } from "./telegramApi";
+
+type AgendamentoDiario = {
+  name: string;
+  cron: string;
+  path: string;
+  method: "POST";
+  description: string;
+};
 
 const CRON_USER: User = {
   id: -1,
@@ -150,7 +158,7 @@ export async function enviarRelatorioDiario(): Promise<void> {
   await sendTelegramMessage(ENV.telegramChatIdGuilherme, texto);
 }
 
-const ETAPAS_AGENDADAS: Array<{ chave: ChaveEtapa; minuto: number }> = [
+export const ETAPAS_AGENDADAS: Array<{ chave: ChaveEtapa; minuto: number }> = [
   { chave: "ssu-inter", minuto: 0 }, { chave: "ssu-caixa", minuto: 1 },
   { chave: "ssu-mercadopago-conta", minuto: 2 }, { chave: "ssu-mercadopago-adquirente", minuto: 3 },
   { chave: "ssu-comanda", minuto: 4 }, { chave: "ssu-comanda-itens", minuto: 5 },
@@ -160,7 +168,7 @@ const ETAPAS_AGENDADAS: Array<{ chave: ChaveEtapa; minuto: number }> = [
   { chave: "rbs-comanda-itens", minuto: 12 }, { chave: "rbs-contas-drive", minuto: 13 },
 ];
 
-export function listarHeartbeatsSincronizacaoDiaria(): HeartbeatJob[] {
+export function listarHeartbeatsSincronizacaoDiaria(): AgendamentoDiario[] {
   const etapas = ETAPAS_AGENDADAS.map(({ chave, minuto }) => ({
     name: `cron-sync-diaria-${chave}`,
     cron: `0 ${minuto} 10 * * *`,
@@ -180,30 +188,3 @@ export function listarHeartbeatsSincronizacaoDiaria(): HeartbeatJob[] {
   ];
 }
 
-export function registerDailySyncScheduledRoute(app: Express) {
-  for (const { chave } of ETAPAS_AGENDADAS) {
-    app.post(`/api/scheduled/sincronizar-tudo-diario-${chave}`, async (req: Request, res: Response) => {
-      try {
-        const user = await sdk.authenticateRequest(req);
-        if (!user.isCron) return res.status(403).json({ error: "cron-only" });
-        const resultado = await executarEtapaSincronizacaoDiaria(chave);
-        res.json({ success: true, ...resultado });
-      } catch (error) {
-        console.error(`[dailySyncReport] Erro na etapa ${chave}:`, error);
-        res.status(500).json({ error: error instanceof Error ? error.message : "erro desconhecido", etapa: chave });
-      }
-    });
-  }
-
-  app.post("/api/scheduled/relatorio-sincronizacao-diaria", async (req: Request, res: Response) => {
-    try {
-      const user = await sdk.authenticateRequest(req);
-      if (!user.isCron) return res.status(403).json({ error: "cron-only" });
-      await enviarRelatorioDiario();
-      res.json({ success: true });
-    } catch (error) {
-      console.error("[dailySyncReport] Erro no relatório diário:", error);
-      res.status(500).json({ error: error instanceof Error ? error.message : "erro desconhecido" });
-    }
-  });
-}

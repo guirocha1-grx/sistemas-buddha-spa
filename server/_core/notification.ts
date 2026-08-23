@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./env";
+import { sendTelegramMessage } from "../telegramApi";
 
 export type NotificationPayload = {
   title: string;
@@ -12,16 +13,6 @@ const CONTENT_MAX_LENGTH = 20000;
 const trimValue = (value: string): string => value.trim();
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
-
-const buildEndpointUrl = (baseUrl: string): string => {
-  const normalizedBase = baseUrl.endsWith("/")
-    ? baseUrl
-    : `${baseUrl}/`;
-  return new URL(
-    "webdevtoken.v1.WebDevService/SendNotification",
-    normalizedBase
-  ).toString();
-};
 
 const validatePayload = (input: NotificationPayload): NotificationPayload => {
   if (!isNonEmptyString(input.title)) {
@@ -58,57 +49,27 @@ const validatePayload = (input: NotificationPayload): NotificationPayload => {
 };
 
 /**
- * Dispatches a project-owner notification through the Manus Notification Service.
- * Returns `true` if the request was accepted, `false` when the upstream service
- * cannot be reached (callers can fall back to email/slack). Validation errors
- * bubble up as TRPC errors so callers can fix the payload.
+ * Notifica o dono do projeto pelo Telegram (mesmo chat usado pelo relatório
+ * diário, ver server/dailySyncReport.ts). Retorna `true` se o envio foi
+ * aceito; `false` quando o Telegram não está configurado ou falhou —
+ * chamadores tratam como best-effort. Erros de validação sobem como
+ * TRPCError pra quem chamou corrigir o payload.
  */
 export async function notifyOwner(
   payload: NotificationPayload
 ): Promise<boolean> {
   const { title, content } = validatePayload(payload);
 
-  if (!ENV.forgeApiUrl) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Notification service URL is not configured.",
-    });
+  if (!ENV.telegramChatIdGuilherme) {
+    console.warn("[Notification] TELEGRAM_CHAT_ID_GUILHERME não configurado.");
+    return false;
   }
-
-  if (!ENV.forgeApiKey) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Notification service API key is not configured.",
-    });
-  }
-
-  const endpoint = buildEndpointUrl(ENV.forgeApiUrl);
 
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${ENV.forgeApiKey}`,
-        "content-type": "application/json",
-        "connect-protocol-version": "1",
-      },
-      body: JSON.stringify({ title, content }),
-    });
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      console.warn(
-        `[Notification] Failed to notify owner (${response.status} ${response.statusText})${
-          detail ? `: ${detail}` : ""
-        }`
-      );
-      return false;
-    }
-
+    await sendTelegramMessage(ENV.telegramChatIdGuilherme, `*${title}*\n\n${content}`);
     return true;
   } catch (error) {
-    console.warn("[Notification] Error calling notification service:", error);
+    console.warn("[Notification] Erro ao notificar pelo Telegram:", error);
     return false;
   }
 }
