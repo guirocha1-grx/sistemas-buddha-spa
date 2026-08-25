@@ -7,6 +7,14 @@ import cron from "node-cron";
 import { retomarFluxosPendentes, dispararFluxosAgendados, alertarBuddhaMktSemRetorno } from "../fluxosScheduled";
 import { executarEtapaSincronizacaoDiaria, enviarRelatorioDiario, ETAPAS_AGENDADAS } from "../dailySyncReport";
 
+/**
+ * O TiDB é compartilhado entre Railway e desenvolvimento. Tarefas que
+ * acionam Fluxos, Z-API ou sincronizações só podem rodar na produção.
+ */
+export function deveRegistrarTarefasAgendadas(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.NODE_ENV === "production";
+}
+
 function schedule(nome: string, expressao: string, tarefa: () => Promise<unknown>) {
   // Guarda contra sobreposição: sem isso, se uma execução ainda estiver
   // rodando quando o próximo tick disparar (lote grande, Z-API lenta),

@@ -7,6 +7,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { registerWhatsappWebhookRoutes } from "../webhooks";
 import { registerAtendimentosUploadRoute } from "../atendimentosUploadRoute";
 import { registerScheduledJobs } from "./scheduler";
+import { deveRegistrarTarefasAgendadas } from "./scheduler";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -21,7 +22,11 @@ async function startServer() {
   registerOAuthRoutes(app);
   registerWhatsappWebhookRoutes(app);
   registerAtendimentosUploadRoute(app);
-  registerScheduledJobs();
+  if (deveRegistrarTarefasAgendadas()) {
+    registerScheduledJobs();
+  } else {
+    console.log("[Scheduler] Tarefas agendadas desativadas fora de produção.");
+  }
   // tRPC API
   app.use(
     "/api/trpc",

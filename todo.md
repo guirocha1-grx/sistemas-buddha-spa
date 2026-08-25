@@ -429,3 +429,6 @@
 - [x] Limpar referências antigas de foto do storage anterior, preservando o bloqueio normal após uma consulta válida da Z-API
 - [x] Aplicar a limpeza de referências antigas de foto tanto a conversas individuais quanto a grupos
 - [x] Documentar e versionar no GitHub a limpeza de referências antigas de foto do TiDB após a migração
+- [x] Sincronizar a última versão, revisar a solução do Claude e auditar imagens, PDFs, áudios, vídeos, documentos e anexos ausentes após a migração
+- [x] Revisar os commits posteriores à auditoria para consolidar as correções de cron, duplicação, fluxo de mídia e “Digitando...”
+- [x] Diagnosticar e corrigir o executor local de Fluxos: tarefas agendadas agora rodam somente em produção e não disputam o TiDB com Railway
