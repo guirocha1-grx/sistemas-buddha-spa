@@ -93,7 +93,14 @@ export function AgentesPromptSection() {
                 <button onClick={() => setAgenteId(item.id)} className="w-full text-left">
                   <div className="flex gap-2 items-center"><span className="text-sm font-medium truncate">{item.nome}</span>{item.tipo === "receptor" && <Badge variant="outline" className="text-[10px]">receptor</Badge>}</div>
                   <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.descricao ?? "Especialidade não definida"}</p>
-                  <div className="mt-1 text-[11px] text-muted-foreground">{item.promptAtivo ? `Prompt v${item.promptAtivo.versao} ativo` : "Sem prompt ativo"}</div>
+                  <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <span>{item.promptAtivo ? `Prompt v${item.promptAtivo.versao} ativo` : "Sem prompt ativo"}</span>
+                    {item.promptEditadoManualmente && (
+                      <Badge variant="outline" className="border-amber-300 text-amber-700 text-[9px] px-1 py-0" title="Esse prompt foi editado manualmente e não recebe mais atualizações automáticas do código.">
+                        editado manualmente
+                      </Badge>
+                    )}
+                  </div>
                 </button>
                 <div className="mt-3 space-y-1.5">
                   <Button size="sm" className="w-full" variant={item.ativo ? "outline" : "default"} disabled={ocupado || !unidadeId} onClick={() => unidadeId && atualizar.mutate({ id: item.id, unidadeId, ativo: !item.ativo })}>{item.ativo ? "Desativar assistente" : "Ativar assistente"}</Button>
@@ -116,6 +123,11 @@ export function AgentesPromptSection() {
           <Button size="sm" variant="outline" disabled={ocupado || !nome.trim()} onClick={salvarConfiguracao}>{atualizar.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}Salvar configuração</Button>
           <div className="pt-2 border-t border-[#eadfca]">
             <div className="flex items-center justify-between gap-3"><Label>Prompt desta versão</Label><div className="flex items-center gap-2 text-xs"><Switch checked={ativarAgora} onCheckedChange={setAtivarAgora} /><span>Ativar ao salvar</span></div></div>
+            {agente.promptEditadoManualmente && (
+              <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900">
+                Esse prompt foi editado manualmente em algum momento e <strong>parou de receber atualizações automáticas do código</strong> (mesma proteção que já existe pra Carol) — mudar o texto padrão no código não vai mais afetar esse agente nessa unidade. Pra atualizar de verdade, edite e salve uma nova versão aqui.
+              </p>
+            )}
             <Textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} className="mt-2 min-h-64 font-mono text-xs leading-5" placeholder="Escreva aqui as instruções deste agente" />
             <div className="mt-3 flex flex-wrap items-center gap-2"><Button size="sm" disabled={ocupado || prompt.trim().length < 20} onClick={salvarNovaVersao}>{criarVersao.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}Salvar nova versão</Button>{criarVersao.isSuccess && <span className="text-xs text-emerald-700 flex items-center"><CheckCircle className="w-3.5 h-3.5 mr-1" /> Versão registrada</span>}</div>
           </div>

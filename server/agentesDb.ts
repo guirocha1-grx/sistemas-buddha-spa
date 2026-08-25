@@ -168,13 +168,25 @@ export async function listarAgentesComPrompts(unidadeId: number) {
   return agentes.map((agente) => {
     const configuracao = configuracoes.find((item) => item.agenteId === agente.id);
     const versoesAgente = versoes.filter((versao) => versao.agenteId === agente.id);
+    const promptAtivo = versoesAgente.find((versao) => versao.status === "ativo") ?? null;
+    // Fica visível na tela quando o prompt ativo saiu do sincronismo
+    // automático com o código (ver garantirAgentesIniciais acima) — sem
+    // isso, uma mudança feita em PROMPTS_BOOTSTRAP no código pode nunca
+    // chegar em produção pra esse agente/unidade, sem nenhum aviso
+    // (foi exatamente o que aconteceu com o ajuste de domingo da Estela,
+    // 2026-08-25 — a versão ativa tinha sido criada por um ajuste manual
+    // de qualidade, "Lote 1 — Qualidade assistida", e não pelo bootstrap).
+    const promptEditadoManualmente = !!promptAtivo
+      && promptAtivo.criadoPorNome !== CRIADO_POR_BOOTSTRAP
+      && promptAtivo.conteudo !== PROMPTS_BOOTSTRAP[agente.chave];
     return {
       ...agente,
       ativo: configuracao?.ativo ?? false,
       modoOperacao: configuracao?.modoOperacao ?? "assistido",
       modelo: configuracao?.modelo ?? "gpt-5-mini",
       unidadeId,
-      promptAtivo: versoesAgente.find((versao) => versao.status === "ativo") ?? null,
+      promptAtivo,
+      promptEditadoManualmente,
       versoes: versoesAgente,
     };
   });
