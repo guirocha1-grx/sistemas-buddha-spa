@@ -4,7 +4,7 @@
 // compatibilidade — cada URL já gravada no banco usa esse prefixo; trocar o
 // nome quebraria toda mídia já enviada).
 
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { ENV } from "./_core/env";
 
@@ -74,6 +74,27 @@ export async function storageGetSignedUrl(relKey: string): Promise<string> {
   const { client, bucket } = getR2Client();
   const key = normalizeStorageKey(relKey);
   return getSignedUrl(client, new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn: 3600 });
+}
+
+/**
+ * Confirma se o objeto existe de verdade no bucket atual — diferente de
+ * storageGetSignedUrl, que só faz uma assinatura criptográfica local e
+ * NUNCA falha por chave inexistente (não bate no R2). Sem essa checagem,
+ * uma referência órfã (ex.: gravada num backend de storage anterior) fica
+ * presa pra sempre: sempre "assina com sucesso", nunca dispara o self-heal
+ * que rebusca a mídia — foi exatamente o que aconteceu com 274 fotos do
+ * Inbox depois da troca de backend Forge → R2 (2026-08-25, ver
+ * registro_recuperacao_fotos_2026-08-25.md).
+ */
+export async function storageExists(relKey: string): Promise<boolean> {
+  const { client, bucket } = getR2Client();
+  const key = normalizeStorageKey(relKey);
+  try {
+    await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

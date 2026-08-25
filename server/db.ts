@@ -10,7 +10,7 @@ import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
-import { storageGetSignedUrl } from "./storage";
+import { storageGetSignedUrl, storageExists } from "./storage";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -492,13 +492,21 @@ async function resolverFotosUrlAssinadas(rows: Array<{ id: number; fotoUrl?: str
   const db = await getDb();
   await Promise.all(
     comFoto.map(async (row) => {
+      const key = row.fotoUrl!.replace("/manus-storage/", "");
       try {
-        row.fotoUrl = await storageGetSignedUrl(row.fotoUrl!.replace("/manus-storage/", ""));
+        // storageGetSignedUrl sozinho NUNCA falha por chave inexistente —
+        // é só uma assinatura criptográfica local, sem bater no R2. Sem
+        // checar existência de verdade primeiro, uma referência órfã
+        // "assina com sucesso" pra sempre e nunca dispara o self-heal (foi
+        // exatamente o que travou 274 fotos depois da troca de backend
+        // Forge → R2, corrigido manualmente em 2026-08-25 — ver
+        // registro_recuperacao_fotos_2026-08-25.md).
+        const existe = await storageExists(key);
+        if (!existe) throw new Error("objeto não encontrado no storage atual");
+        row.fotoUrl = await storageGetSignedUrl(key);
       } catch (e) {
         console.error("[Inbox] Falha ao assinar fotoUrl:", e);
-        // Chave não existe mais no storage atual — acontece pra toda foto
-        // salva antes da troca de backend (Forge → R2, 2026-08-23), já que
-        // os arquivos antigos não foram copiados. Sem limpar aqui, a
+        // Chave não existe mais no storage atual. Sem limpar aqui, a
         // tentativa de assinar repete pra sempre a cada leitura. Zera pra
         // que o próprio webhook (ver hasFoto acima) rebusque uma foto nova
         // da Z-API na próxima mensagem dessa conversa.
