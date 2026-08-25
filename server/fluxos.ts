@@ -8,7 +8,7 @@
  * (ver server/_core/index.ts, rota /api/scheduled/retomar-fluxos).
  *
  * Diferente do mobai-crm: sem os nós de IA "agente"/"assistente" (v1),
- * sem QStash (aguardar fica só com o piso de ~1min do cron), e a
+ * sem QStash (aguardar fica só com o piso de ~5s do cron), e a
  * âncora da execução é a conversa do Inbox, não o cliente.
  */
 import type { Fluxo, FluxoExecucao, FluxoNoConfig, Unidade } from "../drizzle/schema";
@@ -26,7 +26,7 @@ import {
 } from "./db";
 import { zapiApi } from "./zapiApi";
 import { buddhaMktApi } from "./buddhaMktApi";
-import { storageGetBase64, storageGetSignedUrl } from "./storage";
+import { storageGetBase64, storageGetSignedUrl, storageExists } from "./storage";
 import { obterCampanhaMensal } from "./agentesDb";
 
 // Limite de passos processados em sequência numa única chamada
@@ -34,6 +34,15 @@ import { obterCampanhaMensal } from "./agentesDb";
 // avançam recursivamente sem passar pelo cron). Evita loop infinito se
 // um fluxo mal configurado tiver um ciclo sem nenhum "aguardar" no meio.
 const LIMITE_PASSOS_SEQUENCIA = 50;
+
+// Nome reservado dentro de fluxo_execucoes.variaveis — carrega o
+// delayTyping (em segundos) do "aguardar" pro passo "mensagem" logo
+// seguinte, sem precisar de coluna nova nem de passar parâmetro por toda
+// a cadeia recursiva de avancar()/irParaOrdem(). Nunca aparece pro
+// usuário (não é usado em nenhum {{...}} de interpolação) e é sempre
+// consumida/limpa no primeiro "mensagem" alcançado, use-a ou não.
+const VARIAVEL_DELAY_TYPING = "__delayTypingSegundos";
+const DELAY_TYPING_MAX_SEGUNDOS = 15;
 
 function interpolarVariaveis(texto: string, variaveis: Record<string, string>): string {
   return texto.replace(/\{\{(\w+)\}\}/g, (match, nome) => variaveis[nome] ?? match);
@@ -206,15 +215,17 @@ async function extrairVariavelViaIa(conversaId: number, promptIa: string, nomeVa
  * oficial) não tem credencial Z-API nenhuma — usa a conta global lida
  * de `configuracoes` (ver server/buddhaMktApi.ts).
  */
-export async function enviarPelaUnidade(unidade: Unidade, telefone: string, texto: string): Promise<{ zapiMessageId: string | null }> {
+export async function enviarPelaUnidade(unidade: Unidade, telefone: string, texto: string, delayTypingSegundos?: number): Promise<{ zapiMessageId: string | null }> {
   if (unidade.canal === "buddha_mkt") {
+    // delayTyping é específico do /send-text da Z-API — sem equivalente
+    // conhecido na Cloud API oficial do WhatsApp (Buddha Mkt).
     await buddhaMktApi.sendText(telefone, texto);
     return { zapiMessageId: null };
   }
   if (!unidade.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) {
     throw new Error("Z-API não configurado para a unidade do fluxo");
   }
-  const resultado = await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, telefone, texto);
+  const resultado = await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, telefone, texto, undefined, delayTypingSegundos);
   return { zapiMessageId: resultado.messageId ?? null };
 }
 
@@ -285,12 +296,22 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
         const conversa = await getInboxConversaById(execucao.conversaId);
         const variaveisComSistema = { ...variaveis, ...(await computarVariaveisSistema(execucao, fluxo)) };
         const texto = interpolarVariaveis(config.texto, variaveisComSistema);
+        // Consome VARIAVEL_DELAY_TYPING (gravada por retomarExecucoesPendentes
+        // quando o "aguardar" anterior tinha "mostrarDigitando" marcado) — só
+        // vale pro passo "mensagem" imediatamente seguinte, por isso é
+        // sempre limpa aqui, tenha sido usada ou não.
+        const delayTypingBruto = variaveis[VARIAVEL_DELAY_TYPING];
+        if (delayTypingBruto !== undefined) {
+          const { [VARIAVEL_DELAY_TYPING]: _descartado, ...semDelayTyping } = variaveis;
+          await updateFluxoExecucao(execucaoId, { variaveis: semDelayTyping });
+        }
+        const delayTypingSegundos = delayTypingBruto !== undefined ? Number(delayTypingBruto) : undefined;
         if (conversa?.telefone) {
           let zapiMessageId: string | null = null;
           const unidade = await getUnidadeById(fluxo.unidadeId);
           if (unidade) {
             try {
-              ({ zapiMessageId } = await enviarPelaUnidade(unidade, conversa.telefone, texto));
+              ({ zapiMessageId } = await enviarPelaUnidade(unidade, conversa.telefone, texto, delayTypingSegundos));
             } catch (e) {
               console.error(`[Fluxos] Erro ao enviar mensagem (execução ${execucaoId}):`, e);
             }
@@ -316,9 +337,10 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
           status: "pausado",
           proximaExecucaoEm: new Date(Date.now() + delayMs),
         });
-        // Sem QStash aqui — retomada só pelo cron de 1min (ver
-        // server/_core/index.ts), diferente do mobai-crm que tem um
-        // caminho rápido pra "segundos". Precisão de ~1min é aceitável.
+        // Sem QStash aqui — retomada só pelo cron de ~5s (ver
+        // server/_core/scheduler.ts), diferente do mobai-crm que tem um
+        // caminho rápido pra "segundos". Precisão de poucos segundos é
+        // aceitável mesmo pra "aguardar" curtos.
         return;
       }
 
@@ -359,7 +381,24 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
         const config = no.config as Extract<FluxoNoConfig, { tipoMidia: "imagem" | "audio" | "documento"; storageKey: string }>;
         const conversa = await getInboxConversaById(execucao.conversaId);
         if (conversa?.telefone && config.storageKey) {
+          // Confere se o arquivo existe de verdade no bucket atual antes de
+          // tentar enviar — uma referência gravada antes da troca de
+          // backend Forge → R2 (2026-08-23) nunca mais existe, e sem essa
+          // checagem o erro só aparecia num console.error engolido: o
+          // fluxo seguia em frente como se a mídia tivesse sido enviada
+          // (ver registro_recuperacao_fotos_2026-08-25.md pro mesmo
+          // problema nos avatares do Inbox). Diferente do avatar, não tem
+          // self-heal automático aqui — é conteúdo de campanha, só
+          // recuperável reenviando o arquivo pelo editor do Fluxo.
+          if (!(await storageExists(config.storageKey))) {
+            await updateFluxoExecucao(execucaoId, {
+              status: "erro",
+              erroMsg: `Mídia não encontrada no storage atual (chave "${config.storageKey}") — provavelmente um arquivo de antes da troca de backend pra R2. Reenvie o arquivo nesse passo do Fluxo.`,
+            });
+            return;
+          }
           let zapiMessageId: string | null = null;
+          let erroEnvio: string | null = null;
           const unidade = await getUnidadeById(fluxo.unidadeId);
           if (unidade?.canal === "buddha_mkt") {
             // Envio de mídia pela Cloud API oficial exige upload prévio
@@ -369,6 +408,7 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
             try {
               await enviarPelaUnidade(unidade, conversa.telefone, config.legenda || config.nomeArquivo || `[${config.tipoMidia}]`);
             } catch (e) {
+              erroEnvio = e instanceof Error ? e.message : String(e);
               console.error(`[Fluxos] Erro ao enviar mídia via Buddha Mkt (execução ${execucaoId}):`, e);
             }
           } else if (unidade?.zapiInstanceId && unidade.zapiToken && unidade.zapiClientToken) {
@@ -392,8 +432,13 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
                 zapiMessageId = resultado.messageId ?? null;
               }
             } catch (e) {
+              erroEnvio = e instanceof Error ? e.message : String(e);
               console.error(`[Fluxos] Erro ao enviar mídia (execução ${execucaoId}):`, e);
             }
+          }
+          if (erroEnvio) {
+            await updateFluxoExecucao(execucaoId, { status: "erro", erroMsg: `Falha ao enviar mídia: ${erroEnvio}` });
+            return;
           }
           await insertInboxMensagem({
             conversaId: execucao.conversaId,
@@ -461,7 +506,7 @@ export async function retomarNoAguardandoResposta(execucaoId: number): Promise<v
 }
 
 /**
- * Chamado pelo cron /api/scheduled/retomar-fluxos (piso de ~1min) —
+ * Chamado pelo cron "retomar-fluxos" (server/_core/scheduler.ts, piso de ~5s) —
  * retoma execuções "pausado" com prazo vencido (nó "aguardar") e trata
  * por timeout as execuções "aguardando_resposta" (menu) que passaram
  * do diasTimeoutSemResposta sem o cliente responder.
@@ -476,6 +521,15 @@ export async function retomarExecucoesPendentes(limite = 20): Promise<{ processa
     // igual condicional/mensagem já fazem.
     const no = await getFluxoNoByOrdem(execucao.fluxoId, execucao.noAtualOrdem);
     if (no) {
+      if (no.tipo === "aguardar") {
+        const config = no.config as Extract<FluxoNoConfig, { valor: number; unidade: "segundos" | "minutos" | "horas" | "dias" }>;
+        if (config.mostrarDigitando) {
+          const msPorUnidade = { segundos: 1_000, minutos: 60_000, horas: 3_600_000, dias: 86_400_000 }[config.unidade];
+          const segundos = Math.min(Math.max(1, Math.round((config.valor * msPorUnidade) / 1000)), DELAY_TYPING_MAX_SEGUNDOS);
+          const variaveis = (execucao.variaveis as Record<string, string>) ?? {};
+          await updateFluxoExecucao(execucao.id, { variaveis: { ...variaveis, [VARIAVEL_DELAY_TYPING]: String(segundos) } });
+        }
+      }
       await avancar(execucao.id, no.proximoNoOrdem, 0);
     }
   }
