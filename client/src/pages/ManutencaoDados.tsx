@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertTriangle, CheckCircle2, Database, FileUp, Link2, Loader2, UsersRound } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Database, FileUp, ImageOff, Link2, Loader2, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 
 function fileParaBase64(file: File): Promise<string> {
@@ -154,6 +154,13 @@ export default function ManutencaoDados() {
       utils.clientes.planosBelle.invalidate();
     },
     onError: (error) => toast.error(`Falha ao confirmar vínculo: ${error.message}`),
+  });
+  const recuperarFotos = trpc.inbox.conversas.recuperarFotos.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.recuperadas} foto(s) recuperada(s) de ${data.total} conversa(s) sem foto (${data.semFotoNoWhatsapp} sem foto no WhatsApp, ${data.falhas} falha(s)).`);
+      utils.inbox.conversas.list.invalidate();
+    },
+    onError: (error) => toast.error(`Falha ao recuperar fotos: ${error.message}`),
   });
 
   const carregandoPorTipo: Record<ArquivoTipo, boolean> = {
@@ -310,6 +317,18 @@ export default function ManutencaoDados() {
                     })}</TableBody>
                   </Table>
                 </div>}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base" style={{ fontFamily: "'Cormorant Garamond', serif" }}><ImageOff className="h-4 w-4 text-primary" />Fotos de perfil do WhatsApp</CardTitle>
+              <CardDescription>Rebusca na Z-API as fotos de perfil das conversas desta unidade que ficaram sem foto após a troca de armazenamento.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button size="sm" variant="outline" disabled={recuperarFotos.isPending} onClick={() => recuperarFotos.mutate({ unidadeId })}>
+                {recuperarFotos.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ImageOff className="mr-1.5 h-3.5 w-3.5" />}Recuperar fotos
+              </Button>
             </CardContent>
           </Card>
           {importacaoPendente && (() => {
