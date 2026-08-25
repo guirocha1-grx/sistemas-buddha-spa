@@ -935,22 +935,28 @@ Diretrizes:
       }),
 
       /**
-       * Rebusca de uma vez as fotos de perfil perdidas na troca de storage
-       * pro R2 (2026-08-23) — mesma lógica do webhook (server/webhooks.ts),
-       * só que disparada manualmente pra não depender de cada contato
-       * mandar mensagem de novo. Delay entre chamadas pra não estourar
-       * rate limit da Z-API (mesmo cuidado já documentado no webhook).
+       * Rebusca as fotos de perfil perdidas na troca de storage pro R2
+       * (2026-08-23) — mesma lógica do webhook (server/webhooks.ts), só
+       * que disparada manualmente pra não depender de cada contato mandar
+       * mensagem de novo. Processa só um lote por chamada (padrão igual ao
+       * de atendimentosUploadRoute.ts "processar-lote"): uma lista grande
+       * de conversas sem foto, com o delay de rate-limit da Z-API entre
+       * cada uma, estourava o timeout do proxy do host e voltava como
+       * página HTML em vez de JSON (erro real visto em produção). Quem
+       * chama repete a chamada, com o unidadeId, até `restantes` zerar.
        */
-      recuperarFotos: adminProcedure.input(z.object({ unidadeId: z.number() })).mutation(async ({ input }) => {
+      recuperarFotos: adminProcedure.input(z.object({ unidadeId: z.number(), limite: z.number().int().positive().max(30).optional() })).mutation(async ({ input }) => {
         const unidade = await db.getUnidadeById(input.unidadeId);
         if (!unidade?.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) {
           throw new Error("Z-API não configurado para esta unidade");
         }
-        const conversas = await db.listConversasZapiSemFoto(input.unidadeId);
+        const todasSemFoto = await db.listConversasZapiSemFoto(input.unidadeId);
+        const limite = input.limite ?? 15;
+        const lote = todasSemFoto.slice(0, limite);
         let recuperadas = 0;
         let semFotoNoWhatsapp = 0;
         let falhas = 0;
-        for (const conversa of conversas) {
+        for (const conversa of lote) {
           try {
             const fotoWhatsappUrl = conversa.isGrupo === "true"
               ? await zapiApi.getGroupPhoto(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone)
@@ -969,7 +975,7 @@ Diretrizes:
           }
           await new Promise((resolve) => setTimeout(resolve, 400));
         }
-        return { total: conversas.length, recuperadas, semFotoNoWhatsapp, falhas };
+        return { total: todasSemFoto.length, processadas: lote.length, restantes: todasSemFoto.length - lote.length, recuperadas, semFotoNoWhatsapp, falhas };
       }),
 
       abrirPorCliente: protectedProcedure.input(z.object({

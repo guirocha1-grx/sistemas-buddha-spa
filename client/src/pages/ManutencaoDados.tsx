@@ -155,13 +155,37 @@ export default function ManutencaoDados() {
     },
     onError: (error) => toast.error(`Falha ao confirmar vínculo: ${error.message}`),
   });
-  const recuperarFotos = trpc.inbox.conversas.recuperarFotos.useMutation({
-    onSuccess: (data) => {
-      toast.success(`${data.recuperadas} foto(s) recuperada(s) de ${data.total} conversa(s) sem foto (${data.semFotoNoWhatsapp} sem foto no WhatsApp, ${data.falhas} falha(s)).`);
+  const recuperarFotosMutation = trpc.inbox.conversas.recuperarFotos.useMutation();
+  const [recuperandoFotos, setRecuperandoFotos] = useState(false);
+  const [progressoFotos, setProgressoFotos] = useState<{ processadas: number; total: number } | null>(null);
+
+  async function recuperarFotos() {
+    if (!unidadeId) return;
+    setRecuperandoFotos(true);
+    setProgressoFotos(null);
+    let recuperadas = 0;
+    let semFotoNoWhatsapp = 0;
+    let falhas = 0;
+    let processadas = 0;
+    try {
+      while (true) {
+        const resultado = await recuperarFotosMutation.mutateAsync({ unidadeId });
+        recuperadas += resultado.recuperadas;
+        semFotoNoWhatsapp += resultado.semFotoNoWhatsapp;
+        falhas += resultado.falhas;
+        processadas += resultado.processadas;
+        setProgressoFotos({ processadas, total: resultado.total });
+        if (resultado.restantes === 0) break;
+      }
+      toast.success(`${recuperadas} foto(s) recuperada(s) de ${processadas} conversa(s) sem foto (${semFotoNoWhatsapp} sem foto no WhatsApp, ${falhas} falha(s)).`);
       utils.inbox.conversas.list.invalidate();
-    },
-    onError: (error) => toast.error(`Falha ao recuperar fotos: ${error.message}`),
-  });
+    } catch (error: any) {
+      toast.error(`Falha ao recuperar fotos: ${error?.message ?? "erro desconhecido"}`);
+    } finally {
+      setRecuperandoFotos(false);
+      setProgressoFotos(null);
+    }
+  }
 
   const carregandoPorTipo: Record<ArquivoTipo, boolean> = {
     clientes: importarClientes.isPending,
@@ -324,10 +348,13 @@ export default function ManutencaoDados() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base" style={{ fontFamily: "'Cormorant Garamond', serif" }}><ImageOff className="h-4 w-4 text-primary" />Fotos de perfil do WhatsApp</CardTitle>
               <CardDescription>Rebusca na Z-API as fotos de perfil das conversas desta unidade que ficaram sem foto após a troca de armazenamento.</CardDescription>
+              {progressoFotos && (
+                <p className="pt-1 text-xs font-medium text-primary">Processando: {progressoFotos.processadas} de {progressoFotos.total} conversa(s)</p>
+              )}
             </CardHeader>
             <CardContent>
-              <Button size="sm" variant="outline" disabled={recuperarFotos.isPending} onClick={() => recuperarFotos.mutate({ unidadeId })}>
-                {recuperarFotos.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ImageOff className="mr-1.5 h-3.5 w-3.5" />}Recuperar fotos
+              <Button size="sm" variant="outline" disabled={recuperandoFotos} onClick={recuperarFotos}>
+                {recuperandoFotos ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ImageOff className="mr-1.5 h-3.5 w-3.5" />}Recuperar fotos
               </Button>
             </CardContent>
           </Card>
