@@ -251,7 +251,18 @@ export async function listarRelatoriosLiberadosBruto(accessToken: string): Promi
  */
 export async function listarRelatoriosLiberados(accessToken: string): Promise<MpRelatorioInfo[]> {
   const bruto = await listarRelatoriosLiberadosBruto(accessToken);
-  const dados = JSON.parse(bruto) as MpRelatorioInfo[] | { data?: MpRelatorioInfo[]; results?: MpRelatorioInfo[] };
+  let dados: MpRelatorioInfo[] | { data?: MpRelatorioInfo[]; results?: MpRelatorioInfo[] };
+  try {
+    dados = JSON.parse(bruto);
+  } catch {
+    // res.ok pode vir true mesmo com corpo não-JSON (ex.: página HTML de
+    // erro/manutenção servida com status 200) — listarRelatoriosLiberadosBruto
+    // só lança quando !res.ok, então esse parse é o único ponto que detecta
+    // esse caso. Sem o trecho bruto aqui, "Unexpected token '<'" não diz
+    // qual página voltou (login, manutenção, 404 etc.) — mesmo raciocínio do
+    // diagnóstico já usado em llm.ts pra resposta vazia da IA.
+    throw new Error(`[Mercado Pago] Resposta de release_report/list não é JSON válido; início do corpo: ${bruto.slice(0, 300)}`);
+  }
   if (Array.isArray(dados)) return dados;
   return dados.data ?? dados.results ?? [];
 }
