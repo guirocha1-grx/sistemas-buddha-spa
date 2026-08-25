@@ -528,6 +528,30 @@ export async function inboxConversaTemFoto(telefone: string): Promise<boolean> {
 }
 
 /**
+ * Conversas Z-API da unidade sem foto salva — usado pelo botão admin de
+ * "recuperar avatares" (ver server/routers.ts, inbox.conversas.recuperarFotos)
+ * pra rebuscar de uma vez as fotos perdidas na troca de storage pro R2, sem
+ * precisar esperar cada contato mandar mensagem de novo.
+ */
+export async function listConversasZapiSemFoto(unidadeId: number): Promise<Array<{ id: number; telefone: string; isGrupo: string | null }>> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: inboxConversas.id, telefone: inboxConversas.telefone, isGrupo: inboxConversas.isGrupo })
+    .from(inboxConversas)
+    .where(and(
+      eq(inboxConversas.unidadeId, unidadeId),
+      eq(inboxConversas.canal, "zapi"),
+      isNull(inboxConversas.fotoUrl),
+    ));
+}
+
+export async function atualizarFotoConversa(id: number, fotoUrl: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inboxConversas).set({ fotoUrl }).where(eq(inboxConversas.id, id));
+}
+
+/**
  * LEFT JOIN com clientes (mesmo espírito do mobai-crm): o Inbox não
  * deve mostrar só o que o WhatsApp manda como nome — quando a conversa
  * já está vinculada a um cliente Belle (clienteId), o nome do cadastro

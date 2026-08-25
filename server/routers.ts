@@ -934,6 +934,44 @@ Diretrizes:
         return db.listConversasLidPendente();
       }),
 
+      /**
+       * Rebusca de uma vez as fotos de perfil perdidas na troca de storage
+       * pro R2 (2026-08-23) — mesma lógica do webhook (server/webhooks.ts),
+       * só que disparada manualmente pra não depender de cada contato
+       * mandar mensagem de novo. Delay entre chamadas pra não estourar
+       * rate limit da Z-API (mesmo cuidado já documentado no webhook).
+       */
+      recuperarFotos: adminProcedure.input(z.object({ unidadeId: z.number() })).mutation(async ({ input }) => {
+        const unidade = await db.getUnidadeById(input.unidadeId);
+        if (!unidade?.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) {
+          throw new Error("Z-API não configurado para esta unidade");
+        }
+        const conversas = await db.listConversasZapiSemFoto(input.unidadeId);
+        let recuperadas = 0;
+        let semFotoNoWhatsapp = 0;
+        let falhas = 0;
+        for (const conversa of conversas) {
+          try {
+            const fotoWhatsappUrl = conversa.isGrupo === "true"
+              ? await zapiApi.getGroupPhoto(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone)
+              : await zapiApi.getProfilePicture(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone);
+            if (!fotoWhatsappUrl) { semFotoNoWhatsapp++; continue; }
+            const imgResp = await fetch(fotoWhatsappUrl);
+            if (!imgResp.ok) { falhas++; continue; }
+            const buffer = Buffer.from(await imgResp.arrayBuffer());
+            const contentType = imgResp.headers.get("content-type") || "image/jpeg";
+            const chaveSegura = conversa.telefone.replace(/[^a-zA-Z0-9_-]/g, "_");
+            const { url } = await storagePut(`inbox-fotos-perfil/${chaveSegura}.jpg`, buffer, contentType);
+            await db.atualizarFotoConversa(conversa.id, url);
+            recuperadas++;
+          } catch {
+            falhas++;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        }
+        return { total: conversas.length, recuperadas, semFotoNoWhatsapp, falhas };
+      }),
+
       abrirPorCliente: protectedProcedure.input(z.object({
         clienteId: z.number(),
         unidadeId: z.number(),
