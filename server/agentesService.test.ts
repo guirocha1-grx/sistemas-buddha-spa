@@ -105,7 +105,7 @@ describe("orquestrador de agentes", () => {
   });
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     agentesDb.buscarExecucaoPorMensagem.mockResolvedValue(undefined);
     agentesDb.criarExecucao.mockResolvedValue(90);
     agentesDb.obterEstadoConversa.mockResolvedValue(undefined);
@@ -269,7 +269,7 @@ describe("orquestrador de agentes", () => {
     }));
   });
 
-  it("pede que a recepção verifique quando o cliente já informou o período", async () => {
+  it("oferece os slots padronizados quando o cliente já informou o período", async () => {
     agentesDb.obterContextoConversa.mockResolvedValue(contexto("Tem horário para hoje à tarde?"));
     agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);
 
@@ -278,22 +278,43 @@ describe("orquestrador de agentes", () => {
     expect(invokeLLM).not.toHaveBeenCalled();
     expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
       agenteId: 5,
-      sugestao: "Vou verificar para você, por favor aguarde um momento. ✨",
-      variaveis: expect.objectContaining({ triagem_horario: "verificar_disponibilidade" }),
+      sugestao: "Tenho para hoje disponíveis os horários 13:00 e 14:15. Algum desses fica bom para você?",
+      variaveis: expect.objectContaining({ triagem_horario: "aguardando_escolha_slot", slots_oferecidos: "13:00, 14:15" }),
     }));
   });
 
-  it("reconhece horário específico com minutos e pede apenas a verificação da recepção", async () => {
+  it("mantém a coleta com Carol quando o cliente informa um horário específico", async () => {
     agentesDb.obterContextoConversa.mockResolvedValue(contexto("Teria algum horário entre 16h15 e 16h45 no dia 28?"));
     agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);
+    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("Qual será a terapia?") } }] });
 
     await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 487 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
 
+    expect(invokeLLM).toHaveBeenCalledTimes(1);
+    expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
+      sugestao: "Qual será a terapia?",
+    }));
+  });
+
+  it("oferece os slots de domingo na ordem aprovada", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Tem horário para domingo à tarde?"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 492 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
+
     expect(invokeLLM).not.toHaveBeenCalled();
     expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
-      sugestao: "Vou verificar para você, por favor aguarde um momento. ✨",
-      variaveis: expect.objectContaining({ triagem_horario: "verificar_disponibilidade" }),
+      sugestao: "Tenho para domingo disponíveis os horários 14:00 e 15:15. Algum desses fica bom para você?",
+      variaveis: expect.objectContaining({ slots_oferecidos: "14:00, 15:15" }),
     }));
+  });
+
+  it("injeta a regra de última terapia, cadastro posterior e conclusão da Carol", () => {
+    const instrucao = instrucaoContextoRelacionamento("carol");
+    expect(instrucao).toContain("A terapia será [última terapia]?");
+    expect(instrucao).toContain("ID 30020");
+    expect(instrucao).toContain("Por favor, aguarde um momento ✨");
+    expect(instrucaoContextoRelacionamento("bianca")).toBe("");
   });
 
   it.each([
@@ -608,10 +629,12 @@ describe("orquestrador de agentes", () => {
 });
 
 describe("contexto de continuidade da Carol", () => {
-  it("autoriza a Carol a usar plano e último atendimento apenas como referência de agendamento", () => {
+  it("orienta a Carol a usar plano, histórico e último atendimento na preparação do agendamento", () => {
     const instrucao = instrucaoContextoRelacionamento("carol");
     expect(instrucao).toContain("saldo de sessões");
     expect(instrucao).toContain("Nunca afirme que existe horário");
+    expect(instrucao).toContain("atendimentos concluídos");
+    expect(instrucao).toContain("status \"bianca\"");
     expect(instrucaoContextoRelacionamento("bianca")).toBe("");
     expect(instrucaoContextoRelacionamento("diana")).toBe("");
   });

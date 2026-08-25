@@ -714,7 +714,7 @@ async function obterContextoBelleCliente(unidadeId: number | null, clienteId: nu
   const db = await getDb();
   if (!db || !unidadeId || !clienteId) return null;
   const hoje = new Date().toISOString().slice(0, 10);
-  const [planos, ultimoAtendimento] = await Promise.all([
+  const [planos, ultimoAtendimento, totalAtendimentos] = await Promise.all([
     db.select({
       planoBelleId: bellePlanosClientes.planoBelleId,
       validade: bellePlanosClientes.validade,
@@ -739,8 +739,13 @@ async function obterContextoBelleCliente(unidadeId: number | null, clienteId: nu
         eq(belleAtendimentos.status, "Atendido"),
       ))
       .orderBy(desc(belleAtendimentos.dataAtendimento), desc(belleAtendimentos.horario)).limit(1),
+    db.select({ quantidade: sql<number>`COUNT(*)` }).from(belleAtendimentos)
+      .where(and(
+        eq(belleAtendimentos.unidadeId, unidadeId),
+        eq(belleAtendimentos.clienteId, clienteId),
+        eq(belleAtendimentos.status, "Atendido"),
+      )),
   ]);
-  if (planos.length === 0 && ultimoAtendimento.length === 0) return null;
   const servicos = planos.length === 0 ? [] : await db.select({
     planoBelleId: bellePlanosServicos.planoBelleId,
     servicoNome: bellePlanosServicos.servicoNome,
@@ -760,6 +765,7 @@ async function obterContextoBelleCliente(unidadeId: number | null, clienteId: nu
       status: plano.status,
       servicos: servicos.filter((servico) => servico.planoBelleId === plano.planoBelleId),
     })),
+    quantidadeAtendimentos: Number(totalAtendimentos[0]?.quantidade ?? 0),
     ultimoAtendimento: ultimoAtendimento[0] ?? null,
   };
 }

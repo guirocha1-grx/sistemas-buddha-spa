@@ -399,3 +399,20 @@
 - [x] Remover o bloco residual de automação do painel direito, mantendo somente o controle no cabeçalho
 - [x] Exibir detalhes de cada plano no Inbox ao passar o mouse: terapias, sessões restantes, utilizadas e dados disponíveis
 - [x] Reavaliar a efetividade das sugestões dos agentes após os ajustes recentes, comparando decisões da recepção e qualidade por agente
+- [x] Desativar a publicação temporária do Manus após a migração para Railway
+- [x] Registrar nas instruções permanentes que alterações são entregues por GitHub e não devem gerar deploy pelo Manus
+- [x] Recuperar e documentar as alterações aplicadas ao prompt da Carol em 22 de agosto
+- [x] Verificar se o prompt da Carol alterado após o backup de sexta pode ser extraído da publicação Manus desativada
+- [x] Reconstruir o prompt da Carol como preparadora de agenda, com uso presumido de plano ativo e coleta para uma única consulta da recepção
+- [x] Configurar a Carol para presumir uma pessoa e só perguntar quantidade quando houver acompanhante ou grupo explicitamente mencionado
+- [x] Exigir foto do voucher antes de preparar o agendamento e aplicar a resposta de lista de espera prioritária para sábado com voucher ou plano ativo
+- [x] Estruturar a coleta progressiva da Carol: dia, horário, terapia com duração, terapeuta preferido e triagem de cliente recorrente versus primeiro agendamento
+- [x] Sugerir no primeiro agendamento o script de cadastro com nome completo, CPF, data de nascimento e telefone para contato
+- [x] Garantir que ausência de cadastro não interrompa a coleta das cinco informações de agendamento antes do script de cadastro
+- [x] Configurar a Carol para sugerir slots padrão por período, oferecendo inicialmente apenas os dois primeiros horários e reservando 20:45 como alternativa
+- [x] Usar linguagem direta ao oferecer slots: “Tenho disponível [X] e [Y]. Algum desses fica bom para você?”
+- [x] Incluir slots de domingo: 12:00, 13:30, 14:00, 15:15, 16:30, 17:45 e 18:45
+- [x] Disponibilizar à Carol o histórico de atendimentos da unidade e confirmar a última terapia quando o cliente informar data e terapeuta, mas não mencionar a terapia
+- [x] Encerrar a Carol após a coleta completa com “Por favor, aguarde um momento ✨” e resumo estruturado para a recepção
+- [x] Fazer a Carol perguntar a terapia de forma aberta sem histórico e devolver para Bianca quando houver dúvida explicativa sobre terapias
+- [x] Implantar a versão aprovada da Carol com contexto de histórico, fluxo de coleta, slots e resumo para recepção

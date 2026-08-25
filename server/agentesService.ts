@@ -55,7 +55,7 @@ function instrucaoNaoIntervencao(chaveAgente: string) {
 
 export function instrucaoContextoRelacionamento(chaveAgente: string) {
   if (chaveAgente !== "carol") return "";
-  return "\n\nCONTEXTO DE RELACIONAMENTO: quando o sistema informar plano ativo, saldo de sessões, última terapia ou profissional, use esses dados apenas como referência factual. Se o cliente demonstrar intenção de agendar, você pode sugerir naturalmente repetir a terapia ou consultar o mesmo profissional como uma opção, nunca como decisão já tomada. Só mencione saldo se houver serviço correspondente com restante maior que zero. Nunca afirme que existe horário, nunca use dados vencidos e nunca ofereça uma terapia/profissional sem confirmação do cliente.";
+  return "\n\nCONTEXTO E FLUXO OPERACIONAL DA CAROL: você prepara o agendamento para que a recepção consulte a agenda somente uma vez; não consulta, não confirma e não promete vaga. Nunca afirme que existe horário. O contexto informa exclusivamente a mesma unidade da conversa. Se houver plano ativo, presuma o uso do plano e não pergunte se o cliente quer utilizá-lo; use saldo de sessões apenas como referência factual para o resumo. Se houver última terapia e o cliente informou data/horário ou profissional, mas não informou a terapia, pergunte: \"A terapia será [última terapia]?\"; nunca presuma sem a confirmação. Se não houver última terapia ou se a terapia não estiver clara, pergunte de forma aberta: \"Qual será a terapia?\". Se o cliente pedir explicação, comparação ou indicação entre terapias, responda com status \"bianca\" e preserve as variáveis coletadas. A quantidade de atendimentos concluídos serve apenas para distinguir histórico conhecido na unidade: só depois de completar a coleta de agenda, se ela for zero, selecione o Script \"Solicitação de dados para agendamento\" (ID 30020). A falta de cadastro nunca interrompe a coleta. Ao terminar, use status \"success\", registre no summary dia, horário/período, terapia com duração, profissional de preferência se houver, pessoa atendida, plano/voucher e cadastro pendente se aplicável; sugira somente \"Por favor, aguarde um momento ✨\". Não faça pergunta adicional nesse ponto.";
 }
 
 /** Impede que uma resposta improvisada pelo modelo vire um texto longo no Inbox. */
@@ -88,6 +88,9 @@ function textoContexto(contexto: ContextoConversa) {
   const resumoBelle = !dadosBelle ? "" : [
     dadosBelle.planos?.length
       ? `Planos ativos espelhados: ${dadosBelle.planos.map((plano) => `${plano.validade ? `validade ${plano.validade}` : "validade não informada"}; ${plano.servicos.map((servico) => `${servico.servicoNome} (${servico.restantes} restante(s), ${servico.agendados} agendado(s))`).join(", ")}`).join(" | ")}`
+      : null,
+    typeof dadosBelle.quantidadeAtendimentos === "number"
+      ? `Histórico na unidade: ${dadosBelle.quantidadeAtendimentos} atendimento(s) concluído(s).`
       : null,
     dadosBelle.ultimoAtendimento
       ? `Último atendimento espelhado: ${dadosBelle.ultimoAtendimento.dataAtendimento ?? "data não informada"}; ${dadosBelle.ultimoAtendimento.servicoNome ?? "serviço não informado"}; profissional ${dadosBelle.ultimoAtendimento.profissionalNome ?? "não informado"}${dadosBelle.ultimoAtendimento.temPreferencia ? "; preferência registrada" : ""}.`
@@ -252,7 +255,39 @@ function pedidoDisponibilidade(contexto: ContextoConversa) {
 function periodoPreferenciaInformado(contexto: ContextoConversa) {
   const texto = (ultimaMensagemCliente(contexto)?.transcricao || ultimaMensagemCliente(contexto)?.conteudo || "")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  return /\b(manha|tarde|noite|madrugada)\b|\b(?:[01]?\d|2[0-3])\s*(?:h(?:\s*[0-5]\d)?|:[0-5]\d|horas)\b/.test(texto);
+  return /\b(manha|tarde|noite|madrugada)\b/.test(texto);
+}
+
+function horarioEspecificoInformado(contexto: ContextoConversa) {
+  const texto = (ultimaMensagemCliente(contexto)?.transcricao || ultimaMensagemCliente(contexto)?.conteudo || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return /\b(?:[01]?\d|2[0-3])\s*(?:h(?:\s*[0-5]\d)?|:[0-5]\d|horas)\b/.test(texto);
+}
+
+function referenciaDoPedido(contexto: ContextoConversa) {
+  const texto = (ultimaMensagemCliente(contexto)?.transcricao || ultimaMensagemCliente(contexto)?.conteudo || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/\bamanha\b/.test(texto)) return "para amanhã";
+  if (/\bhoje\b/.test(texto)) return "para hoje";
+  if (/\bdomingo\b/.test(texto)) return "para domingo";
+  if (/\bsabado\b/.test(texto)) return "para sábado";
+  return "";
+}
+
+function slotsParaPeriodo(contexto: ContextoConversa) {
+  const texto = (ultimaMensagemCliente(contexto)?.transcricao || ultimaMensagemCliente(contexto)?.conteudo || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const domingo = /\bdomingo\b/.test(texto);
+  if (domingo) {
+    if (/\b(noite|fim de tarde)\b/.test(texto)) return ["17:45", "18:45"];
+    if (/\btarde\b/.test(texto)) return ["14:00", "15:15"];
+    return ["12:00", "13:30"];
+  }
+  if (/\bmanha\b/.test(texto)) return ["10:15", "11:30"];
+  if (/\bfim de tarde\b/.test(texto)) return ["17:00", "18:15"];
+  if (/\bnoite\b/.test(texto)) return ["18:15", "19:30"];
+  if (/\btarde\b/.test(texto)) return ["13:00", "14:15"];
+  return null;
 }
 
 function respostaCarolParaContextoEncerrado(
@@ -301,16 +336,21 @@ function instrucaoParetoEspecialista(chaveAgente: string) {
   return `\n\nREGRAS PARETO DA BIANCA: a tabela comercial e os Scripts são a fonte literal de nomes, durações, indicação e condições. NOMENCLATURA OFICIAL: quando existir referência oficial, copie a nomenclatura canônica dela; não crie sinônimos, modalidades, durações ou nomes alternativos. Se a referência não estiver disponível, não complete por suposição: faça uma pergunta curta ou encaminhe para a recepção. “Tenho/já comprei/ganhei/recebi voucher” significa voucher existente para uso ou agendamento, nunca emissão de novo voucher. Nessa situação, não peça dados de emissão; encaminhe com status "carol" para a triagem de agenda. SEQUÊNCIA DE RESPOSTA: quando o cliente fizer uma pergunta específica, responda-a primeiro com o fato disponível nas fontes oficiais — só depois de entregar essa resposta você pode avançar com uma pergunta de qualificação ou sugerir o próximo passo. Nunca substitua a resposta por uma pergunta de qualificação; a pergunta vem depois do fato, nunca no lugar dele.`;
 }
 
-function respostaPadraoDisponibilidade(contexto: ContextoConversa, estado: Awaited<ReturnType<typeof agentesDb.obterEstadoConversa>>) {
+function respostaPadraoDisponibilidade(contexto: ContextoConversa, estado: Awaited<ReturnType<typeof agentesDb.obterEstadoConversa>>): RespostaEspecialista | null {
   const aguardavaPeriodo = estado?.variaveis?.triagem_horario === "aguardando_periodo";
   const possuiPeriodo = periodoPreferenciaInformado(contexto);
   if (!pedidoDisponibilidade(contexto) && !(aguardavaPeriodo && possuiPeriodo)) return null;
+  // O cliente já informou um horário exato: a Carol precisa continuar a
+  // coleta (principalmente da terapia), em vez de trocar o pedido por slots.
+  if (horarioEspecificoInformado(contexto)) return null;
   if (possuiPeriodo) {
+    const slots = slotsParaPeriodo(contexto);
+    const referencia = referenciaDoPedido(contexto);
     return {
-      message: "Vou verificar para você, por favor aguarde um momento. ✨",
+      message: `Tenho${referencia ? ` ${referencia}` : ""} disponíveis os horários ${slots?.[0]} e ${slots?.[1]}. Algum desses fica bom para você?`,
       status: "in_process" as const,
-      summary: "Cliente informou preferência de período; recepção deve verificar disponibilidade.",
-      variables: { triagem_horario: "verificar_disponibilidade" },
+      summary: `Cliente informou preferência de período; foram sugeridos slots ${slots?.join(" e ")} para confirmar a escolha antes da preparação do agendamento.`,
+      variables: { triagem_horario: "aguardando_escolha_slot", slots_oferecidos: slots?.join(", ") ?? null },
       action: null,
       scriptId: null,
       excecaoOperacional: false,
@@ -572,7 +612,7 @@ export async function processarMensagemRecebida(params: { conversaId: number; me
 
       if (naoIntervencaoPermitida(especialista, resposta)) {
         const variaveisAnteriores = (await agentesDb.obterEstadoConversa(params.conversaId))?.variaveis ?? {};
-        const variaveis = { ...(variaveisAnteriores ?? {}), ...resposta.variables };
+        const variaveis: Record<string, string | number | boolean | null> = { ...(variaveisAnteriores ?? {}), ...resposta.variables };
         await agentesDb.salvarEstadoConversa({
           conversaId: params.conversaId,
           unidadeId,
@@ -596,7 +636,7 @@ export async function processarMensagemRecebida(params: { conversaId: number; me
       if (!resposta.message.trim()) throw new Error("O especialista retornou uma mensagem vazia fora da regra de não intervenção");
 
       const variaveisAnteriores = (await agentesDb.obterEstadoConversa(params.conversaId))?.variaveis ?? {};
-      const variaveis = { ...(variaveisAnteriores ?? {}), ...resposta.variables };
+      const variaveis: Record<string, string | number | boolean | null> = { ...(variaveisAnteriores ?? {}), ...resposta.variables };
       if (resposta.status === "aurea") {
         const roteamento = await obterRotaComAurea({ contexto, receptor, especialistas });
         const novoEspecialista = especialistas.find(({ agente }) => agente.chave === roteamento.destino);
@@ -628,7 +668,7 @@ export async function processarMensagemRecebida(params: { conversaId: number; me
       const filaRestante = handoff
         ? (handoff.agente.chave === rotasPendentes[0] ? rotasPendentes.slice(1) : rotasPendentes)
         : rotasPendentes.slice(1);
-      const variaveisComFila = {
+      const variaveisComFila: Record<string, string | number | boolean | null> = {
         ...variaveis,
         ...(filaRestante.length ? { rotas_pendentes: JSON.stringify(filaRestante) } : { rotas_pendentes: null }),
       };
