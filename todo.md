@@ -418,3 +418,4 @@
 - [x] Implantar a versão aprovada da Carol com contexto de histórico, fluxo de coleta, slots e resumo para recepção
 - [x] Restaurar uma autenticação válida do GitHub e enviar o commit 596ce13 da nova jornada da Carol
 - [x] Gerar e cadastrar uma chave SSH exclusiva do ambiente para enviar o commit 596ce13 ao GitHub
+- [x] Atualizar as instruções permanentes do projeto para a operação, testes e deploy pelo Railway
