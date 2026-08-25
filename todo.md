@@ -416,3 +416,5 @@
 - [x] Encerrar a Carol após a coleta completa com “Por favor, aguarde um momento ✨” e resumo estruturado para a recepção
 - [x] Fazer a Carol perguntar a terapia de forma aberta sem histórico e devolver para Bianca quando houver dúvida explicativa sobre terapias
 - [x] Implantar a versão aprovada da Carol com contexto de histórico, fluxo de coleta, slots e resumo para recepção
+- [ ] Restaurar uma autenticação válida do GitHub e enviar o commit 596ce13 da nova jornada da Carol
+- [ ] Gerar e cadastrar uma chave SSH exclusiva do ambiente para enviar o commit 596ce13 ao GitHub
