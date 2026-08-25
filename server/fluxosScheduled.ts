@@ -83,11 +83,18 @@ export async function alertarBuddhaMktSemRetorno() {
           continue;
         }
         const nome = conversa.nomeContato || conversa.telefone;
-        await sendTelegramParaRecepcao(
-          `⚠️ Buddha Mkt: ${nome} (${conversa.telefone}) recebeu o disparo há mais de 10min e não escolheu unidade. Ligar pra atender.`,
-        );
-        await marcarBuddhaMktAlertado(conversa.id);
-        alertados++;
+        try {
+          await sendTelegramParaRecepcao(
+            `⚠️ Buddha Mkt: ${nome} (${conversa.telefone}) recebeu o disparo há mais de 10min e não escolheu unidade. Ligar pra atender.`,
+          );
+          alertados++;
+        } finally {
+          // Marca como alertada mesmo quando o envio falha (ex.: chat_id do
+          // Telegram inválido) — senão essa conversa nunca sai da fila e o
+          // cron (a cada minuto) tenta reenviar pra sempre, virando spam de
+          // erro no log em vez de uma falha registrada uma única vez.
+          await marcarBuddhaMktAlertado(conversa.id);
+        }
       } catch (e) {
         console.error(`[Fluxos] Erro ao avaliar aviso Buddha Mkt (conversa ${conversa.id}):`, e);
       }
