@@ -419,3 +419,13 @@
 - [x] Restaurar uma autenticação válida do GitHub e enviar o commit 596ce13 da nova jornada da Carol
 - [x] Gerar e cadastrar uma chave SSH exclusiva do ambiente para enviar o commit 596ce13 ao GitHub
 - [x] Atualizar as instruções permanentes do projeto para a operação, testes e deploy pelo Railway
+- [x] Investigar a atualização de fotos de perfil do WhatsApp no Railway — R2 está configurado; Z-API retorna foto indisponível ou não autorizada para os contatos afetados
+- [x] Verificar se a consulta em massa de fotos gerou limitação da Z-API/WhatsApp e definir retomada segura
+- [x] Diagnosticar por que fotos de grupos do WhatsApp também não aparecem após a migração
+- [x] Recuperar de forma isolada e com baixa cadência as fotos dos 3 a 4 grupos, sem reprocessar contatos individuais
+- [x] Revalidar somente a foto da conversa de grupo 900001, sem alterar mensagens, clientes ou demais conversas
+- [x] Confirmar a conexão TiDB do Railway e zerar somente fotoUrl da conversa 900001
+- [x] Confirmar que o marcador de “sem foto” deve ser preservado após resposta válida para evitar consultas repetidas
+- [x] Limpar referências antigas de foto do storage anterior, preservando o bloqueio normal após uma consulta válida da Z-API
+- [x] Aplicar a limpeza de referências antigas de foto tanto a conversas individuais quanto a grupos
+- [x] Documentar e versionar no GitHub a limpeza de referências antigas de foto do TiDB após a migração
