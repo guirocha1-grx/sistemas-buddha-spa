@@ -471,7 +471,15 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
 
   const resolvedMaxTokens = max_tokens ?? maxTokens;
   if (typeof resolvedMaxTokens === "number") {
-    payload.max_tokens = resolvedMaxTokens;
+    // A OpenAI descontinuou "max_tokens" pra modelos de raciocínio (família
+    // gpt-5): rejeita com 400 "Unsupported parameter" e pede
+    // "max_completion_tokens" (cobre também os tokens de raciocínio interno,
+    // não só o texto visível). O proxy anterior (Forge) aceitava
+    // "max_tokens" e convertia por baixo dos panos; falando direto com a
+    // OpenAI isso ficou explícito. "maxTokens"/"max_tokens" continuam sendo
+    // os nomes do parâmetro aqui em InvokeParams — só o campo enviado no
+    // payload mudou.
+    payload.max_completion_tokens = resolvedMaxTokens;
   }
 
   if (thinking) {
