@@ -508,7 +508,7 @@ export default function Clientes() {
                           <TableCell className="py-2">
                             <div className="flex items-center gap-1.5">
                               <span className="font-medium">{cliente.nome}</span>
-                              {cliente.clienteSsu && cliente.clienteRbs && (
+                              {user?.role === "admin" && cliente.clienteSsu && cliente.clienteRbs && (
                                 <Badge variant="outline" className="border-amber-300 text-amber-700 text-[10px] px-1 py-0">
                                   2 unidades
                                 </Badge>
