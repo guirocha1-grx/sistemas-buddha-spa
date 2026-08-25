@@ -71,7 +71,15 @@ export const buddhaMktApi = {
     }
 
     const data = (await response.json()) as { messages?: { id: string }[] };
-    return { messageId: data.messages?.[0]?.id ?? "" };
+    const messageId = data.messages?.[0]?.id;
+    // A Cloud API pode responder 2xx sem messages[0].id em erro assíncrono
+    // (mesmo padrão de bug já corrigido na Z-API, ver zapiApi.ts
+    // zapiRequest) — sem essa checagem, o envio era tratado como sucesso e
+    // o histórico local criado como se a mensagem tivesse sido entregue.
+    if (!messageId) {
+      throw new Error(`Buddha Mkt (WhatsApp Cloud API) respondeu sem confirmação de envio: ${JSON.stringify(data)}`);
+    }
+    return { messageId };
   },
 
   /** Mensagem fria (fora da janela de 24h) — só funciona com Template já aprovado pela Meta. */
@@ -109,6 +117,10 @@ export const buddhaMktApi = {
     }
 
     const data = (await response.json()) as { messages?: { id: string }[] };
-    return { messageId: data.messages?.[0]?.id ?? "" };
+    const messageId = data.messages?.[0]?.id;
+    if (!messageId) {
+      throw new Error(`Buddha Mkt (WhatsApp Cloud API) respondeu sem confirmação de envio: ${JSON.stringify(data)}`);
+    }
+    return { messageId };
   },
 };

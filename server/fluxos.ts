@@ -307,14 +307,25 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
         }
         const delayTypingSegundos = delayTypingBruto !== undefined ? Number(delayTypingBruto) : undefined;
         if (conversa?.telefone) {
-          let zapiMessageId: string | null = null;
           const unidade = await getUnidadeById(fluxo.unidadeId);
-          if (unidade) {
-            try {
-              ({ zapiMessageId } = await enviarPelaUnidade(unidade, conversa.telefone, texto, delayTypingSegundos));
-            } catch (e) {
-              console.error(`[Fluxos] Erro ao enviar mensagem (execução ${execucaoId}):`, e);
-            }
+          if (!unidade) {
+            await updateFluxoExecucao(execucaoId, { status: "erro", erroMsg: "Unidade do fluxo não encontrada" });
+            return;
+          }
+          let zapiMessageId: string | null;
+          try {
+            ({ zapiMessageId } = await enviarPelaUnidade(unidade, conversa.telefone, texto, delayTypingSegundos));
+          } catch (e) {
+            // Não grava como "enviada" quando o envio de verdade falhou —
+            // mesmo bug que a mídia tinha antes (ver storageExists acima)
+            // e que a Manus achou e corrigiu no mobai-crm: aceitar 2xx sem
+            // confirmação de entrega e registrar como se tivesse sido
+            // enviada. Marca a execução como erro em vez de seguir
+            // silenciosamente.
+            const erroMsg = e instanceof Error ? e.message : String(e);
+            console.error(`[Fluxos] Erro ao enviar mensagem (execução ${execucaoId}):`, e);
+            await updateFluxoExecucao(execucaoId, { status: "erro", erroMsg: `Falha ao enviar mensagem: ${erroMsg}` });
+            return;
           }
           await insertInboxMensagem({
             conversaId: execucao.conversaId,
