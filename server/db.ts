@@ -486,15 +486,26 @@ export async function mensageriaEstaAtiva(): Promise<boolean> {
  * permanente; a resolução é refeita a cada leitura (mesma estratégia do
  * mobai-crm).
  */
-async function resolverFotosUrlAssinadas(rows: Array<{ fotoUrl?: string | null }>): Promise<void> {
+async function resolverFotosUrlAssinadas(rows: Array<{ id: number; fotoUrl?: string | null }>): Promise<void> {
   const comFoto = rows.filter((r) => r.fotoUrl && r.fotoUrl.startsWith("/manus-storage/"));
   if (comFoto.length === 0) return;
+  const db = await getDb();
   await Promise.all(
     comFoto.map(async (row) => {
       try {
         row.fotoUrl = await storageGetSignedUrl(row.fotoUrl!.replace("/manus-storage/", ""));
       } catch (e) {
         console.error("[Inbox] Falha ao assinar fotoUrl:", e);
+        // Chave não existe mais no storage atual — acontece pra toda foto
+        // salva antes da troca de backend (Forge → R2, 2026-08-23), já que
+        // os arquivos antigos não foram copiados. Sem limpar aqui, a
+        // tentativa de assinar repete pra sempre a cada leitura. Zera pra
+        // que o próprio webhook (ver hasFoto acima) rebusque uma foto nova
+        // da Z-API na próxima mensagem dessa conversa.
+        row.fotoUrl = null;
+        if (db) {
+          db.update(inboxConversas).set({ fotoUrl: null }).where(eq(inboxConversas.id, row.id)).catch(() => {});
+        }
       }
     })
   );
