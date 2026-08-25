@@ -167,18 +167,22 @@ export default function ManutencaoDados() {
     let semFotoNoWhatsapp = 0;
     let falhas = 0;
     let processadas = 0;
+    const MAX_LOTES = 100; // trava de segurança: 100 lotes de 15 = até 1500 conversas por acionamento
     try {
-      while (true) {
+      for (let lote = 0; lote < MAX_LOTES; lote++) {
         const resultado = await recuperarFotosMutation.mutateAsync({ unidadeId });
         recuperadas += resultado.recuperadas;
         semFotoNoWhatsapp += resultado.semFotoNoWhatsapp;
         falhas += resultado.falhas;
         processadas += resultado.processadas;
         setProgressoFotos({ processadas, total: resultado.total });
+        utils.inbox.conversas.list.invalidate();
         if (resultado.restantes === 0) break;
+        if (lote === MAX_LOTES - 1) {
+          toast.message(`Parado após ${processadas} conversas por segurança — clique em "Recuperar fotos" de novo pra continuar de onde parou.`);
+        }
       }
       toast.success(`${recuperadas} foto(s) recuperada(s) de ${processadas} conversa(s) sem foto (${semFotoNoWhatsapp} sem foto no WhatsApp, ${falhas} falha(s)).`);
-      utils.inbox.conversas.list.invalidate();
     } catch (error: any) {
       toast.error(`Falha ao recuperar fotos: ${error?.message ?? "erro desconhecido"}`);
     } finally {

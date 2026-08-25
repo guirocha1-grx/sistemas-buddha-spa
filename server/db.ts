@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { eq, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
+import { eq, asc, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, bellePlanosClientes, bellePlanosServicos, lidMapping, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertBellePlanoCliente, type InsertBellePlanoServico, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
@@ -532,6 +532,13 @@ export async function inboxConversaTemFoto(telefone: string): Promise<boolean> {
  * "recuperar avatares" (ver server/routers.ts, inbox.conversas.recuperarFotos)
  * pra rebuscar de uma vez as fotos perdidas na troca de storage pro R2, sem
  * precisar esperar cada contato mandar mensagem de novo.
+ *
+ * ORDER BY id garante que cada lote avança pra próximas conversas em vez
+ * de reconsultar a mesma fatia a cada chamada (a ordem de um SELECT sem
+ * ORDER BY não é garantida pelo MySQL/TiDB) — sem isso, contatos que
+ * nunca recebem fotoUrl (ver marcarConversaSemFotoWhatsapp) podiam
+ * ocupar o topo de todo lote pra sempre, travando o processo nos mesmos
+ * poucos contatos.
  */
 export async function listConversasZapiSemFoto(unidadeId: number): Promise<Array<{ id: number; telefone: string; isGrupo: string | null }>> {
   const db = await getDb();
@@ -542,13 +549,28 @@ export async function listConversasZapiSemFoto(unidadeId: number): Promise<Array
       eq(inboxConversas.unidadeId, unidadeId),
       eq(inboxConversas.canal, "zapi"),
       isNull(inboxConversas.fotoUrl),
-    ));
+    ))
+    .orderBy(asc(inboxConversas.id));
 }
 
 export async function atualizarFotoConversa(id: number, fotoUrl: string): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.update(inboxConversas).set({ fotoUrl }).where(eq(inboxConversas.id, id));
+}
+
+/**
+ * Marca que a Z-API foi consultada e o contato não tem foto de perfil
+ * definida no WhatsApp agora — string vazia (não NULL), pra sair do
+ * filtro isNull(fotoUrl) de listConversasZapiSemFoto e não ser
+ * reconsultada em todo lote seguinte. Diferente de uma falha de
+ * download (mantida NULL, pra tentar de novo depois — pode ser link
+ * expirado, transitório).
+ */
+export async function marcarConversaSemFotoWhatsapp(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(inboxConversas).set({ fotoUrl: "" }).where(eq(inboxConversas.id, id));
 }
 
 /**

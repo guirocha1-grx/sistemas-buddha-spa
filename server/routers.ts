@@ -961,7 +961,7 @@ Diretrizes:
             const fotoWhatsappUrl = conversa.isGrupo === "true"
               ? await zapiApi.getGroupPhoto(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone)
               : await zapiApi.getProfilePicture(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone);
-            if (!fotoWhatsappUrl) { semFotoNoWhatsapp++; continue; }
+            if (!fotoWhatsappUrl) { semFotoNoWhatsapp++; await db.marcarConversaSemFotoWhatsapp(conversa.id); continue; }
             const imgResp = await fetch(fotoWhatsappUrl);
             if (!imgResp.ok) { falhas++; continue; }
             const buffer = Buffer.from(await imgResp.arrayBuffer());
