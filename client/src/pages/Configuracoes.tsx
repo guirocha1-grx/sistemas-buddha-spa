@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megaphone, Landmark, CreditCard, Sparkles, RotateCcw } from "lucide-react";
+import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megaphone, Landmark, CreditCard, Sparkles, RotateCcw, Send } from "lucide-react";
 import { AtendentesSection } from "@/components/AtendentesSection";
 import { AgentesPromptSection } from "@/components/AgentesPromptSection";
 import { AgentesRecursosSection } from "@/components/AgentesRecursosSection";
@@ -56,6 +56,7 @@ const SECOES = [
   { chave: "sicredi", label: "Sicredi", escopo: "unidade" },
   { chave: "atendentes", label: "Atendentes", escopo: "unidade" },
   { chave: "buddha_mkt", label: "Buddha Mkt", escopo: "global" },
+  { chave: "telegram", label: "Telegram", escopo: "global" },
   { chave: "prompts_ia", label: "Prompts de IA", escopo: "global" },
   { chave: "agentes", label: "Agentes", escopo: "global" },
   { chave: "tecnico", label: "Info Técnica", escopo: "global" },
@@ -80,6 +81,7 @@ export default function Configuracoes() {
   const [sicrediSaved, setSicrediSaved] = useState<number | null>(null);
   const [promptMensagem, setPromptMensagem] = useState<string | undefined>(undefined);
   const [promptSaved, setPromptSaved] = useState(false);
+  const [telegramTesteResultado, setTelegramTesteResultado] = useState<{ ok: boolean; mensagem: string } | null>(null);
 
   const updateUnidade = trpc.unidades.update.useMutation({
     onSuccess: (_data, vars) => {
@@ -111,6 +113,11 @@ export default function Configuracoes() {
     BUDDHA_MKT_CHAVES.map((sufixo) => t.configuracoes.get({ chave: `buddha_mkt_${sufixo}` })),
   );
   const promptMensagemQuery = trpc.configuracoes.get.useQuery({ chave: INBOX_AI_PROMPT_KEY });
+  const telegramStatusQuery = trpc.telegram.status.useQuery();
+  const enviarTesteTelegram = trpc.telegram.enviarTeste.useMutation({
+    onSuccess: () => setTelegramTesteResultado({ ok: true, mensagem: "Enviado! Confira o grupo da recepção no Telegram." }),
+    onError: (error) => setTelegramTesteResultado({ ok: false, mensagem: error.message }),
+  });
 
   const setConfig = trpc.configuracoes.set.useMutation({
     onSuccess: () => {
@@ -638,6 +645,38 @@ export default function Configuracoes() {
           <p className="text-xs text-muted-foreground">
             Webhook de verificação: <span className="font-mono">/api/webhooks/buddha-mkt</span>
           </p>
+        </CardContent>
+      </Card>
+      )}
+
+      {(filtroSecao === "todas" || filtroSecao === "telegram") && (
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                <Send className="h-4 w-4" /> Telegram (avisos pro grupo da recepção)
+              </CardTitle>
+              <CardDescription>Usado pelo aviso automático de Buddha Mkt sem retorno. Configurado via TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID_GRUPO_RECEPCAO no Railway.</CardDescription>
+            </div>
+            {telegramStatusQuery.data?.configurado ? (
+              <Badge className="bg-green-100 text-green-700">Configurado</Badge>
+            ) : (
+              <Badge variant="secondary">Não configurado</Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Button size="sm" onClick={() => { setTelegramTesteResultado(null); enviarTesteTelegram.mutate(); }} disabled={enviarTesteTelegram.isPending}>
+            {enviarTesteTelegram.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
+            Enviar mensagem de teste
+          </Button>
+          {telegramTesteResultado && (
+            <p className={`text-sm flex items-center gap-1.5 ${telegramTesteResultado.ok ? "text-green-700" : "text-destructive"}`}>
+              {telegramTesteResultado.ok ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+              {telegramTesteResultado.mensagem}
+            </p>
+          )}
         </CardContent>
       </Card>
       )}
