@@ -760,6 +760,7 @@ function NoPainel({
   const [texto, setTexto] = useState(no.config?.texto ?? "");
   const [valorEspera, setValorEspera] = useState(String(no.config?.valor ?? 10));
   const [unidade, setUnidade] = useState<"segundos" | "minutos" | "horas" | "dias">(no.config?.unidade ?? "minutos");
+  const [mostrarDigitando, setMostrarDigitando] = useState(!!no.config?.mostrarDigitando);
   const [logica, setLogica] = useState<"E" | "OU">(no.config?.logica ?? "E");
   const [condicoes, setCondicoes] = useState<CondicaoForm[]>(
     (no.config?.condicoes ?? [{ ...CONDICAO_VAZIA }]).map((c: any) => ({
@@ -817,7 +818,7 @@ function NoPainel({
     let config: any;
     switch (no.tipo) {
       case "mensagem": config = { texto }; break;
-      case "aguardar": config = { valor: parseInt(valorEspera) || 1, unidade }; break;
+      case "aguardar": config = { valor: parseInt(valorEspera) || 1, unidade, mostrarDigitando: mostrarDigitando || undefined }; break;
       case "condicional":
         config = {
           logica,
@@ -911,8 +912,14 @@ function NoPainel({
         )}
         {no.tipo === "aguardar" && (
           <p className="text-[11px] text-muted-foreground">
-            A retomada roda pelo cron a cada ~1min (ver botão "Ativar retomada automática" na lista de fluxos) — durações em segundos podem levar até 1min a mais pra retomar.
+            A retomada roda pelo cron a cada ~5s — durações curtas podem levar até 5s a mais pra retomar.
           </p>
+        )}
+        {no.tipo === "aguardar" && (
+          <div className="flex items-center gap-2" title={`Mostra "Digitando..." pro cliente logo antes de enviar a próxima mensagem do fluxo. Limitado a 15s pela Z-API — durações maiores mostram "Digitando..." só nos últimos 15s antes do envio.`}>
+            <Switch checked={mostrarDigitando} onCheckedChange={setMostrarDigitando} />
+            <span className="text-xs text-muted-foreground">Mostrar "Digitando..." antes da próxima mensagem</span>
+          </div>
         )}
 
         {no.tipo === "condicional" && (

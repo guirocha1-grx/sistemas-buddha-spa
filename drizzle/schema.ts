@@ -1137,7 +1137,15 @@ export type InsertFluxo = typeof fluxos.$inferInsert;
 
 export type FluxoNoConfig =
   | { texto: string } // mensagem
-  | { valor: number; unidade: "segundos" | "minutos" | "horas" | "dias" } // aguardar
+  | {
+      valor: number;
+      unidade: "segundos" | "minutos" | "horas" | "dias";
+      // Mostra "Digitando..." pro cliente logo antes do próximo passo
+      // "mensagem" ser enviado (Z-API /send-text, parâmetro delayTyping —
+      // aceita só 1-15s; o motor usa min(valor em segundos, 15)). Não se
+      // aplica a "aguardar" seguido de outro tipo de passo.
+      mostrarDigitando?: boolean;
+    } // aguardar
   | {
       logica: "E" | "OU";
       condicoes: Array<{

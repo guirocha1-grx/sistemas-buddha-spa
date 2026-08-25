@@ -75,7 +75,7 @@ const fluxoNoTipoSchema = z.enum(["mensagem", "aguardar", "condicional", "salvar
 
 const fluxoNoConfigSchema = z.union([
   z.object({ texto: z.string() }).strict(), // mensagem
-  z.object({ valor: z.number(), unidade: z.enum(["segundos", "minutos", "horas", "dias"]) }).strict(), // aguardar
+  z.object({ valor: z.number(), unidade: z.enum(["segundos", "minutos", "horas", "dias"]), mostrarDigitando: z.boolean().optional() }).strict(), // aguardar
   z.object({
     logica: z.enum(["E", "OU"]),
     condicoes: z.array(z.object({

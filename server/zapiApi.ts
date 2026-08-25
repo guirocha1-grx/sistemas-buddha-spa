@@ -90,11 +90,17 @@ export const zapiApi = {
     phone: string,
     message: string,
     mentioned?: string[],
+    delayTyping?: number,
   ): Promise<ZapiSendResult> {
     return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-text", {
       phone,
       message,
       ...(mentioned && mentioned.length > 0 ? { mentioned } : {}),
+      // Mostra "Digitando..." pro destinatário por N segundos antes de
+      // enviar — confirmado em developer.z-api.io/message/send-text,
+      // aceita só 1-15s (fora disso a Z-API provavelmente ignora ou
+      // rejeita; quem chama já garante o clamp).
+      ...(typeof delayTyping === "number" && delayTyping > 0 ? { delayTyping } : {}),
     });
   },
 
