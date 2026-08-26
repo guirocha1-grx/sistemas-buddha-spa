@@ -596,6 +596,55 @@ function FluxoCanvas({
     }
   }, [nosPorId, updateNoMut, invalidateAll]);
 
+  // Apagar uma aresta no canvas (selecionar + Delete) só mexia no estado
+  // local do React Flow — a aresta é só uma representação visual de um
+  // campo do nó de origem (proximoNoOrdem/ordemSeVerdadeiro/ordemSeFalso/
+  // ramo.ordemDestino/opcao.ordemDestino/ordemSeErro/ordemSeNaoEntendeu),
+  // sem persistir nada, o próximo refetch recalculava as arestas a partir
+  // dos dados antigos do servidor e a conexão "voltava". Espelha o inverso
+  // exato de onConnect, zerando o campo de origem certo.
+  const onEdgesDelete = useCallback((arestasRemovidas: Edge[]) => {
+    for (const aresta of arestasRemovidas) {
+      const sourceId = Number(aresta.source);
+      const source = nosPorId.get(sourceId);
+      if (!source) continue;
+      if (source.tipo === "condicional") {
+        const handle = aresta.sourceHandle === "falso" ? "ordemSeFalso" : "ordemSeVerdadeiro";
+        updateNoMut.mutate({ id: sourceId, config: { ...source.config, [handle]: null } }, { onSuccess: invalidateAll });
+      } else if (source.tipo === "randomizador" && aresta.sourceHandle?.startsWith("ramo-")) {
+        const i = Number(aresta.sourceHandle.slice("ramo-".length));
+        const ramos = [...(source.config?.ramos ?? [])];
+        if (ramos[i]) {
+          ramos[i] = { ...ramos[i], ordemDestino: null };
+          updateNoMut.mutate({ id: sourceId, config: { ...source.config, ramos } }, { onSuccess: invalidateAll });
+        }
+      } else if (source.tipo === "webhook" && aresta.sourceHandle === "erro") {
+        updateNoMut.mutate({ id: sourceId, config: { ...source.config, ordemSeErro: null } }, { onSuccess: invalidateAll });
+      } else if (source.tipo === "menu" && aresta.sourceHandle?.startsWith("opcao-")) {
+        const i = Number(aresta.sourceHandle.slice("opcao-".length));
+        const opcoes = [...(source.config?.opcoes ?? [])];
+        if (opcoes[i]) {
+          opcoes[i] = { ...opcoes[i], ordemDestino: null };
+          updateNoMut.mutate({ id: sourceId, config: { ...source.config, opcoes } }, { onSuccess: invalidateAll });
+        }
+      } else if (source.tipo === "menu" && aresta.sourceHandle === "nao_entendeu") {
+        updateNoMut.mutate({ id: sourceId, config: { ...source.config, ordemSeNaoEntendeu: null } }, { onSuccess: invalidateAll });
+      } else {
+        updateNoMut.mutate({ id: sourceId, proximoNoOrdem: null }, { onSuccess: invalidateAll });
+      }
+    }
+  }, [nosPorId, updateNoMut, invalidateAll]);
+
+  // Mesmo problema do lado dos nós: apagar pelo teclado (Delete/Backspace
+  // com o nó selecionado) só removia do estado local — nunca chamava a
+  // mutation de exclusão (só o botão de lixeira no painel lateral fazia
+  // isso). O próximo refetch trazia o nó de volta.
+  const onNodesDelete = useCallback((nosRemovidos: Node[]) => {
+    for (const node of nosRemovidos) {
+      deleteNoMut.mutate({ id: Number(node.id) });
+    }
+  }, [deleteNoMut]);
+
   const onNodeDragStop = useCallback((_e: any, node: Node) => {
     updateNoMut.mutate({ id: Number(node.id), posX: Math.round(node.position.x), posY: Math.round(node.position.y) });
   }, [updateNoMut]);
@@ -630,6 +679,8 @@ function FluxoCanvas({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onNodesDelete={onNodesDelete}
+        onEdgesDelete={onEdgesDelete}
         onNodeDragStop={onNodeDragStop}
         onNodeClick={onNodeClick}
         nodeTypes={NODE_TYPES}
