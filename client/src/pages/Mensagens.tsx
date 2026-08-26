@@ -361,6 +361,24 @@ export default function Mensagens() {
     onError: (error) => toast.error(error.message),
   });
 
+  const [editandoProximoAtendimento, setEditandoProximoAtendimento] = useState(false);
+  const [formProximoAtendimento, setFormProximoAtendimento] = useState({ data: "", horario: "", servico: "" });
+  const cancelarProximoAtendimentoMutation = trpc.inbox.conversas.cancelarProximoAtendimento.useMutation({
+    onSuccess: () => {
+      toast.success("Agendamento cancelado");
+      utils.inbox.conversas.get.invalidate({ id: conversaSelecionadaId ?? 0 });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const editarProximoAtendimentoMutation = trpc.inbox.conversas.editarProximoAtendimento.useMutation({
+    onSuccess: () => {
+      toast.success("Agendamento atualizado");
+      setEditandoProximoAtendimento(false);
+      utils.inbox.conversas.get.invalidate({ id: conversaSelecionadaId ?? 0 });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   const alterarStatusMutation = trpc.inbox.conversas.alterarStatus.useMutation({
     onSuccess: () => {
       utils.inbox.conversas.get.invalidate({ id: conversaSelecionadaId ?? 0 });
@@ -1649,7 +1667,71 @@ export default function Mensagens() {
 
                 {conversaSelecionada?.resumoRelacionamento?.proximoAtendimento && (
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/20 p-2.5 space-y-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-500">Próximo atendimento</p>
+                    <div className="flex items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-500">Próximo atendimento</p>
+                        <Badge
+                          variant="outline"
+                          className={`text-[9px] px-1 py-0 ${conversaSelecionada.resumoRelacionamento.proximoAtendimento.status === "Agendado (IA)" ? "border-amber-300 text-amber-700" : "border-emerald-300 text-emerald-700"}`}
+                          title={conversaSelecionada.resumoRelacionamento.proximoAtendimento.status === "Agendado (IA)" ? "Identificado pelo CRM na conversa — ainda não confirmado pela planilha do Belle" : "Confirmado pela planilha do Belle"}
+                        >
+                          {conversaSelecionada.resumoRelacionamento.proximoAtendimento.status === "Agendado (IA)" ? "CRM" : "Belle"}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <Popover open={editandoProximoAtendimento} onOpenChange={(v) => {
+                          setEditandoProximoAtendimento(v);
+                          if (v && conversaSelecionada.resumoRelacionamento?.proximoAtendimento) {
+                            const p = conversaSelecionada.resumoRelacionamento.proximoAtendimento;
+                            setFormProximoAtendimento({ data: p.dataAtendimento, horario: p.horario ?? "", servico: p.servicoNome ?? "" });
+                          }
+                        }}>
+                          <PopoverTrigger asChild>
+                            <Button size="icon" variant="ghost" className="h-5 w-5" title="Editar agendamento">
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-64 space-y-2" align="end">
+                            <div>
+                              <Label className="text-xs">Data</Label>
+                              <Input type="date" className="mt-1 h-8 text-xs" value={formProximoAtendimento.data}
+                                onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, data: e.target.value }))} />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Horário</Label>
+                              <Input type="time" className="mt-1 h-8 text-xs" value={formProximoAtendimento.horario}
+                                onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, horario: e.target.value }))} />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Serviço</Label>
+                              <Input className="mt-1 h-8 text-xs" value={formProximoAtendimento.servico}
+                                onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, servico: e.target.value }))} />
+                            </div>
+                            <Button size="sm" className="w-full h-7 text-xs" disabled={editarProximoAtendimentoMutation.isPending}
+                              onClick={() => {
+                                const id = conversaSelecionada.resumoRelacionamento?.proximoAtendimento?.id;
+                                if (!id) return;
+                                editarProximoAtendimentoMutation.mutate({
+                                  id,
+                                  dataAtendimento: formProximoAtendimento.data,
+                                  horario: formProximoAtendimento.horario || null,
+                                  servicoNome: formProximoAtendimento.servico || null,
+                                });
+                              }}>
+                              {editarProximoAtendimentoMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Salvar
+                            </Button>
+                          </PopoverContent>
+                        </Popover>
+                        <Button size="icon" variant="ghost" className="h-5 w-5" title="Cancelar agendamento"
+                          disabled={cancelarProximoAtendimentoMutation.isPending}
+                          onClick={() => {
+                            const id = conversaSelecionada.resumoRelacionamento?.proximoAtendimento?.id;
+                            if (id && confirm("Cancelar este agendamento?")) cancelarProximoAtendimentoMutation.mutate({ id });
+                          }}>
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
                     <p className="text-xs font-medium">
                       {formatarDataRelacao(conversaSelecionada.resumoRelacionamento.proximoAtendimento.dataAtendimento)}
                       {conversaSelecionada.resumoRelacionamento.proximoAtendimento.horario ? ` às ${conversaSelecionada.resumoRelacionamento.proximoAtendimento.horario}` : ""}

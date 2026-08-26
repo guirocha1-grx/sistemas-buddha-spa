@@ -124,6 +124,8 @@ const state = vi.hoisted(() => {
         get: { useQuery: (input: { id: number }) => ({ data: input.id === 42 ? conversaAlternativa : conversa, isLoading: false }) },
         atualizarNome: { useMutation: () => mutation() },
         alterarStatus: { useMutation: () => mutation() },
+        cancelarProximoAtendimento: { useMutation: () => mutation() },
+        editarProximoAtendimento: { useMutation: () => mutation() },
         definirAutomacaoAgentes: { useMutation: (options: any) => ({
           mutate: (input: any) => {
             revisaoAgente.automacaoMutation(input);

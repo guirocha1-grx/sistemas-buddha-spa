@@ -747,6 +747,29 @@ export async function registrarAgendamentoInferidoBelle(params: {
   });
 }
 
+/**
+ * Cancela/edita manualmente uma linha de belle_atendimentos mostrada como
+ * "próximo atendimento" no Inbox — vale tanto pra linha real do Belle
+ * (efeito só local: some daqui até a próxima planilha trazer o status
+ * atualizado de verdade) quanto pra "Agendado (IA)" (aqui sim é
+ * definitivo, já que nada mais vai sobrescrever essa linha sozinho).
+ */
+export async function cancelarAtendimentoBelle(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(belleAtendimentos).set({ status: "Cancelado" }).where(eq(belleAtendimentos.id, id));
+}
+
+export async function editarAtendimentoBelle(id: number, dados: {
+  dataAtendimento?: string;
+  horario?: string | null;
+  servicoNome?: string | null;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(belleAtendimentos).set(dados).where(eq(belleAtendimentos.id, id));
+}
+
 async function obterResumoRelacionamentoInbox(unidadeId: number, clienteId: number) {
   const db = await getDb();
   if (!db) return { plano: null, ultimoAtendimento: null, proximoAtendimento: null };
@@ -770,10 +793,12 @@ async function obterResumoRelacionamentoInbox(unidadeId: number, clienteId: numb
       .orderBy(desc(belleAtendimentos.dataAtendimento), desc(belleAtendimentos.horario))
       .limit(1),
     db.select({
+      id: belleAtendimentos.id,
       dataAtendimento: belleAtendimentos.dataAtendimento,
       horario: belleAtendimentos.horario,
       servicoNome: belleAtendimentos.servicoNome,
       profissionalNome: belleAtendimentos.profissionalNome,
+      status: belleAtendimentos.status,
     }).from(belleAtendimentos)
       .where(and(
         eq(belleAtendimentos.unidadeId, unidadeId),
@@ -805,10 +830,12 @@ async function obterResumoRelacionamentoInbox(unidadeId: number, clienteId: numb
     : [];
   const proximoAtendimentoPorNome = !proximoAtendimentoVinculado[0] && cliente?.nome
     ? await db.select({
+      id: belleAtendimentos.id,
       dataAtendimento: belleAtendimentos.dataAtendimento,
       horario: belleAtendimentos.horario,
       servicoNome: belleAtendimentos.servicoNome,
       profissionalNome: belleAtendimentos.profissionalNome,
+      status: belleAtendimentos.status,
     }).from(belleAtendimentos)
       .where(and(
         eq(belleAtendimentos.unidadeId, unidadeId),

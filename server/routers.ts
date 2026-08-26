@@ -988,6 +988,22 @@ Diretrizes:
         return { conversaId };
       }),
 
+      /** Cancelar/editar o "próximo atendimento" mostrado no painel do cliente. */
+      cancelarProximoAtendimento: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+        await db.cancelarAtendimentoBelle(input.id);
+        return { success: true };
+      }),
+
+      editarProximoAtendimento: protectedProcedure.input(z.object({
+        id: z.number(),
+        dataAtendimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        horario: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+        servicoNome: z.string().nullable().optional(),
+      })).mutation(async ({ input: { id, ...dados } }) => {
+        await db.editarAtendimentoBelle(id, dados);
+        return { success: true };
+      }),
+
       qrCode: protectedProcedure.input(z.object({
         unidadeId: z.number(),
       })).query(async ({ input }) => {
