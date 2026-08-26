@@ -976,7 +976,7 @@ function NoPainel({
         )}
         {no.tipo === "aguardar" && (
           digitandoDisponivel ? (
-            <div className="flex items-center gap-2" title={`Mostra "Digitando..." pro cliente durante os ${valorEspera}s inteiros do Aguardar — a Z-API manda a mensagem seguinte assim que esse tempo passa, sem espera extra.`}>
+            <div className="flex items-center gap-2" title={`Aplica os ${valorEspera}s no próximo passo, sem espera extra. Se o próximo passo for Mensagem, mostra "Digitando..." pro cliente durante esse tempo; se for Mídia (imagem/documento), a Z-API não tem indicador visual — só atrasa o envio em silêncio pelo mesmo tempo; áudio mostra "Gravando áudio...".`}>
               <Switch checked={mostrarDigitando} onCheckedChange={setMostrarDigitando} />
               <span className="text-xs text-muted-foreground">Mostrar "Digitando..." durante a espera</span>
             </div>

@@ -406,6 +406,20 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
       case "midia": {
         const config = no.config as Extract<FluxoNoConfig, { tipoMidia: "imagem" | "audio" | "documento"; storageKey: string }>;
         const conversa = await getInboxConversaById(execucao.conversaId);
+        // Mesmo consumo de VARIAVEL_DELAY_TYPING do case "mensagem" — um
+        // "aguardar" com "mostrarDigitando" pode ser seguido de mídia em
+        // vez de mensagem (ex.: aguardar → imagem → aguardar → imagem →
+        // mensagem). Sem consumir aqui também, a marcação passava direto
+        // por cima da mídia sem nenhum efeito e só aparecia na mensagem
+        // bem mais adiante, sobrescrita a cada novo "aguardar" no meio —
+        // na prática só o ÚLTIMO "aguardar" antes de uma mensagem real
+        // chegava a mostrar "Digitando...".
+        const delayTypingBrutoMidia = variaveis[VARIAVEL_DELAY_TYPING];
+        if (delayTypingBrutoMidia !== undefined) {
+          const { [VARIAVEL_DELAY_TYPING]: _descartadoMidia, ...semDelayTypingMidia } = variaveis;
+          await updateFluxoExecucao(execucaoId, { variaveis: semDelayTypingMidia });
+        }
+        const delaySegundosMidia = delayTypingBrutoMidia !== undefined ? Number(delayTypingBrutoMidia) : undefined;
         if (conversa?.telefone && config.storageKey) {
           // Confere se o arquivo existe de verdade no bucket atual antes de
           // tentar enviar — uma referência gravada antes da troca de
@@ -446,15 +460,15 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
               // Áudio continua por URL (sem sendAudioBase64 ainda).
               if (config.tipoMidia === "imagem") {
                 const base64 = await storageGetBase64(config.storageKey);
-                const resultado = await zapiApi.sendImageBase64(creds.instanceId, creds.token, creds.clientToken, conversa.telefone, base64, "image/jpeg", config.legenda);
+                const resultado = await zapiApi.sendImageBase64(creds.instanceId, creds.token, creds.clientToken, conversa.telefone, base64, "image/jpeg", config.legenda, delaySegundosMidia);
                 zapiMessageId = resultado.messageId ?? null;
               } else if (config.tipoMidia === "audio") {
                 const url = await storageGetSignedUrl(config.storageKey);
-                const resultado = await zapiApi.sendAudio(creds.instanceId, creds.token, creds.clientToken, conversa.telefone, url);
+                const resultado = await zapiApi.sendAudio(creds.instanceId, creds.token, creds.clientToken, conversa.telefone, url, delaySegundosMidia);
                 zapiMessageId = resultado.messageId ?? null;
               } else {
                 const base64 = await storageGetBase64(config.storageKey);
-                const resultado = await zapiApi.sendDocumentBase64(creds.instanceId, creds.token, creds.clientToken, conversa.telefone, base64, "application/octet-stream", config.nomeArquivo);
+                const resultado = await zapiApi.sendDocumentBase64(creds.instanceId, creds.token, creds.clientToken, conversa.telefone, base64, "application/octet-stream", config.nomeArquivo, undefined, delaySegundosMidia);
                 zapiMessageId = resultado.messageId ?? null;
               }
             } catch (e) {

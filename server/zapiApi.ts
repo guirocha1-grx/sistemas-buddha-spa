@@ -152,11 +152,15 @@ export const zapiApi = {
     base64: string,
     contentType: string,
     caption?: string,
+    delayMessage?: number,
   ): Promise<ZapiSendResult> {
+    // /send-image não tem delayTyping (sem indicador visível pra imagem na
+    // Z-API) — só delayMessage, um atraso silencioso antes de enviar.
     return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-image", {
       phone,
       image: toDataUrl(base64, contentType),
       ...(caption ? { caption } : {}),
+      ...(typeof delayMessage === "number" && delayMessage > 0 ? { delayMessage } : {}),
     });
   },
 
@@ -166,10 +170,14 @@ export const zapiApi = {
     clientToken: string,
     phone: string,
     audioUrl: string,
+    delayTyping?: number,
   ): Promise<ZapiSendResult> {
+    // Diferente de imagem/documento, /send-audio tem delayTyping de
+    // verdade — mostra "Gravando áudio..." pro cliente.
     return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, "/send-audio", {
       phone,
       audio: audioUrl,
+      ...(typeof delayTyping === "number" && delayTyping > 0 ? { delayTyping } : {}),
     });
   },
 
@@ -197,13 +205,16 @@ export const zapiApi = {
     contentType: string,
     fileName?: string,
     caption?: string,
+    delayMessage?: number,
   ): Promise<ZapiSendResult> {
+    // /send-document também não tem delayTyping — só delayMessage.
     const extension = getDocumentExtension(fileName, contentType);
     return zapiRequest<ZapiSendResult>(instanceId, token, clientToken, `/send-document/${extension}`, {
       phone,
       document: toDataUrl(base64, contentType),
       ...(fileName ? { fileName } : {}),
       ...(caption ? { caption } : {}),
+      ...(typeof delayMessage === "number" && delayMessage > 0 ? { delayMessage } : {}),
     });
   },
 
