@@ -27,3 +27,36 @@ export function extrairNomeConfirmacaoBelle(texto: string | undefined | null): s
   const nome = match?.[1]?.trim();
   return nome && nome.length >= 2 ? nome : undefined;
 }
+
+export interface AgendamentoConfirmacaoBelle {
+  nome?: string;
+  servicoNome?: string;
+  dataAtendimento: string; // AAAA-MM-DD
+  horario: string; // HH:MM
+}
+
+const REGEX_SERVICO_CONFIRMACAO = /para o servi[çc]o\s+(.+?)\s+est[áa] marcado para:/i;
+const REGEX_DATA_CONFIRMACAO = /📅\s*(\d{2})\/(\d{2})\/(\d{4})/;
+const REGEX_HORARIO_CONFIRMACAO = /🕒\s*(\d{1,2}:\d{2})/;
+
+/**
+ * Extrai data/horário/serviço/nome da confirmação de agendamento fixa do
+ * Belle (mesmo template documentado acima) — usada pra registrar um
+ * agendamento "visto" na conversa mesmo antes da próxima planilha
+ * importada trazer o dado oficial (ver server/webhooks.ts, gatilho no
+ * fromMe). Só retorna algo quando 📅 e 🕒 aparecem — sem os dois não dá
+ * pra montar uma linha útil de agendamento, mesmo sabendo o nome.
+ */
+export function extrairAgendamentoConfirmacaoBelle(texto: string | undefined | null): AgendamentoConfirmacaoBelle | undefined {
+  if (!texto || !texto.includes("Agendamento")) return undefined;
+  const dataMatch = texto.match(REGEX_DATA_CONFIRMACAO);
+  const horarioMatch = texto.match(REGEX_HORARIO_CONFIRMACAO);
+  if (!dataMatch || !horarioMatch) return undefined;
+  const [, dia, mes, ano] = dataMatch;
+  return {
+    nome: extrairNomeConfirmacaoBelle(texto),
+    servicoNome: texto.match(REGEX_SERVICO_CONFIRMACAO)?.[1]?.trim(),
+    dataAtendimento: `${ano}-${mes}-${dia}`,
+    horario: horarioMatch[1],
+  };
+}

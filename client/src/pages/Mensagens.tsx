@@ -1647,6 +1647,22 @@ export default function Mensagens() {
                   </div>
                 )}
 
+                {conversaSelecionada?.resumoRelacionamento?.proximoAtendimento && (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/20 p-2.5 space-y-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-500">Próximo atendimento</p>
+                    <p className="text-xs font-medium">
+                      {formatarDataRelacao(conversaSelecionada.resumoRelacionamento.proximoAtendimento.dataAtendimento)}
+                      {conversaSelecionada.resumoRelacionamento.proximoAtendimento.horario ? ` às ${conversaSelecionada.resumoRelacionamento.proximoAtendimento.horario}` : ""}
+                      {conversaSelecionada.resumoRelacionamento.proximoAtendimento.servicoNome ? ` · ${conversaSelecionada.resumoRelacionamento.proximoAtendimento.servicoNome}` : ""}
+                    </p>
+                    {conversaSelecionada.resumoRelacionamento.proximoAtendimento.profissionalNome && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Terapeuta: {conversaSelecionada.resumoRelacionamento.proximoAtendimento.profissionalNome}
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {conversaSelecionada && !conversaSelecionada.clienteId && conversaSelecionada.isGrupo !== "true" && (conversaSelecionada.candidatosCliente?.length ?? 0) > 0 && (
                   <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-2">
                     <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-500">

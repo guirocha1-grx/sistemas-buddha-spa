@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { sendTelegramParaRecepcao } from "./telegramApi";
 import { zapiApi } from "./zapiApi";
 import { storagePut, storageGetSignedUrl } from "./storage";
-import { extrairNomeConfirmacaoBelle } from "@shared/belleTemplates";
+import { extrairNomeConfirmacaoBelle, extrairAgendamentoConfirmacaoBelle } from "@shared/belleTemplates";
 import { telefoneCanonico } from "@shared/telefone";
 import { pipeInboxMedia } from "./inboxMediaProxy";
 
@@ -508,6 +508,27 @@ function registerZapiWebhook(app: Express) {
         // que o cliente mandou (ver payload.reaction acima).
         zapiMessageId: payload.messageId ?? null,
       });
+
+      // Confirmação de agendamento fixa do Belle (fromMe) — registra o
+      // agendamento visto na conversa antes da próxima planilha trazer o
+      // dado oficial, cobre o caso do cliente que agenda no mesmo dia e
+      // some sozinho quando a planilha real chegar (ver db.ts
+      // registrarAgendamentoInferidoBelle / upsertAtendimentosBelleImportados).
+      if (payload.fromMe && unidade.id && mensagemId) {
+        const agendamento = extrairAgendamentoConfirmacaoBelle(conteudo);
+        if (agendamento) {
+          db.registrarAgendamentoInferidoBelle({
+            unidadeId: unidade.id,
+            mensagemId,
+            clienteId: clienteId ?? null,
+            clienteNome: agendamento.nome ?? identificadorContato,
+            telefone: identificadorContato,
+            servicoNome: agendamento.servicoNome,
+            dataAtendimento: agendamento.dataAtendimento,
+            horario: agendamento.horario,
+          }).catch((e) => console.error("[Webhook] Falha ao registrar agendamento inferido do Belle:", e));
+        }
+      }
 
       // Fluxos de automação — só mensagem 1:1 de verdade vinda do
       // cliente (não fromMe, não grupo). Se já existe uma execução

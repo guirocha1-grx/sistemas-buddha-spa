@@ -687,10 +687,71 @@ export function classificarPlanosRelacionamento(
   };
 }
 
+// Status que o relatório de atendimentos do Belle usa pra agendamento
+// ainda não realizado — diferente de "Atendido" (já aconteceu) e de
+// "Desmarcado"/"Cancelado" (não vai acontecer). Confirmado com dados
+// reais 2026-08-26: o relatório só traz agendamento futuro quando
+// exportado com o período pedido incluindo datas à frente (senão vem
+// só histórico, mesmo tendo agenda real no Belle).
+// Status sintético (não vem do Belle) pra agendamento detectado na própria
+// conversa — ver registrarAgendamentoInferidoBelle abaixo.
+const STATUS_AGENDADO_POR_IA = "Agendado (IA)";
+const STATUS_ATENDIMENTO_AGENDADO = ["Marcado", "Pré-Agendado", "Confirmado", STATUS_AGENDADO_POR_IA];
+
+/**
+ * Registra um agendamento visto na própria conversa (confirmação fixa do
+ * Belle, ver shared/belleTemplates.ts extrairAgendamentoConfirmacaoBelle)
+ * antes da próxima planilha trazer o dado oficial — cobre o caso de
+ * agendamento feito no mesmo dia, que a planilha (atualizada
+ * periodicamente) nunca pega a tempo. atendimentoBelleId negativo
+ * (derivado da própria mensagem) garante que nunca colide com um ID real
+ * do Belle (sempre positivo) e que reprocessar a mesma mensagem só
+ * atualiza a mesma linha, não duplica. Some sozinho quando a planilha real
+ * trouxer dado desse cliente (ver upsertAtendimentosBelleImportados).
+ */
+export async function registrarAgendamentoInferidoBelle(params: {
+  unidadeId: number;
+  mensagemId: number;
+  clienteId: number | null;
+  clienteNome: string;
+  telefone: string | null;
+  servicoNome?: string;
+  dataAtendimento: string;
+  horario: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const valores: InsertBelleAtendimento = {
+    unidadeId: params.unidadeId,
+    atendimentoBelleId: -params.mensagemId,
+    clienteId: params.clienteId,
+    clienteNome: params.clienteNome,
+    telefone: params.telefone,
+    dataAtendimento: params.dataAtendimento,
+    horario: params.horario,
+    servicoNome: params.servicoNome,
+    status: STATUS_AGENDADO_POR_IA,
+    temPreferencia: false,
+    importadoEm: new Date(),
+  };
+  await db.insert(belleAtendimentos).values(valores).onDuplicateKeyUpdate({
+    set: {
+      clienteId: sql`VALUES(clienteId)`,
+      clienteNome: sql`VALUES(clienteNome)`,
+      telefone: sql`VALUES(telefone)`,
+      dataAtendimento: sql`VALUES(dataAtendimento)`,
+      horario: sql`VALUES(horario)`,
+      servicoNome: sql`VALUES(servicoNome)`,
+      importadoEm: sql`VALUES(importadoEm)`,
+    },
+  });
+}
+
 async function obterResumoRelacionamentoInbox(unidadeId: number, clienteId: number) {
   const db = await getDb();
-  if (!db) return { plano: null, ultimoAtendimento: null };
-  const [planos, clienteLocal, ultimoAtendimentoVinculado] = await Promise.all([
+  if (!db) return { plano: null, ultimoAtendimento: null, proximoAtendimento: null };
+  const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const [planos, clienteLocal, ultimoAtendimentoVinculado, proximoAtendimentoVinculado] = await Promise.all([
     listarPlanosBellePorCliente(unidadeId, clienteId),
     db.select({ nome: clientes.nome, ultimoAtendimento: clientes.ultimoAtendimento }).from(clientes)
       .where(eq(clientes.id, clienteId))
@@ -707,6 +768,20 @@ async function obterResumoRelacionamentoInbox(unidadeId: number, clienteId: numb
         eq(belleAtendimentos.status, "Atendido"),
       ))
       .orderBy(desc(belleAtendimentos.dataAtendimento), desc(belleAtendimentos.horario))
+      .limit(1),
+    db.select({
+      dataAtendimento: belleAtendimentos.dataAtendimento,
+      horario: belleAtendimentos.horario,
+      servicoNome: belleAtendimentos.servicoNome,
+      profissionalNome: belleAtendimentos.profissionalNome,
+    }).from(belleAtendimentos)
+      .where(and(
+        eq(belleAtendimentos.unidadeId, unidadeId),
+        eq(belleAtendimentos.clienteId, clienteId),
+        inArray(belleAtendimentos.status, STATUS_ATENDIMENTO_AGENDADO),
+        gte(belleAtendimentos.dataAtendimento, hojeBrt),
+      ))
+      .orderBy(asc(belleAtendimentos.dataAtendimento), asc(belleAtendimentos.horario))
       .limit(1),
   ]);
   const cliente = clienteLocal[0];
@@ -728,15 +803,32 @@ async function obterResumoRelacionamentoInbox(unidadeId: number, clienteId: numb
       .orderBy(desc(belleAtendimentos.dataAtendimento), desc(belleAtendimentos.horario))
       .limit(1)
     : [];
+  const proximoAtendimentoPorNome = !proximoAtendimentoVinculado[0] && cliente?.nome
+    ? await db.select({
+      dataAtendimento: belleAtendimentos.dataAtendimento,
+      horario: belleAtendimentos.horario,
+      servicoNome: belleAtendimentos.servicoNome,
+      profissionalNome: belleAtendimentos.profissionalNome,
+    }).from(belleAtendimentos)
+      .where(and(
+        eq(belleAtendimentos.unidadeId, unidadeId),
+        eq(belleAtendimentos.clienteNome, cliente.nome),
+        inArray(belleAtendimentos.status, STATUS_ATENDIMENTO_AGENDADO),
+        gte(belleAtendimentos.dataAtendimento, hojeBrt),
+      ))
+      .orderBy(asc(belleAtendimentos.dataAtendimento), asc(belleAtendimentos.horario))
+      .limit(1)
+    : [];
   const ultimoAtendimento = ultimoAtendimentoVinculado[0]
     ?? ultimoAtendimentoPorNome[0]
     ?? (cliente?.ultimoAtendimento
       ? { dataAtendimento: cliente.ultimoAtendimento, horario: null, servicoNome: null, profissionalNome: null }
       : null);
-  const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const proximoAtendimento = proximoAtendimentoVinculado[0] ?? proximoAtendimentoPorNome[0] ?? null;
   return {
     plano: classificarPlanosRelacionamento(planos, hojeBrt),
     ultimoAtendimento,
+    proximoAtendimento,
   };
 }
 
@@ -803,7 +895,7 @@ export async function getInboxConversaById(id: number) {
     : [];
   const resumoRelacionamento = conversa.clienteId && typeof conversa.unidadeId === "number"
     ? await obterResumoRelacionamentoInbox(conversa.unidadeId, conversa.clienteId)
-    : { plano: null, ultimoAtendimento: null };
+    : { plano: null, ultimoAtendimento: null, proximoAtendimento: null };
   return {
     ...conversa,
     automacaoAgentesEfetiva: obterModoEfetivoAutomacaoAgentes(conversa),
@@ -3801,6 +3893,20 @@ export async function upsertAtendimentosBelleImportados(
         importadoEm: sql`VALUES(importadoEm)`,
       },
     });
+  }
+
+  // A planilha real ganha do agendamento inferido na conversa — uma vez
+  // que o Belle traz QUALQUER dado desse cliente nesse import, os
+  // palpites pendentes dele somem (ver registrarAgendamentoInferidoBelle).
+  const clienteIdsComDadoReal = Array.from(new Set(
+    valoresParaGravar.map((v) => v.clienteId).filter((id): id is number => id != null),
+  ));
+  if (clienteIdsComDadoReal.length > 0) {
+    await db.delete(belleAtendimentos).where(and(
+      eq(belleAtendimentos.unidadeId, unidadeId),
+      inArray(belleAtendimentos.clienteId, clienteIdsComDadoReal),
+      eq(belleAtendimentos.status, STATUS_AGENDADO_POR_IA),
+    ));
   }
 
   return { inseridos, atualizados, vinculadosComSeguranca, semVinculo, ambiguos };
