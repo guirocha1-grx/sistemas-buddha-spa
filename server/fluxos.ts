@@ -94,6 +94,7 @@ export async function computarVariaveisSistema(execucao: FluxoExecucao, fluxo: F
   return {
     nome: nomeCliente,
     nome_cliente: nomeCliente,
+    first_name: nomeCliente.trim().split(/\s+/)[0] ?? "",
     telefone: conversa?.telefone || "",
     email: "",
     unidade: unidade?.nome || "",

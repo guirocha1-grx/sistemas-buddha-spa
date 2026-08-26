@@ -1376,6 +1376,7 @@ export default function Mensagens() {
                         nome_atendente: atendente?.nome ?? user?.name ?? "",
                         unidade: unidadeSelecionada?.nome ?? "",
                         nome_cliente: conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || "",
+                        first_name: (conversaSelecionada?.clienteNome || conversaSelecionada?.nomeContato || "").trim().split(/\s+/)[0] ?? "",
                       }}
                     />
                     <Button

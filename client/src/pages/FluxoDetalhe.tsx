@@ -749,6 +749,7 @@ const CONDICAO_VAZIA: CondicaoForm = { variavel: "", operador: "existe", valor: 
 
 const VARIAVEIS_BUILTIN = [
   { nome: "nome", dica: "nome do cliente/contato" },
+  { nome: "first_name", dica: "primeiro nome do cliente" },
   { nome: "telefone", dica: "telefone do contato" },
   { nome: "email", dica: "email do cliente" },
   { nome: "campanha_do_mes", dica: "texto atual da Campanha do Mês da unidade" },

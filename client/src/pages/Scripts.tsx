@@ -58,6 +58,7 @@ const VARIAVEIS_SCRIPT = [
   { nome: "nome_atendente", dica: "quem está atendendo agora" },
   { nome: "unidade", dica: "nome da unidade" },
   { nome: "nome_cliente", dica: "nome do cliente/contato" },
+  { nome: "first_name", dica: "primeiro nome do cliente" },
   { nome: "campanha_do_mes", dica: "conteúdo atual da campanha da unidade" },
 ];
 
