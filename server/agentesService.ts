@@ -219,7 +219,7 @@ function perguntaCatalogoGeralDaySpa(contexto: ContextoConversa) {
   const texto = (ultimaMensagemCliente(contexto)?.transcricao || ultimaMensagemCliente(contexto)?.conteudo || "")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   return /\b(day spa|dayspa|mini day)\b/.test(texto)
-    && /\b(quais|qual|tem|tipos|opcoes|opcao|conhecer|informacoes|informacao)\b/.test(texto)
+    && /\b(quais|qual|tem|tipos|opcoes|opcao|conhecer|informacoes|informacao|como|funciona|funcionam|explica|explicar|entender)\b/.test(texto)
     && !/\b(valor|preco|quanto custa|agendar|agendamento|reservar|voucher|presente)\b/.test(texto);
 }
 
