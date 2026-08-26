@@ -344,6 +344,20 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
         const config = no.config as Extract<FluxoNoConfig, { valor: number; unidade: "segundos" | "minutos" | "horas" | "dias" }>;
         const msPorUnidade = { segundos: 1_000, minutos: 60_000, horas: 3_600_000, dias: 86_400_000 }[config.unidade];
         const delayMs = config.valor * msPorUnidade;
+        const delaySegundos = Math.round(delayMs / 1000);
+        if (config.mostrarDigitando && delaySegundos <= DELAY_TYPING_MAX_SEGUNDOS) {
+          // A espera some daqui e vira o próprio delayTyping do /send-text
+          // seguinte — a Z-API sempre soma o tempo de "Digitando..." ANTES
+          // de mandar a mensagem, então pausar aqui pelo tempo cheio e
+          // ainda mandar delayTyping depois dobrava a espera real (ex.:
+          // "aguardar 3s" virava ~6s). Passando direto sem pausar (só
+          // grava a variável e avança na mesma chamada, sem passar pelo
+          // cron), a Z-API espera o tempo certo de uma vez só, com o
+          // "Digitando..." cobrindo o período inteiro.
+          await updateFluxoExecucao(execucaoId, { variaveis: { ...variaveis, [VARIAVEL_DELAY_TYPING]: String(Math.max(1, delaySegundos)) } });
+          await avancar(execucaoId, no.proximoNoOrdem, profundidade);
+          return;
+        }
         await updateFluxoExecucao(execucaoId, {
           status: "pausado",
           proximaExecucaoEm: new Date(Date.now() + delayMs),

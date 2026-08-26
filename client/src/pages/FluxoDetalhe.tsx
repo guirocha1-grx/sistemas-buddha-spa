@@ -761,6 +761,13 @@ function NoPainel({
   const [valorEspera, setValorEspera] = useState(String(no.config?.valor ?? 10));
   const [unidade, setUnidade] = useState<"segundos" | "minutos" | "horas" | "dias">(no.config?.unidade ?? "minutos");
   const [mostrarDigitando, setMostrarDigitando] = useState(!!no.config?.mostrarDigitando);
+  // "Digitando..." só faz sentido pra espera curta: a Z-API só aceita até
+  // 15s de delayTyping, e esse tempo passa a SER a própria espera (ver
+  // fluxos.ts, case "aguardar") — não faz sentido pra minutos/horas/dias.
+  const digitandoDisponivel = unidade === "segundos" && (parseInt(valorEspera) || 0) >= 1 && (parseInt(valorEspera) || 0) <= 15;
+  useEffect(() => {
+    if (!digitandoDisponivel && mostrarDigitando) setMostrarDigitando(false);
+  }, [digitandoDisponivel, mostrarDigitando]);
   const [logica, setLogica] = useState<"E" | "OU">(no.config?.logica ?? "E");
   const [condicoes, setCondicoes] = useState<CondicaoForm[]>(
     (no.config?.condicoes ?? [{ ...CONDICAO_VAZIA }]).map((c: any) => ({
@@ -910,16 +917,22 @@ function NoPainel({
             </Select>
           </div>
         )}
-        {no.tipo === "aguardar" && (
+        {no.tipo === "aguardar" && unidade !== "segundos" && (
           <p className="text-[11px] text-muted-foreground">
             A retomada roda pelo cron a cada ~5s — durações curtas podem levar até 5s a mais pra retomar.
           </p>
         )}
         {no.tipo === "aguardar" && (
-          <div className="flex items-center gap-2" title={`Mostra "Digitando..." pro cliente logo antes de enviar a próxima mensagem do fluxo. Limitado a 15s pela Z-API — durações maiores mostram "Digitando..." só nos últimos 15s antes do envio.`}>
-            <Switch checked={mostrarDigitando} onCheckedChange={setMostrarDigitando} />
-            <span className="text-xs text-muted-foreground">Mostrar "Digitando..." antes da próxima mensagem</span>
-          </div>
+          digitandoDisponivel ? (
+            <div className="flex items-center gap-2" title={`Mostra "Digitando..." pro cliente durante os ${valorEspera}s inteiros do Aguardar — a Z-API manda a mensagem seguinte assim que esse tempo passa, sem espera extra.`}>
+              <Switch checked={mostrarDigitando} onCheckedChange={setMostrarDigitando} />
+              <span className="text-xs text-muted-foreground">Mostrar "Digitando..." durante a espera</span>
+            </div>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              "Digitando..." só está disponível pra Aguardar em segundos, até 15s (limite da Z-API).
+            </p>
+          )
         )}
 
         {no.tipo === "condicional" && (
