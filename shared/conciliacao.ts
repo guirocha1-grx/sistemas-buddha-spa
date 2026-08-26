@@ -103,6 +103,45 @@ function agruparParcelas(itens: ItemConciliacao[]): ItemConciliacao[] {
   return agrupados;
 }
 
+// Combinações de N itens (ordem não importa) — usado só depois que
+// sobrarem itens sem par individual, pra manter pequeno (MAX_ITENS_GRUPO
+// e mesma forma de pagamento limitam bastante o espaço de busca).
+function combinacoes<T>(itens: T[], tamanho: number): T[][] {
+  if (tamanho === 0) return [[]];
+  if (itens.length < tamanho) return [];
+  const [primeiro, ...resto] = itens;
+  const comPrimeiro = combinacoes(resto, tamanho - 1).map((c) => [primeiro, ...c]);
+  const semPrimeiro = combinacoes(resto, tamanho);
+  return [...comPrimeiro, ...semPrimeiro];
+}
+
+const MAX_ITENS_GRUPO = 4;
+
+/**
+ * Procura um grupo de 2 a MAX_ITENS_GRUPO itens em `grupo` cuja soma bata
+ * (mesma forma, valor exato) com um item avulso em `unico` — caso comum
+ * no Day Spa: duas ou mais comandas separadas pagas numa única passada
+ * de cartão. Retorna os índices do primeiro grupo encontrado, ou null.
+ */
+function encontrarGrupo(
+  grupo: ItemConciliacao[],
+  unico: ItemConciliacao[],
+): { indicesGrupo: number[]; indiceUnico: number } | null {
+  for (const forma of TODAS_FORMAS) {
+    const candidatosGrupo = grupo.map((item, i) => ({ item, i })).filter(({ item }) => item.forma === forma);
+    const candidatosUnico = unico.map((item, i) => ({ item, i })).filter(({ item }) => item.forma === forma);
+    if (candidatosGrupo.length < 2 || candidatosUnico.length === 0) continue;
+    for (let tamanho = 2; tamanho <= Math.min(MAX_ITENS_GRUPO, candidatosGrupo.length); tamanho++) {
+      for (const combo of combinacoes(candidatosGrupo, tamanho)) {
+        const soma = combo.reduce((s, { item }) => s + item.valor, 0);
+        const alvo = candidatosUnico.find(({ item }) => Math.abs(item.valor - soma) < 0.005);
+        if (alvo) return { indicesGrupo: combo.map(({ i }) => i), indiceUnico: alvo.i };
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Pareia Comanda x Contas por valor e retorna as ações corretivas. Todo
  * item que sobra sem par (não bateu por valor+forma, por valor com
@@ -152,6 +191,41 @@ function parear(comanda: ItemConciliacao[], contas: ItemConciliacao[]): { acoes:
       restanteComanda.splice(i, 1);
       restanteContas.splice(j, 1);
     }
+  }
+
+  // 3.5) Grupo de itens de um lado somando o valor de um item avulso do
+  // outro — ex.: duas comandas de Day Spa (R$343 cada) pagas numa única
+  // passada de cartão de R$686. Tenta nos dois sentidos (grupo na
+  // Comanda x avulso nas Contas, e o inverso — venda paga em parcelas
+  // separadas nas contas). Repete até não achar mais nenhum grupo, já
+  // que casar um grupo pode liberar itens que fecham outro.
+  while (true) {
+    const grupoNaComanda = encontrarGrupo(restanteComanda, restanteContas);
+    if (grupoNaComanda) {
+      const itensGrupo = grupoNaComanda.indicesGrupo.map((i) => restanteComanda[i]);
+      const itemUnico = restanteContas[grupoNaComanda.indiceUnico];
+      const soma = totalItens(itensGrupo);
+      const horario = itemUnico.horario ? ` às ${itemUnico.horario}` : "";
+      acoes.push(
+        `Pagamento único de ${fmtMoeda(soma)} (${LABEL_FORMA[itemUnico.forma]}${horario} — ${itemUnico.descricao}) provavelmente cobre ${itensGrupo.length} vendas da comanda: ${itensGrupo.map((i) => `${i.descricao} (${fmtMoeda(i.valor)})`).join(", ")}. Confira e vincule.`,
+      );
+      for (const i of [...grupoNaComanda.indicesGrupo].sort((a, b) => b - a)) restanteComanda.splice(i, 1);
+      restanteContas.splice(grupoNaComanda.indiceUnico, 1);
+      continue;
+    }
+    const grupoNasContas = encontrarGrupo(restanteContas, restanteComanda);
+    if (grupoNasContas) {
+      const itensGrupo = grupoNasContas.indicesGrupo.map((i) => restanteContas[i]);
+      const itemUnico = restanteComanda[grupoNasContas.indiceUnico];
+      const soma = totalItens(itensGrupo);
+      acoes.push(
+        `Venda de ${fmtMoeda(soma)} (${LABEL_FORMA[itemUnico.forma]} — ${itemUnico.descricao}) provavelmente foi recebida em ${itensGrupo.length} lançamentos separados nas contas: ${itensGrupo.map((i) => fmtMoeda(i.valor)).join(", ")}. Confira e vincule.`,
+      );
+      for (const i of [...grupoNasContas.indicesGrupo].sort((a, b) => b - a)) restanteContas.splice(i, 1);
+      restanteComanda.splice(grupoNasContas.indiceUnico, 1);
+      continue;
+    }
+    break;
   }
 
   // 4) Sobrou só na Comanda — recepção lançou, mas o dinheiro não apareceu na conta.
