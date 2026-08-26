@@ -3616,6 +3616,41 @@ Diretrizes:
     }),
   }),
 
+  terapeutas: router({
+    listAdmin: adminProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      return db.listTerapeutasAdmin(input.unidadeId);
+    }),
+
+    criar: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      nomeCompleto: z.string().min(1),
+      nomeAbreviado: z.string().min(1),
+      celular: z.string().optional(),
+      cpf: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const id = await db.criarTerapeuta({
+        unidadeId: input.unidadeId,
+        nomeCompleto: input.nomeCompleto,
+        nomeAbreviado: input.nomeAbreviado,
+        celular: input.celular || null,
+        cpf: input.cpf || null,
+      });
+      return { success: true, id };
+    }),
+
+    atualizar: adminProcedure.input(z.object({
+      id: z.number(),
+      nomeCompleto: z.string().min(1).optional(),
+      nomeAbreviado: z.string().min(1).optional(),
+      celular: z.string().nullable().optional(),
+      cpf: z.string().nullable().optional(),
+      ativo: z.boolean().optional(),
+    })).mutation(async ({ input: { id, ...dados } }) => {
+      await db.atualizarTerapeuta(id, dados);
+      return { success: true };
+    }),
+  }),
+
   // ===== Controle de acesso por módulo (ver shared/modulos.ts) =====
   permissoes: router({
     // Não é adminProcedure — todo mundo precisa saber os próprios

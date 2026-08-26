@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { eq, asc, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, bellePlanosClientes, bellePlanosServicos, lidMapping, atendentes, atendenteSessoes, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertBellePlanoCliente, type InsertBellePlanoServico, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, bellePlanosClientes, bellePlanosServicos, lidMapping, atendentes, atendenteSessoes, terapeutas, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertBellePlanoCliente, type InsertBellePlanoServico, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import type { LinhaAtendimentoBelleImportada } from "./atendimentosBelleXlsxParser";
 import type { RelatorioPlanosBelleImportado, VinculoPlanoBelleImportado } from "./planosBelleXlsParser";
@@ -3615,6 +3615,39 @@ export async function atualizarAtendente(id: number, dados: { nome?: string; pin
   const db = await getDb();
   if (!db) return;
   await db.update(atendentes).set(dados).where(eq(atendentes.id, id));
+}
+
+export async function listTerapeutasAdmin(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(terapeutas)
+    .where(eq(terapeutas.unidadeId, unidadeId))
+    .orderBy(terapeutas.nomeCompleto);
+}
+
+export async function criarTerapeuta(params: {
+  unidadeId: number;
+  nomeCompleto: string;
+  nomeAbreviado: string;
+  celular?: string | null;
+  cpf?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.insert(terapeutas).values(params).$returningId();
+  return result[0]?.id;
+}
+
+export async function atualizarTerapeuta(id: number, dados: {
+  nomeCompleto?: string;
+  nomeAbreviado?: string;
+  celular?: string | null;
+  cpf?: string | null;
+  ativo?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(terapeutas).set(dados).where(eq(terapeutas.id, id));
 }
 
 /**

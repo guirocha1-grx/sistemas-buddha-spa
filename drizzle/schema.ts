@@ -309,6 +309,27 @@ export const atendentes = mysqlTable("atendentes", {
 export type Atendente = typeof atendentes.$inferSelect;
 export type InsertAtendente = typeof atendentes.$inferInsert;
 
+/** Cadastro dos profissionais (massagistas/terapeutas) de cada unidade — hoje só referência (nome/contato), sem login. */
+export const terapeutas = mysqlTable("terapeutas", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  nomeCompleto: varchar("nomeCompleto", { length: 200 }).notNull(),
+  nomeAbreviado: varchar("nomeAbreviado", { length: 100 }).notNull(),
+  celular: varchar("celular", { length: 20 }),
+  cpf: varchar("cpf", { length: 14 }),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeIdx: index("terapeutas_unidade_idx").on(table.unidadeId),
+  // Único quando preenchido — MySQL/TiDB não conta NULL como duplicata
+  // em índice único, então vários terapeutas sem CPF cadastrado convivem bem.
+  cpfIdx: uniqueIndex("terapeutas_cpf_idx").on(table.cpf),
+}));
+
+export type Terapeuta = typeof terapeutas.$inferSelect;
+export type InsertTerapeuta = typeof terapeutas.$inferInsert;
+
 /**
  * Sessão do atendente após validar o PIN — token opaco (não é o JWT do
  * login, cookie separado), com expiração curta (um turno). DB-backed
