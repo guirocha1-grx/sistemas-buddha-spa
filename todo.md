@@ -465,6 +465,9 @@
 - [x] Impedir que o reenvio do mesmo chamado preencha uma segunda linha da Comanda
 - [x] Abreviar o nome do cliente no chamado, preservando nome composto quando houver
 - [x] Alterar o destino de chamados para o Grupo Geral RBS 960001 e atualizar a identificação no modal
+- [x] Corrigir o mapeamento da unidade para localizar a Comanda virtual no envio de chamado
+- [x] Restringir a escrita da Comanda a Cliente, Terapia/Produto e Terapeuta da primeira linha vazia, sem tocar em fórmulas ou campos financeiros
+- [x] Preencher Abertura comanda (responsável) com o nome da pessoa logada que envia o chamado
 - [ ] Futuro: criar fluxo de cobrança de clientes por Link de Pagamento
 - [x] Mover o controle Pref. para ao lado do terapeuta em Próximos atendimentos, com Não como padrão
 - [x] Destacar em verde a preferência confirmada na prévia e na mensagem de chamado enviada ao grupo

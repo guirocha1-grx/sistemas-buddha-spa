@@ -27,7 +27,7 @@ import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarTodosPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, classificarOrigemPagamentoMp } from "./mercadoPagoApi";
 import { dataSaoPaulo, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
 import { PDFParse } from "pdf-parse";
-import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual } from "./googleSheets";
+import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual, chaveComandaVirtualPorUnidade } from "./googleSheets";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTelegramParaRecepcao } from "./telegramApi";
 import { CONVERSA_GRUPO_GERAL_RBS_ID, destinoGrupoGeralRbsValido, montarMensagemChamadoTerapeuta } from "./chamadoTerapeuta";
@@ -3796,11 +3796,11 @@ Diretrizes:
         if (!input.atendimentoBelleId) throw new Error("Este chamado não possui atendimento vinculado para preencher a Comanda");
         comanda = await db.obterPreenchimentoComanda(input.unidadeId, input.atendimentoBelleId);
         if (!comanda) {
-        const slug = unidade.slug === "rbs" || unidade.slug === "ssu" ? unidade.slug : null;
+        const slug = chaveComandaVirtualPorUnidade(input.unidadeId);
         if (!slug) throw new Error("A unidade não possui Comanda virtual configurada");
         comanda = await preencherLinhaVaziaComandaVirtual({
           spreadsheetId: SPREADSHEET_IDS_COMANDA_VIRTUAL[slug], data: dataSaoPaulo(new Date()), cliente: input.clienteNome,
-          terapia: input.terapiaBemEstar || input.terapiaEstetica || "Não informada", terapeuta: input.terapeutaNome,
+          terapia: input.terapiaBemEstar || input.terapiaEstetica || "Não informada", terapeuta: input.terapeutaNome, responsavel: ctx.user.name || "Recepção",
         });
         await db.registrarPreenchimentoComanda(input.unidadeId, input.atendimentoBelleId, comanda.aba, comanda.linha);
         }

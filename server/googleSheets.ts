@@ -425,6 +425,12 @@ export const SPREADSHEET_IDS_COMANDA_VIRTUAL = {
   ssu: "1pdKiK3h5CRZfrT2fjVi3w-_Sd1BBgfhgjCvFUBk7FUs",
 };
 
+export function chaveComandaVirtualPorUnidade(unidadeId: number): keyof typeof SPREADSHEET_IDS_COMANDA_VIRTUAL | null {
+  if (unidadeId === 2) return "rbs";
+  if (unidadeId === 1) return "ssu";
+  return null;
+}
+
 function colunaLetraComanda(indice: number): string {
   let n = indice + 1;
   let resultado = "";
@@ -454,7 +460,7 @@ export function encontrarLinhaVaziaComandaVirtual(linhas: unknown[][]): { linha:
 
 /** Preenche somente Cliente, Terapia/Produto e Terapeuta na primeira linha já existente e vazia da aba diária. */
 export async function preencherLinhaVaziaComandaVirtual(params: {
-  spreadsheetId: string; data: string; cliente: string; terapia: string; terapeuta: string;
+  spreadsheetId: string; data: string; cliente: string; terapia: string; terapeuta: string; responsavel: string;
 }): Promise<{ aba: string; linha: number }> {
   const auth = getAuth();
   if (!auth) throw new Error("Credenciais do Google Sheets não configuradas");
@@ -464,12 +470,16 @@ export async function preencherLinhaVaziaComandaVirtual(params: {
       const resposta = await sheets.spreadsheets.values.get({ spreadsheetId: params.spreadsheetId, range: `'${aba}'!A1:AD300` });
       const linhas = resposta.data.values ?? [];
       const { linha: linhaPlanilha, clienteCol, terapiaCol, terapeutaCol } = encontrarLinhaVaziaComandaVirtual(linhas);
+      const cabecalho = linhas.find((linha) => linha.some((celula: unknown) => normalizarRotulo(celula) === "cliente"))?.map(normalizarRotulo) ?? [];
+      const responsavelCol = cabecalho.indexOf("abertura comanda (responsavel)");
+      if (responsavelCol < 0) throw new Error("A Comanda não possui a coluna Abertura comanda (responsável) esperada");
       await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: params.spreadsheetId,
         requestBody: { valueInputOption: "USER_ENTERED", data: [
           { range: `'${aba}'!${colunaLetraComanda(clienteCol)}${linhaPlanilha}`, values: [[params.cliente]] },
           { range: `'${aba}'!${colunaLetraComanda(terapiaCol)}${linhaPlanilha}`, values: [[params.terapia]] },
           { range: `'${aba}'!${colunaLetraComanda(terapeutaCol)}${linhaPlanilha}`, values: [[params.terapeuta]] },
+          { range: `'${aba}'!${colunaLetraComanda(responsavelCol)}${linhaPlanilha}`, values: [[params.responsavel]] },
         ] },
       });
       return { aba, linha: linhaPlanilha };
