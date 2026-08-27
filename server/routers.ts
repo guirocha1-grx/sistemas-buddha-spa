@@ -3794,13 +3794,14 @@ Diretrizes:
       let comanda: { aba: string; linha: number } | null = null;
       if (input.enviarParaComanda) {
         if (!input.atendimentoBelleId) throw new Error("Este chamado não possui atendimento vinculado para preencher a Comanda");
+        if (!ctx.atendente?.nome?.trim()) throw new Error("Selecione seu nome pelo PIN antes de enviar dados para a Comanda");
         comanda = await db.obterPreenchimentoComanda(input.unidadeId, input.atendimentoBelleId);
         if (!comanda) {
         const slug = chaveComandaVirtualPorUnidade(input.unidadeId);
         if (!slug) throw new Error("A unidade não possui Comanda virtual configurada");
         comanda = await preencherLinhaVaziaComandaVirtual({
           spreadsheetId: SPREADSHEET_IDS_COMANDA_VIRTUAL[slug], data: dataSaoPaulo(new Date()), cliente: input.clienteNome,
-          terapia: input.terapiaBemEstar || input.terapiaEstetica || "Não informada", terapeuta: input.terapeutaNome, responsavel: ctx.user.name || "Recepção",
+          terapia: input.terapiaBemEstar || input.terapiaEstetica || "Não informada", terapeuta: input.terapeutaNome, responsavel: ctx.atendente.nome.trim(),
         });
         await db.registrarPreenchimentoComanda(input.unidadeId, input.atendimentoBelleId, comanda.aba, comanda.linha);
         }

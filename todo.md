@@ -470,5 +470,8 @@
 - [x] Preencher Abertura comanda (responsável) com o nome da pessoa logada que envia o chamado
 - [x] Atualizar o aviso de sucesso para identificar chamado ou pré-chamado, Grupo Geral da unidade e envio à Comanda virtual
 - [ ] Futuro: criar fluxo de cobrança de clientes por Link de Pagamento
+- [ ] Pausado: projetar a cobrança de clientes por Link de Pagamento com geração, envio no Inbox e rastreabilidade
 - [x] Mover o controle Pref. para ao lado do terapeuta em Próximos atendimentos, com Não como padrão
 - [x] Destacar em verde a preferência confirmada na prévia e na mensagem de chamado enviada ao grupo
+- [x] Completar as opções de Local para o terapeuta chamar no Ribeirão Shopping conforme a referência operacional
+- [x] Preencher Abertura comanda com o valor válido associado ao PIN da pessoa logada, sem usar o nome técnico da conta
