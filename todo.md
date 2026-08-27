@@ -462,6 +462,9 @@
 - [x] Manter os menus Agenda e Financeiro abertos por padrão no menu lateral
 - [x] Futuro: preencher uma linha vazia existente da Comanda ao enviar o chamado
 - [x] Integrar o envio do chamado ao preenchimento de uma linha vazia existente da Comanda diária, sem criar linhas nem alterar campos financeiros
+- [x] Impedir que o reenvio do mesmo chamado preencha uma segunda linha da Comanda
+- [x] Abreviar o nome do cliente no chamado, preservando nome composto quando houver
+- [x] Alterar o destino de chamados para o Grupo Geral RBS 960001 e atualizar a identificação no modal
 - [ ] Futuro: criar fluxo de cobrança de clientes por Link de Pagamento
 - [x] Mover o controle Pref. para ao lado do terapeuta em Próximos atendimentos, com Não como padrão
 - [x] Destacar em verde a preferência confirmada na prévia e na mensagem de chamado enviada ao grupo

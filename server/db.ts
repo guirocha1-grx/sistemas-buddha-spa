@@ -849,6 +849,24 @@ export async function retirarProximoAtendimentoDaLista(unidadeId: number, atendi
   }
 }
 
+export async function obterPreenchimentoComanda(unidadeId: number, atendimentoBelleId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const registros = await db.select({ aba: atendimentosOperacional.comandaAba, linha: atendimentosOperacional.comandaLinha, preenchidaEm: atendimentosOperacional.comandaPreenchidaEm })
+    .from(atendimentosOperacional).where(and(eq(atendimentosOperacional.unidadeId, unidadeId), eq(atendimentosOperacional.atendimentoBelleId, atendimentoBelleId))).limit(1);
+  return registros[0]?.preenchidaEm && registros[0].aba && registros[0].linha ? { aba: registros[0].aba, linha: registros[0].linha } : null;
+}
+
+export async function registrarPreenchimentoComanda(unidadeId: number, atendimentoBelleId: number, aba: string, linha: number) {
+  const db = await getDb();
+  if (!db) return;
+  const existente = await db.select({ id: atendimentosOperacional.id }).from(atendimentosOperacional)
+    .where(and(eq(atendimentosOperacional.unidadeId, unidadeId), eq(atendimentosOperacional.atendimentoBelleId, atendimentoBelleId))).limit(1);
+  const dados = { comandaAba: aba, comandaLinha: linha, comandaPreenchidaEm: new Date() };
+  if (existente[0]) await db.update(atendimentosOperacional).set(dados).where(eq(atendimentosOperacional.id, existente[0].id));
+  else await db.insert(atendimentosOperacional).values({ unidadeId, atendimentoBelleId, preferencial: false, ...dados });
+}
+
 export async function listarBanhosImersaoHoje(unidadeId: number) {
   const db = await getDb();
   if (!db) return [];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONVERSA_TESTE_CHAMADOS_ID, destinoTesteChamadoValido, montarMensagemChamadoTerapeuta, primeiroNomeTerapeuta } from "./chamadoTerapeuta";
+import { CONVERSA_GRUPO_GERAL_RBS_ID, destinoGrupoGeralRbsValido, montarMensagemChamadoTerapeuta, nomeCurtoCliente, primeiroNomeTerapeuta } from "./chamadoTerapeuta";
 
 describe("chamado de terapeuta", () => {
   it("usa apenas o primeiro nome do terapeuta no aviso", () => {
@@ -15,7 +15,7 @@ describe("chamado de terapeuta", () => {
     })).toBe("*Chamado*\nTerapeuta: Larah.\nCliente: Fabiana aguarda em: Sala Espera - Não vai tomar chá (pode chamar).\nTerapia Bem-Estar: Yin Yang 60.\nLocal: 1. Sala Shanti - Maca casal.\nTAA não se aplica. Pref.: Não.");
   });
 
-  it("monta o pré-chamado com horário previsto e impede outros destinos durante o teste", () => {
+  it("monta o pré-chamado com horário previsto e limita o destino ao Grupo Geral RBS", () => {
     const texto = montarMensagemChamadoTerapeuta({
       modalidade: "pre_chamado", clienteNome: "Murilo", horarioPrevisto: "15:30", aguardandoEm: "Sala Espera - Tomando chá (chamar em 3 min)",
       terapeutaNome: "Lucimara", terapiaBemEstar: "Relaxante 60", terapiaEstetica: null,
@@ -24,7 +24,12 @@ describe("chamado de terapeuta", () => {
     expect(texto).toContain("*Pré-chamado*");
     expect(texto).toContain("previsto(a) para chegar às 15:30");
     expect(texto).toContain("🟩 PREFERENCIAL");
-    expect(destinoTesteChamadoValido(CONVERSA_TESTE_CHAMADOS_ID, 2)).toBe(true);
-    expect(destinoTesteChamadoValido(CONVERSA_TESTE_CHAMADOS_ID, 1)).toBe(false);
+    expect(destinoGrupoGeralRbsValido(CONVERSA_GRUPO_GERAL_RBS_ID, 2)).toBe(true);
+    expect(destinoGrupoGeralRbsValido(900001, 2)).toBe(false);
+  });
+
+  it("abrevia cliente e preserva nome composto", () => {
+    expect(nomeCurtoCliente("Fabiana Ricci Barbosa")).toBe("Fabiana");
+    expect(nomeCurtoCliente("Ana Paula Souza")).toBe("Ana Paula");
   });
 });

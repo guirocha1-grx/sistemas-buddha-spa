@@ -30,7 +30,7 @@ import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual } from "./googleSheets";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTelegramParaRecepcao } from "./telegramApi";
-import { CONVERSA_TESTE_CHAMADOS_ID, destinoTesteChamadoValido, montarMensagemChamadoTerapeuta } from "./chamadoTerapeuta";
+import { CONVERSA_GRUPO_GERAL_RBS_ID, destinoGrupoGeralRbsValido, montarMensagemChamadoTerapeuta } from "./chamadoTerapeuta";
 import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY, montarPedidoSugestaoMensagem } from "@shared/inboxAi";
 import { iniciarExecucaoFluxo } from "./fluxos";
 import { agentesRouter, tabelaPrecosRouter } from "./routers/agentes";
@@ -3782,22 +3782,28 @@ Diretrizes:
       taa: z.string().trim().min(1),
       preferencial: z.boolean(),
       enviarParaComanda: z.boolean().default(false),
+      atendimentoBelleId: z.number().int().nullable().optional(),
     })).mutation(async ({ input, ctx }) => {
-      const conversa = await db.getInboxConversaById(CONVERSA_TESTE_CHAMADOS_ID);
-      if (!conversa || !destinoTesteChamadoValido(conversa.id, input.unidadeId) || conversa.isGrupo !== "true" || conversa.canal !== "zapi") {
-        throw new Error("O grupo de teste de chamados (900001) não está disponível para esta unidade");
+      const conversa = await db.getInboxConversaById(CONVERSA_GRUPO_GERAL_RBS_ID);
+      if (!conversa || !destinoGrupoGeralRbsValido(conversa.id, input.unidadeId) || conversa.isGrupo !== "true" || conversa.canal !== "zapi") {
+        throw new Error("O Grupo Geral RBS (960001) não está disponível para esta unidade");
       }
       if (!(await db.mensageriaEstaAtiva())) throw new Error("Envio de mensagens pausado — kill switch de mensageria ativado por um administrador");
       const unidade = await db.getUnidadeById(conversa.unidadeId!);
       if (!unidade?.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) throw new Error("Z-API não configurado para o grupo de teste");
       let comanda: { aba: string; linha: number } | null = null;
       if (input.enviarParaComanda) {
+        if (!input.atendimentoBelleId) throw new Error("Este chamado não possui atendimento vinculado para preencher a Comanda");
+        comanda = await db.obterPreenchimentoComanda(input.unidadeId, input.atendimentoBelleId);
+        if (!comanda) {
         const slug = unidade.slug === "rbs" || unidade.slug === "ssu" ? unidade.slug : null;
         if (!slug) throw new Error("A unidade não possui Comanda virtual configurada");
         comanda = await preencherLinhaVaziaComandaVirtual({
           spreadsheetId: SPREADSHEET_IDS_COMANDA_VIRTUAL[slug], data: dataSaoPaulo(new Date()), cliente: input.clienteNome,
           terapia: input.terapiaBemEstar || input.terapiaEstetica || "Não informada", terapeuta: input.terapeutaNome,
         });
+        await db.registrarPreenchimentoComanda(input.unidadeId, input.atendimentoBelleId, comanda.aba, comanda.linha);
+        }
       }
       const texto = montarMensagemChamadoTerapeuta(input);
       const resultado = await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, texto);
