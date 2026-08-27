@@ -122,6 +122,11 @@ export const unidades = mysqlTable("unidades", {
   interTokenExpiresAt: bigint("interTokenExpiresAt", { mode: "number" }),
   // Mercado Pago — só precisa do Access Token (self-service, sem mTLS).
   mpAccessToken: text("mpAccessToken"),
+  // Endpoint público e assinatura secreta do Webhook do Mercado Pago.
+  // São dados por unidade porque cada conta pode estar vinculada a uma
+  // integração diferente. Nunca retornam a usuários não administradores.
+  mpWebhookUrl: text("mpWebhookUrl"),
+  mpWebhookSecret: text("mpWebhookSecret"),
   // Sicredi — mesmo modelo do Inter (OAuth2 client_credentials + mTLS
   // obrigatório em toda chamada). Cooperativa/agência/conta identificam
   // a conta corrente (o Sicredi não usa um único "número de conta" como
@@ -143,6 +148,71 @@ export const unidades = mysqlTable("unidades", {
 
 export type Unidade = typeof unidades.$inferSelect;
 export type InsertUnidade = typeof unidades.$inferInsert;
+
+/**
+ * Cobrança criada no Inbox para um cliente específico. O Link (preferência)
+ * nunca é compartilhado por conversas diferentes: `chaveAberta` é única
+ * enquanto a cobrança está aberta e vira null após encerramento.
+ */
+export const cobrancasLink = mysqlTable("cobrancas_link", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  conversaId: int("conversaId").notNull(),
+  clienteId: int("clienteId"),
+  clienteNome: varchar("clienteNome", { length: 200 }).notNull(),
+  responsavelUserId: int("responsavelUserId").notNull(),
+  responsavelAtendenteId: int("responsavelAtendenteId"),
+  titulo: varchar("titulo", { length: 200 }).notNull(),
+  descricao: text("descricao"),
+  valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
+  formaPagamentoInformada: varchar("formaPagamentoInformada", { length: 80 }),
+  status: mysqlEnum("status", ["rascunho", "criada", "enviada", "pendente", "aprovada", "rejeitada", "cancelada", "expirada", "erro"]).default("rascunho").notNull(),
+  preferenceId: varchar("preferenceId", { length: 160 }),
+  initPoint: text("initPoint"),
+  externalReference: varchar("externalReference", { length: 160 }).notNull(),
+  chaveAberta: varchar("chaveAberta", { length: 100 }).unique(),
+  paymentId: varchar("paymentId", { length: 80 }),
+  paymentStatus: varchar("paymentStatus", { length: 80 }),
+  paymentStatusDetail: varchar("paymentStatusDetail", { length: 160 }),
+  pagadorNome: varchar("pagadorNome", { length: 200 }),
+  pagadorEmail: varchar("pagadorEmail", { length: 320 }),
+  paymentApprovedAt: timestamp("paymentApprovedAt"),
+  criadaEm: timestamp("criadaEm"),
+  enviadaEm: timestamp("enviadaEm"),
+  ultimoWebhookEm: timestamp("ultimoWebhookEm"),
+  ultimoWebhookAcao: varchar("ultimoWebhookAcao", { length: 100 }),
+  webhookAssinaturaValida: boolean("webhookAssinaturaValida").default(false).notNull(),
+  alertaCriadoEm: timestamp("alertaCriadoEm"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeStatusIdx: index("cobrancas_link_unidade_status_idx").on(table.unidadeId, table.status),
+  conversaIdx: index("cobrancas_link_conversa_idx").on(table.conversaId),
+  paymentIdx: index("cobrancas_link_payment_idx").on(table.paymentId),
+  referenceIdx: uniqueIndex("cobrancas_link_external_reference_idx").on(table.externalReference),
+}));
+
+export type CobrancaLink = typeof cobrancasLink.$inferSelect;
+export type InsertCobrancaLink = typeof cobrancasLink.$inferInsert;
+
+/** Modelos por unidade para preencher rapidamente a cobrança, nunca Links reutilizados. */
+export const cobrancasLinkModelos = mysqlTable("cobrancas_link_modelos", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  titulo: varchar("titulo", { length: 200 }).notNull(),
+  descricao: text("descricao"),
+  valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
+  formaPagamentoInformada: varchar("formaPagamentoInformada", { length: 80 }),
+  ativo: boolean("ativo").default(true).notNull(),
+  ordem: int("ordem").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeAtivoOrdemIdx: index("cobrancas_link_modelos_unidade_ativo_ordem_idx").on(table.unidadeId, table.ativo, table.ordem),
+}));
+
+export type CobrancaLinkModelo = typeof cobrancasLinkModelos.$inferSelect;
+export type InsertCobrancaLinkModelo = typeof cobrancasLinkModelos.$inferInsert;
 
 /**
  * Configurações gerais do sistema (chave-valor).

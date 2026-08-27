@@ -21,7 +21,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
   Pencil, Check, CheckCheck, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
-  UserPlus, SmilePlus, Users, Download, ZoomIn, FileText, Bot, BellRing,
+  UserPlus, SmilePlus, Users, Download, ZoomIn, FileText, Bot, BellRing, CreditCard,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useSearch } from "wouter";
@@ -31,6 +31,7 @@ import { formatPhone, diasDesde } from "@/lib/utils";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { ScriptPicker } from "@/components/ScriptPicker";
 import { ChamadoTerapeutaDialog } from "@/components/ChamadoTerapeutaDialog";
+import { CobrancaLinkDialog } from "@/components/CobrancaLinkDialog";
 
 // Portado do mobai-crm (client/src/pages/Inbox.tsx) — conversão manual
 // pra BRT (UTC-3) em vez de depender do timezone do navegador, mais
@@ -193,6 +194,7 @@ export default function Mensagens() {
   const [sugestaoDispensadaId, setSugestaoDispensadaId] = useState<number | null>(null);
   const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
   const [modalChamadoTerapeuta, setModalChamadoTerapeuta] = useState(false);
+  const [modalCobrancaLink, setModalCobrancaLink] = useState(false);
   const [midiasComFalha, setMidiasComFalha] = useState<Set<number>>(() => new Set());
   // Autocomplete de @menção em grupo — mentionInicio é o índice do "@" no
   // texto (null = não está em meio a uma menção); mentionados guarda os
@@ -1040,6 +1042,18 @@ export default function Mensagens() {
                       </div>
                     </PopoverContent>
                   </Popover>
+                  {conversaSelecionada && conversaSelecionada.isGrupo !== "true" && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-primary hover:bg-primary/10 hover:text-primary"
+                      title="Cobrar cliente por Link de Pagamento"
+                      aria-label="Cobrar cliente por Link de Pagamento"
+                      onClick={() => setModalCobrancaLink(true)}
+                    >
+                      <CreditCard size={13} />
+                    </Button>
+                  )}
                   {conversaSelecionada && (
                     <Button
                       size="sm"
@@ -1756,6 +1770,14 @@ export default function Mensagens() {
                   unidadeId={unidadeSelecionada?.id}
                   conversa={conversaSelecionada}
                   atendimento={conversaSelecionada?.resumoRelacionamento?.proximoAtendimento}
+                />
+                <CobrancaLinkDialog
+                  open={modalCobrancaLink}
+                  onOpenChange={setModalCobrancaLink}
+                  conversaId={conversaSelecionadaId}
+                  unidadeId={unidadeSelecionada?.id}
+                  clienteNome={conversaSelecionada?.nomeContato ?? "Cliente"}
+                  ehGrupo={conversaSelecionada?.isGrupo === "true"}
                 />
 
                 {conversaSelecionada && !conversaSelecionada.clienteId && conversaSelecionada.isGrupo !== "true" && (conversaSelecionada.candidatosCliente?.length ?? 0) > 0 && (

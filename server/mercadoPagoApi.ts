@@ -125,15 +125,72 @@ export interface MpPaymentsSearchResponse {
   results: MpPagamento[];
 }
 
-async function mpRequest<T>(path: string, accessToken: string): Promise<T> {
+async function mpRequest<T>(path: string, accessToken: string, options: { method?: "GET" | "POST"; body?: unknown } = {}): Promise<T> {
   const res = await fetch(`${MP_BASE_URL}${path}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    method: options.method ?? "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
   });
   if (!res.ok) {
     const corpo = await res.text();
     throw new Error(`[Mercado Pago] ${path} → ${res.status}: ${corpo}`);
   }
   return res.json() as Promise<T>;
+}
+
+export interface MpPreferenciaPagamentoInput {
+  titulo: string;
+  descricao?: string | null;
+  valor: number;
+  externalReference: string;
+  notificationUrl: string;
+}
+
+export interface MpPreferenciaPagamento {
+  id: string;
+  init_point?: string;
+  sandbox_init_point?: string;
+}
+
+export function montarCorpoPreferenciaPagamento(input: MpPreferenciaPagamentoInput) {
+  return {
+    items: [{
+      id: input.externalReference,
+      title: input.titulo,
+      description: input.descricao || undefined,
+      quantity: 1,
+      currency_id: "BRL",
+      unit_price: Number(input.valor.toFixed(2)),
+    }],
+    external_reference: input.externalReference,
+    notification_url: input.notificationUrl,
+    statement_descriptor: "BUDDHA SPA",
+  };
+}
+
+/**
+ * Cria uma preferência exclusiva para uma cobrança do CRM. A ausência de
+ * `expires` é deliberada: a operação atual trabalha com Links sem vencimento.
+ */
+export async function criarPreferenciaPagamento(accessToken: string, input: MpPreferenciaPagamentoInput): Promise<MpPreferenciaPagamento> {
+  if (!Number.isFinite(input.valor) || input.valor <= 0) {
+    throw new Error("O valor da cobrança precisa ser maior que zero");
+  }
+  const url = new URL(input.notificationUrl);
+  if (url.protocol !== "https:") throw new Error("A URL de notificação precisa usar HTTPS");
+  return mpRequest<MpPreferenciaPagamento>("/checkout/preferences", accessToken, {
+    method: "POST",
+    body: montarCorpoPreferenciaPagamento({ ...input, notificationUrl: url.toString() }),
+  });
+}
+
+/** Consulta de fonte de verdade usada após um webhook assinado. */
+export async function consultarPagamentoPorId(accessToken: string, paymentId: string): Promise<MpPagamento> {
+  if (!/^\d+$/.test(paymentId)) throw new Error("Identificador de pagamento inválido");
+  return mpRequest<MpPagamento>(`/v1/payments/${encodeURIComponent(paymentId)}`, accessToken);
 }
 
 /**

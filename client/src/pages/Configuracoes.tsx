@@ -11,6 +11,7 @@ import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megap
 import { AtendentesSection } from "@/components/AtendentesSection";
 import { TerapeutasSection } from "@/components/TerapeutasSection";
 import { ChamadosParametrosSection } from "@/components/ChamadosParametrosSection";
+import { CobrancaLinkModelosSection } from "@/components/CobrancaLinkModelosSection";
 import { AgentesPromptSection } from "@/components/AgentesPromptSection";
 import { AgentesRecursosSection } from "@/components/AgentesRecursosSection";
 import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY } from "@shared/inboxAi";
@@ -25,6 +26,8 @@ interface InterForm {
 
 interface MpForm {
   mpAccessToken?: string;
+  mpWebhookUrl?: string;
+  mpWebhookSecret?: string;
 }
 
 interface SicrediForm {
@@ -101,7 +104,7 @@ export default function Configuracoes() {
         setInterSaved(vars.id);
         setTimeout(() => setInterSaved(null), 3000);
       }
-      if (vars.mpAccessToken !== undefined) {
+      if (vars.mpAccessToken !== undefined || vars.mpWebhookUrl !== undefined || vars.mpWebhookSecret !== undefined) {
         setMpSaved(vars.id);
         setTimeout(() => setMpSaved(null), 3000);
       }
@@ -466,19 +469,34 @@ export default function Configuracoes() {
                   placeholder="Access Token"
                   defaultValue={unidade.mpAccessToken || ""}
                   onChange={(e) =>
-                    setMpForms({ ...mpForms, [unidade.id]: { mpAccessToken: e.target.value } })
+                    setMpForms({ ...mpForms, [unidade.id]: { ...mpForms[unidade.id], mpAccessToken: e.target.value } })
                   }
                 />
+                <div className="rounded-lg border border-primary/15 bg-primary/[0.035] p-3 space-y-2">
+                  <p className="text-xs font-medium text-primary">Cobrança por Link e confirmação automática</p>
+                  <p className="text-xs text-muted-foreground">Informe o endpoint HTTPS que receberá os pagamentos desta unidade e a assinatura secreta gerada em Suas integrações → Webhooks. A recepção não visualiza esses dados.</p>
+                  <Input
+                    type="url"
+                    placeholder="https://spa.grxcorp.com.br/api/webhooks/mercadopago"
+                    defaultValue={unidade.mpWebhookUrl || ""}
+                    onChange={(e) => setMpForms({ ...mpForms, [unidade.id]: { ...mpForms[unidade.id], mpWebhookUrl: e.target.value } })}
+                  />
+                  <Input
+                    type="password"
+                    placeholder={unidade.mpWebhookSecret ? "Assinatura secreta configurada — informe outra somente para substituir" : "Assinatura secreta do Webhook"}
+                    onChange={(e) => setMpForms({ ...mpForms, [unidade.id]: { ...mpForms[unidade.id], mpWebhookSecret: e.target.value } })}
+                  />
+                </div>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => {
                     const form = mpForms[unidade.id];
-                    if (form?.mpAccessToken) {
+                    if (form && (form.mpAccessToken || form.mpWebhookUrl || form.mpWebhookSecret)) {
                       updateUnidade.mutate({ id: unidade.id, ...form });
                     }
                   }}
-                  disabled={!mpForms[unidade.id]?.mpAccessToken || updateUnidade.isPending}
+                  disabled={!mpForms[unidade.id] || updateUnidade.isPending}
                 >
                   {mpSaved === unidade.id ? (
                     <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
@@ -487,6 +505,7 @@ export default function Configuracoes() {
                   )}
                   {mpSaved === unidade.id ? "Salvo!" : "Salvar Mercado Pago"}
                 </Button>
+                <CobrancaLinkModelosSection unidadeId={unidade.id} />
               </div>
               )}
 

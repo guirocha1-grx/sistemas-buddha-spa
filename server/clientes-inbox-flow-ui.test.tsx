@@ -96,6 +96,10 @@ const state = vi.hoisted(() => {
         diagnostico: { conversa: { invalidate: vi.fn() } },
         fila: { pendenteConversa: { invalidate: vi.fn() } },
       },
+      cobrancasLink: {
+        aberta: { invalidate: vi.fn() },
+        modelos: { list: { invalidate: vi.fn() } },
+      },
       mensageria: { status: { invalidate: vi.fn() } },
     }),
     clientes: {
@@ -180,6 +184,23 @@ const state = vi.hoisted(() => {
     },
     atendentes: {
       atual: { useQuery: () => ({ data: null, isLoading: false }) },
+    },
+    chamados: {
+      opcoes: { useQuery: () => ({ data: { parametros: [], terapeutas: [] }, isLoading: false, refetch: vi.fn() }) },
+      enviarTeste: { useMutation: () => mutation() },
+      salvarPreferenciaCliente: { useMutation: () => mutation() },
+    },
+    servicos: {
+      list: { useQuery: () => ({ data: [], isLoading: false }) },
+    },
+    cobrancasLink: {
+      configuracao: { useQuery: () => ({ data: { mercadoPagoConfigurado: true, webhookConfigurado: true }, isLoading: false }) },
+      aberta: { useQuery: () => ({ data: null, isLoading: false }) },
+      modelos: {
+        list: { useQuery: () => ({ data: [], isLoading: false }) },
+      },
+      extrairDaConversa: { useMutation: () => mutation() },
+      criarEEnviar: { useMutation: () => mutation() },
     },
     fluxos: {
       iniciarVisivel: { useMutation: () => mutation() },

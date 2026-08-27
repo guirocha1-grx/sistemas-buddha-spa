@@ -24,7 +24,7 @@ import { parseAtendimentosBelleXlsx } from "./atendimentosBelleXlsxParser";
 import { parsePlanosBelleXls, parseVinculosPlanosBelleXlsx } from "./planosBelleXlsParser";
 import { parseComandaVirtualXlsx } from "./comandaVirtualXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
-import { consultarTodosPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, classificarOrigemPagamentoMp } from "./mercadoPagoApi";
+import { consultarTodosPagamentos, consultarPagamentoPorId, criarPreferenciaPagamento, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, classificarOrigemPagamentoMp } from "./mercadoPagoApi";
 import { dataSaoPaulo, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
 import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual, chaveComandaVirtualPorUnidade } from "./googleSheets";
@@ -35,6 +35,19 @@ import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY, montarPedidoSuges
 import { iniciarExecucaoFluxo } from "./fluxos";
 import { agentesRouter, tabelaPrecosRouter } from "./routers/agentes";
 import * as agentesDb from "./agentesDb";
+import { normalizarExtracaoCobrancaLink, normalizarValorCobranca } from "./cobrancaLink";
+
+const FORMAS_PAGAMENTO_COBRANCA = ["Não especificada", "Pix", "Cartão", "Pix ou cartão"] as const;
+
+function textoCobrancaComLink(texto: string, initPoint: string): string {
+  const limpo = texto.trim();
+  return limpo.includes(initPoint) ? limpo : `${limpo}\n${initPoint}`;
+}
+
+async function usuarioPodeOperarNaUnidade(user: { id: number; role: "user" | "admin" }, unidadeId: number): Promise<boolean> {
+  const unidadesPermitidas = await db.getUnidadesParaUsuario(user.id, user.role);
+  return unidadesPermitidas.some((unidade) => unidade.id === unidadeId);
+}
 
 /**
  * A sugestão manual é uma reescrita curta do rascunho da recepção. Sem uma
@@ -238,6 +251,8 @@ export const appRouter = router({
       interContaCorrente: z.string().optional(),
       // Mercado Pago
       mpAccessToken: z.string().optional(),
+      mpWebhookUrl: z.string().url().max(1000).optional(),
+      mpWebhookSecret: z.string().max(500).optional(),
       // Sicredi
       sicrediClientId: z.string().optional(),
       sicrediClientSecret: z.string().optional(),
@@ -1444,6 +1459,230 @@ Diretrizes:
     })).mutation(async ({ input }) => {
       await db.unificarInboxConversas(input.idOrigemLid, input.idDestinoReal);
       return { success: true };
+    }),
+  }),
+
+  // ===== Cobrança individual por Link Mercado Pago =====
+  cobrancasLink: router({
+    configuracao: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input, ctx }) => {
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      return {
+        mercadoPagoConfigurado: Boolean(unidade?.mpAccessToken),
+        webhookConfigurado: Boolean(unidade?.mpWebhookUrl && unidade?.mpWebhookSecret),
+      };
+    }),
+
+    aberta: protectedProcedure.input(z.object({ conversaId: z.number() })).query(async ({ input, ctx }) => {
+      const conversa = await db.getInboxConversaById(input.conversaId);
+      if (!conversa?.unidadeId || conversa.isGrupo === "true") return null;
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, conversa.unidadeId))) throw new Error("Sem acesso à unidade desta conversa");
+      const cobranca = await db.getCobrancaLinkAbertaPorConversa(input.conversaId);
+      if (!cobranca) return null;
+      return {
+        id: cobranca.id,
+        titulo: cobranca.titulo,
+        valor: cobranca.valor,
+        status: cobranca.status,
+        enviadaEm: cobranca.enviadaEm,
+        initPoint: cobranca.initPoint,
+      };
+    }),
+
+    modelos: router({
+      list: protectedProcedure.input(z.object({ unidadeId: z.number(), incluirInativos: z.boolean().optional() })).query(async ({ input, ctx }) => {
+        if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
+        return db.listModelosCobrancaLink(input.unidadeId, ctx.user.role === "admin" && Boolean(input.incluirInativos));
+      }),
+      create: adminProcedure.input(z.object({
+        unidadeId: z.number(),
+        titulo: z.string().trim().min(2).max(200),
+        descricao: z.string().trim().max(2000).optional(),
+        valor: z.number().positive().max(999999.99),
+        formaPagamentoInformada: z.enum(FORMAS_PAGAMENTO_COBRANCA).optional(),
+        ordem: z.number().int().min(0).max(999).optional(),
+      })).mutation(async ({ input, ctx }) => {
+        if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
+        const id = await db.criarModeloCobrancaLink({
+          unidadeId: input.unidadeId,
+          titulo: input.titulo,
+          descricao: input.descricao || null,
+          valor: normalizarValorCobranca(input.valor).toFixed(2),
+          formaPagamentoInformada: input.formaPagamentoInformada ?? null,
+          ordem: input.ordem ?? 0,
+        });
+        return { id };
+      }),
+      update: adminProcedure.input(z.object({
+        id: z.number(),
+        unidadeId: z.number(),
+        titulo: z.string().trim().min(2).max(200),
+        descricao: z.string().trim().max(2000).optional(),
+        valor: z.number().positive().max(999999.99),
+        formaPagamentoInformada: z.enum(FORMAS_PAGAMENTO_COBRANCA).optional(),
+        ativo: z.boolean(),
+        ordem: z.number().int().min(0).max(999),
+      })).mutation(async ({ input, ctx }) => {
+        if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
+        await db.atualizarModeloCobrancaLink(input.id, {
+          titulo: input.titulo,
+          descricao: input.descricao || null,
+          valor: normalizarValorCobranca(input.valor).toFixed(2),
+          formaPagamentoInformada: input.formaPagamentoInformada ?? null,
+          ativo: input.ativo,
+          ordem: input.ordem,
+        });
+        return { success: true };
+      }),
+    }),
+
+    extrairDaConversa: protectedProcedure.input(z.object({ conversaId: z.number() })).mutation(async ({ input, ctx }) => {
+      const conversa = await db.getInboxConversaById(input.conversaId);
+      if (!conversa?.unidadeId || conversa.isGrupo === "true") throw new Error("A cobrança só pode usar uma conversa individual vinculada a uma unidade");
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, conversa.unidadeId))) throw new Error("Sem acesso à unidade desta conversa");
+      const mensagens = await db.listInboxMensagens(input.conversaId, 10);
+      const contexto = mensagens.map((mensagem) => {
+        const conteudo = mensagem.conteudo?.trim() || mensagem.transcricao?.trim() || "(sem conteúdo textual)";
+        return `${mensagem.direcao === "recebida" ? "Cliente" : "Equipe"}: ${conteudo}`;
+      }).join("\n");
+      if (!contexto) throw new Error("Não há mensagens recentes para analisar");
+      try {
+        const resposta = await invokeLLM({
+          model: "gpt-5-mini",
+          maxTokens: 600,
+          tools: [],
+          toolChoice: "none",
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "extracao_cobranca_link",
+              strict: true,
+              schema: {
+                type: "object",
+                properties: {
+                  titulo: { type: ["string", "null"] },
+                  descricao: { type: ["string", "null"] },
+                  valor: { type: ["number", "null"] },
+                  formaPagamentoMencionada: { type: ["string", "null"] },
+                  confianca: { type: "integer", minimum: 0, maximum: 100 },
+                  justificativa: { type: "string" },
+                },
+                required: ["titulo", "descricao", "valor", "formaPagamentoMencionada", "confianca", "justificativa"],
+                additionalProperties: false,
+              },
+            },
+          },
+          messages: [
+            { role: "system", content: "Você extrai dados para uma cobrança manual no Brasil. Não cria cobrança, não decide preço e não inventa dados. Só preencha valor se um valor monetário final estiver explícito nas mensagens; em dúvida, use null. A resposta será apenas JSON compatível com o schema." },
+            { role: "user", content: `Analise somente as últimas mensagens abaixo. Sugira título e descrição apenas se o serviço ou produto estiver claro. Informe a forma de pagamento apenas se for mencionada.\n\n${contexto}` },
+          ],
+        });
+        const conteudo = resposta.choices[0]?.message.content;
+        return normalizarExtracaoCobrancaLink(typeof conteudo === "string" ? conteudo : null);
+      } catch (error) {
+        console.error("[Cobrança Link] Falha na extração assistida:", error);
+        throw new Error("Não foi possível trazer os dados da conversa agora. Preencha manualmente e revise antes de enviar.");
+      }
+    }),
+
+    criarEEnviar: protectedProcedure.input(z.object({
+      conversaId: z.number(),
+      titulo: z.string().trim().min(2).max(200),
+      descricao: z.string().trim().max(2000).optional(),
+      valor: z.number().positive().max(999999.99),
+      formaPagamentoInformada: z.enum(FORMAS_PAGAMENTO_COBRANCA).optional(),
+      textoWhatsapp: z.string().trim().min(2).max(3500),
+      reutilizarCobrancaAberta: z.boolean().default(false),
+      confirmarCriacaoEEnvio: z.literal(true),
+    })).mutation(async ({ input, ctx }) => {
+      const conversa = await db.getInboxConversaById(input.conversaId);
+      if (!conversa?.unidadeId || conversa.isGrupo === "true") throw new Error("A cobrança só pode ser enviada em uma conversa individual vinculada a uma unidade");
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, conversa.unidadeId))) throw new Error("Sem acesso à unidade desta conversa");
+      if (!(await db.mensageriaEstaAtiva())) throw new Error("Envio de mensagens pausado — kill switch de mensageria ativado por um administrador");
+      const unidade = await db.getUnidadeById(conversa.unidadeId);
+      if (!unidade?.mpAccessToken) throw new Error("Mercado Pago não configurado para esta unidade");
+      if (!unidade.mpWebhookUrl || !unidade.mpWebhookSecret) throw new Error("Configure a URL HTTPS e a assinatura secreta do Webhook Mercado Pago antes de criar Links para esta unidade");
+      let urlNotificacao: URL;
+      try {
+        urlNotificacao = new URL(unidade.mpWebhookUrl);
+      } catch {
+        throw new Error("A URL de Webhook Mercado Pago configurada é inválida");
+      }
+      if (urlNotificacao.protocol !== "https:") throw new Error("A URL de Webhook Mercado Pago precisa usar HTTPS");
+
+      const aberta = await db.getCobrancaLinkAbertaPorConversa(input.conversaId);
+      let cobranca = aberta;
+      if (aberta && !input.reutilizarCobrancaAberta) {
+        throw new Error("Já existe um Link aberto para este cliente. Revise a cobrança existente e confirme se deseja reenviá-lo.");
+      }
+
+      if (!cobranca) {
+        const externalReference = `buddha-link-${conversa.unidadeId}-${crypto.randomUUID()}`;
+        const cobrancaId = await db.criarCobrancaLink({
+          unidadeId: conversa.unidadeId,
+          conversaId: conversa.id,
+          clienteId: conversa.clienteId ?? null,
+          clienteNome: conversa.nomeContato?.trim() || "Cliente sem nome",
+          responsavelUserId: ctx.user.id,
+          responsavelAtendenteId: ctx.atendente?.id ?? null,
+          titulo: input.titulo,
+          descricao: input.descricao || null,
+          valor: normalizarValorCobranca(input.valor).toFixed(2),
+          formaPagamentoInformada: input.formaPagamentoInformada ?? null,
+          externalReference,
+          chaveAberta: db.chaveCobrancaAberta(input.conversaId),
+        });
+        if (!cobrancaId) throw new Error("Não foi possível registrar a cobrança antes da criação do Link");
+        cobranca = await db.getCobrancaLinkPorId(cobrancaId);
+        if (!cobranca) throw new Error("Cobrança não encontrada após o registro");
+        const cobrancaCriada = cobranca;
+        try {
+          const preferencia = await criarPreferenciaPagamento(unidade.mpAccessToken, {
+            titulo: cobrancaCriada.titulo,
+            descricao: cobrancaCriada.descricao,
+            valor: Number(cobrancaCriada.valor),
+            externalReference: cobrancaCriada.externalReference,
+            notificationUrl: urlNotificacao.toString(),
+          });
+          const initPoint = preferencia.init_point;
+          if (!preferencia.id || !initPoint) throw new Error("O Mercado Pago não retornou uma URL de pagamento válida");
+          await db.atualizarCobrancaLink(cobrancaCriada.id, { status: "criada", preferenceId: preferencia.id, initPoint, criadaEm: new Date() });
+          cobranca = await db.getCobrancaLinkPorId(cobrancaCriada.id);
+          if (!cobranca) throw new Error("Cobrança não encontrada após criar a preferência");
+        } catch (error) {
+          await db.atualizarCobrancaLink(cobrancaCriada.id, { status: "erro", chaveAberta: null });
+          throw error;
+        }
+      }
+
+      if (!cobranca.initPoint) throw new Error("A cobrança aberta não possui Link válido; crie uma nova cobrança após revisar os dados");
+      const textoSemAssinatura = textoCobrancaComLink(input.textoWhatsapp, cobranca.initPoint);
+      const nomeRemetente = ctx.atendente?.nome ?? ctx.user.name;
+      const textoFinal = nomeRemetente?.trim() ? `*${nomeRemetente.trim()}:*\n${textoSemAssinatura}` : textoSemAssinatura;
+      let zapiMessageId: string | undefined;
+      if (conversa.canal === "zapi") {
+        if (!unidade.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) throw new Error("Z-API não configurado para esta unidade");
+        zapiMessageId = (await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, textoFinal)).messageId;
+      } else {
+        await buddhaMktApi.sendText(conversa.telefone, textoFinal);
+      }
+      await db.insertInboxMensagem({
+        conversaId: conversa.id,
+        direcao: "enviada",
+        tipo: "texto",
+        conteudo: textoFinal,
+        enviadaPorUserId: ctx.user.id,
+        enviadaPorAtendenteId: ctx.atendente?.id ?? null,
+        zapiMessageId: zapiMessageId ?? null,
+      });
+      await db.upsertInboxConversa({ unidadeId: conversa.unidadeId, canal: conversa.canal, telefone: conversa.telefone, nomeContato: conversa.nomeContato ?? undefined, ultimaMensagemTexto: textoFinal });
+      await db.atualizarCobrancaLink(cobranca.id, { status: "enviada", enviadaEm: new Date() });
+      return { cobrancaId: cobranca.id, initPoint: cobranca.initPoint, reutilizada: Boolean(aberta) };
+    }),
+
+    alertas: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input, ctx }) => {
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
+      return db.listCobrancasLinkAprovadasRecentes(input.unidadeId);
     }),
   }),
 

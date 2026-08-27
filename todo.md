@@ -469,9 +469,20 @@
 - [x] Restringir a escrita da Comanda a Cliente, Terapia/Produto e Terapeuta da primeira linha vazia, sem tocar em fórmulas ou campos financeiros
 - [x] Preencher Abertura comanda (responsável) com o nome da pessoa logada que envia o chamado
 - [x] Atualizar o aviso de sucesso para identificar chamado ou pré-chamado, Grupo Geral da unidade e envio à Comanda virtual
-- [ ] Futuro: criar fluxo de cobrança de clientes por Link de Pagamento
-- [ ] Pausado: projetar a cobrança de clientes por Link de Pagamento com geração, envio no Inbox e rastreabilidade
+- [x] Criar fluxo de cobrança de clientes por Link de Pagamento
+- [x] Projetar cobrança por Link com geração, envio no Inbox e rastreabilidade
+- [x] Criar modal de cobrança com preenchimento manual, leitura assistida das últimas mensagens e confirmação explícita de envio
+- [x] Criar atalhos administráveis para produtos recorrentes de cobrança por Link
+- [x] Receber webhook assinado de pagamento aprovado do Mercado Pago e atualizar a cobrança correspondente
+- [x] Exibir alerta em telas da unidade quando um Link de Pagamento for aprovado, orientando seguir para agendamento ou voucher
 - [x] Mover o controle Pref. para ao lado do terapeuta em Próximos atendimentos, com Não como padrão
 - [x] Destacar em verde a preferência confirmada na prévia e na mensagem de chamado enviada ao grupo
 - [x] Completar as opções de Local para o terapeuta chamar no Ribeirão Shopping conforme a referência operacional
 - [x] Preencher Abertura comanda com o valor válido associado ao PIN da pessoa logada, sem usar o nome técnico da conta
+- [x] Criar tabelas de cobranças por Link, modelos recorrentes e alertas de pagamento, todas isoladas por unidade
+- [x] Criar uma preferência Mercado Pago nova e rastreável por cobrança, sem vencimento, com bloqueio de duplicidade aberta por conversa
+- [x] Permitir reutilizar apenas o mesmo Link ainda aberto para o mesmo cliente e impedir reutilização entre clientes
+- [x] Validar assinatura HMAC de Webhook, consultar o pagamento no Mercado Pago e confirmar valor, unidade e referência antes de aprovar localmente
+- [x] Exigir configuração explícita do endpoint HTTPS e do segredo de Webhook no ambiente Railway antes de ativar alertas automáticos
+- [x] Exibir alerta dispensável por usuário para pagamento aprovado na unidade, sem processo recorrente no servidor
+- [x] Cobrir criação, duplicidade, extração assistida, assinatura e idempotência com testes automatizados

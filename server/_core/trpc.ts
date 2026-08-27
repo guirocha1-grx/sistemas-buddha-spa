@@ -56,6 +56,7 @@ const ROUTER_MODULO: Record<string, string> = {
   adquirentes: "financeiro",
   confirmacaoPagamentos: "financeiro",
   chamados: "mensagens",
+  cobrancasLink: "mensagens",
   copilot: "copilot",
   laminas: "laminas",
   leads: "leads",
@@ -102,6 +103,9 @@ const PROCEDURES_EXENTAS_DO_MODULO = new Set([
   // Alerta operacional é exibido no layout inteiro para qualquer pessoa
   // logada; não concede acesso à Agenda nem às suas demais ações.
   "proximosAtendimentos.banhosImersaoHoje",
+  // A confirmação de pagamento é operacional e aparece no layout inteiro;
+  // a criação/reenviar cobrança continua protegida pelo módulo Mensagens.
+  "cobrancasLink.alertas",
 ]);
 
 /**

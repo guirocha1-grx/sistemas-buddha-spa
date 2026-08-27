@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { trpc } from "@/lib/trpc";
 import { BellRing, CheckSquare, ChevronDown, Clock3, Loader2, Send, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 type Atendimento = { id?: number; horario?: string | null; servicoNome?: string | null; profissionalNome?: string | null; terapeutaOrganizado?: string | null; salaOrganizada?: string | null; preferencialOrganizado?: boolean | null };

@@ -34,6 +34,7 @@ import { Button } from "./ui/button";
 import { AtendenteGate, useAtendenteAtual } from "./AtendenteGate";
 import GlobalSyncCenter from "./GlobalSyncCenter";
 import BanhoImersaoAlert from "./BanhoImersaoAlert";
+import CobrancaLinkAprovadaAlert from "./CobrancaLinkAprovadaAlert";
 import type { ModuloChave } from "@shared/modulos";
 
 // `modulo` liga cada item ao controle de acesso (shared/modulos.ts) —
@@ -468,6 +469,7 @@ function DashboardLayoutContent({
       </SidebarInset>
       <GlobalSyncCenter />
       <BanhoImersaoAlert />
+      <CobrancaLinkAprovadaAlert />
     </>
   );
 }

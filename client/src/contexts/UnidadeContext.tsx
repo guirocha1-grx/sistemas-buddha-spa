@@ -18,6 +18,8 @@ interface UnidadeInfo {
   interChavePrivada?: string | null;
   interContaCorrente?: string | null;
   mpAccessToken?: string | null;
+  mpWebhookUrl?: string | null;
+  mpWebhookSecret?: string | null;
   // Sicredi
   sicrediClientId?: string | null;
   sicrediClientSecret?: string | null;
@@ -65,6 +67,8 @@ export function UnidadeProvider({ children }: { children: ReactNode }) {
     interChavePrivada: u.interChavePrivada,
     interContaCorrente: u.interContaCorrente,
     mpAccessToken: u.mpAccessToken,
+    mpWebhookUrl: u.mpWebhookUrl,
+    mpWebhookSecret: u.mpWebhookSecret,
     sicrediClientId: u.sicrediClientId,
     sicrediClientSecret: u.sicrediClientSecret,
     sicrediCertificado: u.sicrediCertificado,

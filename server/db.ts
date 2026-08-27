@@ -12,6 +12,7 @@ import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
 import { storageGetSignedUrl, storageExists } from "./storage";
 import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, type InsertChamadoParametro } from "../drizzle/schema";
+import { cobrancasLink, cobrancasLinkModelos, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -232,7 +233,7 @@ export async function getUnidadesParaUsuario(userId: number, role: "user" | "adm
 const CAMPOS_CREDENCIAIS_UNIDADE = [
   "belleToken", "zapiInstanceId", "zapiToken", "zapiClientToken",
   "interClientId", "interClientSecret", "interCertificado", "interChavePrivada",
-  "mpAccessToken", "sicrediClientId", "sicrediClientSecret", "sicrediCertificado", "sicrediChavePrivada",
+  "mpAccessToken", "mpWebhookUrl", "mpWebhookSecret", "sicrediClientId", "sicrediClientSecret", "sicrediCertificado", "sicrediChavePrivada",
 ] as const;
 
 /** Remove segredos antes de retornar unidades a procedimentos acessíveis a usuários não administradores. */
@@ -5323,4 +5324,125 @@ export async function marcarBuddhaMktAlertado(conversaId: number): Promise<void>
   const db = await getDb();
   if (!db) return;
   await db.update(inboxConversas).set({ buddhaMktAlertadoEm: new Date() }).where(eq(inboxConversas.id, conversaId));
+}
+
+// ===== Cobranças por Link Mercado Pago =====
+
+export const STATUS_COBRANCA_ABERTA = ["rascunho", "criada", "enviada", "pendente"] as const;
+export type StatusCobrancaLink = "rascunho" | "criada" | "enviada" | "pendente" | "aprovada" | "rejeitada" | "cancelada" | "expirada" | "erro";
+
+/** Uma única cobrança em aberto por conversa evita mandar dois Links para a mesma negociação. */
+export function chaveCobrancaAberta(conversaId: number): string {
+  return `conversa:${conversaId}`;
+}
+
+export async function getCobrancaLinkAbertaPorConversa(conversaId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(cobrancasLink)
+    .where(eq(cobrancasLink.chaveAberta, chaveCobrancaAberta(conversaId)))
+    .limit(1);
+  return rows[0];
+}
+
+export async function getCobrancaLinkPorId(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(cobrancasLink).where(eq(cobrancasLink.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function getCobrancaLinkPorReferencia(externalReference: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(cobrancasLink)
+    .where(eq(cobrancasLink.externalReference, externalReference)).limit(1);
+  return rows[0];
+}
+
+export async function criarCobrancaLink(dados: InsertCobrancaLink): Promise<number | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const resultado = await db.insert(cobrancasLink).values(dados).$returningId();
+  return resultado[0]?.id;
+}
+
+export async function atualizarCobrancaLink(id: number, dados: Partial<InsertCobrancaLink>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(cobrancasLink).set(dados).where(eq(cobrancasLink.id, id));
+}
+
+export async function registrarPagamentoCobrancaLink(dados: {
+  cobrancaId: number;
+  paymentId: string;
+  paymentStatus: string;
+  paymentStatusDetail?: string | null;
+  pagadorNome?: string | null;
+  pagadorEmail?: string | null;
+  aprovadoEm?: Date | null;
+  acaoWebhook?: string | null;
+  assinaturaValida: boolean;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const statusMapeado: StatusCobrancaLink = dados.paymentStatus === "approved"
+    ? "aprovada"
+    : dados.paymentStatus === "rejected" ? "rejeitada"
+      : dados.paymentStatus === "cancelled" ? "cancelada"
+        : dados.paymentStatus === "expired" ? "expirada"
+          : "pendente";
+  const terminal = ["aprovada", "rejeitada", "cancelada", "expirada"].includes(statusMapeado);
+  await db.update(cobrancasLink).set({
+    status: statusMapeado,
+    paymentId: dados.paymentId,
+    paymentStatus: dados.paymentStatus,
+    paymentStatusDetail: dados.paymentStatusDetail ?? null,
+    pagadorNome: dados.pagadorNome ?? null,
+    pagadorEmail: dados.pagadorEmail ?? null,
+    paymentApprovedAt: dados.aprovadoEm ?? null,
+    ultimoWebhookEm: new Date(),
+    ultimoWebhookAcao: dados.acaoWebhook ?? null,
+    webhookAssinaturaValida: dados.assinaturaValida,
+    ...(terminal ? { chaveAberta: null } : {}),
+    ...(statusMapeado === "aprovada" ? { alertaCriadoEm: new Date() } : {}),
+  }).where(eq(cobrancasLink.id, dados.cobrancaId));
+}
+
+/** Alertas são derivados das cobranças aprovadas; a dispensa é individual por sessão no navegador. */
+export async function listCobrancasLinkAprovadasRecentes(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const desde = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  return db.select({
+    id: cobrancasLink.id,
+    conversaId: cobrancasLink.conversaId,
+    clienteNome: cobrancasLink.clienteNome,
+    titulo: cobrancasLink.titulo,
+    valor: cobrancasLink.valor,
+    paymentApprovedAt: cobrancasLink.paymentApprovedAt,
+  }).from(cobrancasLink)
+    .where(and(eq(cobrancasLink.unidadeId, unidadeId), eq(cobrancasLink.status, "aprovada"), gte(cobrancasLink.paymentApprovedAt, desde)))
+    .orderBy(desc(cobrancasLink.paymentApprovedAt));
+}
+
+export async function listModelosCobrancaLink(unidadeId: number, incluirInativos = false) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(cobrancasLinkModelos)
+    .where(incluirInativos ? eq(cobrancasLinkModelos.unidadeId, unidadeId) : and(eq(cobrancasLinkModelos.unidadeId, unidadeId), eq(cobrancasLinkModelos.ativo, true)))
+    .orderBy(asc(cobrancasLinkModelos.ordem), asc(cobrancasLinkModelos.titulo));
+}
+
+export async function criarModeloCobrancaLink(dados: InsertCobrancaLinkModelo): Promise<number | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const resultado = await db.insert(cobrancasLinkModelos).values(dados).$returningId();
+  return resultado[0]?.id;
+}
+
+export async function atualizarModeloCobrancaLink(id: number, dados: Partial<InsertCobrancaLinkModelo>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(cobrancasLinkModelos).set(dados).where(eq(cobrancasLinkModelos.id, id));
 }

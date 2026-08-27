@@ -11,6 +11,8 @@ import { storagePut, storageGetSignedUrl } from "./storage";
 import { extrairNomeConfirmacaoBelle, extrairAgendamentoConfirmacaoBelle } from "@shared/belleTemplates";
 import { telefoneCanonico } from "@shared/telefone";
 import { pipeInboxMedia } from "./inboxMediaProxy";
+import { consultarPagamentoPorId } from "./mercadoPagoApi";
+import { extrairDataIdWebhookMercadoPago, validarAssinaturaWebhookMercadoPago } from "./mercadoPagoWebhook";
 
 // Tabela deploy_pending para comunicação entre webhook (sandbox) e cron (produção)
 const deployPending = mysqlTable("deploy_pending", {
@@ -33,10 +35,90 @@ async function getDb() {
  */
 export function registerWhatsappWebhookRoutes(app: Express) {
   registerInboxMediaRoute(app);
+  registerMercadoPagoWebhook(app);
   registerZapiWebhook(app);
   registerBuddhaMktWebhook(app);
   registerDeployWebhook(app);
   registerTelegramTestRoute(app);
+}
+
+type WebhookMercadoPagoPayload = {
+  type?: string;
+  action?: string;
+  data?: { id?: string | number };
+};
+
+/**
+ * O payload do Mercado Pago é apenas um aviso. Antes de atualizar uma
+ * cobrança, o CRM valida a assinatura e consulta a API do Mercado Pago.
+ */
+function registerMercadoPagoWebhook(app: Express) {
+  app.post("/api/webhooks/mercadopago", async (req: Request, res: Response) => {
+    const payload = (req.body ?? {}) as WebhookMercadoPagoPayload;
+    if (payload.type && payload.type !== "payment") {
+      res.status(200).json({ received: true, skipped: "topic_not_payment" });
+      return;
+    }
+    const paymentId = extrairDataIdWebhookMercadoPago({ query: req.query as Record<string, unknown>, body: payload });
+    if (!paymentId) {
+      res.status(400).json({ error: "payment_id ausente ou inválido" });
+      return;
+    }
+    try {
+      // A URL não decide a unidade. Cada segredo válido apenas torna a
+      // unidade candidata; a API devolve a referência da cobrança real.
+      const candidatas = (await db.getUnidades()).filter((unidade) => Boolean(unidade.mpAccessToken && unidade.mpWebhookSecret) && validarAssinaturaWebhookMercadoPago({
+        xSignature: req.headers["x-signature"],
+        xRequestId: req.headers["x-request-id"],
+        dataId: paymentId,
+        segredo: unidade.mpWebhookSecret,
+      }));
+      if (candidatas.length === 0) {
+        res.status(401).json({ error: "assinatura inválida" });
+        return;
+      }
+      for (const unidade of candidatas) {
+        let pagamento;
+        try {
+          pagamento = await consultarPagamentoPorId(unidade.mpAccessToken!, paymentId);
+        } catch (error) {
+          console.warn(`[Mercado Pago webhook] pagamento ${paymentId} não pôde ser consultado na unidade ${unidade.id}:`, error instanceof Error ? error.message : error);
+          continue;
+        }
+        if (!pagamento.external_reference) continue;
+        const cobranca = await db.getCobrancaLinkPorReferencia(pagamento.external_reference);
+        if (!cobranca || cobranca.unidadeId !== unidade.id) continue;
+        const valorPago = Number(pagamento.transaction_amount);
+        const valorEsperado = Number(cobranca.valor);
+        if (!Number.isFinite(valorPago) || Math.abs(valorPago - valorEsperado) > 0.009) {
+          console.error(`[Mercado Pago webhook] valor incompatível para cobrança ${cobranca.id}: esperado=${valorEsperado} recebido=${valorPago}`);
+          res.status(422).json({ error: "valor do pagamento não confere com a cobrança" });
+          return;
+        }
+        const aprovadoEm = pagamento.date_approved ? new Date(pagamento.date_approved) : null;
+        await db.registrarPagamentoCobrancaLink({
+          cobrancaId: cobranca.id,
+          paymentId: String(pagamento.id),
+          paymentStatus: pagamento.status,
+          paymentStatusDetail: pagamento.status_detail ?? null,
+          pagadorNome: [pagamento.payer?.first_name, pagamento.payer?.last_name].filter(Boolean).join(" ") || null,
+          pagadorEmail: pagamento.payer?.email ?? null,
+          aprovadoEm: aprovadoEm && !Number.isNaN(aprovadoEm.getTime()) ? aprovadoEm : null,
+          acaoWebhook: payload.action ?? null,
+          assinaturaValida: true,
+        });
+        console.info(`[Mercado Pago webhook] cobrança=${cobranca.id} pagamento=${paymentId} status=${pagamento.status}`);
+        res.status(200).json({ received: true, cobrancaId: cobranca.id, status: pagamento.status });
+        return;
+      }
+      // Assinatura válida, mas sem cobrança deste CRM: confirma a entrega e
+      // evita retentativas para eventos que pertencem a outro canal da conta.
+      res.status(200).json({ received: true, skipped: "cobranca_not_found" });
+    } catch (error) {
+      console.error("[Mercado Pago webhook] falha inesperada:", error);
+      res.status(500).json({ error: "erro ao processar webhook" });
+    }
+  });
 }
 
 function registerInboxMediaRoute(app: Express) {
