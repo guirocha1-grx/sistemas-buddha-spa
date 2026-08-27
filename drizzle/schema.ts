@@ -406,6 +406,41 @@ export const clientes = mysqlTable("clientes", {
 export type Cliente = typeof clientes.$inferSelect;
 export type InsertCliente = typeof clientes.$inferInsert;
 
+/** Preferência de terapeuta por cliente e unidade. O nome é mantido junto
+ * ao ID para preservar o histórico do cliente se o cadastro mudar depois. */
+export const clientesPreferenciasTerapeuta = mysqlTable("clientes_preferencias_terapeuta", {
+  id: int("id").autoincrement().primaryKey(),
+  clienteId: int("clienteId").notNull(),
+  unidadeId: int("unidadeId").notNull(),
+  terapeutaId: int("terapeutaId"),
+  terapeutaNome: varchar("terapeutaNome", { length: 200 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  clienteUnidadeUnico: uniqueIndex("clientes_pref_terapeuta_cliente_unidade_idx").on(table.clienteId, table.unidadeId),
+  unidadeIdx: index("clientes_pref_terapeuta_unidade_idx").on(table.unidadeId),
+}));
+export type ClientePreferenciaTerapeuta = typeof clientesPreferenciasTerapeuta.$inferSelect;
+export type InsertClientePreferenciaTerapeuta = typeof clientesPreferenciasTerapeuta.$inferInsert;
+
+/** Opções operacionais que podem ser alteradas pelo administrador sem
+ * mexer no formulário do chamado. */
+export const chamadosParametros = mysqlTable("chamados_parametros", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  tipo: mysqlEnum("tipo", ["aguardando", "sala", "taa"]).notNull(),
+  nome: varchar("nome", { length: 200 }).notNull(),
+  descricao: varchar("descricao", { length: 300 }),
+  ordem: int("ordem").default(0).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeTipoOrdemIdx: index("chamados_parametros_unidade_tipo_ordem_idx").on(table.unidadeId, table.tipo, table.ordem),
+}));
+export type ChamadoParametro = typeof chamadosParametros.$inferSelect;
+export type InsertChamadoParametro = typeof chamadosParametros.$inferInsert;
+
 /**
  * Espelho local de atendimentos exportados do Belle. Diferente de
  * `atendimentos`, que registra a atuação comercial interna, esta tabela

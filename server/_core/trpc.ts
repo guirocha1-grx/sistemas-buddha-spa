@@ -55,6 +55,7 @@ const ROUTER_MODULO: Record<string, string> = {
   dreRegras: "financeiro",
   adquirentes: "financeiro",
   confirmacaoPagamentos: "financeiro",
+  chamados: "mensagens",
   copilot: "copilot",
   laminas: "laminas",
   leads: "leads",

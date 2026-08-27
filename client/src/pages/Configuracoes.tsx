@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megaphone, Landmark, CreditCard, Sparkles, RotateCcw, Send } from "lucide-react";
 import { AtendentesSection } from "@/components/AtendentesSection";
 import { TerapeutasSection } from "@/components/TerapeutasSection";
+import { ChamadosParametrosSection } from "@/components/ChamadosParametrosSection";
 import { AgentesPromptSection } from "@/components/AgentesPromptSection";
 import { AgentesRecursosSection } from "@/components/AgentesRecursosSection";
 import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY } from "@shared/inboxAi";
@@ -57,6 +58,7 @@ const SECOES = [
   { chave: "sicredi", label: "Sicredi", escopo: "unidade" },
   { chave: "atendentes", label: "Atendentes", escopo: "unidade" },
   { chave: "terapeutas", label: "Terapeutas", escopo: "unidade" },
+  { chave: "chamados", label: "Chamados", escopo: "unidade" },
   { chave: "buddha_mkt", label: "Buddha Mkt", escopo: "global" },
   { chave: "telegram", label: "Telegram", escopo: "global" },
   { chave: "prompts_ia", label: "Prompts de IA", escopo: "global" },
@@ -598,6 +600,9 @@ export default function Configuracoes() {
 
               {(filtroSecao === "todas" || filtroSecao === "terapeutas") && (
                 <TerapeutasSection unidadeId={unidade.id} />
+              )}
+              {(filtroSecao === "todas" || filtroSecao === "chamados") && (
+                <ChamadosParametrosSection unidadeId={unidade.id} />
               )}
             </CardContent>
           </Card>

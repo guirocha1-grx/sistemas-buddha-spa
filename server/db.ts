@@ -11,6 +11,7 @@ import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
 import { storageGetSignedUrl, storageExists } from "./storage";
+import { chamadosParametros, clientesPreferenciasTerapeuta, type InsertChamadoParametro } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -1272,6 +1273,78 @@ export async function upsertInboxConversa(params: {
   };
   const result = await db.insert(inboxConversas).values(insertValues).$returningId();
   return result[0]?.id;
+}
+
+// ===== Chamados de terapeuta =====
+export async function listChamadosParametros(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(chamadosParametros)
+    .where(and(eq(chamadosParametros.unidadeId, unidadeId), eq(chamadosParametros.ativo, true)))
+    .orderBy(asc(chamadosParametros.tipo), asc(chamadosParametros.ordem), asc(chamadosParametros.nome));
+}
+
+export async function listChamadosParametrosAdmin(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(chamadosParametros)
+    .where(eq(chamadosParametros.unidadeId, unidadeId))
+    .orderBy(asc(chamadosParametros.tipo), asc(chamadosParametros.ordem), asc(chamadosParametros.nome));
+}
+
+export async function listTerapeutasAtivos(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
+    .from(terapeutas)
+    .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true)))
+    .orderBy(asc(terapeutas.nomeAbreviado));
+}
+
+export async function getClientePreferenciaTerapeuta(clienteId: number, unidadeId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const resultado = await db.select().from(clientesPreferenciasTerapeuta)
+    .where(and(eq(clientesPreferenciasTerapeuta.clienteId, clienteId), eq(clientesPreferenciasTerapeuta.unidadeId, unidadeId)))
+    .limit(1);
+  return resultado[0] ?? null;
+}
+
+export async function salvarClientePreferenciaTerapeuta(dados: {
+  clienteId: number; unidadeId: number; terapeutaId?: number | null; terapeutaNome?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  if (!dados.terapeutaId || !dados.terapeutaNome?.trim()) {
+    await db.delete(clientesPreferenciasTerapeuta).where(and(
+      eq(clientesPreferenciasTerapeuta.clienteId, dados.clienteId),
+      eq(clientesPreferenciasTerapeuta.unidadeId, dados.unidadeId),
+    ));
+    return;
+  }
+  await db.insert(clientesPreferenciasTerapeuta).values({
+    clienteId: dados.clienteId,
+    unidadeId: dados.unidadeId,
+    terapeutaId: dados.terapeutaId,
+    terapeutaNome: dados.terapeutaNome.trim(),
+  }).onDuplicateKeyUpdate({ set: {
+    terapeutaId: dados.terapeutaId,
+    terapeutaNome: dados.terapeutaNome.trim(),
+    updatedAt: new Date(),
+  } });
+}
+
+export async function criarChamadoParametro(dados: InsertChamadoParametro) {
+  const db = await getDb();
+  if (!db) return null;
+  const resultado = await db.insert(chamadosParametros).values(dados).$returningId();
+  return resultado[0]?.id ?? null;
+}
+
+export async function atualizarChamadoParametro(id: number, dados: Partial<Pick<InsertChamadoParametro, "nome" | "descricao" | "ordem" | "ativo">>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(chamadosParametros).set(dados).where(eq(chamadosParametros.id, id));
 }
 
 /**

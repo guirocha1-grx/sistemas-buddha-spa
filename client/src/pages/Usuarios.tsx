@@ -270,25 +270,26 @@ export default function Usuarios() {
       </Card>
 
       <Dialog open={editandoId != null} onOpenChange={(open) => !open && setEditandoId(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-md flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pb-3 pt-6">
             <DialogTitle>Permissões de {usuarioEditando?.name || usuarioEditando?.email}</DialogTitle>
             <DialogDescription>
               Escolha exatamente quais módulos e unidades essa conta pode acessar.
             </DialogDescription>
           </DialogHeader>
 
-          {permissoesQuery.isLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-3">
+            {permissoesQuery.isLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
             // key={editandoId} força um remount limpo ao trocar de usuário —
             // sem isso, o Select de "clonar de" (Radix, renderiza via portal
             // fora dessa árvore) pode ficar com estado preso de um usuário
             // pro outro e causar erro de DOM ao tentar remover um nó que o
             // Radix já tinha removido sozinho (NotFoundError: removeChild).
-            <div key={editandoId} className="space-y-4">
+            <div key={editandoId} className="space-y-4 pb-2">
               <div className="flex items-center justify-between rounded-lg border px-3 py-2">
                 <div>
                   <Label className="text-sm">Restringir acesso</Label>
@@ -385,9 +386,10 @@ export default function Usuarios() {
                 </>
               )}
             </div>
-          )}
+            )}
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t px-6 py-4">
             <Button variant="ghost" onClick={() => setEditandoId(null)}>Cancelar</Button>
             <Button onClick={handleSalvar} disabled={salvando || permissoesQuery.isLoading}>
               {salvando && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

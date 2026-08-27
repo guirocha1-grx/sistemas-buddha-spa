@@ -30,6 +30,7 @@ import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet } from "./googleSheets";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTelegramParaRecepcao } from "./telegramApi";
+import { CONVERSA_TESTE_CHAMADOS_ID, destinoTesteChamadoValido, montarMensagemChamadoTerapeuta } from "./chamadoTerapeuta";
 import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY, montarPedidoSugestaoMensagem } from "@shared/inboxAi";
 import { iniciarExecucaoFluxo } from "./fluxos";
 import { agentesRouter, tabelaPrecosRouter } from "./routers/agentes";
@@ -3711,6 +3712,71 @@ Diretrizes:
     }),
   }),
 
+  chamados: router({
+    opcoes: protectedProcedure.input(z.object({ unidadeId: z.number(), clienteId: z.number() })).query(async ({ input }) => {
+      const [parametros, terapeutasAtivos, preferencia] = await Promise.all([
+        db.listChamadosParametros(input.unidadeId),
+        db.listTerapeutasAtivos(input.unidadeId),
+        db.getClientePreferenciaTerapeuta(input.clienteId, input.unidadeId),
+      ]);
+      return { parametros, terapeutas: terapeutasAtivos, preferencia };
+    }),
+    listAdmin: adminProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      return db.listChamadosParametrosAdmin(input.unidadeId);
+    }),
+    criarParametro: adminProcedure.input(z.object({
+      unidadeId: z.number(), tipo: z.enum(["aguardando", "sala", "taa"]), nome: z.string().trim().min(1),
+      descricao: z.string().trim().nullable(), ordem: z.number().int().min(0).default(0),
+    })).mutation(async ({ input }) => {
+      const id = await db.criarChamadoParametro({ ...input, descricao: input.descricao || null, ativo: true });
+      return { success: true, id };
+    }),
+    atualizarParametro: adminProcedure.input(z.object({
+      id: z.number(), nome: z.string().trim().min(1).optional(), descricao: z.string().trim().nullable().optional(),
+      ordem: z.number().int().min(0).optional(), ativo: z.boolean().optional(),
+    })).mutation(async ({ input: { id, ...dados } }) => {
+      await db.atualizarChamadoParametro(id, dados);
+      return { success: true };
+    }),
+    salvarPreferenciaCliente: protectedProcedure.input(z.object({
+      clienteId: z.number(), unidadeId: z.number(), terapeutaId: z.number().nullable(), terapeutaNome: z.string().nullable(),
+    })).mutation(async ({ input }) => {
+      await db.salvarClientePreferenciaTerapeuta(input);
+      return { success: true };
+    }),
+    enviarTeste: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      clienteNome: z.string().trim().min(1),
+      modalidade: z.enum(["chamado", "pre_chamado"]),
+      horarioPrevisto: z.string().trim().nullable(),
+      aguardandoEm: z.string().trim().min(1),
+      terapeutaNome: z.string().trim().min(1),
+      terapiaBemEstar: z.string().trim().nullable(),
+      terapiaEstetica: z.string().trim().nullable(),
+      sala: z.string().trim().min(1),
+      taa: z.string().trim().min(1),
+      preferencial: z.boolean(),
+    })).mutation(async ({ input, ctx }) => {
+      const conversa = await db.getInboxConversaById(CONVERSA_TESTE_CHAMADOS_ID);
+      if (!conversa || !destinoTesteChamadoValido(conversa.id, input.unidadeId) || conversa.isGrupo !== "true" || conversa.canal !== "zapi") {
+        throw new Error("O grupo de teste de chamados (900001) não está disponível para esta unidade");
+      }
+      if (!(await db.mensageriaEstaAtiva())) throw new Error("Envio de mensagens pausado — kill switch de mensageria ativado por um administrador");
+      const unidade = await db.getUnidadeById(conversa.unidadeId!);
+      if (!unidade?.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) throw new Error("Z-API não configurado para o grupo de teste");
+      const texto = montarMensagemChamadoTerapeuta(input);
+      const resultado = await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, texto);
+      await db.insertInboxMensagem({
+        conversaId: conversa.id, direcao: "enviada", tipo: "texto", conteudo: texto,
+        enviadaPorUserId: ctx.user.id, enviadaPorAtendenteId: ctx.atendente?.id ?? null, zapiMessageId: resultado.messageId ?? null,
+      });
+      await db.upsertInboxConversa({
+        unidadeId: conversa.unidadeId, canal: "zapi", telefone: conversa.telefone,
+        nomeContato: conversa.nomeContato ?? undefined, ultimaMensagemTexto: texto,
+      });
+      return { success: true, conversaId: conversa.id, mensagem: texto };
+    }),
+  }),
   terapeutas: router({
     listAdmin: adminProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
       return db.listTerapeutasAdmin(input.unidadeId);

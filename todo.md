@@ -441,3 +441,10 @@
 - [x] Analisar os sinais de origem registrados na sincronização Mercado Pago do Ribeirão Shopping — amostra confirmou Link de Pagamento e compra de equipamento Point, sem inferência retrospectiva
 - [x] Criar a seção Confirmação de Pagamento para a recepção consultar e sincronizar Pix Inter e Links Mercado Pago das últimas 48 horas
 - [x] Permitir a sincronização pontual da Confirmação de Pagamento sem liberar a sincronização total à recepção
+- [x] Criar chamado editável a partir do próximo atendimento, com modalidades Chamado e Pré-chamado
+- [x] Criar parâmetros por unidade para situações de espera, salas e opções de TAA do chamado
+- [x] Adicionar ao cliente o campo de terapeuta de preferência para preencher automaticamente o chamado
+- [x] Enviar chamados somente para a conversa de teste 900001, com opção de abandonar sem envio
+- [x] Adicionar rolagem interna ao modal de permissões em Usuários para caber em telas menores
+- [x] Remover a coluna Identificação da tabela Pix em Confirmação de Pagamento
+- [x] Evitar que o botão global de sincronização cubra ações da página em telas móveis

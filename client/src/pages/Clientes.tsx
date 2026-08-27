@@ -383,6 +383,16 @@ export default function Clientes() {
   const planosBelleQuery = trpc.clientes.planosBelle.useQuery(historicoAtendimentosInput, {
     enabled: !!unidadeSelecionada && !!selectedCliente,
   });
+  const chamadoOpcoesQuery = trpc.chamados.opcoes.useQuery(historicoAtendimentosInput, {
+    enabled: !!unidadeSelecionada && !!selectedCliente,
+  });
+  const salvarPreferenciaTerapeutaMutation = trpc.chamados.salvarPreferenciaCliente.useMutation({
+    onSuccess: () => {
+      chamadoOpcoesQuery.refetch();
+      toast.success("Preferência de terapeuta atualizada.");
+    },
+    onError: (erro) => toast.error(`Não foi possível atualizar a preferência: ${erro.message}`),
+  });
 
   function toggleSort(col: OrderCol) {
     if (orderBy === col) setOrderDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -636,6 +646,41 @@ export default function Clientes() {
                         )}
                         {selectedCliente.clienteRbs && (
                           <Badge variant="outline" className="border-blue-300 text-blue-700">Ribeirão Shopping</Badge>
+                        )}
+                      </div>
+
+                      <div className="rounded-lg border border-border/60 bg-muted/10 p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <h3 className="font-medium text-sm">Terapeuta de preferência</h3>
+                            <p className="text-xs text-muted-foreground">Válido apenas para {unidadeSelecionada?.nome ?? "esta unidade"}.</p>
+                          </div>
+                          {chamadoOpcoesQuery.data?.preferencia?.terapeutaNome && <Badge variant="outline" className="text-[10px]">Preferencial</Badge>}
+                        </div>
+                        {chamadoOpcoesQuery.isLoading ? (
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando terapeutas...</div>
+                        ) : (
+                          <Select
+                            value={chamadoOpcoesQuery.data?.preferencia?.terapeutaId?.toString() ?? "nenhum"}
+                            onValueChange={(valor) => {
+                              const terapeuta = chamadoOpcoesQuery.data?.terapeutas.find((item) => item.id.toString() === valor);
+                              salvarPreferenciaTerapeutaMutation.mutate({
+                                clienteId: selectedCliente.id,
+                                unidadeId: unidadeSelecionada!.id,
+                                terapeutaId: terapeuta?.id ?? null,
+                                terapeutaNome: terapeuta ? (terapeuta.nomeAbreviado || terapeuta.nomeCompleto) : null,
+                              });
+                            }}
+                            disabled={salvarPreferenciaTerapeutaMutation.isPending}
+                          >
+                            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Sem preferência" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="nenhum">Sem preferência</SelectItem>
+                              {(chamadoOpcoesQuery.data?.terapeutas ?? []).map((terapeuta) => (
+                                <SelectItem key={terapeuta.id} value={terapeuta.id.toString()}>{terapeuta.nomeAbreviado || terapeuta.nomeCompleto}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         )}
                       </div>
 

@@ -21,7 +21,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
   Pencil, Check, CheckCheck, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
-  UserPlus, SmilePlus, Users, Download, ZoomIn, FileText, Bot,
+  UserPlus, SmilePlus, Users, Download, ZoomIn, FileText, Bot, BellRing,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useSearch } from "wouter";
@@ -30,6 +30,7 @@ import { getInboxAttachmentUrl, type InboxAttachmentMetadata } from "@shared/inb
 import { formatPhone, diasDesde } from "@/lib/utils";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { ScriptPicker } from "@/components/ScriptPicker";
+import { ChamadoTerapeutaDialog } from "@/components/ChamadoTerapeutaDialog";
 
 // Portado do mobai-crm (client/src/pages/Inbox.tsx) — conversão manual
 // pra BRT (UTC-3) em vez de depender do timezone do navegador, mais
@@ -191,6 +192,7 @@ export default function Mensagens() {
   const [comentarioRejeicao, setComentarioRejeicao] = useState("");
   const [sugestaoDispensadaId, setSugestaoDispensadaId] = useState<number | null>(null);
   const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
+  const [modalChamadoTerapeuta, setModalChamadoTerapeuta] = useState(false);
   const [midiasComFalha, setMidiasComFalha] = useState<Set<number>>(() => new Set());
   // Autocomplete de @menção em grupo — mentionInicio é o índice do "@" no
   // texto (null = não está em meio a uma menção); mentionados guarda os
@@ -1679,6 +1681,9 @@ export default function Mensagens() {
                         </Badge>
                       </div>
                       <div className="flex items-center gap-0.5">
+                        <Button size="icon" variant="ghost" className="h-5 w-5 text-emerald-700 hover:text-emerald-800" title="Chamar terapeuta" onClick={() => setModalChamadoTerapeuta(true)}>
+                          <BellRing className="h-3 w-3" />
+                        </Button>
                         <Popover open={editandoProximoAtendimento} onOpenChange={(v) => {
                           setEditandoProximoAtendimento(v);
                           if (v && conversaSelecionada.resumoRelacionamento?.proximoAtendimento) {
@@ -1744,6 +1749,14 @@ export default function Mensagens() {
                     )}
                   </div>
                 )}
+
+                <ChamadoTerapeutaDialog
+                  open={modalChamadoTerapeuta}
+                  onOpenChange={setModalChamadoTerapeuta}
+                  unidadeId={unidadeSelecionada?.id}
+                  conversa={conversaSelecionada}
+                  atendimento={conversaSelecionada?.resumoRelacionamento?.proximoAtendimento}
+                />
 
                 {conversaSelecionada && !conversaSelecionada.clienteId && conversaSelecionada.isGrupo !== "true" && (conversaSelecionada.candidatosCliente?.length ?? 0) > 0 && (
                   <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-2">

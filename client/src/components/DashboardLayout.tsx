@@ -440,7 +440,7 @@ function DashboardLayoutContent({
             </div>
           </div>
         )}
-        <main className="flex-1 p-4">
+        <main className="flex-1 p-4 pb-24 sm:pb-4">
           {atendenteLoading && user?.role !== "admin" ? (
             // Enquanto não sabemos se essa conta já tem atendente selecionado,
             // não monta a página real (children) — evita montar e desmontar
