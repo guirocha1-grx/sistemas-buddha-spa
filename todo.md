@@ -440,3 +440,4 @@
 - [x] Diagnosticar e corrigir o bloqueio do botão de iniciar sincronização geral na versão online
 - [x] Analisar os sinais de origem registrados na sincronização Mercado Pago do Ribeirão Shopping — amostra confirmou Link de Pagamento e compra de equipamento Point, sem inferência retrospectiva
 - [x] Criar a seção Confirmação de Pagamento para a recepção consultar e sincronizar Pix Inter e Links Mercado Pago das últimas 48 horas
+- [x] Permitir a sincronização pontual da Confirmação de Pagamento sem liberar a sincronização total à recepção

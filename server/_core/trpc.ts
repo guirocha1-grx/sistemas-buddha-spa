@@ -201,11 +201,10 @@ const requireSyncPermission = t.middleware(async (opts) => {
 
 export const syncProcedure = t.procedure.use(requireUser).use(requireSyncPermission).use(auditMiddleware);
 
-/** Consulta externa de confirmação de pagamento: exige a subseção
- * financeira própria e a permissão explícita de sincronização. */
+/** Consulta externa de confirmação de pagamento: exige exclusivamente a
+ * subseção financeira própria. Não concede nem exige sincronização total. */
 export const confirmacaoPagamentoProcedure = t.procedure
   .use(requireUser)
-  .use(requireSyncPermission)
   .use(moduloMiddleware)
   .use(auditMiddleware);
 
