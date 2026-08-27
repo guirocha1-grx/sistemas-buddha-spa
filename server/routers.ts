@@ -27,7 +27,7 @@ import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarTodosPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, classificarOrigemPagamentoMp } from "./mercadoPagoApi";
 import { dataSaoPaulo, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
 import { PDFParse } from "pdf-parse";
-import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet } from "./googleSheets";
+import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual } from "./googleSheets";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTelegramParaRecepcao } from "./telegramApi";
 import { CONVERSA_TESTE_CHAMADOS_ID, destinoTesteChamadoValido, montarMensagemChamadoTerapeuta } from "./chamadoTerapeuta";
@@ -3781,6 +3781,7 @@ Diretrizes:
       sala: z.string().trim().min(1),
       taa: z.string().trim().min(1),
       preferencial: z.boolean(),
+      enviarParaComanda: z.boolean().default(false),
     })).mutation(async ({ input, ctx }) => {
       const conversa = await db.getInboxConversaById(CONVERSA_TESTE_CHAMADOS_ID);
       if (!conversa || !destinoTesteChamadoValido(conversa.id, input.unidadeId) || conversa.isGrupo !== "true" || conversa.canal !== "zapi") {
@@ -3789,6 +3790,15 @@ Diretrizes:
       if (!(await db.mensageriaEstaAtiva())) throw new Error("Envio de mensagens pausado — kill switch de mensageria ativado por um administrador");
       const unidade = await db.getUnidadeById(conversa.unidadeId!);
       if (!unidade?.zapiInstanceId || !unidade.zapiToken || !unidade.zapiClientToken) throw new Error("Z-API não configurado para o grupo de teste");
+      let comanda: { aba: string; linha: number } | null = null;
+      if (input.enviarParaComanda) {
+        const slug = unidade.slug === "rbs" || unidade.slug === "ssu" ? unidade.slug : null;
+        if (!slug) throw new Error("A unidade não possui Comanda virtual configurada");
+        comanda = await preencherLinhaVaziaComandaVirtual({
+          spreadsheetId: SPREADSHEET_IDS_COMANDA_VIRTUAL[slug], data: dataSaoPaulo(new Date()), cliente: input.clienteNome,
+          terapia: input.terapiaBemEstar || input.terapiaEstetica || "Não informada", terapeuta: input.terapeutaNome,
+        });
+      }
       const texto = montarMensagemChamadoTerapeuta(input);
       const resultado = await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, texto);
       await db.insertInboxMensagem({
@@ -3799,7 +3809,7 @@ Diretrizes:
         unidadeId: conversa.unidadeId, canal: "zapi", telefone: conversa.telefone,
         nomeContato: conversa.nomeContato ?? undefined, ultimaMensagemTexto: texto,
       });
-      return { success: true, conversaId: conversa.id, mensagem: texto };
+      return { success: true, conversaId: conversa.id, mensagem: texto, comanda };
     }),
   }),
   terapeutas: router({

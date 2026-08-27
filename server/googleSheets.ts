@@ -425,6 +425,62 @@ export const SPREADSHEET_IDS_COMANDA_VIRTUAL = {
   ssu: "1pdKiK3h5CRZfrT2fjVi3w-_Sd1BBgfhgjCvFUBk7FUs",
 };
 
+function colunaLetraComanda(indice: number): string {
+  let n = indice + 1;
+  let resultado = "";
+  while (n > 0) {
+    const resto = (n - 1) % 26;
+    resultado = String.fromCharCode(65 + resto) + resultado;
+    n = Math.floor((n - 1) / 26);
+  }
+  return resultado;
+}
+
+export function encontrarLinhaVaziaComandaVirtual(linhas: unknown[][]): { linha: number; clienteCol: number; terapiaCol: number; terapeutaCol: number } {
+  const indiceCabecalho = linhas.findIndex((linha) => linha.some((celula: unknown) => normalizarRotulo(celula) === "cliente"));
+  if (indiceCabecalho < 0) throw new Error("Não encontrei o cabeçalho da Comanda");
+  const cabecalho = linhas[indiceCabecalho].map(normalizarRotulo);
+  const clienteCol = cabecalho.indexOf("cliente");
+  const terapiaCol = cabecalho.indexOf("terapia/produto");
+  const terapeutaCol = cabecalho.indexOf("terapeuta");
+  if (clienteCol < 0 || terapiaCol < 0 || terapeutaCol < 0) throw new Error("A Comanda não possui as colunas Cliente, Terapia/Produto e Terapeuta esperadas");
+  const indiceLinha = linhas.slice(indiceCabecalho + 1).findIndex((linha) => {
+    const clienteAtual = String(linha?.[clienteCol] ?? "").trim();
+    return !clienteAtual || clienteAtual === "--";
+  });
+  if (indiceLinha < 0) throw new Error("Não há uma linha vazia disponível na Comanda de hoje");
+  return { linha: indiceCabecalho + indiceLinha + 2, clienteCol, terapiaCol, terapeutaCol };
+}
+
+/** Preenche somente Cliente, Terapia/Produto e Terapeuta na primeira linha já existente e vazia da aba diária. */
+export async function preencherLinhaVaziaComandaVirtual(params: {
+  spreadsheetId: string; data: string; cliente: string; terapia: string; terapeuta: string;
+}): Promise<{ aba: string; linha: number }> {
+  const auth = getAuth();
+  if (!auth) throw new Error("Credenciais do Google Sheets não configuradas");
+  const sheets = google.sheets({ version: "v4", auth });
+  for (const aba of nomesAbaComandaVirtual(params.data)) {
+    try {
+      const resposta = await sheets.spreadsheets.values.get({ spreadsheetId: params.spreadsheetId, range: `'${aba}'!A1:AD300` });
+      const linhas = resposta.data.values ?? [];
+      const { linha: linhaPlanilha, clienteCol, terapiaCol, terapeutaCol } = encontrarLinhaVaziaComandaVirtual(linhas);
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: params.spreadsheetId,
+        requestBody: { valueInputOption: "USER_ENTERED", data: [
+          { range: `'${aba}'!${colunaLetraComanda(clienteCol)}${linhaPlanilha}`, values: [[params.cliente]] },
+          { range: `'${aba}'!${colunaLetraComanda(terapiaCol)}${linhaPlanilha}`, values: [[params.terapia]] },
+          { range: `'${aba}'!${colunaLetraComanda(terapeutaCol)}${linhaPlanilha}`, values: [[params.terapeuta]] },
+        ] },
+      });
+      return { aba, linha: linhaPlanilha };
+    } catch (erro: any) {
+      if (erro?.code === 400 && /unable to parse range/i.test(String(erro?.message))) continue;
+      throw erro;
+    }
+  }
+  throw new Error("Não encontrei a aba diária da Comanda para hoje");
+}
+
 /**
  * A convenção de nome de aba não é garantidamente a mesma nas duas
  * planilhas — confirmado em produção (2026-08-10) que a RBS usa

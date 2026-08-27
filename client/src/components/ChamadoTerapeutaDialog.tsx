@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { trpc } from "@/lib/trpc";
-import { BellRing, Clock3, Loader2, Send, X } from "lucide-react";
+import { BellRing, CheckSquare, Clock3, Loader2, Send, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -47,6 +47,7 @@ export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendime
   const opcoesQuery = trpc.chamados.opcoes.useQuery({ unidadeId: unidadeId ?? 0, clienteId: clienteId ?? undefined }, { enabled: open && !!unidadeId });
   const servicosQuery = trpc.servicos.list.useQuery({ unidadeId: unidadeId ?? 0 }, { enabled: open && !!unidadeId });
   const [form, setForm] = useState<FormChamado>(() => criarFormulario(atendimento, conversa));
+  const [enviarParaComanda, setEnviarParaComanda] = useState(true);
   const formularioInicializadoRef = useRef(false);
   const parametros = opcoesQuery.data?.parametros ?? [];
   const aguardando = parametros.filter((item) => item.tipo === "aguardando");
@@ -96,10 +97,11 @@ export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendime
           <CampoLista label="Sala" value={form.sala} onChange={(valor) => mudar("sala", valor)} valores={salas.map((item) => item.nome)} placeholder="Selecione ou digite" id="chamado-sala" />
           <CampoLista label="TAA" value={form.taa} onChange={(valor) => mudar("taa", valor)} valores={taa.map((item) => item.nome)} placeholder="Selecione a situação" id="chamado-taa" />
         </div>
+        <button type="button" onClick={() => setEnviarParaComanda((atual) => !atual)} className={`flex w-full items-center justify-between rounded-lg border p-3 text-left text-sm ${enviarParaComanda ? "border-primary/30 bg-primary/[0.04]" : "bg-muted/30"}`}><span className="flex items-center gap-2 font-medium"><CheckSquare className={`h-4 w-4 ${enviarParaComanda ? "text-primary" : "text-muted-foreground"}`} />Enviar para a Comanda</span><span className="text-xs text-muted-foreground">{enviarParaComanda ? "Marcado" : "Não enviar"}</span></button>
         <div className="rounded-lg border border-primary/15 bg-primary/[0.035] p-3"><div className="mb-2 flex items-center gap-2"><Badge variant="outline" className="border-primary/25 text-primary">Prévia de envio</Badge>{form.preferencial ? <Badge className="border-emerald-600 bg-emerald-600 text-white">● Preferência</Badge> : null}<span className="text-xs text-muted-foreground">Grupo de teste 900001</span></div><p className="whitespace-pre-wrap text-sm leading-5">{mensagemPrevia(form)}</p></div>
       </div>}
       <Separator />
-      <DialogFooter className="gap-2 sm:gap-0"><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={enviarMutation.isPending}><X className="mr-2 h-4 w-4" />Abandonar chamado</Button><Button type="button" disabled={!podeEnviar || enviarMutation.isPending} onClick={() => enviarMutation.mutate({ unidadeId: unidadeId!, ...form, horarioPrevisto: form.horarioPrevisto || null, terapiaBemEstar: form.terapiaBemEstar || null, terapiaEstetica: form.terapiaEstetica || null })}>{enviarMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Enviar no grupo</Button></DialogFooter>
+      <DialogFooter className="gap-2 sm:gap-0"><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={enviarMutation.isPending}><X className="mr-2 h-4 w-4" />Abandonar chamado</Button><Button type="button" disabled={!podeEnviar || enviarMutation.isPending} onClick={() => enviarMutation.mutate({ unidadeId: unidadeId!, ...form, enviarParaComanda, horarioPrevisto: form.horarioPrevisto || null, terapiaBemEstar: form.terapiaBemEstar || null, terapiaEstetica: form.terapiaEstetica || null })}>{enviarMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Enviar no grupo</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }

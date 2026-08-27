@@ -451,7 +451,7 @@
 - [x] Exibir somente o primeiro nome do terapeuta nos chamados enviados ao grupo
 - [x] Criar a seção Próximos atendimentos do dia, ordenada por horário e com acionamento direto de chamado
 - [x] Evitar duplicidade na lista de Próximos atendimentos quando o registro oficial substituir um agendamento local da IA
-- [ ] No chamado, incluir opção marcada por padrão para preencher uma linha vazia existente da Comanda diária com cliente, terapia e terapeuta, sem criar linha nova
+- [x] No chamado, incluir opção marcada por padrão para preencher uma linha vazia existente da Comanda diária com cliente, terapia e terapeuta, sem criar linha nova
 - [x] Permitir editar rapidamente o terapeuta de um Próximo atendimento por seleção de profissionais ativos da unidade
 - [x] Permitir editar a sala ao lado do terapeuta no Próximo atendimento e pré-preencher o chamado com a seleção
 - [x] Adicionar em Usuários a permissão específica Próximos atendimentos para liberar a tela à recepção
@@ -460,7 +460,8 @@
 - [ ] Futuro: exibir contador do tempo restante para o próximo atendimento
 - [x] Cadastrar os terapeutas ativos informados para o Ribeirão Shopping e disponibilizá-los nos seletores operacionais
 - [x] Manter os menus Agenda e Financeiro abertos por padrão no menu lateral
-- [ ] Futuro: preencher uma linha vazia existente da Comanda ao enviar o chamado
+- [x] Futuro: preencher uma linha vazia existente da Comanda ao enviar o chamado
+- [x] Integrar o envio do chamado ao preenchimento de uma linha vazia existente da Comanda diária, sem criar linhas nem alterar campos financeiros
 - [ ] Futuro: criar fluxo de cobrança de clientes por Link de Pagamento
 - [x] Mover o controle Pref. para ao lado do terapeuta em Próximos atendimentos, com Não como padrão
 - [x] Destacar em verde a preferência confirmada na prévia e na mensagem de chamado enviada ao grupo
