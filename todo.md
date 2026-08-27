@@ -458,3 +458,7 @@
 - [x] Permitir retirar um atendimento somente da lista operacional de Próximos atendimentos, sem cancelar nem alterar a agenda no Belle
 - [x] Alertar em qualquer tela a equipe logada, uma hora antes, sobre cada Banho de Imersão que precisa ser preparado
 - [ ] Futuro: exibir contador do tempo restante para o próximo atendimento
+- [x] Cadastrar os terapeutas ativos informados para o Ribeirão Shopping e disponibilizá-los nos seletores operacionais
+- [x] Manter os menus Agenda e Financeiro abertos por padrão no menu lateral
+- [ ] Futuro: preencher uma linha vazia existente da Comanda ao enviar o chamado
+- [ ] Futuro: criar fluxo de cobrança de clientes por Link de Pagamento

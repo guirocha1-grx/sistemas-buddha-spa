@@ -336,7 +336,7 @@ function DashboardLayoutContent({
 
                 const isChildActive = childrenVisiveis.some(c => c.path === location);
                 return (
-                  <Collapsible key={item.path} defaultOpen={isChildActive} className="group/collapsible">
+                  <Collapsible key={item.path} defaultOpen className="group/collapsible">
                     <SidebarMenuItem>
                       <CollapsibleTrigger asChild>
                         <SidebarMenuButton
