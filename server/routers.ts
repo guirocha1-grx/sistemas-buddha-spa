@@ -1,7 +1,7 @@
 import { COOKIE_NAME, ATENDENTE_COOKIE_NAME, ATENDENTE_SESSION_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router, protectedProcedure, adminProcedure, syncProcedure } from "./_core/trpc";
+import { publicProcedure, router, protectedProcedure, adminProcedure, syncProcedure, confirmacaoPagamentoProcedure } from "./_core/trpc";
 import { z } from "zod";
 import { parse as parseCookieHeader } from "cookie";
 import * as db from "./db";
@@ -25,6 +25,7 @@ import { parsePlanosBelleXls, parseVinculosPlanosBelleXlsx } from "./planosBelle
 import { parseComandaVirtualXlsx } from "./comandaVirtualXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarTodosPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, classificarOrigemPagamentoMp } from "./mercadoPagoApi";
+import { dataSaoPaulo, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
 import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet } from "./googleSheets";
 import { transcribeAudio } from "./_core/voiceTranscription";
@@ -3384,6 +3385,98 @@ Diretrizes:
     excluir: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await db.excluirDreRegra(input.id);
       return { success: true };
+    }),
+  }),
+
+  // ===== Confirmação de Pagamento (recepção — últimos 48h) =====
+  confirmacaoPagamentos: router({
+    sincronizarPixInter: confirmacaoPagamentoProcedure.input(z.object({
+      unidadeId: z.number(),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.interClientId || !unidade?.interClientSecret || !unidade?.interCertificado || !unidade?.interChavePrivada) {
+        throw new Error("Credenciais Banco Inter não configuradas para esta unidade");
+      }
+
+      const consultaEm = new Date();
+      const inicioJanela = new Date(consultaEm.getTime() - 48 * 60 * 60 * 1000);
+      const dataInicio = dataSaoPaulo(inicioJanela);
+      const dataFim = dataSaoPaulo(consultaEm);
+      const credenciais = { certificado: unidade.interCertificado, chavePrivada: unidade.interChavePrivada };
+      let token = unidade.interAccessToken;
+      if (!token || !isTokenValid(unidade.interTokenExpiresAt)) {
+        const autenticacao = await getInterAccessToken(unidade.interClientId, unidade.interClientSecret, credenciais);
+        await db.updateInterToken(input.unidadeId, autenticacao.accessToken, autenticacao.expiresAt);
+        token = autenticacao.accessToken;
+      }
+
+      const transacoes: InterTransacaoCompleta[] = [];
+      let pagina = await interApi.consultarExtratoCompleto(token, dataInicio, dataFim, {
+        tamanhoPagina: 200,
+        scrollEnabled: true,
+        contaCorrente: unidade.interContaCorrente,
+      }, credenciais);
+      transacoes.push(...pagina.transacoes);
+      while (pagina.hasMore && pagina.scrollId) {
+        pagina = await interApi.consultarExtratoCompleto(token, dataInicio, dataFim, {
+          tamanhoPagina: 200,
+          scrollId: pagina.scrollId,
+          contaCorrente: unidade.interContaCorrente,
+        }, credenciais);
+        transacoes.push(...pagina.transacoes);
+      }
+
+      return {
+        dataInicio,
+        dataFim,
+        consultaEm: consultaEm.toISOString(),
+        totalConsultado: transacoes.length,
+        pagamentos: listarPixInterRecentes(transacoes, inicioJanela),
+      };
+    }),
+
+    sincronizarLinksMercadoPago: confirmacaoPagamentoProcedure.input(z.object({
+      unidadeId: z.number(),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade?.mpAccessToken) {
+        throw new Error("Mercado Pago não configurado para esta unidade");
+      }
+
+      const consultaEm = new Date();
+      const inicioJanela = new Date(consultaEm.getTime() - 48 * 60 * 60 * 1000);
+      const dataInicio = dataSaoPaulo(inicioJanela);
+      const dataFim = dataSaoPaulo(consultaEm);
+      const coleta = await consultarTodosPagamentos(unidade.mpAccessToken, dataInicio, dataFim);
+      const vendas = coleta.pagamentos.filter((pagamento) => !ehCompraEquipamentoPoint(pagamento)).map((pagamento) => {
+        const { bruto, taxa, antecipacao, liquido } = extrairValoresMp(pagamento);
+        return {
+          unidadeId: input.unidadeId,
+          adquirente: "mercadopago" as const,
+          idTransacaoExterno: String(pagamento.id),
+          dataHora: (pagamento.date_approved ?? "").replace("T", " ").slice(0, 19),
+          tipo: db.normalizarTipoAdquirente(pagamento.payment_type_id, pagamento.payment_method_id),
+          status: pagamento.status,
+          parcela: pagamento.installments ? `1/${pagamento.installments}` : undefined,
+          bandeira: pagamento.payment_method_id,
+          origemPagamento: classificarOrigemPagamentoMp(pagamento),
+          valorBruto: bruto?.toFixed(2),
+          valorTaxa: taxa?.toFixed(2),
+          valorAntecipacao: antecipacao?.toFixed(2),
+          valorLiquido: liquido?.toFixed(2),
+          dataPagamento: pagamento.money_release_date?.slice(0, 10),
+        };
+      });
+      const novasVendas = await db.upsertAdquirenteVendas(input.unidadeId, vendas);
+
+      return {
+        dataInicio,
+        dataFim,
+        consultaEm: consultaEm.toISOString(),
+        totalConsultado: coleta.pagamentos.length,
+        novasVendas,
+        pagamentos: listarLinksMercadoPagoRecentes(coleta.pagamentos, inicioJanela),
+      };
     }),
   }),
 

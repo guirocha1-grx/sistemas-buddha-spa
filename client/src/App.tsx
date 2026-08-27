@@ -20,6 +20,7 @@ import Financeiro from "./pages/Financeiro";
 import Extratos from "./pages/Extratos";
 import ComandaRecepcao from "./pages/ComandaRecepcao";
 import Adquirentes from "./pages/Adquirentes";
+import ConfirmacaoPagamentos from "./pages/ConfirmacaoPagamentos";
 import TransacoesEntreUnidades from "./pages/TransacoesEntreUnidades";
 import Parametros from "./pages/Parametros";
 import Copilot from "./pages/Copilot";
@@ -54,6 +55,7 @@ function Router() {
         <Route path="/financeiro/extratos" component={Extratos} />
         <Route path="/financeiro/comanda-recepcao" component={ComandaRecepcao} />
         <Route path="/financeiro/adquirentes" component={Adquirentes} />
+        <Route path="/financeiro/confirmacao-pagamento" component={ConfirmacaoPagamentos} />
         <Route path="/financeiro/transacoes-entre-unidades" component={TransacoesEntreUnidades} />
         <Route path="/financeiro/parametros" component={Parametros} />
         <Route path="/copilot" component={Copilot} />

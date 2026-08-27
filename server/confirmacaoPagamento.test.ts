@@ -1,0 +1,46 @@
+import { describe, expect, it } from "vitest";
+import { dataSaoPaulo, ePixRecebidoInter, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
+
+describe("confirmação de pagamento", () => {
+  it("seleciona somente Pix recebidos do Inter e mantém nome, valor e identificador da transação", () => {
+    const inicio = new Date("2026-08-25T12:00:00.000Z");
+    const pix = {
+      idTransacao: "pix-1", dataInclusao: "2026-08-26T10:30:00.000Z", dataTransacao: "2026-08-26",
+      tipoTransacao: "PIX", tipoOperacao: "C", valor: "359.00", titulo: "Pix recebido", descricao: "Ketty",
+      detalhes: { nomePagador: "Ketty", cpfCnpjPagador: "30573303800", endToEndId: "E123" },
+    };
+    const pixEnviado = { ...pix, idTransacao: "pix-2", tipoOperacao: "D" } as const;
+
+    expect(ePixRecebidoInter(pix)).toBe(true);
+    expect(ePixRecebidoInter(pixEnviado)).toBe(false);
+    expect(listarPixInterRecentes([pix, pixEnviado], inicio)).toEqual([{
+      idTransacao: "pix-1", dataHora: "2026-08-26T10:30:00.000Z", valor: "359.00", pagador: "Ketty",
+      cpfCnpjPagador: "30573303800", descricao: "Ketty", endToEndId: "E123",
+    }]);
+  });
+
+  it("traz apenas Links de Pagamento aprovados dentro da janela real de 48 horas", () => {
+    const inicio = new Date("2026-08-25T12:00:00.000Z");
+    const base = { date_approved: "2026-08-26T10:00:00.000Z", status: "approved" as const, transaction_amount: 359, point_of_interaction: { type: "CHECKOUT", business_info: { unit: "online_payments", sub_unit: "payment_link" } } };
+    const ponto = { ...base, id: 2, point_of_interaction: { type: "POINT", business_info: { unit: "point" } } };
+    const antigo = { ...base, id: 3, date_approved: "2026-08-24T10:00:00.000Z" };
+
+    expect(listarLinksMercadoPagoRecentes([{ ...base, id: 1 }, ponto, antigo], inicio)).toEqual([{
+      idPagamento: "1", dataHora: "2026-08-26T10:00:00.000Z", valorBruto: "359.00", valorLiquido: null,
+      parcelas: null, formaPagamento: null, pagador: null, identificacaoPagador: null, descricao: null,
+    }]);
+  });
+
+  it("calcula a data da janela no fuso de São Paulo", () => {
+    expect(dataSaoPaulo(new Date("2026-08-27T02:30:00.000Z"))).toBe("2026-08-26");
+  });
+
+  it("interpreta dataInclusao sem offset como horário de Brasília", () => {
+    const inicio = new Date("2026-08-25T13:30:00.000Z"); // 10:30 em Brasília
+    const transacao = {
+      idTransacao: "pix-brasilia", dataInclusao: "2026-08-25 10:00:00.000", dataTransacao: "2026-08-25",
+      tipoTransacao: "PIX", tipoOperacao: "C", valor: "100.00", titulo: "Pix recebido", descricao: "Cliente",
+    };
+    expect(listarPixInterRecentes([transacao], inicio)).toHaveLength(0);
+  });
+});

@@ -65,6 +65,7 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
       { label: "Visão Geral", path: "/financeiro", subsecao: "financeiro:visao-geral" },
       { label: "Contas", path: "/financeiro/extratos", subsecao: "financeiro:contas" },
       { label: "Comanda Recepção", path: "/financeiro/comanda-recepcao", subsecao: "financeiro:comanda-recepcao" },
+      { label: "Confirmação de Pagamento", path: "/financeiro/confirmacao-pagamento", subsecao: "financeiro:confirmacao-pagamento" },
       { label: "Adquirentes", path: "/financeiro/adquirentes", subsecao: "financeiro:adquirentes" },
       { label: "Transações entre Unidades", path: "/financeiro/transacoes-entre-unidades", subsecao: "financeiro:transacoes-entre-unidades" },
       { label: "Parâmetros", path: "/financeiro/parametros", subsecao: "financeiro:parametros" },

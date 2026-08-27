@@ -54,6 +54,7 @@ const ROUTER_MODULO: Record<string, string> = {
   dreDescricoes: "financeiro",
   dreRegras: "financeiro",
   adquirentes: "financeiro",
+  confirmacaoPagamentos: "financeiro",
   copilot: "copilot",
   laminas: "laminas",
   leads: "leads",
@@ -78,6 +79,7 @@ const ROUTER_SUBSECAO: Record<string, string> = {
   sicredi: "financeiro:contas",
   comandaRecepcao: "financeiro:comanda-recepcao",
   adquirentes: "financeiro:adquirentes",
+  confirmacaoPagamentos: "financeiro:confirmacao-pagamento",
   dreCategorias: "financeiro:parametros",
   dreDescricoes: "financeiro:parametros",
   dreRegras: "financeiro:parametros",
@@ -198,6 +200,14 @@ const requireSyncPermission = t.middleware(async (opts) => {
 });
 
 export const syncProcedure = t.procedure.use(requireUser).use(requireSyncPermission).use(auditMiddleware);
+
+/** Consulta externa de confirmação de pagamento: exige a subseção
+ * financeira própria e a permissão explícita de sincronização. */
+export const confirmacaoPagamentoProcedure = t.procedure
+  .use(requireUser)
+  .use(requireSyncPermission)
+  .use(moduloMiddleware)
+  .use(auditMiddleware);
 
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {

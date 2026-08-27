@@ -40,6 +40,12 @@ export interface MpPagamento {
   money_release_date?: string | null; // ISO 8601 — quando o valor é liberado/cai
   description?: string;
   external_reference?: string;
+  payer?: {
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    identification?: { type?: string; number?: string };
+  };
   coupon_amount?: number;
   shipping_amount?: number;
   order?: { id?: string; type?: string };
