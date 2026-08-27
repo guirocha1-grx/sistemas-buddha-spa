@@ -568,6 +568,9 @@ export const appRouter = router({
         data_fim: input.data_fim,
       });
     }),
+    proximosHoje: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      return db.listarProximosAtendimentosHoje(input.unidadeId);
+    }),
   }),
 
   // ===== Serviços =====
@@ -3713,11 +3716,11 @@ Diretrizes:
   }),
 
   chamados: router({
-    opcoes: protectedProcedure.input(z.object({ unidadeId: z.number(), clienteId: z.number() })).query(async ({ input }) => {
+    opcoes: protectedProcedure.input(z.object({ unidadeId: z.number(), clienteId: z.number().optional() })).query(async ({ input }) => {
       const [parametros, terapeutasAtivos, preferencia] = await Promise.all([
         db.listChamadosParametros(input.unidadeId),
         db.listTerapeutasAtivos(input.unidadeId),
-        db.getClientePreferenciaTerapeuta(input.clienteId, input.unidadeId),
+        input.clienteId ? db.getClientePreferenciaTerapeuta(input.clienteId, input.unidadeId) : Promise.resolve(null),
       ]);
       return { parametros, terapeutas: terapeutasAtivos, preferencia };
     }),

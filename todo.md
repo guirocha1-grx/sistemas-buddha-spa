@@ -448,3 +448,7 @@
 - [x] Adicionar rolagem interna ao modal de permissões em Usuários para caber em telas menores
 - [x] Remover a coluna Identificação da tabela Pix em Confirmação de Pagamento
 - [x] Evitar que o botão global de sincronização cubra ações da página em telas móveis
+- [x] Exibir somente o primeiro nome do terapeuta nos chamados enviados ao grupo
+- [x] Criar a seção Próximos atendimentos do dia, ordenada por horário e com acionamento direto de chamado
+- [x] Evitar duplicidade na lista de Próximos atendimentos quando o registro oficial substituir um agendamento local da IA
+- [ ] No chamado, incluir opção marcada por padrão para preencher uma linha vazia existente da Comanda diária com cliente, terapia e terapeuta, sem criar linha nova

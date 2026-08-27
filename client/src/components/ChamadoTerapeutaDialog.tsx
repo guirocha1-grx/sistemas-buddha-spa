@@ -16,10 +16,14 @@ type FormChamado = {
   terapeutaNome: string; terapiaBemEstar: string; terapiaEstetica: string; sala: string; taa: string; preferencial: boolean;
 };
 
+function primeiroNome(nome: string | null | undefined) {
+  return nome?.trim().split(/\s+/)[0] || "";
+}
+
 function criarFormulario(atendimento: Atendimento | null | undefined, conversa: Conversa | null | undefined, preferencia?: string | null, aguardando?: string, taa?: string): FormChamado {
   return {
     modalidade: "chamado", clienteNome: conversa?.nomeContato ?? "", horarioPrevisto: atendimento?.horario ?? "",
-    aguardandoEm: aguardando ?? "", terapeutaNome: atendimento?.profissionalNome ?? preferencia ?? "",
+    aguardandoEm: aguardando ?? "", terapeutaNome: primeiroNome(atendimento?.profissionalNome) || preferencia || "",
     terapiaBemEstar: atendimento?.servicoNome ?? "", terapiaEstetica: "", sala: "", taa: taa ?? "TAA não se aplica", preferencial: !!preferencia,
   };
 }
@@ -38,8 +42,8 @@ function mensagemPrevia(form: FormChamado) {
 export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendimento, conversa }: {
   open: boolean; onOpenChange: (open: boolean) => void; unidadeId: number | undefined; atendimento: Atendimento | null | undefined; conversa: Conversa | null | undefined;
 }) {
-  const clienteId = conversa?.clienteId ?? 0;
-  const opcoesQuery = trpc.chamados.opcoes.useQuery({ unidadeId: unidadeId ?? 0, clienteId }, { enabled: open && !!unidadeId && !!clienteId });
+  const clienteId = conversa?.clienteId ?? null;
+  const opcoesQuery = trpc.chamados.opcoes.useQuery({ unidadeId: unidadeId ?? 0, clienteId: clienteId ?? undefined }, { enabled: open && !!unidadeId });
   const servicosQuery = trpc.servicos.list.useQuery({ unidadeId: unidadeId ?? 0 }, { enabled: open && !!unidadeId });
   const [form, setForm] = useState<FormChamado>(() => criarFormulario(atendimento, conversa));
   const formularioInicializadoRef = useRef(false);
@@ -68,7 +72,7 @@ export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendime
   });
   const mudar = <K extends keyof FormChamado>(campo: K, valor: FormChamado[K]) => setForm((atual) => ({ ...atual, [campo]: valor }));
   const destinoTesteDisponivel = unidadeId === 2;
-  const podeEnviar = destinoTesteDisponivel && !!clienteId && !!form.clienteNome.trim() && !!form.aguardandoEm.trim() && !!form.terapeutaNome.trim() && !!form.sala.trim() && !!form.taa.trim();
+  const podeEnviar = destinoTesteDisponivel && !!form.clienteNome.trim() && !!form.aguardandoEm.trim() && !!form.terapeutaNome.trim() && !!form.sala.trim() && !!form.taa.trim();
 
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-h-[92dvh] max-w-2xl overflow-y-auto">
@@ -76,7 +80,7 @@ export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendime
         <div className="flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary"><BellRing className="h-4 w-4" /></span><DialogTitle className="font-serif text-2xl">Chamar terapeuta</DialogTitle></div>
         <DialogDescription>Todos os campos podem ser corrigidos antes do envio. Nesta etapa, o aviso vai somente para o grupo de teste da recepção.</DialogDescription>
       </DialogHeader>
-      {!clienteId ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">Vincule esta conversa a um cliente antes de criar o chamado.</div> : !destinoTesteDisponivel ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">O envio de teste está configurado somente para o grupo da recepção do Ribeirão Shopping.</div> : opcoesQuery.isLoading ? <div className="flex items-center gap-2 rounded-lg border p-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Preparando opções do chamado...</div> : <div className="space-y-5">
+      {!destinoTesteDisponivel ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">O envio de teste está configurado somente para o grupo da recepção do Ribeirão Shopping.</div> : opcoesQuery.isLoading ? <div className="flex items-center gap-2 rounded-lg border p-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Preparando opções do chamado...</div> : <div className="space-y-5">
         <div className="grid grid-cols-2 gap-2 rounded-xl bg-muted/50 p-1">
           <Button type="button" variant={form.modalidade === "chamado" ? "default" : "ghost"} className="h-9" onClick={() => mudar("modalidade", "chamado")}><BellRing className="mr-2 h-4 w-4" />Chamado agora</Button>
           <Button type="button" variant={form.modalidade === "pre_chamado" ? "default" : "ghost"} className="h-9" onClick={() => mudar("modalidade", "pre_chamado")}><Clock3 className="mr-2 h-4 w-4" />Pré-chamado</Button>

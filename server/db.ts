@@ -12,6 +12,7 @@ import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
 import { storageGetSignedUrl, storageExists } from "./storage";
 import { chamadosParametros, clientesPreferenciasTerapeuta, type InsertChamadoParametro } from "../drizzle/schema";
+import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -769,6 +770,41 @@ export async function editarAtendimentoBelle(id: number, dados: {
   const db = await getDb();
   if (!db) return;
   await db.update(belleAtendimentos).set(dados).where(eq(belleAtendimentos.id, id));
+}
+
+/**
+ * Lista os atendimentos ainda previstos para o dia corrente, pela unidade.
+ * É uma visão operacional local: não consulta o Belle a cada abertura e não
+ * altera agenda, status ou o vínculo do cliente. A data segue BRT, como os
+ * demais resumos do Inbox.
+ */
+export async function listarProximosAtendimentosHoje(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const registros = await db.select({
+    id: belleAtendimentos.id,
+    clienteId: belleAtendimentos.clienteId,
+    clienteNome: belleAtendimentos.clienteNome,
+    telefone: belleAtendimentos.telefone,
+    dataAtendimento: belleAtendimentos.dataAtendimento,
+    horario: belleAtendimentos.horario,
+    servicoNome: belleAtendimentos.servicoNome,
+    profissionalNome: belleAtendimentos.profissionalNome,
+    status: belleAtendimentos.status,
+  }).from(belleAtendimentos)
+    .where(and(
+      eq(belleAtendimentos.unidadeId, unidadeId),
+      eq(belleAtendimentos.dataAtendimento, hojeBrt),
+      inArray(belleAtendimentos.status, STATUS_ATENDIMENTO_AGENDADO),
+    ))
+    .orderBy(asc(belleAtendimentos.horario), asc(belleAtendimentos.clienteNome));
+
+  // A confirmação enviada pelo Inbox cria temporariamente uma linha
+  // “Agendado (IA)”. Quando o mesmo atendimento chega pelo relatório Belle,
+  // ele deve prevalecer na visão operacional, inclusive se o vínculo de
+  // cliente ainda estiver pendente. O cadastro original continua intacto.
+  return deduplicarProximosAtendimentos(registros, STATUS_AGENDADO_POR_IA);
 }
 
 async function obterResumoRelacionamentoInbox(unidadeId: number, clienteId: number) {

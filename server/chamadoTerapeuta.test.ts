@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { CONVERSA_TESTE_CHAMADOS_ID, destinoTesteChamadoValido, montarMensagemChamadoTerapeuta } from "./chamadoTerapeuta";
+import { CONVERSA_TESTE_CHAMADOS_ID, destinoTesteChamadoValido, montarMensagemChamadoTerapeuta, primeiroNomeTerapeuta } from "./chamadoTerapeuta";
 
 describe("chamado de terapeuta", () => {
+  it("usa apenas o primeiro nome do terapeuta no aviso", () => {
+    expect(primeiroNomeTerapeuta("Larissa de Souza")).toBe("Larissa");
+    expect(primeiroNomeTerapeuta("  Thiago  ")).toBe("Thiago");
+  });
+
   it("monta o chamado imediato com os campos operacionais", () => {
     expect(montarMensagemChamadoTerapeuta({
       modalidade: "chamado", clienteNome: "Fabiana", aguardandoEm: "Sala Espera - Não vai tomar chá (pode chamar)",

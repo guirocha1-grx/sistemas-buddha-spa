@@ -14,10 +14,14 @@ export type DadosChamadoTerapeuta = {
   preferencial: boolean;
 };
 
+export function primeiroNomeTerapeuta(nome: string): string {
+  return nome.trim().split(/\s+/)[0] || "—";
+}
+
 export function montarMensagemChamadoTerapeuta(dados: DadosChamadoTerapeuta): string {
   const linhas = [
     dados.modalidade === "pre_chamado" ? "*Pré-chamado*" : "*Chamado*",
-    `Terapeuta: ${dados.terapeutaNome}.`,
+    `Terapeuta: ${primeiroNomeTerapeuta(dados.terapeutaNome)}.`,
     dados.modalidade === "pre_chamado"
       ? `Cliente: ${dados.clienteNome} previsto(a) para chegar${dados.horarioPrevisto ? ` às ${dados.horarioPrevisto}` : ""}.`
       : `Cliente: ${dados.clienteNome} aguarda em: ${dados.aguardandoEm}.`,
