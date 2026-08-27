@@ -823,6 +823,9 @@ export const adquirenteVendas = mysqlTable("adquirente_vendas", {
   status: varchar("status", { length: 64 }), // Pago/Em Processamento/Cancelado — texto livre
   parcela: varchar("parcela", { length: 8 }), // "1/3"
   bandeira: varchar("bandeira", { length: 32 }), // Mastercard/Visa/Elo/Pix
+  // Só preenchida na inserção quando o payload atual do Mercado Pago
+  // apresentar sinal inequívoco. Linhas históricas permanecem NULL.
+  origemPagamento: mysqlEnum("origemPagamento", ["link_pagamento", "maquininha_point", "online", "indefinido"]),
   valorBruto: decimal("valorBruto", { precision: 12, scale: 2 }),
   valorTaxa: decimal("valorTaxa", { precision: 12, scale: 2 }),
   valorAntecipacao: decimal("valorAntecipacao", { precision: 12, scale: 2 }),

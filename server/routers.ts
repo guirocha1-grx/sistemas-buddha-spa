@@ -24,7 +24,7 @@ import { parseAtendimentosBelleXlsx } from "./atendimentosBelleXlsxParser";
 import { parsePlanosBelleXls, parseVinculosPlanosBelleXlsx } from "./planosBelleXlsParser";
 import { parseComandaVirtualXlsx } from "./comandaVirtualXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
-import { consultarTodosPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp } from "./mercadoPagoApi";
+import { consultarTodosPagamentos, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, classificarOrigemPagamentoMp } from "./mercadoPagoApi";
 import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet } from "./googleSheets";
 import { transcribeAudio } from "./_core/voiceTranscription";
@@ -3479,6 +3479,7 @@ Diretrizes:
               status: p.status,
               parcela: p.installments ? `1/${p.installments}` : undefined,
               bandeira: p.payment_method_id,
+              origemPagamento: classificarOrigemPagamentoMp(p),
               valorBruto: bruto?.toFixed(2),
               valorTaxa: taxa?.toFixed(2),
               valorAntecipacao: antecipacao?.toFixed(2),

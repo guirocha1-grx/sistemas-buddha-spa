@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coletarPagamentosEstaveis, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, type MpPaymentsSearchResponse } from "./mercadoPagoApi";
+import { classificarOrigemPagamentoMp, coletarPagamentosEstaveis, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, type MpPaymentsSearchResponse } from "./mercadoPagoApi";
 
 describe("ehCompraEquipamentoPoint", () => {
   it("separa uma compra subsidiada de Point Smart das vendas", () => {
@@ -99,5 +99,35 @@ describe("resumirOrigemPagamentoMp", () => {
       collector_id: null,
       application_id: null,
     });
+  });
+});
+
+describe("classificarOrigemPagamentoMp", () => {
+  it("classifica Link de Pagamento pelo subcanal confirmado, sem depender de referência externa", () => {
+    expect(classificarOrigemPagamentoMp({
+      id: 20,
+      date_approved: null,
+      status: "approved",
+      point_of_interaction: { type: "CHECKOUT", business_info: { unit: "online_payments", sub_unit: "payment_link" } },
+    })).toBe("link_pagamento");
+  });
+
+  it("classifica Point somente com evidência operacional de Point, POS ou loja", () => {
+    expect(classificarOrigemPagamentoMp({
+      id: 21,
+      date_approved: null,
+      status: "approved",
+      point_of_interaction: { type: "POINT", business_info: { unit: "point" }, transaction_data: { pos_id: "POS-1" } },
+    })).toBe("maquininha_point");
+  });
+
+  it("classifica checkout online explícito e mantém ausência de evidência como indefinida", () => {
+    expect(classificarOrigemPagamentoMp({
+      id: 22,
+      date_approved: null,
+      status: "approved",
+      point_of_interaction: { type: "CHECKOUT", business_info: { unit: "online_payments", sub_unit: "checkout_pro" } },
+    })).toBe("online");
+    expect(classificarOrigemPagamentoMp({ id: 23, date_approved: null, status: "approved", external_reference: "não-classifica-link" })).toBe("indefinido");
   });
 });

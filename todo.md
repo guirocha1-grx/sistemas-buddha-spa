@@ -435,6 +435,7 @@
 - [x] Criar a nova versão ativa do prompt da Estela com regra de valor de domingo e arquivar a versão 30006
 - [x] Criar a tabela terapeutas com cadastro por unidade, índice de unidade e CPF único no TiDB
 - [x] Verificar se a importação Mercado Pago distingue pagamentos por Link de Pagamento e maquininha Point
-- [ ] Ampliar a sincronização Mercado Pago para capturar e persistir a origem como Link, Point, online ou indefinido sem reclassificar históricos por suposição
+- [x] Ampliar a sincronização Mercado Pago para capturar e persistir a origem como Link, Point, online ou indefinido sem reclassificar históricos por suposição
+- [x] Persistir apenas para novas sincronizações a origem comprovada de pagamentos Mercado Pago, mantendo registros históricos sem reclassificação
 - [x] Diagnosticar e corrigir o bloqueio do botão de iniciar sincronização geral na versão online
 - [x] Analisar os sinais de origem registrados na sincronização Mercado Pago do Ribeirão Shopping — amostra confirmou Link de Pagamento e compra de equipamento Point, sem inferência retrospectiva

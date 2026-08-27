@@ -84,6 +84,36 @@ export function resumirOrigemPagamentoMp(pagamento: MpPagamento) {
   };
 }
 
+export type OrigemPagamentoMp = "link_pagamento" | "maquininha_point" | "online" | "indefinido";
+
+/**
+ * Classifica apenas sinais explícitos, comprovados no payload da API.
+ * `external_reference` não é critério de Link: pode existir em outros
+ * checkouts e permanece apenas como sinal de auditoria.
+ */
+export function classificarOrigemPagamentoMp(pagamento: MpPagamento): OrigemPagamentoMp {
+  const origem = resumirOrigemPagamentoMp(pagamento);
+  const tipoInteracao = origem.point_of_interaction_type?.toLowerCase() ?? "";
+  const unidadeNegocio = origem.point_business_unit?.toLowerCase() ?? "";
+  const subUnidadeNegocio = origem.point_business_sub_unit?.toLowerCase() ?? "";
+
+  // Confirmado no sync RBS de 2026-08-27: CHECKOUT +
+  // online_payments/payment_link identifica Link de Pagamento.
+  if (subUnidadeNegocio === "payment_link") return "link_pagamento";
+
+  // POS, store ou o domínio Point são indicadores operacionais de venda
+  // presencial. Compras de equipamento Point são filtradas antes desta etapa.
+  if (origem.pos_id || origem.store_id || tipoInteracao === "point" || unidadeNegocio === "point" || subUnidadeNegocio.includes("point")) {
+    return "maquininha_point";
+  }
+
+  // Checkout explicitamente identificado como pagamentos online, mas que
+  // não seja Link (tratado acima). Não usa somente `CHECKOUT` como critério.
+  if (unidadeNegocio === "online_payments") return "online";
+
+  return "indefinido";
+}
+
 export interface MpPaymentsSearchResponse {
   paging: { total: number; limit: number; offset: number };
   results: MpPagamento[];

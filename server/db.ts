@@ -2093,7 +2093,12 @@ export async function upsertAdquirenteVendas(
         )
         .limit(1);
       if (existente.length > 0) {
-        await db.update(adquirenteVendas).set(linha).where(eq(adquirenteVendas.id, existente[0].id));
+        // Origem é dado prospectivo: uma linha que já existia antes da
+        // instrumentação não pode ser reclassificada retrospectivamente.
+        // Atualizações de valores/status preservam o NULL (ou o valor já
+        // persistido) na origem original.
+        const { origemPagamento: _origemPagamento, ...linhaParaAtualizar } = linha;
+        await db.update(adquirenteVendas).set(linhaParaAtualizar).where(eq(adquirenteVendas.id, existente[0].id));
         continue;
       }
     }
