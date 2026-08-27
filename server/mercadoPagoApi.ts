@@ -47,6 +47,41 @@ export interface MpPagamento {
     items?: Array<{ title?: string; quantity?: number; unit_price?: number }>;
   };
   financing_group?: string; // ex.: "PSJ_LINK_HASTA_3X" — parcelamento sem juros
+  // Campos opcionais de canal/origem. Eles não eram registrados pelo CRM,
+  // então entram primeiro na amostra auditável da sincronização antes de
+  // qualquer classificação de Link ou Point.
+  point_of_interaction?: {
+    type?: string;
+    business_info?: { unit?: string; sub_unit?: string; branch?: string };
+    transaction_data?: { pos_id?: string; store_id?: string };
+  };
+  pos_id?: string;
+  store_id?: string;
+  operation_type?: string;
+  processing_mode?: string;
+  collector_id?: number;
+  application_id?: string;
+}
+
+/**
+ * Recorte sem PII dos campos que podem identificar o canal de origem. A
+ * referência externa não é gravada no log: basta registrar se ela existe
+ * para a auditoria de Link/checkout sem expor conteúdo operacional.
+ */
+export function resumirOrigemPagamentoMp(pagamento: MpPagamento) {
+  return {
+    point_of_interaction_type: pagamento.point_of_interaction?.type ?? null,
+    point_business_unit: pagamento.point_of_interaction?.business_info?.unit ?? null,
+    point_business_sub_unit: pagamento.point_of_interaction?.business_info?.sub_unit ?? null,
+    pos_id: pagamento.pos_id ?? pagamento.point_of_interaction?.transaction_data?.pos_id ?? null,
+    store_id: pagamento.store_id ?? pagamento.point_of_interaction?.transaction_data?.store_id ?? null,
+    order_type: pagamento.order?.type ?? null,
+    operation_type: pagamento.operation_type ?? null,
+    processing_mode: pagamento.processing_mode ?? null,
+    possui_external_reference: Boolean(pagamento.external_reference),
+    collector_id: pagamento.collector_id ?? null,
+    application_id: pagamento.application_id ?? null,
+  };
 }
 
 export interface MpPaymentsSearchResponse {

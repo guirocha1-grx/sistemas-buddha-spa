@@ -434,3 +434,5 @@
 - [x] Diagnosticar e corrigir o executor local de Fluxos: tarefas agendadas agora rodam somente em produção e não disputam o TiDB com Railway
 - [x] Criar a nova versão ativa do prompt da Estela com regra de valor de domingo e arquivar a versão 30006
 - [x] Criar a tabela terapeutas com cadastro por unidade, índice de unidade e CPF único no TiDB
+- [x] Verificar se a importação Mercado Pago distingue pagamentos por Link de Pagamento e maquininha Point
+- [ ] Ampliar a sincronização Mercado Pago para capturar e persistir a origem como Link, Point, online ou indefinido sem reclassificar históricos por suposição

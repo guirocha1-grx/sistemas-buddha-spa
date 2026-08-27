@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coletarPagamentosEstaveis, ehCompraEquipamentoPoint, type MpPaymentsSearchResponse } from "./mercadoPagoApi";
+import { coletarPagamentosEstaveis, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, type MpPaymentsSearchResponse } from "./mercadoPagoApi";
 
 describe("ehCompraEquipamentoPoint", () => {
   it("separa uma compra subsidiada de Point Smart das vendas", () => {
@@ -55,5 +55,49 @@ describe("coletarPagamentosEstaveis", () => {
 
     expect(coleta.paginasConsultadas).toBe(2);
     expect(coleta.pagamentos).toHaveLength(3);
+  });
+});
+
+describe("resumirOrigemPagamentoMp", () => {
+  it("registra sinais de Point sem expor a referência externa", () => {
+    expect(resumirOrigemPagamentoMp({
+      id: 10,
+      date_approved: null,
+      status: "approved",
+      external_reference: "cliente-interno-123",
+      point_of_interaction: {
+        type: "POINT",
+        business_info: { unit: "loja", sub_unit: "ribeirao" },
+        transaction_data: { pos_id: "POS-1", store_id: "STORE-1" },
+      },
+    })).toEqual({
+      point_of_interaction_type: "POINT",
+      point_business_unit: "loja",
+      point_business_sub_unit: "ribeirao",
+      pos_id: "POS-1",
+      store_id: "STORE-1",
+      order_type: null,
+      operation_type: null,
+      processing_mode: null,
+      possui_external_reference: true,
+      collector_id: null,
+      application_id: null,
+    });
+  });
+
+  it("preserva ausência de sinais como nulo sem inferir origem", () => {
+    expect(resumirOrigemPagamentoMp({ id: 11, date_approved: null, status: "approved" })).toEqual({
+      point_of_interaction_type: null,
+      point_business_unit: null,
+      point_business_sub_unit: null,
+      pos_id: null,
+      store_id: null,
+      order_type: null,
+      operation_type: null,
+      processing_mode: null,
+      possui_external_reference: false,
+      collector_id: null,
+      application_id: null,
+    });
   });
 });
