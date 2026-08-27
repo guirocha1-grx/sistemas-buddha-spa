@@ -9,7 +9,7 @@ import { BellRing, Clock3, Loader2, Send, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-type Atendimento = { horario?: string | null; servicoNome?: string | null; profissionalNome?: string | null; terapeutaOrganizado?: string | null; salaOrganizada?: string | null };
+type Atendimento = { horario?: string | null; servicoNome?: string | null; profissionalNome?: string | null; terapeutaOrganizado?: string | null; salaOrganizada?: string | null; preferencialOrganizado?: boolean | null };
 type Conversa = { clienteId?: number | null; nomeContato?: string | null };
 type FormChamado = {
   modalidade: "chamado" | "pre_chamado"; clienteNome: string; horarioPrevisto: string; aguardandoEm: string;
@@ -24,7 +24,7 @@ function criarFormulario(atendimento: Atendimento | null | undefined, conversa: 
   return {
     modalidade: "chamado", clienteNome: conversa?.nomeContato ?? "", horarioPrevisto: atendimento?.horario ?? "",
     aguardandoEm: aguardando ?? "", terapeutaNome: atendimento?.terapeutaOrganizado || primeiroNome(atendimento?.profissionalNome) || preferencia || "",
-    terapiaBemEstar: atendimento?.servicoNome ?? "", terapiaEstetica: "", sala: atendimento?.salaOrganizada ?? "", taa: taa ?? "TAA não se aplica", preferencial: !!preferencia,
+    terapiaBemEstar: atendimento?.servicoNome ?? "", terapiaEstetica: "", sala: atendimento?.salaOrganizada ?? "", taa: taa ?? "TAA não se aplica", preferencial: atendimento?.preferencialOrganizado ?? !!preferencia,
   };
 }
 
@@ -36,6 +36,7 @@ function mensagemPrevia(form: FormChamado) {
   if (form.terapiaEstetica) linhas.push(`Terapia Estética: ${form.terapiaEstetica}.`);
   linhas.push(`Local: ${form.sala || "—"}.`);
   linhas.push(`${form.taa || "—"}. Pref.: ${form.preferencial ? "Sim" : "Não"}.`);
+  if (form.preferencial) linhas.push("🟩 PREFERENCIAL");
   return linhas.join("\n");
 }
 
@@ -89,14 +90,13 @@ export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendime
           <div className="space-y-1.5"><Label>Cliente</Label><Input value={form.clienteNome} onChange={(event) => mudar("clienteNome", event.target.value)} placeholder="Nome do cliente" /></div>
           <div className="space-y-1.5"><Label>{form.modalidade === "pre_chamado" ? "Horário previsto de chegada" : "Horário do atendimento"}</Label><Input type="time" value={form.horarioPrevisto} onChange={(event) => mudar("horarioPrevisto", event.target.value)} /></div>
           <CampoLista label={form.modalidade === "pre_chamado" ? "Como preparar" : "Aguardando em"} value={form.aguardandoEm} onChange={(valor) => mudar("aguardandoEm", valor)} valores={aguardando.map((item) => item.nome)} placeholder="Informe onde o cliente está" id="chamado-aguardando" />
-          <CampoLista label="Terapeuta" value={form.terapeutaNome} onChange={(valor) => mudar("terapeutaNome", valor)} valores={(opcoesQuery.data?.terapeutas ?? []).map((item) => item.nomeAbreviado || item.nomeCompleto)} placeholder="Selecione ou digite" id="chamado-terapeuta" />
+          <div className="flex items-end gap-2"><div className="min-w-0 flex-1"><CampoLista label="Terapeuta" value={form.terapeutaNome} onChange={(valor) => mudar("terapeutaNome", valor)} valores={(opcoesQuery.data?.terapeutas ?? []).map((item) => item.nomeAbreviado || item.nomeCompleto)} placeholder="Selecione ou digite" id="chamado-terapeuta" /></div><div className="shrink-0 space-y-1.5"><Label>Pref.</Label><div className="flex gap-1 rounded-lg bg-muted p-1"><Button type="button" size="sm" className={`h-8 px-2 ${form.preferencial ? "bg-emerald-600 text-white hover:bg-emerald-700" : ""}`} variant={form.preferencial ? "default" : "ghost"} onClick={() => mudar("preferencial", true)}>Sim</Button><Button type="button" size="sm" className="h-8 px-2" variant={!form.preferencial ? "default" : "ghost"} onClick={() => mudar("preferencial", false)}>Não</Button></div></div></div>
           <CampoLista label="Terapia Bem-Estar" value={form.terapiaBemEstar} onChange={(valor) => mudar("terapiaBemEstar", valor)} valores={nomesServicos} placeholder="Selecione ou digite" id="chamado-bem-estar" />
           <CampoLista label="Terapia Estética" value={form.terapiaEstetica} onChange={(valor) => mudar("terapiaEstetica", valor)} valores={nomesServicos} placeholder="Opcional" id="chamado-estetica" />
           <CampoLista label="Sala" value={form.sala} onChange={(valor) => mudar("sala", valor)} valores={salas.map((item) => item.nome)} placeholder="Selecione ou digite" id="chamado-sala" />
           <CampoLista label="TAA" value={form.taa} onChange={(valor) => mudar("taa", valor)} valores={taa.map((item) => item.nome)} placeholder="Selecione a situação" id="chamado-taa" />
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"><div><p className="text-sm font-medium">Terapeuta preferencial</p><p className="text-xs text-muted-foreground">Indique se este atendimento é com profissional de preferência.</p></div><div className="flex gap-1 rounded-lg bg-muted p-1"><Button type="button" size="sm" variant={form.preferencial ? "default" : "ghost"} onClick={() => mudar("preferencial", true)}>Sim</Button><Button type="button" size="sm" variant={!form.preferencial ? "default" : "ghost"} onClick={() => mudar("preferencial", false)}>Não</Button></div></div>
-        <div className="rounded-lg border border-primary/15 bg-primary/[0.035] p-3"><div className="mb-2 flex items-center gap-2"><Badge variant="outline" className="border-primary/25 text-primary">Prévia de envio</Badge><span className="text-xs text-muted-foreground">Grupo de teste 900001</span></div><p className="whitespace-pre-wrap text-sm leading-5">{mensagemPrevia(form)}</p></div>
+        <div className="rounded-lg border border-primary/15 bg-primary/[0.035] p-3"><div className="mb-2 flex items-center gap-2"><Badge variant="outline" className="border-primary/25 text-primary">Prévia de envio</Badge>{form.preferencial ? <Badge className="border-emerald-600 bg-emerald-600 text-white">● Preferência</Badge> : null}<span className="text-xs text-muted-foreground">Grupo de teste 900001</span></div><p className="whitespace-pre-wrap text-sm leading-5">{mensagemPrevia(form)}</p></div>
       </div>}
       <Separator />
       <DialogFooter className="gap-2 sm:gap-0"><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={enviarMutation.isPending}><X className="mr-2 h-4 w-4" />Abandonar chamado</Button><Button type="button" disabled={!podeEnviar || enviarMutation.isPending} onClick={() => enviarMutation.mutate({ unidadeId: unidadeId!, ...form, horarioPrevisto: form.horarioPrevisto || null, terapiaBemEstar: form.terapiaBemEstar || null, terapiaEstetica: form.terapiaEstetica || null })}>{enviarMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Enviar no grupo</Button></DialogFooter>

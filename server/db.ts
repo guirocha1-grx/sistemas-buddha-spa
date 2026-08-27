@@ -794,6 +794,7 @@ export async function listarProximosAtendimentosHoje(unidadeId: number) {
     status: belleAtendimentos.status,
     terapeutaOrganizado: atendimentosOperacional.terapeutaNome,
     salaOrganizada: atendimentosOperacional.sala,
+    preferencialOrganizado: atendimentosOperacional.preferencial,
   }).from(belleAtendimentos)
     .leftJoin(atendimentosOperacional, and(
       eq(atendimentosOperacional.unidadeId, belleAtendimentos.unidadeId),
@@ -815,7 +816,7 @@ export async function listarProximosAtendimentosHoje(unidadeId: number) {
 }
 
 export async function salvarOrganizacaoProximoAtendimento(params: {
-  unidadeId: number; atendimentoBelleId: number; terapeutaNome?: string | null; sala?: string | null;
+  unidadeId: number; atendimentoBelleId: number; terapeutaNome?: string | null; sala?: string | null; preferencial?: boolean;
 }): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -825,11 +826,12 @@ export async function salvarOrganizacaoProximoAtendimento(params: {
   const dados = {
     ...(params.terapeutaNome !== undefined ? { terapeutaNome: params.terapeutaNome || null } : {}),
     ...(params.sala !== undefined ? { sala: params.sala || null } : {}),
+    ...(params.preferencial !== undefined ? { preferencial: params.preferencial } : {}),
   };
   if (existente[0]) {
     await db.update(atendimentosOperacional).set(dados).where(eq(atendimentosOperacional.id, existente[0].id));
   } else {
-    await db.insert(atendimentosOperacional).values({ unidadeId: params.unidadeId, atendimentoBelleId: params.atendimentoBelleId, terapeutaNome: null, sala: null, ...dados });
+    await db.insert(atendimentosOperacional).values({ unidadeId: params.unidadeId, atendimentoBelleId: params.atendimentoBelleId, terapeutaNome: null, sala: null, preferencial: false, ...dados });
   }
 }
 
@@ -843,7 +845,7 @@ export async function retirarProximoAtendimentoDaLista(unidadeId: number, atendi
   if (existente[0]) {
     await db.update(atendimentosOperacional).set(retirada).where(eq(atendimentosOperacional.id, existente[0].id));
   } else {
-    await db.insert(atendimentosOperacional).values({ unidadeId, atendimentoBelleId, terapeutaNome: null, sala: null, ...retirada });
+    await db.insert(atendimentosOperacional).values({ unidadeId, atendimentoBelleId, terapeutaNome: null, sala: null, preferencial: false, ...retirada });
   }
 }
 

@@ -452,6 +452,7 @@ export const atendimentosOperacional = mysqlTable("atendimentos_operacional", {
   atendimentoBelleId: int("atendimentoBelleId").notNull(),
   terapeutaNome: varchar("terapeutaNome", { length: 100 }),
   sala: varchar("sala", { length: 200 }),
+  preferencial: boolean("preferencial").notNull().default(false),
   removidoEm: timestamp("removidoEm"),
   removidoPorUserId: int("removidoPorUserId"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

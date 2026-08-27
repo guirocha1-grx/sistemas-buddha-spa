@@ -462,3 +462,5 @@
 - [x] Manter os menus Agenda e Financeiro abertos por padrão no menu lateral
 - [ ] Futuro: preencher uma linha vazia existente da Comanda ao enviar o chamado
 - [ ] Futuro: criar fluxo de cobrança de clientes por Link de Pagamento
+- [x] Mover o controle Pref. para ao lado do terapeuta em Próximos atendimentos, com Não como padrão
+- [x] Destacar em verde a preferência confirmada na prévia e na mensagem de chamado enviada ao grupo

@@ -31,6 +31,7 @@ export function montarMensagemChamadoTerapeuta(dados: DadosChamadoTerapeuta): st
   if (dados.terapiaEstetica) linhas.push(`Terapia Estética: ${dados.terapiaEstetica}.`);
   linhas.push(`Local: ${dados.sala}.`);
   linhas.push(`${dados.taa}. Pref.: ${dados.preferencial ? "Sim" : "Não"}.`);
+  if (dados.preferencial) linhas.push("🟩 PREFERENCIAL");
   return linhas.join("\n");
 }
 

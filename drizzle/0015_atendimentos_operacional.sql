@@ -4,6 +4,7 @@ CREATE TABLE atendimentos_operacional (
   atendimentoBelleId INT NOT NULL,
   terapeutaNome VARCHAR(100) NULL,
   sala VARCHAR(200) NULL,
+  preferencial BOOLEAN NOT NULL DEFAULT FALSE,
   removidoEm TIMESTAMP NULL,
   removidoPorUserId INT NULL,
   updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

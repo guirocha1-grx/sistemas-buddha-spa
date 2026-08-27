@@ -581,7 +581,7 @@ export const appRouter = router({
       return { parametros, terapeutas };
     }),
     organizar: protectedProcedure.input(z.object({
-      unidadeId: z.number(), atendimentoBelleId: z.number(), terapeutaNome: z.string().trim().nullable().optional(), sala: z.string().trim().nullable().optional(),
+      unidadeId: z.number(), atendimentoBelleId: z.number(), terapeutaNome: z.string().trim().nullable().optional(), sala: z.string().trim().nullable().optional(), preferencial: z.boolean().optional(),
     })).mutation(async ({ input }) => {
       await db.salvarOrganizacaoProximoAtendimento(input);
       return { success: true };

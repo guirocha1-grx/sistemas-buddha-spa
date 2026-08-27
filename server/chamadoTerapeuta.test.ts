@@ -23,6 +23,7 @@ describe("chamado de terapeuta", () => {
     });
     expect(texto).toContain("*Pré-chamado*");
     expect(texto).toContain("previsto(a) para chegar às 15:30");
+    expect(texto).toContain("🟩 PREFERENCIAL");
     expect(destinoTesteChamadoValido(CONVERSA_TESTE_CHAMADOS_ID, 2)).toBe(true);
     expect(destinoTesteChamadoValido(CONVERSA_TESTE_CHAMADOS_ID, 1)).toBe(false);
   });
