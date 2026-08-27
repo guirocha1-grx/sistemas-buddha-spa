@@ -432,3 +432,5 @@
 - [x] Sincronizar a última versão, revisar a solução do Claude e auditar imagens, PDFs, áudios, vídeos, documentos e anexos ausentes após a migração
 - [x] Revisar os commits posteriores à auditoria para consolidar as correções de cron, duplicação, fluxo de mídia e “Digitando...”
 - [x] Diagnosticar e corrigir o executor local de Fluxos: tarefas agendadas agora rodam somente em produção e não disputam o TiDB com Railway
+- [x] Criar a nova versão ativa do prompt da Estela com regra de valor de domingo e arquivar a versão 30006
+- [x] Criar a tabela terapeutas com cadastro por unidade, índice de unidade e CPF único no TiDB
