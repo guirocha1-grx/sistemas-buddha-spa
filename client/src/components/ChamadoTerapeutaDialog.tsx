@@ -69,7 +69,12 @@ export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendime
   }, [open, opcoesQuery.isLoading, opcoesQuery.data, atendimento?.horario, atendimento?.servicoNome, atendimento?.profissionalNome, atendimento?.terapeutaOrganizado, atendimento?.salaOrganizada, conversa?.nomeContato, opcoesQuery.data?.preferencia?.terapeutaNome]);
 
   const enviarMutation = trpc.chamados.enviarTeste.useMutation({
-    onSuccess: () => { toast.success("Chamado enviado no grupo de teste da recepção."); onOpenChange(false); },
+    onSuccess: () => {
+      const tipo = form.modalidade === "pre_chamado" ? "Pré-chamado" : "Chamado";
+      const comanda = enviarParaComanda && !!atendimento?.id ? " Dados enviados para a Comanda virtual." : "";
+      toast.success(`${tipo} enviado no Grupo Geral da unidade.${comanda}`);
+      onOpenChange(false);
+    },
     onError: (erro) => toast.error(`Não foi possível enviar o chamado: ${erro.message}`),
   });
   const mudar = <K extends keyof FormChamado>(campo: K, valor: FormChamado[K]) => setForm((atual) => ({ ...atual, [campo]: valor }));

@@ -468,6 +468,7 @@
 - [x] Corrigir o mapeamento da unidade para localizar a Comanda virtual no envio de chamado
 - [x] Restringir a escrita da Comanda a Cliente, Terapia/Produto e Terapeuta da primeira linha vazia, sem tocar em fórmulas ou campos financeiros
 - [x] Preencher Abertura comanda (responsável) com o nome da pessoa logada que envia o chamado
+- [x] Atualizar o aviso de sucesso para identificar chamado ou pré-chamado, Grupo Geral da unidade e envio à Comanda virtual
 - [ ] Futuro: criar fluxo de cobrança de clientes por Link de Pagamento
 - [x] Mover o controle Pref. para ao lado do terapeuta em Próximos atendimentos, com Não como padrão
 - [x] Destacar em verde a preferência confirmada na prévia e na mensagem de chamado enviada ao grupo
