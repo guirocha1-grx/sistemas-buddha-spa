@@ -36,6 +36,7 @@ import { iniciarExecucaoFluxo } from "./fluxos";
 import { agentesRouter, tabelaPrecosRouter } from "./routers/agentes";
 import * as agentesDb from "./agentesDb";
 import { normalizarExtracaoCobrancaLink, normalizarValorCobranca } from "./cobrancaLink";
+import { normalizarSugestaoProximoAtendimento } from "./proximoAtendimentoIa";
 
 const FORMAS_PAGAMENTO_COBRANCA = ["Não especificada", "Pix", "Cartão", "Pix ou cartão"] as const;
 
@@ -1044,6 +1045,82 @@ Diretrizes:
       })).mutation(async ({ input: { id, ...dados } }) => {
         await db.editarAtendimentoBelle(id, dados);
         return { success: true };
+      }),
+
+      criarProximoAtendimento: protectedProcedure.input(z.object({
+        conversaId: z.number(),
+        dataAtendimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        horario: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
+        servicoNome: z.string().trim().min(2).max(250).nullable(),
+      })).mutation(async ({ input, ctx }) => {
+        const conversa = await db.getInboxConversaById(input.conversaId);
+        if (!conversa?.unidadeId || !conversa.clienteId || conversa.isGrupo === "true") {
+          throw new Error("O próximo atendimento só pode ser incluído para um cliente vinculado a uma conversa individual");
+        }
+        if (!(await usuarioPodeOperarNaUnidade(ctx.user, conversa.unidadeId))) throw new Error("Sem acesso à unidade desta conversa");
+        const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        if (input.dataAtendimento < hojeBrt) throw new Error("Informe uma data de hoje ou futura para o próximo atendimento");
+        const id = await db.criarProximoAtendimentoInbox({
+          unidadeId: conversa.unidadeId,
+          clienteId: conversa.clienteId,
+          clienteNome: conversa.clienteNome ?? conversa.nomeContato ?? "Cliente",
+          telefone: conversa.telefone ?? null,
+          dataAtendimento: input.dataAtendimento,
+          horario: input.horario,
+          servicoNome: input.servicoNome,
+        });
+        return { id };
+      }),
+
+      sugerirProximoAtendimento: protectedProcedure.input(z.object({ conversaId: z.number() })).mutation(async ({ input, ctx }) => {
+        const conversa = await db.getInboxConversaById(input.conversaId);
+        if (!conversa?.unidadeId || !conversa.clienteId || conversa.isGrupo === "true") {
+          throw new Error("A IA só pode atualizar o próximo atendimento de um cliente vinculado a uma conversa individual");
+        }
+        if (!(await usuarioPodeOperarNaUnidade(ctx.user, conversa.unidadeId))) throw new Error("Sem acesso à unidade desta conversa");
+        const mensagens = await db.listInboxMensagens(input.conversaId, 10);
+        const contexto = mensagens.map((mensagem) => {
+          const conteudo = mensagem.conteudo?.trim() || mensagem.transcricao?.trim() || "(sem conteúdo textual)";
+          return `${mensagem.direcao === "recebida" ? "Cliente" : "Equipe"}: ${conteudo}`;
+        }).join("\n");
+        if (!contexto) throw new Error("Não há mensagens recentes para analisar");
+        const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        try {
+          const resposta = await invokeLLM({
+            model: "gpt-5-mini",
+            maxTokens: 600,
+            tools: [],
+            toolChoice: "none",
+            response_format: {
+              type: "json_schema",
+              json_schema: {
+                name: "sugestao_proximo_atendimento",
+                strict: true,
+                schema: {
+                  type: "object",
+                  properties: {
+                    dataAtendimento: { type: ["string", "null"] },
+                    horario: { type: ["string", "null"] },
+                    servicoNome: { type: ["string", "null"] },
+                    confianca: { type: "integer", minimum: 0, maximum: 100 },
+                    justificativa: { type: "string" },
+                  },
+                  required: ["dataAtendimento", "horario", "servicoNome", "confianca", "justificativa"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            messages: [
+              { role: "system", content: `Você extrai somente dados de um próximo atendimento para a prévia editável da recepção. Hoje, no fuso de São Paulo, é ${hojeBrt}. Não agenda, não confirma disponibilidade e não inventa dados. Preencha data apenas quando ela for explícita ou quando a conversa trouxer hoje, amanhã ou um dia da semana claramente convertível a partir de hoje. Preencha horário e serviço apenas quando explícitos. Use null em qualquer dúvida. Responda somente com JSON compatível com o schema.` },
+              { role: "user", content: `Analise exclusivamente as últimas mensagens abaixo e sugira os campos do próximo atendimento.\n\n${contexto}` },
+            ],
+          });
+          const conteudo = resposta.choices[0]?.message.content;
+          return normalizarSugestaoProximoAtendimento(typeof conteudo === "string" ? conteudo : null);
+        } catch (error) {
+          console.error("[Próximo atendimento] Falha na sugestão assistida:", error);
+          throw new Error("Não foi possível atualizar a prévia pela conversa agora. Revise ou preencha os campos manualmente.");
+        }
       }),
 
       qrCode: protectedProcedure.input(z.object({

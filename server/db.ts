@@ -774,6 +774,40 @@ export async function editarAtendimentoBelle(id: number, dados: {
 }
 
 /**
+ * Inclusão operacional feita pela recepção. Não altera a agenda do Belle: a
+ * linha fica identificada como CRM até a próxima importação trazer o registro
+ * oficial, quando a deduplicação mantém o dado do Belle como prioritário.
+ */
+export async function criarProximoAtendimentoInbox(params: {
+  unidadeId: number;
+  clienteId: number;
+  clienteNome: string;
+  telefone: string | null;
+  dataAtendimento: string;
+  horario: string | null;
+  servicoNome: string | null;
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível");
+  const resultado = await db.insert(belleAtendimentos).values({
+    unidadeId: params.unidadeId,
+    // IDs negativos nunca conflitam com IDs reais do Belle. Em milissegundos,
+    // também não colidem com os IDs negativos derivados das mensagens.
+    atendimentoBelleId: -Date.now(),
+    clienteId: params.clienteId,
+    clienteNome: params.clienteNome,
+    telefone: params.telefone,
+    dataAtendimento: params.dataAtendimento,
+    horario: params.horario,
+    servicoNome: params.servicoNome,
+    status: STATUS_AGENDADO_POR_IA,
+    temPreferencia: false,
+    importadoEm: new Date(),
+  });
+  return Number(resultado[0].insertId);
+}
+
+/**
  * Lista os atendimentos ainda previstos para o dia corrente, pela unidade.
  * É uma visão operacional local: não consulta o Belle a cada abertura e não
  * altera agenda, status ou o vínculo do cliente. A data segue BRT, como os

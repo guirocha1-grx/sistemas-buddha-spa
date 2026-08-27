@@ -20,7 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
-  Pencil, Check, CheckCheck, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft,
+  Pencil, Check, CheckCheck, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft, Plus,
   UserPlus, SmilePlus, Users, Download, ZoomIn, FileText, Bot, BellRing, CreditCard,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -366,6 +366,7 @@ export default function Mensagens() {
   });
 
   const [editandoProximoAtendimento, setEditandoProximoAtendimento] = useState(false);
+  const [modoFormProximoAtendimento, setModoFormProximoAtendimento] = useState<"editar" | "incluir">("editar");
   const [formProximoAtendimento, setFormProximoAtendimento] = useState({ data: "", horario: "", servico: "" });
   const cancelarProximoAtendimentoMutation = trpc.inbox.conversas.cancelarProximoAtendimento.useMutation({
     onSuccess: () => {
@@ -379,6 +380,28 @@ export default function Mensagens() {
       toast.success("Agendamento atualizado");
       setEditandoProximoAtendimento(false);
       utils.inbox.conversas.get.invalidate({ id: conversaSelecionadaId ?? 0 });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const criarProximoAtendimentoMutation = trpc.inbox.conversas.criarProximoAtendimento.useMutation({
+    onSuccess: () => {
+      toast.success("Próximo atendimento incluído no CRM");
+      setEditandoProximoAtendimento(false);
+      utils.inbox.conversas.get.invalidate({ id: conversaSelecionadaId ?? 0 });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const sugerirProximoAtendimentoMutation = trpc.inbox.conversas.sugerirProximoAtendimento.useMutation({
+    onSuccess: (sugestao) => {
+      const atual = conversaSelecionada?.resumoRelacionamento?.proximoAtendimento;
+      setModoFormProximoAtendimento(atual ? "editar" : "incluir");
+      setFormProximoAtendimento({
+        data: sugestao.dataAtendimento ?? atual?.dataAtendimento ?? "",
+        horario: sugestao.horario ?? atual?.horario ?? "",
+        servico: sugestao.servicoNome ?? atual?.servicoNome ?? "",
+      });
+      setEditandoProximoAtendimento(true);
+      toast.success("Prévia atualizada pela conversa. Revise antes de salvar.");
     },
     onError: (error) => toast.error(error.message),
   });
@@ -1698,9 +1721,21 @@ export default function Mensagens() {
                         <Button size="icon" variant="ghost" className="h-5 w-5 text-emerald-700 hover:text-emerald-800" title="Chamar terapeuta" onClick={() => setModalChamadoTerapeuta(true)}>
                           <BellRing className="h-3 w-3" />
                         </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-5 w-5 text-primary hover:bg-primary/10 hover:text-primary"
+                          title="Atualizar de acordo com conversa (IA)"
+                          aria-label="Atualizar de acordo com conversa (IA)"
+                          disabled={sugerirProximoAtendimentoMutation.isPending}
+                          onClick={() => conversaSelecionadaId && sugerirProximoAtendimentoMutation.mutate({ conversaId: conversaSelecionadaId })}
+                        >
+                          {sugerirProximoAtendimentoMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                        </Button>
                         <Popover open={editandoProximoAtendimento} onOpenChange={(v) => {
                           setEditandoProximoAtendimento(v);
                           if (v && conversaSelecionada.resumoRelacionamento?.proximoAtendimento) {
+                            setModoFormProximoAtendimento("editar");
                             const p = conversaSelecionada.resumoRelacionamento.proximoAtendimento;
                             setFormProximoAtendimento({ data: p.dataAtendimento, horario: p.horario ?? "", servico: p.servicoNome ?? "" });
                           }
@@ -1726,21 +1761,46 @@ export default function Mensagens() {
                               <Input className="mt-1 h-8 text-xs" value={formProximoAtendimento.servico}
                                 onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, servico: e.target.value }))} />
                             </div>
-                            <Button size="sm" className="w-full h-7 text-xs" disabled={editarProximoAtendimentoMutation.isPending}
+                            <Button size="sm" className="w-full h-7 text-xs" disabled={editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending}
                               onClick={() => {
                                 const id = conversaSelecionada.resumoRelacionamento?.proximoAtendimento?.id;
-                                if (!id) return;
-                                editarProximoAtendimentoMutation.mutate({
-                                  id,
+                                if (modoFormProximoAtendimento === "editar") {
+                                  if (!id) return;
+                                  editarProximoAtendimentoMutation.mutate({
+                                    id,
+                                    dataAtendimento: formProximoAtendimento.data,
+                                    horario: formProximoAtendimento.horario || null,
+                                    servicoNome: formProximoAtendimento.servico || null,
+                                  });
+                                  return;
+                                }
+                                if (!conversaSelecionadaId || !formProximoAtendimento.data) return;
+                                criarProximoAtendimentoMutation.mutate({
+                                  conversaId: conversaSelecionadaId,
                                   dataAtendimento: formProximoAtendimento.data,
                                   horario: formProximoAtendimento.horario || null,
                                   servicoNome: formProximoAtendimento.servico || null,
                                 });
                               }}>
-                              {editarProximoAtendimentoMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Salvar
+                              {editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}{modoFormProximoAtendimento === "editar" ? "Salvar" : "Incluir"}
                             </Button>
                           </PopoverContent>
                         </Popover>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-5 w-5 text-muted-foreground hover:text-foreground"
+                          title="Incluir próximo atendimento"
+                          aria-label="Incluir próximo atendimento"
+                          onClick={() => {
+                            const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                            setModoFormProximoAtendimento("incluir");
+                            setFormProximoAtendimento({ data: hojeBrt, horario: "", servico: "" });
+                            setEditandoProximoAtendimento(true);
+                          }}
+                        >
+                          <Plus className="h-3 w-3" />
+                        </Button>
                         <Button size="icon" variant="ghost" className="h-5 w-5" title="Cancelar agendamento"
                           disabled={cancelarProximoAtendimentoMutation.isPending}
                           onClick={() => {

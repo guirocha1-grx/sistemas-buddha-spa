@@ -486,3 +486,7 @@
 - [x] Exigir configuração explícita do endpoint HTTPS e do segredo de Webhook no ambiente Railway antes de ativar alertas automáticos
 - [x] Exibir alerta dispensável por usuário para pagamento aprovado na unidade, sem processo recorrente no servidor
 - [x] Cobrir criação, duplicidade, extração assistida, assinatura e idempotência com testes automatizados
+- [x] Adicionar botão discreto de IA no cartão Próximo atendimento, com dica “Atualizar de acordo com conversa (IA)”
+- [x] Usar somente mensagens recentes para sugerir data, horário e serviço em uma prévia de atendimento sempre editável
+- [x] Adicionar botão pequeno de inclusão de próximo atendimento ao lado da edição e preservar o envio manual pela recepção
+- [x] Validar a sugestão de próximo atendimento, a inclusão manual e a edição com testes e build antes do push

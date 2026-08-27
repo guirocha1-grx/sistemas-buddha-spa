@@ -70,6 +70,7 @@ const state = vi.hoisted(() => {
         servicoNome: "Massagem Relaxante",
         profissionalNome: "Terapeuta Teste",
       },
+      proximoAtendimento: undefined as any,
     },
   };
   const conversaAlternativa = {
@@ -130,6 +131,8 @@ const state = vi.hoisted(() => {
         alterarStatus: { useMutation: () => mutation() },
         cancelarProximoAtendimento: { useMutation: () => mutation() },
         editarProximoAtendimento: { useMutation: () => mutation() },
+        criarProximoAtendimento: { useMutation: () => mutation() },
+        sugerirProximoAtendimento: { useMutation: () => mutation() },
         definirAutomacaoAgentes: { useMutation: (options: any) => ({
           mutate: (input: any) => {
             revisaoAgente.automacaoMutation(input);
@@ -266,6 +269,7 @@ beforeEach(() => {
   state.conversa.nomeContato = "Cliente Existente";
   state.conversa.fotoUrl = null;
   state.conversa.isGrupo = "false";
+  state.conversa.resumoRelacionamento.proximoAtendimento = undefined;
   state.diagnosticos.splice(0);
   state.revisaoAgente.pendente = null;
   state.revisaoAgente.aprovarMutation.mockReset();
@@ -372,6 +376,26 @@ describe("fluxo completo Clientes → Inbox", () => {
     expect(await screen.findByText("Último atendimento")).toBeTruthy();
     expect(screen.getByText(/10\/08\/2026 · Massagem Relaxante/i)).toBeTruthy();
     expect(screen.getByText("Terapeuta: Terapeuta Teste")).toBeTruthy();
+  });
+
+  it("exibe ações compactas de IA e inclusão no próximo atendimento", async () => {
+    state.page.location = "/mensagens?conversaId=41";
+    state.conversa.resumoRelacionamento.proximoAtendimento = {
+      id: 901,
+      dataAtendimento: "2026-08-27",
+      horario: "16:30",
+      servicoNome: "Reflexologia 45",
+      profissionalNome: null,
+      status: "Confirmado",
+    };
+    render(<Mensagens />);
+
+    const botaoIa = await screen.findByRole("button", { name: "Atualizar de acordo com conversa (IA)" });
+    expect(botaoIa.getAttribute("title")).toBe("Atualizar de acordo com conversa (IA)");
+    expect(screen.getByRole("button", { name: "Incluir próximo atendimento" }).getAttribute("title")).toBe("Incluir próximo atendimento");
+
+    fireEvent.click(screen.getByRole("button", { name: "Incluir próximo atendimento" }));
+    expect(await screen.findByRole("button", { name: "Incluir" })).toBeTruthy();
   });
 
   it("abre o detalhamento do plano com terapias, sessões e utilização ao passar o mouse", async () => {
