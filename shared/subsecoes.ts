@@ -7,6 +7,10 @@
  * um nível abaixo). Chave sempre "modulo:subsecao".
  */
 export const SUBSECOES: Record<string, { chave: string; label: string }[]> = {
+  agenda: [
+    { chave: "agenda:agenda", label: "Agenda" },
+    { chave: "agenda:proximos-atendimentos", label: "Próximos atendimentos" },
+  ],
   tabela_precos: [
     { chave: "tabela_precos:campanha_mes", label: "Gerenciar Campanha do Mês" },
   ],

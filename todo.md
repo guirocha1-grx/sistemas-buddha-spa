@@ -452,3 +452,9 @@
 - [x] Criar a seção Próximos atendimentos do dia, ordenada por horário e com acionamento direto de chamado
 - [x] Evitar duplicidade na lista de Próximos atendimentos quando o registro oficial substituir um agendamento local da IA
 - [ ] No chamado, incluir opção marcada por padrão para preencher uma linha vazia existente da Comanda diária com cliente, terapia e terapeuta, sem criar linha nova
+- [x] Permitir editar rapidamente o terapeuta de um Próximo atendimento por seleção de profissionais ativos da unidade
+- [x] Permitir editar a sala ao lado do terapeuta no Próximo atendimento e pré-preencher o chamado com a seleção
+- [x] Adicionar em Usuários a permissão específica Próximos atendimentos para liberar a tela à recepção
+- [x] Permitir retirar um atendimento somente da lista operacional de Próximos atendimentos, sem cancelar nem alterar a agenda no Belle
+- [x] Alertar em qualquer tela a equipe logada, uma hora antes, sobre cada Banho de Imersão que precisa ser preparado
+- [ ] Futuro: exibir contador do tempo restante para o próximo atendimento

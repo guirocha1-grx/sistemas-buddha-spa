@@ -33,6 +33,7 @@ import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { AtendenteGate, useAtendenteAtual } from "./AtendenteGate";
 import GlobalSyncCenter from "./GlobalSyncCenter";
+import BanhoImersaoAlert from "./BanhoImersaoAlert";
 import type { ModuloChave } from "@shared/modulos";
 
 // `modulo` liga cada item ao controle de acesso (shared/modulos.ts) —
@@ -47,8 +48,13 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
   { icon: LayoutDashboard, label: "Dashboard", path: "/", modulo: "dashboard" },
   { icon: Users, label: "Clientes", path: "/clientes", modulo: "clientes" },
   { icon: KanbanSquare, label: "Reativação", path: "/reativacao", modulo: "reativacao" },
-  { icon: Calendar, label: "Agenda", path: "/agenda", modulo: "agenda" },
-  { icon: CalendarClock, label: "Próximos atendimentos", path: "/proximos-atendimentos", modulo: "agenda" },
+  {
+    icon: Calendar, label: "Agenda", path: "/agenda", modulo: "agenda",
+    children: [
+      { label: "Agenda", path: "/agenda", subsecao: "agenda:agenda" },
+      { label: "Próximos atendimentos", path: "/proximos-atendimentos", subsecao: "agenda:proximos-atendimentos" },
+    ],
+  },
   { icon: MessageCircle, label: "WhatsApp", path: "/mensagens", modulo: "mensagens" },
   { icon: BookOpenCheck, label: "Tabela de Preços", path: "/tabela-precos", modulo: "tabela_precos" },
   { icon: ScrollText, label: "Scripts", path: "/scripts", modulo: "scripts" },
@@ -461,6 +467,7 @@ function DashboardLayoutContent({
         </main>
       </SidebarInset>
       <GlobalSyncCenter />
+      <BanhoImersaoAlert />
     </>
   );
 }

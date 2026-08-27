@@ -74,6 +74,8 @@ const ROUTER_MODULO: Record<string, string> = {
  * por sub-seção (mesmo se o módulo dele tiver sub-seções).
  */
 const ROUTER_SUBSECAO: Record<string, string> = {
+  agenda: "agenda:agenda",
+  proximosAtendimentos: "agenda:proximos-atendimentos",
   financeiro: "financeiro:visao-geral",
   contas: "financeiro:contas",
   inter: "financeiro:contas",
@@ -95,7 +97,12 @@ const ROUTER_SUBSECAO: Record<string, string> = {
  * precisa usar — é por isso que esse procedure já é protectedProcedure
  * e não adminProcedure (ver server/routers.ts).
  */
-const PROCEDURES_EXENTAS_DO_MODULO = new Set(["fluxos.iniciarVisivel"]);
+const PROCEDURES_EXENTAS_DO_MODULO = new Set([
+  "fluxos.iniciarVisivel",
+  // Alerta operacional é exibido no layout inteiro para qualquer pessoa
+  // logada; não concede acesso à Agenda nem às suas demais ações.
+  "proximosAtendimentos.banhosImersaoHoje",
+]);
 
 /**
  * Barra o acesso quando a conta tem permissoesCustomizadas=true (ver

@@ -11,7 +11,7 @@ import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
 import { storageGetSignedUrl, storageExists } from "./storage";
-import { chamadosParametros, clientesPreferenciasTerapeuta, type InsertChamadoParametro } from "../drizzle/schema";
+import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, type InsertChamadoParametro } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -792,11 +792,18 @@ export async function listarProximosAtendimentosHoje(unidadeId: number) {
     servicoNome: belleAtendimentos.servicoNome,
     profissionalNome: belleAtendimentos.profissionalNome,
     status: belleAtendimentos.status,
+    terapeutaOrganizado: atendimentosOperacional.terapeutaNome,
+    salaOrganizada: atendimentosOperacional.sala,
   }).from(belleAtendimentos)
+    .leftJoin(atendimentosOperacional, and(
+      eq(atendimentosOperacional.unidadeId, belleAtendimentos.unidadeId),
+      eq(atendimentosOperacional.atendimentoBelleId, belleAtendimentos.id),
+    ))
     .where(and(
       eq(belleAtendimentos.unidadeId, unidadeId),
       eq(belleAtendimentos.dataAtendimento, hojeBrt),
       inArray(belleAtendimentos.status, STATUS_ATENDIMENTO_AGENDADO),
+      isNull(atendimentosOperacional.removidoEm),
     ))
     .orderBy(asc(belleAtendimentos.horario), asc(belleAtendimentos.clienteNome));
 
@@ -805,6 +812,66 @@ export async function listarProximosAtendimentosHoje(unidadeId: number) {
   // ele deve prevalecer na visão operacional, inclusive se o vínculo de
   // cliente ainda estiver pendente. O cadastro original continua intacto.
   return deduplicarProximosAtendimentos(registros, STATUS_AGENDADO_POR_IA);
+}
+
+export async function salvarOrganizacaoProximoAtendimento(params: {
+  unidadeId: number; atendimentoBelleId: number; terapeutaNome?: string | null; sala?: string | null;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const existente = await db.select({ id: atendimentosOperacional.id }).from(atendimentosOperacional)
+    .where(and(eq(atendimentosOperacional.unidadeId, params.unidadeId), eq(atendimentosOperacional.atendimentoBelleId, params.atendimentoBelleId)))
+    .limit(1);
+  const dados = {
+    ...(params.terapeutaNome !== undefined ? { terapeutaNome: params.terapeutaNome || null } : {}),
+    ...(params.sala !== undefined ? { sala: params.sala || null } : {}),
+  };
+  if (existente[0]) {
+    await db.update(atendimentosOperacional).set(dados).where(eq(atendimentosOperacional.id, existente[0].id));
+  } else {
+    await db.insert(atendimentosOperacional).values({ unidadeId: params.unidadeId, atendimentoBelleId: params.atendimentoBelleId, terapeutaNome: null, sala: null, ...dados });
+  }
+}
+
+export async function retirarProximoAtendimentoDaLista(unidadeId: number, atendimentoBelleId: number, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const existente = await db.select({ id: atendimentosOperacional.id }).from(atendimentosOperacional)
+    .where(and(eq(atendimentosOperacional.unidadeId, unidadeId), eq(atendimentosOperacional.atendimentoBelleId, atendimentoBelleId)))
+    .limit(1);
+  const retirada = { removidoEm: new Date(), removidoPorUserId: userId };
+  if (existente[0]) {
+    await db.update(atendimentosOperacional).set(retirada).where(eq(atendimentosOperacional.id, existente[0].id));
+  } else {
+    await db.insert(atendimentosOperacional).values({ unidadeId, atendimentoBelleId, terapeutaNome: null, sala: null, ...retirada });
+  }
+}
+
+export async function listarBanhosImersaoHoje(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return db.select({
+    id: belleAtendimentos.id,
+    clienteNome: belleAtendimentos.clienteNome,
+    dataAtendimento: belleAtendimentos.dataAtendimento,
+    horario: belleAtendimentos.horario,
+    servicoNome: belleAtendimentos.servicoNome,
+    terapeutaNome: atendimentosOperacional.terapeutaNome,
+    sala: atendimentosOperacional.sala,
+  }).from(belleAtendimentos)
+    .leftJoin(atendimentosOperacional, and(
+      eq(atendimentosOperacional.unidadeId, belleAtendimentos.unidadeId),
+      eq(atendimentosOperacional.atendimentoBelleId, belleAtendimentos.id),
+    ))
+    .where(and(
+      eq(belleAtendimentos.unidadeId, unidadeId),
+      eq(belleAtendimentos.dataAtendimento, hojeBrt),
+      inArray(belleAtendimentos.status, STATUS_ATENDIMENTO_AGENDADO),
+      like(belleAtendimentos.servicoNome, "%Banho de Imers%"),
+      isNull(atendimentosOperacional.removidoEm),
+    ))
+    .orderBy(asc(belleAtendimentos.horario));
 }
 
 async function obterResumoRelacionamentoInbox(unidadeId: number, clienteId: number) {

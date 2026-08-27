@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MODULOS, MODULOS_CHAVES } from "../shared/modulos";
-import { confirmacaoPagamentoProcedure, router, syncProcedure } from "./_core/trpc";
+import { SUBSECOES } from "../shared/subsecoes";
+import { confirmacaoPagamentoProcedure, protectedProcedure, router, syncProcedure } from "./_core/trpc";
 import type { TrpcContext } from "./_core/context";
 
 const permissionProbe = router({
@@ -10,6 +11,12 @@ const permissionProbe = router({
 const confirmacaoProbe = router({
   confirmacaoPagamentos: router({
     consultar: confirmacaoPagamentoProcedure.query(() => ({ allowed: true })),
+  }),
+});
+
+const proximosAtendimentosProbe = router({
+  proximosAtendimentos: router({
+    listar: protectedProcedure.query(() => ({ allowed: true })),
   }),
 });
 
@@ -54,5 +61,14 @@ describe("permissão de sincronização global", () => {
 
     const semSubsecao = confirmacaoProbe.createCaller(contextWith(["financeiro"], ["financeiro:contas"]));
     await expect(semSubsecao.confirmacaoPagamentos.consultar()).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("permite liberar Próximos atendimentos sem liberar a Agenda inteira", async () => {
+    expect(SUBSECOES.agenda).toContainEqual({ chave: "agenda:proximos-atendimentos", label: "Próximos atendimentos" });
+    const liberada = proximosAtendimentosProbe.createCaller(contextWith(["agenda"], ["agenda:proximos-atendimentos"]));
+    await expect(liberada.proximosAtendimentos.listar()).resolves.toEqual({ allowed: true });
+
+    const semPermissao = proximosAtendimentosProbe.createCaller(contextWith(["agenda"], ["agenda:agenda"]));
+    await expect(semPermissao.proximosAtendimentos.listar()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

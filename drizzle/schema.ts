@@ -442,6 +442,26 @@ export type ChamadoParametro = typeof chamadosParametros.$inferSelect;
 export type InsertChamadoParametro = typeof chamadosParametros.$inferInsert;
 
 /**
+ * Ajustes operacionais da recepção para a visão de próximos atendimentos.
+ * Não substitui a agenda oficial do Belle: apenas define a organização local
+ * de terapeuta/sala e permite ocultar uma linha depois do chamado.
+ */
+export const atendimentosOperacional = mysqlTable("atendimentos_operacional", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  atendimentoBelleId: int("atendimentoBelleId").notNull(),
+  terapeutaNome: varchar("terapeutaNome", { length: 100 }),
+  sala: varchar("sala", { length: 200 }),
+  removidoEm: timestamp("removidoEm"),
+  removidoPorUserId: int("removidoPorUserId"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeAtendimentoUnico: uniqueIndex("atendimentos_operacional_unidade_atendimento_idx").on(table.unidadeId, table.atendimentoBelleId),
+  unidadeRemovidoIdx: index("atendimentos_operacional_unidade_removido_idx").on(table.unidadeId, table.removidoEm),
+}));
+export type AtendimentoOperacional = typeof atendimentosOperacional.$inferSelect;
+
+/**
  * Espelho local de atendimentos exportados do Belle. Diferente de
  * `atendimentos`, que registra a atuação comercial interna, esta tabela
  * preserva a agenda/histórico operacional da unidade para consulta do perfil

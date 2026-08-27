@@ -9,7 +9,7 @@ import { BellRing, Clock3, Loader2, Send, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-type Atendimento = { horario?: string | null; servicoNome?: string | null; profissionalNome?: string | null };
+type Atendimento = { horario?: string | null; servicoNome?: string | null; profissionalNome?: string | null; terapeutaOrganizado?: string | null; salaOrganizada?: string | null };
 type Conversa = { clienteId?: number | null; nomeContato?: string | null };
 type FormChamado = {
   modalidade: "chamado" | "pre_chamado"; clienteNome: string; horarioPrevisto: string; aguardandoEm: string;
@@ -23,8 +23,8 @@ function primeiroNome(nome: string | null | undefined) {
 function criarFormulario(atendimento: Atendimento | null | undefined, conversa: Conversa | null | undefined, preferencia?: string | null, aguardando?: string, taa?: string): FormChamado {
   return {
     modalidade: "chamado", clienteNome: conversa?.nomeContato ?? "", horarioPrevisto: atendimento?.horario ?? "",
-    aguardandoEm: aguardando ?? "", terapeutaNome: primeiroNome(atendimento?.profissionalNome) || preferencia || "",
-    terapiaBemEstar: atendimento?.servicoNome ?? "", terapiaEstetica: "", sala: "", taa: taa ?? "TAA não se aplica", preferencial: !!preferencia,
+    aguardandoEm: aguardando ?? "", terapeutaNome: atendimento?.terapeutaOrganizado || primeiroNome(atendimento?.profissionalNome) || preferencia || "",
+    terapiaBemEstar: atendimento?.servicoNome ?? "", terapiaEstetica: "", sala: atendimento?.salaOrganizada ?? "", taa: taa ?? "TAA não se aplica", preferencial: !!preferencia,
   };
 }
 
@@ -64,7 +64,7 @@ export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendime
   // A abertura é o momento certo para carregar o atendimento atual; a mudança
   // posterior de opções não deve apagar o que a recepção já estiver editando.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, opcoesQuery.isLoading, opcoesQuery.data, atendimento?.horario, atendimento?.servicoNome, atendimento?.profissionalNome, conversa?.nomeContato, opcoesQuery.data?.preferencia?.terapeutaNome]);
+  }, [open, opcoesQuery.isLoading, opcoesQuery.data, atendimento?.horario, atendimento?.servicoNome, atendimento?.profissionalNome, atendimento?.terapeutaOrganizado, atendimento?.salaOrganizada, conversa?.nomeContato, opcoesQuery.data?.preferencia?.terapeutaNome]);
 
   const enviarMutation = trpc.chamados.enviarTeste.useMutation({
     onSuccess: () => { toast.success("Chamado enviado no grupo de teste da recepção."); onOpenChange(false); },

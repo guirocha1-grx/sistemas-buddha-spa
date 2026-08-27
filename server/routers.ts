@@ -568,8 +568,30 @@ export const appRouter = router({
         data_fim: input.data_fim,
       });
     }),
-    proximosHoje: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+  }),
+  proximosAtendimentos: router({
+    listarHoje: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
       return db.listarProximosAtendimentosHoje(input.unidadeId);
+    }),
+    opcoes: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      const [parametros, terapeutas] = await Promise.all([
+        db.listChamadosParametros(input.unidadeId),
+        db.listTerapeutasAtivos(input.unidadeId),
+      ]);
+      return { parametros, terapeutas };
+    }),
+    organizar: protectedProcedure.input(z.object({
+      unidadeId: z.number(), atendimentoBelleId: z.number(), terapeutaNome: z.string().trim().nullable().optional(), sala: z.string().trim().nullable().optional(),
+    })).mutation(async ({ input }) => {
+      await db.salvarOrganizacaoProximoAtendimento(input);
+      return { success: true };
+    }),
+    retirar: protectedProcedure.input(z.object({ unidadeId: z.number(), atendimentoBelleId: z.number() })).mutation(async ({ input, ctx }) => {
+      await db.retirarProximoAtendimentoDaLista(input.unidadeId, input.atendimentoBelleId, ctx.user.id);
+      return { success: true };
+    }),
+    banhosImersaoHoje: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      return db.listarBanhosImersaoHoje(input.unidadeId);
     }),
   }),
 
