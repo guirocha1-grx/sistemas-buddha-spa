@@ -74,6 +74,18 @@ describe("GlobalSyncCenter", () => {
     expect(mocks.mutateAsync).toHaveBeenCalled();
   });
 
+  it("mantém a ação de início acessível no rodapé do modal em telas estreitas", async () => {
+    render(<GlobalSyncCenter />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sincronizar tudo" }));
+    const dialog = await screen.findByRole("dialog");
+    const startButton = screen.getByRole("button", { name: "Iniciar sincronização" });
+
+    expect(dialog).toHaveClass("flex", "h-[92dvh]", "flex-col");
+    expect(startButton).toHaveClass("w-full", "sm:w-auto");
+    expect(startButton).not.toBeDisabled();
+  });
+
   it("minimiza e permite restaurar o acompanhamento enquanto uma etapa está em curso", async () => {
     mocks.mutateAsync.mockReset();
     mocks.mutateAsync.mockImplementation(() => new Promise(() => undefined));

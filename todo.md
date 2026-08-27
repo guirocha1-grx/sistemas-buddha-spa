@@ -436,3 +436,5 @@
 - [x] Criar a tabela terapeutas com cadastro por unidade, índice de unidade e CPF único no TiDB
 - [x] Verificar se a importação Mercado Pago distingue pagamentos por Link de Pagamento e maquininha Point
 - [ ] Ampliar a sincronização Mercado Pago para capturar e persistir a origem como Link, Point, online ou indefinido sem reclassificar históricos por suposição
+- [x] Diagnosticar e corrigir o bloqueio do botão de iniciar sincronização geral na versão online
+- [x] Analisar os sinais de origem registrados na sincronização Mercado Pago do Ribeirão Shopping — amostra confirmou Link de Pagamento e compra de equipamento Point, sem inferência retrospectiva
