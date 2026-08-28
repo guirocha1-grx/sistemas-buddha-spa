@@ -195,6 +195,29 @@ export const cobrancasLink = mysqlTable("cobrancas_link", {
 export type CobrancaLink = typeof cobrancasLink.$inferSelect;
 export type InsertCobrancaLink = typeof cobrancasLink.$inferInsert;
 
+/**
+ * Último resultado exibido na Confirmação de Pagamento, por unidade e fonte.
+ * Não substitui extratos ou cobranças: evita a tela vazia entre uma consulta
+ * pontual e outra, mantendo apenas o snapshot operacional mais recente.
+ */
+export const confirmacaoPagamentosConsultas = mysqlTable("confirmacao_pagamentos_consultas", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  fonte: mysqlEnum("fonte", ["pix_inter", "links_mercado_pago"]).notNull(),
+  consultaEm: timestamp("consultaEm").notNull(),
+  dataInicio: varchar("dataInicio", { length: 10 }).notNull(),
+  dataFim: varchar("dataFim", { length: 10 }).notNull(),
+  totalConsultado: int("totalConsultado").notNull(),
+  novasVendas: int("novasVendas"),
+  pagamentos: json("pagamentos").$type<unknown>().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeFonteUnica: uniqueIndex("confirmacao_pagamentos_consultas_unidade_fonte_idx").on(table.unidadeId, table.fonte),
+}));
+
+export type ConfirmacaoPagamentoConsulta = typeof confirmacaoPagamentosConsultas.$inferSelect;
+
 /** Modelos por unidade para preencher rapidamente a cobrança, nunca Links reutilizados. */
 export const cobrancasLinkModelos = mysqlTable("cobrancas_link_modelos", {
   id: int("id").autoincrement().primaryKey(),

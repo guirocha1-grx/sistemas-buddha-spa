@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dataSaoPaulo, ePixRecebidoInter, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
+import { combinarLinksConfirmacao, dataSaoPaulo, ePixRecebidoInter, listarLinksConfirmadosLocalmente, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
 
 describe("confirmação de pagamento", () => {
   it("seleciona somente Pix recebidos do Inter e mantém nome, valor e identificador da transação", () => {
@@ -42,5 +42,24 @@ describe("confirmação de pagamento", () => {
       tipoTransacao: "PIX", tipoOperacao: "C", valor: "100.00", titulo: "Pix recebido", descricao: "Cliente",
     };
     expect(listarPixInterRecentes([transacao], inicio)).toHaveLength(0);
+  });
+
+  it("inclui imediatamente a cobrança aprovada pelo Webhook e evita duplicá-la quando a API retornar o mesmo pagamento", () => {
+    const local = listarLinksConfirmadosLocalmente([{
+      id: 2,
+      clienteNome: "Robinson Gomes",
+      titulo: "Relaxante MenCare",
+      valor: "259.00",
+      formaPagamentoInformada: null,
+      paymentId: "176022256588",
+      paymentApprovedAt: new Date("2026-08-28T13:39:16.000Z"),
+      pagadorNome: "Robinson Gomes",
+    }]);
+    const combinados = combinarLinksConfirmacao([{
+      ...local[0],
+      formaPagamento: "pix",
+    }], local);
+    expect(combinados).toHaveLength(1);
+    expect(combinados[0]).toMatchObject({ idPagamento: "176022256588", formaPagamento: "pix", valorBruto: "259.00" });
   });
 });

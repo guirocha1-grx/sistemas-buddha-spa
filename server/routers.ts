@@ -25,7 +25,7 @@ import { parsePlanosBelleXls, parseVinculosPlanosBelleXlsx } from "./planosBelle
 import { parseComandaVirtualXlsx } from "./comandaVirtualXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarTodosPagamentos, consultarPagamentoPorId, criarPreferenciaPagamento, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, classificarOrigemPagamentoMp } from "./mercadoPagoApi";
-import { dataSaoPaulo, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
+import { combinarLinksConfirmacao, dataSaoPaulo, listarLinksConfirmadosLocalmente, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
 import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual, chaveComandaVirtualPorUnidade } from "./googleSheets";
 import { transcribeAudio } from "./_core/voiceTranscription";
@@ -3732,6 +3732,31 @@ Diretrizes:
 
   // ===== Confirmação de Pagamento (recepção — últimos 48h) =====
   confirmacaoPagamentos: router({
+    ultimaConsulta: confirmacaoPagamentoProcedure.input(z.object({
+      unidadeId: z.number(),
+    })).query(async ({ input }) => {
+      const consultas = await db.getConsultasConfirmacaoPagamento(input.unidadeId);
+      const pix = consultas.find((consulta) => consulta.fonte === "pix_inter") ?? null;
+      const links = consultas.find((consulta) => consulta.fonte === "links_mercado_pago") ?? null;
+      const inicioJanela = new Date(Date.now() - 48 * 60 * 60 * 1000);
+      const cobrancasAprovadas = await db.listCobrancasLinkAprovadasParaConfirmacao(input.unidadeId, inicioJanela);
+      const linksWebhook = listarLinksConfirmadosLocalmente(cobrancasAprovadas);
+      const linksPersistidos = Array.isArray(links?.pagamentos) ? links.pagamentos as Parameters<typeof combinarLinksConfirmacao>[0] : [];
+      return {
+        pix: pix ? { ...pix, pagamentos: Array.isArray(pix.pagamentos) ? pix.pagamentos : [] } : null,
+        links: links ? {
+          ...links,
+          pagamentos: combinarLinksConfirmacao(linksPersistidos, linksWebhook),
+        } : linksWebhook.length ? {
+          dataInicio: dataSaoPaulo(inicioJanela),
+          dataFim: dataSaoPaulo(new Date()),
+          consultaEm: new Date(),
+          totalConsultado: 0,
+          novasVendas: 0,
+          pagamentos: linksWebhook,
+        } : null,
+      };
+    }),
     sincronizarPixInter: confirmacaoPagamentoProcedure.input(z.object({
       unidadeId: z.number(),
     })).mutation(async ({ input }) => {
@@ -3768,13 +3793,23 @@ Diretrizes:
         transacoes.push(...pagina.transacoes);
       }
 
-      return {
+      const resultado = {
         dataInicio,
         dataFim,
         consultaEm: consultaEm.toISOString(),
         totalConsultado: transacoes.length,
         pagamentos: listarPixInterRecentes(transacoes, inicioJanela),
       };
+      await db.salvarConsultaConfirmacaoPagamento({
+        unidadeId: input.unidadeId,
+        fonte: "pix_inter",
+        consultaEm,
+        dataInicio,
+        dataFim,
+        totalConsultado: resultado.totalConsultado,
+        pagamentos: resultado.pagamentos,
+      });
+      return resultado;
     }),
 
     sincronizarLinksMercadoPago: confirmacaoPagamentoProcedure.input(z.object({
@@ -3811,14 +3846,30 @@ Diretrizes:
       });
       const novasVendas = await db.upsertAdquirenteVendas(input.unidadeId, vendas);
 
-      return {
+      const cobrancasAprovadas = await db.listCobrancasLinkAprovadasParaConfirmacao(input.unidadeId, inicioJanela);
+      const pagamentos = combinarLinksConfirmacao(
+        listarLinksMercadoPagoRecentes(coleta.pagamentos, inicioJanela),
+        listarLinksConfirmadosLocalmente(cobrancasAprovadas),
+      );
+      const resultado = {
         dataInicio,
         dataFim,
         consultaEm: consultaEm.toISOString(),
         totalConsultado: coleta.pagamentos.length,
         novasVendas,
-        pagamentos: listarLinksMercadoPagoRecentes(coleta.pagamentos, inicioJanela),
+        pagamentos,
       };
+      await db.salvarConsultaConfirmacaoPagamento({
+        unidadeId: input.unidadeId,
+        fonte: "links_mercado_pago",
+        consultaEm,
+        dataInicio,
+        dataFim,
+        totalConsultado: resultado.totalConsultado,
+        novasVendas,
+        pagamentos: resultado.pagamentos,
+      });
+      return resultado;
     }),
   }),
 

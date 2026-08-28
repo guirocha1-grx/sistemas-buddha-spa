@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import { CheckCircle2, CreditCard, Landmark, Loader2, RefreshCw, Search, ShieldCheck } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 type PixResultado = {
@@ -46,21 +46,37 @@ function mascaraDocumento(valor: string | null) {
 export default function ConfirmacaoPagamentos() {
   const { unidadeSelecionada } = useUnidade();
   const unidadeId = unidadeSelecionada?.id;
-  const [pixResultado, setPixResultado] = useState<PixResultado | null>(null);
-  const [linksResultado, setLinksResultado] = useState<LinkResultado | null>(null);
   const [buscaPix, setBuscaPix] = useState("");
   const [buscaLinks, setBuscaLinks] = useState("");
+  const [resultadoLocal, setResultadoLocal] = useState<{ unidadeId: number; pix: PixResultado | null; links: LinkResultado | null } | null>(null);
+  const ultimaConsulta = trpc.confirmacaoPagamentos.ultimaConsulta.useQuery(
+    { unidadeId: unidadeId ?? 0 },
+    { enabled: !!unidadeId, refetchInterval: 15000 },
+  );
+
+  useEffect(() => {
+    if (!unidadeId) return;
+    setResultadoLocal(null);
+  }, [unidadeId]);
+
+  const pixPersistido = ultimaConsulta.data?.pix as PixResultado | null | undefined;
+  const linksPersistidos = ultimaConsulta.data?.links as LinkResultado | null | undefined;
+  const resultadoDaUnidade = resultadoLocal && resultadoLocal.unidadeId === unidadeId ? resultadoLocal : null;
+  const pixResultado = resultadoDaUnidade?.pix ?? pixPersistido ?? null;
+  const linksResultado = resultadoDaUnidade?.links ?? linksPersistidos ?? null;
 
   const sincronizarPix = trpc.confirmacaoPagamentos.sincronizarPixInter.useMutation({
     onSuccess: (resultado) => {
-      setPixResultado(resultado);
+      if (unidadeId) setResultadoLocal((anterior) => ({ unidadeId, pix: resultado, links: anterior?.unidadeId === unidadeId ? anterior.links : linksPersistidos ?? null }));
+      ultimaConsulta.refetch();
       toast.success(`${resultado.pagamentos.length} Pix recebido(s) encontrado(s) nas últimas 48 horas.`);
     },
     onError: (erro) => toast.error(`Não foi possível consultar o Banco Inter: ${erro.message}`),
   });
   const sincronizarLinks = trpc.confirmacaoPagamentos.sincronizarLinksMercadoPago.useMutation({
     onSuccess: (resultado) => {
-      setLinksResultado(resultado);
+      if (unidadeId) setResultadoLocal((anterior) => ({ unidadeId, pix: anterior?.unidadeId === unidadeId ? anterior.pix : pixPersistido ?? null, links: resultado }));
+      ultimaConsulta.refetch();
       toast.success(`${resultado.pagamentos.length} pagamento(s) por Link encontrado(s) nas últimas 48 horas.`);
     },
     onError: (erro) => toast.error(`Não foi possível consultar os Links Mercado Pago: ${erro.message}`),

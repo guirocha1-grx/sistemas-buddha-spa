@@ -12,7 +12,7 @@ import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
 import { storageGetSignedUrl, storageExists } from "./storage";
 import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, type InsertChamadoParametro } from "../drizzle/schema";
-import { cobrancasLink, cobrancasLinkModelos, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
+import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -5458,6 +5458,61 @@ export async function listCobrancasLinkAprovadasRecentes(unidadeId: number) {
   }).from(cobrancasLink)
     .where(and(eq(cobrancasLink.unidadeId, unidadeId), eq(cobrancasLink.status, "aprovada"), gte(cobrancasLink.paymentApprovedAt, desde)))
     .orderBy(desc(cobrancasLink.paymentApprovedAt));
+}
+
+/** Cobranças confirmadas pelo Webhook são fonte imediata para a recepção, antes da próxima consulta manual no Mercado Pago. */
+export async function listCobrancasLinkAprovadasParaConfirmacao(unidadeId: number, desde: Date) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: cobrancasLink.id,
+    clienteNome: cobrancasLink.clienteNome,
+    titulo: cobrancasLink.titulo,
+    valor: cobrancasLink.valor,
+    formaPagamentoInformada: cobrancasLink.formaPagamentoInformada,
+    paymentId: cobrancasLink.paymentId,
+    paymentApprovedAt: cobrancasLink.paymentApprovedAt,
+    pagadorNome: cobrancasLink.pagadorNome,
+  }).from(cobrancasLink)
+    .where(and(
+      eq(cobrancasLink.unidadeId, unidadeId),
+      eq(cobrancasLink.status, "aprovada"),
+      gte(cobrancasLink.paymentApprovedAt, desde),
+    ))
+    .orderBy(desc(cobrancasLink.paymentApprovedAt));
+}
+
+export type FonteConsultaConfirmacaoPagamento = "pix_inter" | "links_mercado_pago";
+
+export async function salvarConsultaConfirmacaoPagamento(dados: {
+  unidadeId: number;
+  fonte: FonteConsultaConfirmacaoPagamento;
+  consultaEm: Date;
+  dataInicio: string;
+  dataFim: string;
+  totalConsultado: number;
+  novasVendas?: number | null;
+  pagamentos: unknown;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(confirmacaoPagamentosConsultas).values(dados).onDuplicateKeyUpdate({
+    set: {
+      consultaEm: dados.consultaEm,
+      dataInicio: dados.dataInicio,
+      dataFim: dados.dataFim,
+      totalConsultado: dados.totalConsultado,
+      novasVendas: dados.novasVendas ?? null,
+      pagamentos: dados.pagamentos,
+    },
+  });
+}
+
+export async function getConsultasConfirmacaoPagamento(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(confirmacaoPagamentosConsultas)
+    .where(eq(confirmacaoPagamentosConsultas.unidadeId, unidadeId));
 }
 
 export async function listModelosCobrancaLink(unidadeId: number, incluirInativos = false) {

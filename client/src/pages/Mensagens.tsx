@@ -3,6 +3,7 @@ import { useUnidade } from "@/contexts/UnidadeContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useAtendenteAtual } from "@/components/AtendenteGate";
 import { trpc } from "@/lib/trpc";
+import { nomeSugeridoParaCadastro } from "@/lib/inboxNomeSugerido";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -200,6 +201,7 @@ export default function Mensagens() {
   const [unificarBusca, setUnificarBusca] = useState("");
   const [unificarDestinoId, setUnificarDestinoId] = useState<number | null>(null);
   const [nomeCriarCliente, setNomeCriarCliente] = useState("");
+  const conversaNomePreenchidoRef = useRef<number | null>(null);
   const [modalNovoCliente, setModalNovoCliente] = useState(false);
   const [novoClienteNome, setNovoClienteNome] = useState("");
   const [novoClienteTelefone, setNovoClienteTelefone] = useState("");
@@ -241,6 +243,14 @@ export default function Mensagens() {
     { id: conversaSelecionadaId ?? 0 },
     { enabled: !!conversaSelecionadaId },
   );
+
+  useEffect(() => {
+    if (!conversaSelecionadaId || !conversaSelecionada || conversaSelecionada.clienteId) return;
+    if (conversaNomePreenchidoRef.current === conversaSelecionadaId) return;
+    const nome = nomeSugeridoParaCadastro(conversaSelecionada);
+    if (nome) setNomeCriarCliente(nome);
+    conversaNomePreenchidoRef.current = conversaSelecionadaId;
+  }, [conversaSelecionada, conversaSelecionadaId]);
 
   const [cursorMensagensAntigas, setCursorMensagensAntigas] = useState<string | null>(null);
   const [cursorAntigasAplicado, setCursorAntigasAplicado] = useState<string | null>(null);

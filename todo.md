@@ -519,3 +519,8 @@
 - [x] Exibir no log administrativo a intenção identificada, confiança e rota efetiva de forma discreta
 - [x] Identificar respostas da pesquisa de satisfação Belle como não intervenção, sem sugestão ou encaminhamento da IA
 - [x] Detectar os convites Belle “Como foi sua Experiência Buddha Spa?” e “Como foi o atendimento do nosso profissional?” antes de classificar a resposta do cliente
+- [x] Investigar por que um Link aprovado pelo Webhook não aparece em Confirmação de Pagamento
+- [x] Persistir a última consulta de Pix Inter e Links Mercado Pago por unidade para carregamento automático da tela
+- [x] Manter a sincronização como atualização explícita sem deixar a página em branco na abertura
+- [x] Validar exibição, isolamento por unidade e consultas financeiras antes de enviar a correção ao GitHub
+- [x] Pré-preencher o nome no formulário Criar cliente no CRM com o nome atual do contato de WhatsApp, mantendo edição manual

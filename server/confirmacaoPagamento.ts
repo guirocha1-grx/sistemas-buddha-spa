@@ -23,6 +23,17 @@ export type ConfirmacaoLinkMercadoPago = {
   descricao: string | null;
 };
 
+export type CobrancaLinkConfirmadaLocal = {
+  id: number;
+  clienteNome: string;
+  titulo: string;
+  valor: string | number;
+  formaPagamentoInformada: string | null;
+  paymentId: string | null;
+  paymentApprovedAt: Date | null;
+  pagadorNome: string | null;
+};
+
 /** Data AAAA-MM-DD no fuso operacional das unidades. */
 export function dataSaoPaulo(data: Date): string {
   const partes = new Intl.DateTimeFormat("pt-BR", {
@@ -88,4 +99,36 @@ export function listarLinksMercadoPagoRecentes(pagamentos: MpPagamento[], inicio
       descricao: pagamento.description ?? null,
     }))
     .sort((a, b) => b.dataHora.localeCompare(a.dataHora));
+}
+
+/** O Webhook confirmado aparece imediatamente, mesmo antes de uma nova busca na API Mercado Pago. */
+export function listarLinksConfirmadosLocalmente(cobrancas: CobrancaLinkConfirmadaLocal[]): ConfirmacaoLinkMercadoPago[] {
+  return cobrancas
+    .filter((cobranca) => cobranca.paymentId && cobranca.paymentApprovedAt)
+    .map((cobranca) => ({
+      idPagamento: cobrançaIdSeguro(cobranca),
+      dataHora: cobranca.paymentApprovedAt!.toISOString(),
+      valorBruto: Number(cobranca.valor).toFixed(2),
+      valorLiquido: null,
+      parcelas: null,
+      formaPagamento: cobranca.formaPagamentoInformada ?? "link_pagamento",
+      pagador: cobranca.pagadorNome ?? cobranca.clienteNome,
+      identificacaoPagador: null,
+      descricao: cobranca.titulo,
+    }));
+}
+
+function cobrançaIdSeguro(cobranca: CobrancaLinkConfirmadaLocal): string {
+  return cobranca.paymentId ?? `cobranca-${cobranca.id}`;
+}
+
+/** A API completa o dado financeiro; o Webhook local garante a presença imediata e remove duplicatas por pagamento. */
+export function combinarLinksConfirmacao(
+  api: ConfirmacaoLinkMercadoPago[],
+  locais: ConfirmacaoLinkMercadoPago[],
+): ConfirmacaoLinkMercadoPago[] {
+  const porPagamento = new Map<string, ConfirmacaoLinkMercadoPago>();
+  for (const pagamento of locais) porPagamento.set(pagamento.idPagamento, pagamento);
+  for (const pagamento of api) porPagamento.set(pagamento.idPagamento, pagamento);
+  return Array.from(porPagamento.values()).sort((a, b) => b.dataHora.localeCompare(a.dataHora));
 }
