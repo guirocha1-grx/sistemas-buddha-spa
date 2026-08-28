@@ -527,3 +527,4 @@
 - [x] Consolidar em Markdown o estado técnico, operacional e de prompts dos agentes de atendimento
 - [x] Registrar métricas conhecidas, regras de não intervenção, riscos e pendências para continuidade em tópico específico
 - [x] Revisar e enviar ao GitHub o documento de estado dos agentes
+- [x] Atualizar descrição e instruções permanentes do projeto com a produção Railway, GitHub canônico e integrações atuais
