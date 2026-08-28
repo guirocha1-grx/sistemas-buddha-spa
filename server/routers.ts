@@ -5,6 +5,7 @@ import { publicProcedure, router, protectedProcedure, adminProcedure, syncProced
 import { z } from "zod";
 import { parse as parseCookieHeader } from "cookie";
 import * as db from "./db";
+import { DATA_ISO_REGEX } from "./terapeutasRelatorios";
 import { hashPin, verifyPin } from "./atendenteAuth";
 import { belleApi } from "./belleApi";
 import { zapiApi } from "./zapiApi";
@@ -4224,8 +4225,8 @@ Diretrizes:
   terapeutasFidelizacao: router({
     listar: protectedProcedure.input(z.object({
       unidadeId: z.number().int().positive(),
-      dataInicio: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/, "Data inicial inválida"),
-      dataFim: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/, "Data final inválida"),
+      dataInicio: z.string().regex(DATA_ISO_REGEX, "Data inicial inválida"),
+      dataFim: z.string().regex(DATA_ISO_REGEX, "Data final inválida"),
     }).refine((input) => input.dataInicio <= input.dataFim, {
       message: "A data inicial não pode ser posterior à data final",
       path: ["dataFim"],

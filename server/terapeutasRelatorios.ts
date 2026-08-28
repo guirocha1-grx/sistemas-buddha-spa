@@ -1,3 +1,5 @@
+export const DATA_ISO_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
 export interface TerapeutaRelatorioBase {
   id: number;
   nomeCompleto: string;

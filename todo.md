@@ -537,6 +537,5 @@
 - [x] Criar a matriz por unidade de Liberações de terapia, relacionando terapeutas ativos e serviços Belle
 - [x] Implementar o relatório de Preferenciais por unidade, contando clientes distintos com terapeuta de preferência cadastrado
 - [x] Validar unidade, permissões, estados vazios/erro, persistência das liberações e isolamento dos dados antes do commit
-- [x] Verificar e aplicar, se ausente, a tabela aditiva terapeutas_liberacoes no TiDB compartilhado
-- [x] Validar os índices de terapeutas_liberacoes após a migração sem alterar dados existentes
-- [x] Tornar idempotente a migração versionada de terapeutas_liberacoes, pois a tabela já foi criada de forma equivalente no TiDB
+
+- [x] Corrigir regex de datas do relatório de Fidelização para aceitar entradas YYYY-MM-DD do campo date

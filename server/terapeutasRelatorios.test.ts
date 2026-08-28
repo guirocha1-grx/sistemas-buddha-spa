@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calcularFidelizacao, calcularPreferenciais } from "./terapeutasRelatorios";
+import { calcularFidelizacao, calcularPreferenciais, DATA_ISO_REGEX } from "./terapeutasRelatorios";
 
 const terapeutas = [
   { id: 1, nomeCompleto: "Ana Paula Silva", nomeAbreviado: "Ana" },
@@ -7,6 +7,12 @@ const terapeutas = [
 ];
 
 describe("relatórios de terapeutas", () => {
+  it("aceita datas ISO produzidas pelo campo date", () => {
+    expect(DATA_ISO_REGEX.test("2026-08-28")).toBe(true);
+    expect(DATA_ISO_REGEX.test("\\\\2026-08-28")).toBe(false);
+    expect(DATA_ISO_REGEX.test("28/08/2026")).toBe(false);
+  });
+
   it("calcula total, fidelizados, não fidelizados e percentuais por terapeuta", () => {
     const resultado = calcularFidelizacao(terapeutas, [
       { profissionalNome: "Ana Paula Silva", temPreferencia: true },
