@@ -201,6 +201,42 @@ describe("orquestrador de agentes", () => {
     }));
   });
 
+  it("ignora resposta de pesquisa Belle sem chamar a Áurea ou criar sugestão", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue({
+      ...contexto("10 - Excelente"),
+      mensagens: [
+        { direcao: "enviada", conteudo: "*Como foi sua Experiência Buddha Spa?*\nClique na opção abaixo para avaliar sua experiência.", transcricao: null, createdAt: new Date(Date.now() - 1_000) },
+        { direcao: "recebida", conteudo: "10 - Excelente", transcricao: null, createdAt: new Date() },
+      ],
+    });
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [biancaAssistida]);
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 442 })).resolves.toEqual({ status: "ignorada" });
+
+    expect(invokeLLM).not.toHaveBeenCalled();
+    expect(agentesDb.criarSugestao).not.toHaveBeenCalled();
+    expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({
+      status: "ignorada",
+      intencao: "pesquisa_satisfacao_belle",
+      detalheIntencao: "avaliação da experiência geral",
+    }));
+  });
+
+  it("ignora proposta B2B sem enviar ao especialista comercial", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Somos uma agência de marketing digital e podemos gerar leads para sua divulgação."));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [biancaAssistida]);
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 443 })).resolves.toEqual({ status: "ignorada" });
+
+    expect(invokeLLM).not.toHaveBeenCalled();
+    expect(agentesDb.criarSugestao).not.toHaveBeenCalled();
+    expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({
+      status: "ignorada",
+      intencao: "fora_do_escopo",
+      detalheIntencao: "oferta de serviço B2B ou marketing",
+    }));
+  });
+
   it.each(["bloqueada_temporariamente", "bloqueada_permanentemente"] as const)("não executa os agentes quando a automação está %s", async (modo) => {
     agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quero saber sobre massagens", modo));
 

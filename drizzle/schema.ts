@@ -1629,6 +1629,9 @@ export const agentesExecucoes = mysqlTable("agentes_execucoes", {
   promptReceptorId: int("promptReceptorId"),
   promptEspecialistaId: int("promptEspecialistaId"),
   classificacao: varchar("classificacao", { length: 64 }),
+  intencao: varchar("intencao", { length: 64 }),
+  detalheIntencao: varchar("detalheIntencao", { length: 320 }),
+  origemIntencao: varchar("origemIntencao", { length: 32 }),
   confianca: int("confianca"),
   rastro: json("rastro").$type<Record<string, unknown>>(),
   status: mysqlEnum("status", ["pendente", "concluida", "ignorada", "erro"]).default("pendente").notNull(),
@@ -1639,6 +1642,7 @@ export const agentesExecucoes = mysqlTable("agentes_execucoes", {
   mensagemEntradaUnica: uniqueIndex("agentes_execucoes_mensagem_entrada_idx").on(table.mensagemEntradaId),
   conversaCriadaIdx: index("agentes_execucoes_conversa_criada_idx").on(table.conversaId, table.createdAt),
   especialistaIdx: index("agentes_execucoes_especialista_idx").on(table.agenteEspecialistaId),
+  intencaoCriadaIdx: index("agentes_execucoes_intencao_criada_idx").on(table.intencao, table.createdAt),
 }));
 export type AgenteExecucao = typeof agentesExecucoes.$inferSelect;
 export type InsertAgenteExecucao = typeof agentesExecucoes.$inferInsert;

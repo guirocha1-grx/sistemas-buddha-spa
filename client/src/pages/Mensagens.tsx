@@ -148,6 +148,25 @@ function resumirRastroAgente(rastro: unknown) {
   }).filter(Boolean).join(" · ");
 }
 
+function rotuloIntencaoAgente(intencao: string | null | undefined) {
+  const rotulos: Record<string, string> = {
+    informacao_terapia: "Terapia",
+    day_spa_e_estrutura: "Day Spa e estrutura",
+    voucher: "Voucher",
+    preco_e_condicoes: "Valor e condição",
+    agendamento: "Agendamento",
+    pagamento_e_comprovante: "Pagamento",
+    cadastro_documentos: "Cadastro e documentos",
+    saudacao: "Saudação",
+    pos_atendimento: "Pós-atendimento",
+    pesquisa_satisfacao_belle: "Pesquisa Belle",
+    atendimento_humano: "Atendimento humano",
+    fora_do_escopo: "Fora do escopo",
+    sem_intencao_clara: "Sem intenção clara",
+  };
+  return intencao ? rotulos[intencao] ?? intencao : null;
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1958,7 +1977,8 @@ export default function Mensagens() {
                               <span className="font-medium truncate">{rota || "Execução sem rota definida"}</span>
                               <Badge variant="outline" className={evento.status === "erro" ? "border-red-300 text-red-700 text-[9px]" : evento.status === "ignorada" ? "border-amber-300 text-amber-700 text-[9px]" : "text-[9px]"}>{evento.status}</Badge>
                             </div>
-                            <p className="text-muted-foreground">{formatHora(evento.createdAt)}{evento.classificacao ? ` · ${evento.classificacao}` : ""}{evento.confianca !== null ? ` · ${evento.confianca}%` : ""}</p>
+                            <p className="text-muted-foreground">{formatHora(evento.createdAt)}{evento.intencao ? ` · Intenção: ${rotuloIntencaoAgente(evento.intencao)}` : evento.classificacao ? ` · ${evento.classificacao}` : ""}{evento.confianca !== null ? ` · ${evento.confianca}%` : ""}</p>
+                            {evento.detalheIntencao && <p className="text-muted-foreground">{evento.detalheIntencao}</p>}
                             {rastro && <p className="text-muted-foreground break-words">{rastro}</p>}
                             {evento.sugestao && evento.sugestao.avaliacao === "pendente" && !evento.sugestao.enviadaEm ? (
                               <div className="rounded border border-emerald-200 bg-emerald-50/60 p-1.5 space-y-1.5">

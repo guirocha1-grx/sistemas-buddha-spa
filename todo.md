@@ -511,3 +511,11 @@
 - [x] Agrupar mensagens consecutivas por conversa e encaminhar à Áurea somente após dez segundos de silêncio
 - [x] Reiniciar a janela de agrupamento a cada mensagem nova sem perder mensagens, reprocessar blocos ou enviar sugestão antecipada
 - [x] Validar o agrupamento com cenários de mensagens parceladas e a regressão da Carol antes do envio ao GitHub
+- [x] Auditar o que a Áurea já registra sobre intenção, confiança e encaminhamento no log do Inbox
+- [x] Definir a regra de não intervenção para mensagens fora do escopo comercial e operacional do Buddha Spa
+- [x] Propor como expor a intenção identificada à recepção sem confundir o histórico operacional dos agentes
+- [x] Definir e registrar um catálogo de intenções frequentes para medir a demanda e a qualidade de encaminhamento
+- [x] Registrar a explicação de casos fora do escopo sem gerar resposta ou encaminhamento comercial indevido
+- [x] Exibir no log administrativo a intenção identificada, confiança e rota efetiva de forma discreta
+- [x] Identificar respostas da pesquisa de satisfação Belle como não intervenção, sem sugestão ou encaminhamento da IA
+- [x] Detectar os convites Belle “Como foi sua Experiência Buddha Spa?” e “Como foi o atendimento do nosso profissional?” antes de classificar a resposta do cliente

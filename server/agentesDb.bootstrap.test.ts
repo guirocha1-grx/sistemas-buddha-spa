@@ -24,11 +24,13 @@ describe("PROMPTS_BOOTSTRAP", () => {
 
   it("não reintroduz confiança fixa nem destino humano inválido no prompt da Áurea", () => {
     expect(PROMPTS_BOOTSTRAP.aurea).not.toContain('"confianca":0');
-    expect(PROMPTS_BOOTSTRAP.aurea).toContain("calculado de verdade");
+    expect(PROMPTS_BOOTSTRAP.aurea).toContain("calculada de verdade");
     expect(PROMPTS_BOOTSTRAP.aurea).toContain('nunca invente o destino "humano"');
     expect(PROMPTS_BOOTSTRAP.aurea).toContain("EXEMPLOS DE INTENÇÃO");
     expect(PROMPTS_BOOTSTRAP.aurea).toContain("ORDEM COMERCIAL OBRIGATÓRIA");
     expect(PROMPTS_BOOTSTRAP.aurea).toContain("Diana permanece uma única especialista");
+    expect(PROMPTS_BOOTSTRAP.aurea).toContain("pesquisa_satisfacao_belle");
+    expect(PROMPTS_BOOTSTRAP.aurea).toContain("fora_do_escopo");
     expect(PROMPTS_BOOTSTRAP.carol).toContain("BLOQUEIO DE ETAPA");
     expect(PROMPTS_BOOTSTRAP.carol).toContain("preferência de terapeuta somente se ela ainda estiver ausente");
   });
