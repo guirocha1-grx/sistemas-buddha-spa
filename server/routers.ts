@@ -4274,6 +4274,20 @@ Diretrizes:
     }),
   }),
 
+  terapeutasFechamento: router({
+    listar: protectedProcedure.input(z.object({
+      unidadeId: z.number().int().positive(),
+      dataInicio: z.string().regex(DATA_ISO_REGEX, "Data inicial inválida"),
+      dataFim: z.string().regex(DATA_ISO_REGEX, "Data final inválida"),
+    }).refine((input) => input.dataInicio <= input.dataFim, {
+      message: "A data inicial não pode ser posterior à data final",
+      path: ["dataFim"],
+    })).query(async ({ input, ctx }) => {
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
+      return db.listarFechamentoAgendaTerapeutas(input.unidadeId, input.dataInicio, input.dataFim);
+    }),
+  }),
+
   // ===== Controle de acesso por módulo (ver shared/modulos.ts) =====
   permissoes: router({
     // Não é adminProcedure — todo mundo precisa saber os próprios

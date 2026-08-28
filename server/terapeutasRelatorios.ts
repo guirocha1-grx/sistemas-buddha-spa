@@ -1,5 +1,15 @@
 export const DATA_ISO_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
+export const DIAS_SEMANA = [
+  { numero: 1, nome: "Segunda-feira" },
+  { numero: 2, nome: "Terça-feira" },
+  { numero: 3, nome: "Quarta-feira" },
+  { numero: 4, nome: "Quinta-feira" },
+  { numero: 5, nome: "Sexta-feira" },
+  { numero: 6, nome: "Sábado" },
+  { numero: 0, nome: "Domingo" },
+] as const;
+
 export interface TerapeutaRelatorioBase {
   id: number;
   nomeCompleto: string;
@@ -151,4 +161,147 @@ export function calcularPreferenciaisPorAtendimento(
     if (b.clientesPreferenciais !== a.clientesPreferenciais) return b.clientesPreferenciais - a.clientesPreferenciais;
     return a.terapeutaNome.localeCompare(b.terapeutaNome, "pt-BR");
   });
+}
+
+export interface AtendimentoFechamentoInput {
+  profissionalNome: string | null;
+  dataAtendimento: string;
+}
+
+export interface FechamentoDiaSemana {
+  diaSemana: number;
+  nomeDia: string;
+  atendimentos: number;
+  diasAnalisados: number;
+  diasComAtendimento: number;
+  diasSemAtendimento: number;
+  fechamentosProfissionais: number;
+  percentualDiasSemAtendimento: number;
+}
+
+export interface FechamentoTerapeuta {
+  terapeutaId: number;
+  terapeutaNome: string;
+  diasAnalisados: number;
+  diasSemAtendimento: number;
+  percentualDiasSemAtendimento: number;
+  diasSemAtendimentoPorDiaSemana: Record<string, number>;
+}
+
+export interface FechamentoAgendaRelatorio {
+  dataInicio: string;
+  dataFim: string;
+  totalDiasCalendario: number;
+  totalFechamentos: number;
+  resumoSemanal: FechamentoDiaSemana[];
+  terapeutas: FechamentoTerapeuta[];
+}
+
+function diaUTC(data: string): Date | null {
+  const partes = data.split("-").map(Number);
+  if (partes.length !== 3 || partes.some((parte) => !Number.isInteger(parte))) return null;
+  const [ano, mes, dia] = partes;
+  const resultado = new Date(Date.UTC(ano, mes - 1, dia));
+  return resultado.getUTCFullYear() === ano && resultado.getUTCMonth() === mes - 1 && resultado.getUTCDate() === dia
+    ? resultado
+    : null;
+}
+
+function datasDoPeriodo(dataInicio: string, dataFim: string): string[] {
+  const inicio = diaUTC(dataInicio);
+  const fim = diaUTC(dataFim);
+  if (!inicio || !fim || inicio > fim) return [];
+
+  const datas: string[] = [];
+  for (let data = inicio; data <= fim; data = new Date(data.getTime() + 24 * 60 * 60 * 1000)) {
+    datas.push(data.toISOString().slice(0, 10));
+  }
+  return datas;
+}
+
+function diaDaSemana(data: string): number {
+  return diaUTC(data)?.getUTCDay() ?? -1;
+}
+
+export function calcularFechamentoAgenda(
+  terapeutas: TerapeutaRelatorioBase[],
+  atendimentos: AtendimentoFechamentoInput[],
+  dataInicio: string,
+  dataFim: string,
+): FechamentoAgendaRelatorio {
+  const datas = datasDoPeriodo(dataInicio, dataFim);
+  const indice = indiceTerapeutas(terapeutas);
+  const atendimentosPorTerapeuta = new Map<number, Set<string>>();
+  const atendimentosPorDia = new Map<number, number>();
+  const diasComAtendimentoPorDia = new Map<number, Set<string>>();
+
+  for (const atendimento of atendimentos) {
+    if (!datas.includes(atendimento.dataAtendimento)) continue;
+    const dia = diaDaSemana(atendimento.dataAtendimento);
+    const terapeuta = indice.get(normalizarNomeTerapeuta(atendimento.profissionalNome));
+    if (dia < 0 || !terapeuta) continue;
+
+    const diasDoTerapeuta = atendimentosPorTerapeuta.get(terapeuta.id) ?? new Set<string>();
+    diasDoTerapeuta.add(atendimento.dataAtendimento);
+    atendimentosPorTerapeuta.set(terapeuta.id, diasDoTerapeuta);
+    atendimentosPorDia.set(dia, (atendimentosPorDia.get(dia) ?? 0) + 1);
+    const diasComAtendimento = diasComAtendimentoPorDia.get(dia) ?? new Set<string>();
+    diasComAtendimento.add(atendimento.dataAtendimento);
+    diasComAtendimentoPorDia.set(dia, diasComAtendimento);
+  }
+
+  const terapeutasResultado = terapeutas.map((terapeuta) => {
+    const diasComAtendimento = atendimentosPorTerapeuta.get(terapeuta.id) ?? new Set<string>();
+    const diasSemAtendimentoPorDiaSemana: Record<string, number> = Object.fromEntries(DIAS_SEMANA.map(({ numero }) => [String(numero), 0]));
+    let diasSemAtendimento = 0;
+
+    for (const data of datas) {
+      if (diasComAtendimento.has(data)) continue;
+      const dia = diaDaSemana(data);
+      if (dia < 0) continue;
+      diasSemAtendimento += 1;
+      diasSemAtendimentoPorDiaSemana[String(dia)] = (diasSemAtendimentoPorDiaSemana[String(dia)] ?? 0) + 1;
+    }
+
+    return {
+      terapeutaId: terapeuta.id,
+      terapeutaNome: terapeuta.nomeAbreviado || terapeuta.nomeCompleto,
+      diasAnalisados: datas.length,
+      diasSemAtendimento,
+      percentualDiasSemAtendimento: datas.length ? (diasSemAtendimento / datas.length) * 100 : 0,
+      diasSemAtendimentoPorDiaSemana,
+    };
+  }).sort((a, b) => {
+    if (b.diasSemAtendimento !== a.diasSemAtendimento) return b.diasSemAtendimento - a.diasSemAtendimento;
+    return a.terapeutaNome.localeCompare(b.terapeutaNome, "pt-BR");
+  });
+
+  const resumoSemanal = DIAS_SEMANA.map(({ numero, nome }) => {
+    const diasAnalisados = datas.filter((data) => diaDaSemana(data) === numero).length;
+    const diasComAtendimento = diasComAtendimentoPorDia.get(numero)?.size ?? 0;
+    const diasSemAtendimento = Math.max(0, diasAnalisados - diasComAtendimento);
+    const fechamentosProfissionais = terapeutasResultado.reduce(
+      (total, terapeuta) => total + (terapeuta.diasSemAtendimentoPorDiaSemana[String(numero)] ?? 0),
+      0,
+    );
+    return {
+      diaSemana: numero,
+      nomeDia: nome,
+      atendimentos: atendimentosPorDia.get(numero) ?? 0,
+      diasAnalisados,
+      diasComAtendimento,
+      diasSemAtendimento,
+      fechamentosProfissionais,
+      percentualDiasSemAtendimento: diasAnalisados ? (diasSemAtendimento / diasAnalisados) * 100 : 0,
+    };
+  });
+
+  return {
+    dataInicio,
+    dataFim,
+    totalDiasCalendario: datas.length,
+    totalFechamentos: terapeutasResultado.reduce((total, terapeuta) => total + terapeuta.diasSemAtendimento, 0),
+    resumoSemanal,
+    terapeutas: terapeutasResultado,
+  };
 }

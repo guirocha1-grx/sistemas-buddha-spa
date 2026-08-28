@@ -62,6 +62,7 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
       { label: "Fidelização", path: "/terapeutas/fidelizacao", subsecao: "terapeutas:fidelizacao" },
       { label: "Liberações de terapia", path: "/terapeutas/liberacoes", subsecao: "terapeutas:liberacoes" },
       { label: "Preferenciais", path: "/terapeutas/preferenciais", subsecao: "terapeutas:preferenciais" },
+      { label: "Fechamento de agenda", path: "/terapeutas/fechamento", subsecao: "terapeutas:fechamento" },
     ],
   },
   { icon: MessageCircle, label: "WhatsApp", path: "/mensagens", modulo: "mensagens" },

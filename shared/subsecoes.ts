@@ -15,6 +15,7 @@ export const SUBSECOES: Record<string, { chave: string; label: string }[]> = {
     { chave: "terapeutas:fidelizacao", label: "Fidelização" },
     { chave: "terapeutas:liberacoes", label: "Liberações de terapia" },
     { chave: "terapeutas:preferenciais", label: "Preferenciais" },
+    { chave: "terapeutas:fechamento", label: "Fechamento de agenda" },
   ],
   tabela_precos: [
     { chave: "tabela_precos:campanha_mes", label: "Gerenciar Campanha do Mês" },

@@ -13,6 +13,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AlertCircle,
+  BarChart3,
+  CalendarDays,
+  CalendarX2,
   Check,
   HeartHandshake,
   Loader2,
@@ -30,12 +33,13 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 
-type AbaTerapeutas = "fidelizacao" | "liberacoes" | "preferenciais";
+type AbaTerapeutas = "fidelizacao" | "liberacoes" | "preferenciais" | "fechamento";
 
 const ROTAS_ABAS: Record<AbaTerapeutas, string> = {
   fidelizacao: "/terapeutas/fidelizacao",
   liberacoes: "/terapeutas/liberacoes",
   preferenciais: "/terapeutas/preferenciais",
+  fechamento: "/terapeutas/fechamento",
 };
 
 function dataLocalParaInput(data: Date): string {
@@ -65,6 +69,7 @@ function formatarNumero(valor: number): string {
 function abaPelaRota(location: string): AbaTerapeutas {
   if (location === ROTAS_ABAS.liberacoes) return "liberacoes";
   if (location === ROTAS_ABAS.preferenciais) return "preferenciais";
+  if (location === ROTAS_ABAS.fechamento) return "fechamento";
   return "fidelizacao";
 }
 
@@ -154,6 +159,10 @@ export default function Terapeutas() {
     fidelizacaoInput,
     { enabled: Boolean(unidadeId && periodoValido && abaAtiva === "preferenciais") },
   );
+  const fechamentoAgendaQuery = trpc.terapeutasFechamento.listar.useQuery(
+    fidelizacaoInput,
+    { enabled: Boolean(unidadeId && periodoValido && abaAtiva === "fechamento") },
+  );
   const servicosQuery = trpc.servicos.list.useQuery(
     unidadeInput,
     { enabled: Boolean(unidadeId && abaAtiva === "liberacoes") },
@@ -218,7 +227,7 @@ export default function Terapeutas() {
         </div>
       ) : (
         <>
-          {(abaAtiva === "fidelizacao" || abaAtiva === "preferenciais") && (
+          {(abaAtiva === "fidelizacao" || abaAtiva === "preferenciais" || abaAtiva === "fechamento") && (
             <Card className="mb-4 border-border/50 shadow-sm">
               <CardContent className="flex flex-wrap items-end gap-3 p-4">
                 <div className="space-y-1">
@@ -246,11 +255,12 @@ export default function Terapeutas() {
                   variant="outline"
                   onClick={() => {
                     if (abaAtiva === "preferenciais") void preferenciaisQuery.refetch();
+                    else if (abaAtiva === "fechamento") void fechamentoAgendaQuery.refetch();
                     else void fidelizacaoQuery.refetch();
                   }}
-                  disabled={!periodoValido || fidelizacaoQuery.isFetching || preferenciaisQuery.isFetching}
+                  disabled={!periodoValido || fidelizacaoQuery.isFetching || preferenciaisQuery.isFetching || fechamentoAgendaQuery.isFetching}
                 >
-                  {(fidelizacaoQuery.isFetching || preferenciaisQuery.isFetching) ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+                  {(fidelizacaoQuery.isFetching || preferenciaisQuery.isFetching || fechamentoAgendaQuery.isFetching) ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
                   Atualizar
                 </Button>
                 {!periodoValido && <p className="text-xs text-red-600">Informe um período válido.</p>}
@@ -267,6 +277,9 @@ export default function Terapeutas() {
             </TabsTrigger>
             <TabsTrigger value="preferenciais" className="border border-border/60 bg-card data-[state=active]:border-primary/40 data-[state=active]:bg-primary/10">
               Preferenciais
+            </TabsTrigger>
+            <TabsTrigger value="fechamento" className="border border-border/60 bg-card data-[state=active]:border-primary/40 data-[state=active]:bg-primary/10">
+              Fechamento de agenda
             </TabsTrigger>
           </TabsList>
 
@@ -381,6 +394,106 @@ export default function Terapeutas() {
                 <p className="text-xs text-muted-foreground">Cada alteração é salva individualmente. A liberação é específica da unidade selecionada.</p>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="fechamento" className="space-y-4">
+            {fechamentoAgendaQuery.isError && <EstadoErro mensagem={`Não foi possível carregar o fechamento de agenda: ${fechamentoAgendaQuery.error.message}`} />}
+            {fechamentoAgendaQuery.isLoading ? <EstadoCarregando texto="Calculando dias sem atendimento..." /> : !fechamentoAgendaQuery.isError && fechamentoAgendaQuery.data && (
+              <>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <Indicador titulo="Fechamentos de profissionais" valor={formatarNumero(fechamentoAgendaQuery.data.totalFechamentos)} detalhe="Dias sem atendimento registrado" icon={CalendarX2} />
+                  <Indicador
+                    titulo="Dia com mais fechamentos"
+                    valor={fechamentoAgendaQuery.data.resumoSemanal.reduce((maior, dia) => dia.fechamentosProfissionais > maior.fechamentosProfissionais ? dia : maior, fechamentoAgendaQuery.data.resumoSemanal[0]).nomeDia}
+                    detalhe={`${formatarNumero(fechamentoAgendaQuery.data.resumoSemanal.reduce((maior, dia) => dia.fechamentosProfissionais > maior.fechamentosProfissionais ? dia : maior, fechamentoAgendaQuery.data.resumoSemanal[0]).fechamentosProfissionais)} ocorrências profissionais`}
+                    icon={CalendarDays}
+                  />
+                  <Indicador
+                    titulo="Dia de maior movimento"
+                    valor={fechamentoAgendaQuery.data.resumoSemanal.reduce((maior, dia) => dia.atendimentos > maior.atendimentos ? dia : maior, fechamentoAgendaQuery.data.resumoSemanal[0]).nomeDia}
+                    detalhe={`${formatarNumero(fechamentoAgendaQuery.data.resumoSemanal.reduce((maior, dia) => dia.atendimentos > maior.atendimentos ? dia : maior, fechamentoAgendaQuery.data.resumoSemanal[0]).atendimentos)} atendimentos realizados`}
+                    icon={BarChart3}
+                  />
+                </div>
+
+                <Card className="border-border/50 shadow-sm">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Resumo por dia da semana</CardTitle>
+                    <CardDescription>
+                      Compara o movimento realizado com os dias sem atendimento registrado para ajudar a identificar padrões de fechamento.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Dia da semana</TableHead>
+                            <TableHead className="text-right">Atendimentos</TableHead>
+                            <TableHead className="text-right">Dias analisados</TableHead>
+                            <TableHead className="text-right">Dias com atendimento</TableHead>
+                            <TableHead className="text-right">Dias sem atendimento</TableHead>
+                            <TableHead className="text-right">Proporção sem atendimento</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {fechamentoAgendaQuery.data.resumoSemanal.map((dia) => (
+                            <TableRow key={dia.diaSemana}>
+                              <TableCell className="font-medium">{dia.nomeDia}</TableCell>
+                              <TableCell className="text-right">{formatarNumero(dia.atendimentos)}</TableCell>
+                              <TableCell className="text-right">{formatarNumero(dia.diasAnalisados)}</TableCell>
+                              <TableCell className="text-right">{formatarNumero(dia.diasComAtendimento)}</TableCell>
+                              <TableCell className="text-right font-semibold">{formatarNumero(dia.diasSemAtendimento)}</TableCell>
+                              <TableCell className="text-right">{formatarPercentual(dia.percentualDiasSemAtendimento)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border/50 shadow-sm">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Dias sem atendimento por profissional</CardTitle>
+                    <CardDescription>
+                      Ranking dos profissionais com mais dias sem atendimento no período. As colunas mostram em qual dia da semana esses registros se concentram.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-16 text-center">#</TableHead>
+                            <TableHead>Terapeuta</TableHead>
+                            <TableHead className="text-right">Dias sem atendimento</TableHead>
+                            <TableHead className="text-right">Proporção do período</TableHead>
+                            {fechamentoAgendaQuery.data.resumoSemanal.map((dia) => <TableHead key={dia.diaSemana} className="min-w-24 text-right">{dia.nomeDia.replace("-feira", "")}</TableHead>)}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {fechamentoAgendaQuery.data.terapeutas.length === 0 ? (
+                            <TableRow><TableCell colSpan={4 + fechamentoAgendaQuery.data.resumoSemanal.length} className="py-10 text-center text-sm text-muted-foreground">Nenhum terapeuta ativo cadastrado nesta unidade.</TableCell></TableRow>
+                          ) : fechamentoAgendaQuery.data.terapeutas.map((linha, index) => (
+                            <TableRow key={linha.terapeutaId}>
+                              <TableCell className="text-center text-muted-foreground">{index + 1}</TableCell>
+                              <TableCell className="font-medium">{linha.terapeutaNome}</TableCell>
+                              <TableCell className="text-right font-semibold">{formatarNumero(linha.diasSemAtendimento)}</TableCell>
+                              <TableCell className="text-right">{formatarPercentual(linha.percentualDiasSemAtendimento)}</TableCell>
+                              {fechamentoAgendaQuery.data.resumoSemanal.map((dia) => (
+                                <TableCell key={dia.diaSemana} className="text-right">{formatarNumero(linha.diasSemAtendimentoPorDiaSemana[String(dia.diaSemana)] ?? 0)}</TableCell>
+                              ))}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <p className="border-t px-4 py-3 text-xs text-muted-foreground">Este é um indicador gerencial derivado de dias sem atendimento registrado. Ele não confirma sozinho que a agenda foi oficialmente fechada, pois ausência de atendimento também pode ter outras causas.</p>
+                  </CardContent>
+                </Card>
+              </>
+            )}
           </TabsContent>
 
           <TabsContent value="preferenciais" className="space-y-4">

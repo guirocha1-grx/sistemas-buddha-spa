@@ -541,3 +541,7 @@
 - [x] Corrigir regex de datas do relatório de Fidelização para aceitar entradas YYYY-MM-DD do campo date
 
 - [x] Exibir no hover de Preferenciais os clientes com atendimento preferencial no período, ordenados pela quantidade de atendimentos
+
+- [x] Criar o relatório de Fechamento de agenda por profissional e dia da semana usando o período selecionado
+- [x] Exibir o movimento semanal junto do relatório para identificar dias de maior atendimento
+- [x] Validar a interpretação de dia sem atendimento como indicador gerencial, sem afirmar fechamento oficial da agenda

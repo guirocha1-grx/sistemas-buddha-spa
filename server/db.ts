@@ -14,7 +14,7 @@ import { storageGetSignedUrl, storageExists } from "./storage";
 import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, terapeutasLiberacoes, type InsertChamadoParametro } from "../drizzle/schema";
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
-import { calcularFidelizacao, calcularPreferenciaisPorAtendimento } from "./terapeutasRelatorios";
+import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda } from "./terapeutasRelatorios";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -3935,6 +3935,33 @@ export async function listarPreferenciaisTerapeutas(unidadeId: number, dataInici
   ]);
 
   return calcularPreferenciaisPorAtendimento(terapeutasAtivos, atendimentos);
+}
+
+export async function listarFechamentoAgendaTerapeutas(unidadeId: number, dataInicio: string, dataFim: string) {
+  const db = await getDb();
+  if (!db) {
+    return calcularFechamentoAgenda([], [], dataInicio, dataFim);
+  }
+
+  const [terapeutasAtivos, atendimentos] = await Promise.all([
+    db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
+      .from(terapeutas)
+      .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true)))
+      .orderBy(asc(terapeutas.nomeAbreviado)),
+    db.select({
+      profissionalNome: belleAtendimentos.profissionalNome,
+      dataAtendimento: belleAtendimentos.dataAtendimento,
+    })
+      .from(belleAtendimentos)
+      .where(and(
+        eq(belleAtendimentos.unidadeId, unidadeId),
+        gte(belleAtendimentos.dataAtendimento, dataInicio),
+        lte(belleAtendimentos.dataAtendimento, dataFim),
+        eq(belleAtendimentos.status, "Atendido"),
+      )),
+  ]);
+
+  return calcularFechamentoAgenda(terapeutasAtivos, atendimentos, dataInicio, dataFim);
 }
 
 export async function listarTerapeutasComLiberacoes(unidadeId: number) {
