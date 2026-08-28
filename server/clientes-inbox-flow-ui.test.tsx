@@ -18,6 +18,7 @@ const state = vi.hoisted(() => {
     qtdAtendimentosFinalizados: 1,
     qtdServicosFinalizados: 1,
     ultimoAtendimento: null,
+    ultimoContato: new Date("2026-08-26T14:30:00.000Z"),
     dataCadastro: null,
     primeiroAtendimento: null,
     belleId: 10,
@@ -27,6 +28,13 @@ const state = vi.hoisted(() => {
     bairro: null,
     cidade: null,
     uf: null,
+  };
+  const clienteMaisRecente = {
+    ...cliente,
+    id: 12,
+    nome: "Contato Recente",
+    celular: "(16) 98888-8888",
+    ultimoContato: new Date("2026-08-27T17:45:00.000Z"),
   };
   const conversa = {
     id: 41,
@@ -105,7 +113,7 @@ const state = vi.hoisted(() => {
     }),
     clientes: {
       resumoImportados: { useQuery: () => ({ data: { total: 1, ssu: 1, rbs: 0, ambas: 0 }, isLoading: false }) },
-      listImportados: { useQuery: () => ({ data: [cliente], isLoading: false }) },
+      listImportados: { useQuery: () => ({ data: [cliente, clienteMaisRecente], isLoading: false }) },
       importarXlsx: { useMutation: () => mutation() },
       importarAtendimentosXlsx: { useMutation: () => mutation() },
       importarPlanosXls: { useMutation: () => mutation() },
@@ -287,6 +295,21 @@ describe("fluxo completo Clientes → Inbox", () => {
 
     expect(state.page.openMutation).toHaveBeenCalledWith({ clienteId: 10, unidadeId: 1 });
     expect(state.page.setLocation).toHaveBeenCalledWith("/mensagens?conversaId=41");
+  });
+
+  it("exibe e ordena Último contato, mantendo clientes sem contato no fim", async () => {
+    render(<Clientes />);
+
+    expect((await screen.findAllByText("27/08/2026, 14:45")).length).toBeGreaterThan(0);
+    const cabecalho = screen.getAllByText("Último contato")[0].closest("th")!;
+
+    fireEvent.click(cabecalho);
+    let linhas = screen.getAllByRole("row").slice(1);
+    expect(linhas[0].textContent).toContain("Cliente Existente");
+
+    fireEvent.click(cabecalho);
+    linhas = screen.getAllByRole("row").slice(1);
+    expect(linhas[0].textContent).toContain("Contato Recente");
   });
 
   it("renderiza Mensagens com conversaId e seleciona a conversa correta", async () => {

@@ -541,10 +541,21 @@ export const appRouter = router({
       return resolverEPromoverLids(unidade);
     }),
 
-    // Sem filtro/paginação server-side — busca e ordenação ficam no
-    // client (Clientes.tsx), a base cabe inteira numa resposta.
-    listImportados: protectedProcedure.query(async () => {
-      return db.listClientesLocal();
+    // A busca e a ordenação permanecem locais porque a base cabe em uma
+    // resposta, mas o recorte da unidade e o último contato são calculados no
+    // servidor para não expor conversas de outra unidade.
+    listImportados: protectedProcedure.input(z.object({ unidadeId: z.number().int().positive() }).optional()).query(async ({ input, ctx }) => {
+      // O consumidor legado de Disparos usa a base completa para uma ação
+      // administrativa. A tela Clientes sempre informa unidadeId e nunca usa
+      // este ramo sem recorte.
+      if (!input) {
+        if (ctx.user.role !== "admin") throw new Error("A listagem completa de clientes é restrita a administradores.");
+        return db.listClientesLocal();
+      }
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) {
+        throw new Error("Sem acesso à unidade selecionada.");
+      }
+      return db.listClientesLocalPorUnidade(input.unidadeId);
     }),
   }),
 

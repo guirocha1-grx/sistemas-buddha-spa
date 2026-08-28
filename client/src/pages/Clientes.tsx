@@ -339,7 +339,32 @@ function fmtDataBr(iso: string | null): string {
   return `${d}/${m}/${y}`;
 }
 
-type OrderCol = "nome" | "celular" | "cpf" | "dataNascimento" | "qtdAtendimentosFinalizados" | "ultimoAtendimento";
+function fmtDataHoraBr(data: Date | string | null | undefined): string {
+  if (!data) return "—";
+  const dataNormalizada = data instanceof Date ? data : new Date(data);
+  if (Number.isNaN(dataNormalizada.getTime())) return "—";
+  return dataNormalizada.toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function compararUltimoContato(a: Date | string | null | undefined, b: Date | string | null | undefined, direcao: "asc" | "desc") {
+  const dataA = a ? new Date(a).getTime() : Number.NaN;
+  const dataB = b ? new Date(b).getTime() : Number.NaN;
+  const aValida = Number.isFinite(dataA);
+  const bValida = Number.isFinite(dataB);
+  if (!aValida && !bValida) return 0;
+  if (!aValida) return 1;
+  if (!bValida) return -1;
+  return direcao === "asc" ? dataA - dataB : dataB - dataA;
+}
+
+type OrderCol = "nome" | "celular" | "cpf" | "dataNascimento" | "qtdAtendimentosFinalizados" | "ultimoAtendimento" | "ultimoContato";
 const PAGE_SIZE = 50;
 
 function SortTh({ col, label, orderBy, orderDir, onSort, className }: {
@@ -372,7 +397,8 @@ export default function Clientes() {
   const [orderDir, setOrderDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
 
-  const clientesQuery = trpc.clientes.listImportados.useQuery(undefined, { enabled: !!unidadeSelecionada });
+  const clientesInput = useMemo(() => ({ unidadeId: unidadeSelecionada?.id ?? 0 }), [unidadeSelecionada?.id]);
+  const clientesQuery = trpc.clientes.listImportados.useQuery(clientesInput, { enabled: !!unidadeSelecionada });
   const historicoAtendimentosInput = useMemo(() => ({
     unidadeId: unidadeSelecionada?.id ?? 0,
     clienteId: selectedCliente?.id ?? 0,
@@ -400,11 +426,10 @@ export default function Clientes() {
     setPage(1);
   }
 
-  const isRbs = unidadeSelecionada?.slug?.includes("ribeirao") || unidadeSelecionada?.slug?.includes("rbs");
   const termoBusca = searchValue.trim().toLowerCase();
 
   const clientesFiltrados = useMemo(() => {
-    let lista = (clientesQuery.data ?? []).filter((c) => (isRbs ? c.clienteRbs : c.clienteSsu));
+    let lista = [...(clientesQuery.data ?? [])];
 
     if (termoBusca) {
       lista = lista.filter((c) => {
@@ -427,10 +452,11 @@ export default function Clientes() {
         case "dataNascimento": cmp = (a.dataNascimento ?? "").localeCompare(b.dataNascimento ?? ""); break;
         case "qtdAtendimentosFinalizados": cmp = a.qtdAtendimentosFinalizados - b.qtdAtendimentosFinalizados; break;
         case "ultimoAtendimento": cmp = (a.ultimoAtendimento ?? "").localeCompare(b.ultimoAtendimento ?? ""); break;
+        case "ultimoContato": return compararUltimoContato(a.ultimoContato, b.ultimoContato, orderDir);
       }
       return orderDir === "asc" ? cmp : -cmp;
     });
-  }, [clientesQuery.data, isRbs, termoBusca, orderBy, orderDir]);
+  }, [clientesQuery.data, termoBusca, orderBy, orderDir]);
 
   useEffect(() => { setPage(1); }, [termoBusca, unidadeSelecionada?.id]);
 
@@ -505,6 +531,7 @@ export default function Clientes() {
                     <SortTh col="dataNascimento" label="Nascimento" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
                     <SortTh col="qtdAtendimentosFinalizados" label="Visitas" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} className="text-center" />
                     <SortTh col="ultimoAtendimento" label="Última visita" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
+                    <SortTh col="ultimoContato" label="Último contato" orderBy={orderBy} orderDir={orderDir} onSort={toggleSort} />
                     <TableHead className="w-12 text-center" aria-label="WhatsApp">
                       <MessageCircle className="mx-auto h-4 w-4 text-emerald-600" />
                     </TableHead>
@@ -547,6 +574,9 @@ export default function Clientes() {
                             {diasDesde(cliente.ultimoAtendimento) !== null && (
                               <span className="text-muted-foreground"> ({diasDesde(cliente.ultimoAtendimento)}d)</span>
                             )}
+                          </TableCell>
+                          <TableCell className="py-2 text-xs whitespace-nowrap tabular-nums">
+                            {fmtDataHoraBr(cliente.ultimoContato)}
                           </TableCell>
                           <TableCell className="py-2 text-center">
                               <ClienteWhatsAppButton

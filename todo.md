@@ -537,7 +537,6 @@
 - [x] Criar a matriz por unidade de Liberações de terapia, relacionando terapeutas ativos e serviços Belle
 - [x] Implementar o relatório de Preferenciais por unidade, contando clientes distintos com terapeuta de preferência cadastrado
 - [x] Validar unidade, permissões, estados vazios/erro, persistência das liberações e isolamento dos dados antes do commit
-
 - [x] Corrigir regex de datas do relatório de Fidelização para aceitar entradas YYYY-MM-DD do campo date
 
 - [x] Exibir no hover de Preferenciais os clientes com atendimento preferencial no período, ordenados pela quantidade de atendimentos
@@ -545,3 +544,9 @@
 - [x] Criar o relatório de Fechamento de agenda por profissional e dia da semana usando o período selecionado
 - [x] Exibir o movimento semanal junto do relatório para identificar dias de maior atendimento
 - [x] Validar a interpretação de dia sem atendimento como indicador gerencial, sem afirmar fechamento oficial da agenda
+- [x] Verificar e aplicar, se ausente, a tabela aditiva terapeutas_liberacoes no TiDB compartilhado
+- [x] Validar os índices de terapeutas_liberacoes após a migração sem alterar dados existentes
+- [x] Tornar idempotente a migração versionada de terapeutas_liberacoes, pois a tabela já foi criada de forma equivalente no TiDB
+- [x] Exibir na tabela de Clientes a data da última mensagem do Inbox, enviada ou recebida, isolada por unidade
+- [x] Permitir ordenar a tabela de Clientes pelo último contato, do mais recente ao mais antigo e vice-versa
+- [x] Validar a coluna Último contato com clientes sem conversa, múltiplas conversas e isolamento por unidade

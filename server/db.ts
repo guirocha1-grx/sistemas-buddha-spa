@@ -4763,10 +4763,57 @@ export async function resumoClientesLocal() {
  * digitada. Limite alto (não removido) só como rede de segurança
  * contra crescimento descontrolado, não como paginação de verdade.
  */
+/** Lista administrativa usada por Disparos; o recorte por unidade fica na função abaixo. */
 export async function listClientesLocal() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(clientes).orderBy(clientes.nome).limit(20000);
+  return db
+    .select({
+      ...getTableColumns(clientes),
+      // Disparos não trabalha com uma única unidade. Mantém o contrato
+      // compatível sem associar contato de RBS e SSU ao mesmo cliente.
+      ultimoContato: sql<Date | null>`NULL`.as("ultimoContato"),
+    })
+    .from(clientes)
+    .orderBy(clientes.nome)
+    .limit(20000);
+}
+
+/** Lista operacional da tela Clientes, com o último contato isolado por unidade. */
+export async function listClientesLocalPorUnidade(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // `ultimaMensagemEm` é mantido pela conversa para mensagens recebidas e
+  // enviadas. Agregar somente conversas já vinculadas evita associar um contato
+  // pelo telefone de forma especulativa (ex.: número compartilhado por família).
+  const ultimosContatos = db
+    .select({
+      clienteId: inboxConversas.clienteId,
+      ultimoContato: sql<Date>`MAX(${inboxConversas.ultimaMensagemEm})`.as("ultimoContato"),
+    })
+    .from(inboxConversas)
+    .where(and(
+      eq(inboxConversas.unidadeId, unidadeId),
+      sql`${inboxConversas.clienteId} IS NOT NULL`,
+    ))
+    .groupBy(inboxConversas.clienteId)
+    .as("ultimos_contatos_inbox");
+
+  const pertenceAUnidade = unidadeId === 1
+    ? eq(clientes.clienteSsu, true)
+    : eq(clientes.clienteRbs, true);
+
+  return db
+    .select({
+      ...getTableColumns(clientes),
+      ultimoContato: ultimosContatos.ultimoContato,
+    })
+    .from(clientes)
+    .leftJoin(ultimosContatos, eq(ultimosContatos.clienteId, clientes.id))
+    .where(pertenceAUnidade)
+    .orderBy(clientes.nome)
+    .limit(20000);
 }
 
 /** Resolve nome/telefone dos clientes selecionados pra montar destinatários de um Disparo. */
