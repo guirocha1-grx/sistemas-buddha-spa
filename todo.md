@@ -524,3 +524,6 @@
 - [x] Manter a sincronização como atualização explícita sem deixar a página em branco na abertura
 - [x] Validar exibição, isolamento por unidade e consultas financeiras antes de enviar a correção ao GitHub
 - [x] Pré-preencher o nome no formulário Criar cliente no CRM com o nome atual do contato de WhatsApp, mantendo edição manual
+- [x] Consolidar em Markdown o estado técnico, operacional e de prompts dos agentes de atendimento
+- [x] Registrar métricas conhecidas, regras de não intervenção, riscos e pendências para continuidade em tópico específico
+- [x] Revisar e enviar ao GitHub o documento de estado dos agentes
