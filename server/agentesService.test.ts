@@ -425,20 +425,20 @@ describe("orquestrador de agentes", () => {
     expect(agentesDb.salvarEstadoConversa).toHaveBeenCalledWith(expect.objectContaining({ agenteAtualId: 2, variaveis: {} }));
   });
 
-  it("registra preço e agendamento como próximas etapas após explicar a terapia", async () => {
+  it("prioriza preço e mantém o agendamento como próxima etapa quando não há pedido de explicação", async () => {
     agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quero agendar uma massagem, quanto custa?"));
     const estelaAssistida = { agente: { id: 4, chave: "estela", nome: "Estela", descricao: "Preços", modelo: "gpt-5-mini", modoOperacao: "assistido" }, prompt: { id: 14, conteudo: "Informe apenas a tabela." } };
     const carolAssistida = { agente: { id: 5, chave: "carol", nome: "Carol", descricao: "Agendamento", modelo: "gpt-5-mini", modoOperacao: "assistido" }, prompt: { id: 15, conteudo: "Prepare o agendamento." } };
     agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [biancaAssistida, estelaAssistida, carolAssistida]);
-    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("Claro. A massagem relaxante é indicada para aliviar tensões e promover bem-estar. Na sequência, verifico os valores para você.") } }] });
+    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("A Massagem Relaxante 60 tem o valor de R$ 220,00. Na sequência, seguimos com o agendamento.") } }] });
 
     await processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 443 });
 
-    expect(agentesDb.listarScriptsParaAgentes).toHaveBeenCalledWith("bianca");
+    expect(agentesDb.listarScriptsParaAgentes).toHaveBeenCalledWith("estela");
     expect(agentesDb.salvarEstadoConversa).toHaveBeenCalledWith(expect.objectContaining({
-      agenteAtualId: 2,
-      proximaRota: "estela",
-      variaveis: expect.objectContaining({ rotas_pendentes: JSON.stringify(["carol"]) }),
+      agenteAtualId: 4,
+      proximaRota: "carol",
+      variaveis: expect.objectContaining({ rotas_pendentes: null }),
     }));
   });
 

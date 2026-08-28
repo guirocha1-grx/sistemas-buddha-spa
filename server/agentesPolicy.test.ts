@@ -17,7 +17,7 @@ describe("políticas dos agentes", () => {
 
 describe("regras híbridas de atendimento", () => {
   it("prioriza a explicação antes do preço e preserva o escalonamento humano", () => {
-    expect(rotaDeterministica("Quero saber o valor da relaxante")).toBe("bianca");
+    expect(rotaDeterministica("Quero saber o valor da relaxante")).toBe("estela");
     expect(rotaDeterministica("Quero falar com um atendente humano")).toBe("humano");
     expect(rotaDeterministica("Vocês trabalham com voucher?")).toBe("diana");
   });
@@ -30,11 +30,12 @@ describe("regras híbridas de atendimento", () => {
   });
 
   it("mantém a fila comercial: explicação, preço e depois agendamento", () => {
-    expect(rotasDeterministicas("Quero agendar uma massagem, quanto custa?")).toEqual(["bianca", "estela", "carol"]);
-    expect(rotasDeterministicas("Quero presentear com um Day Spa, qual o valor?")).toEqual(["fabricia", "diana", "estela"]);
-    expect(rotasDeterministicas("Quero emitir um voucher de massagem, quanto custa?")).toEqual(["bianca", "diana", "estela", "diana"]);
+    expect(rotasDeterministicas("Quero agendar uma massagem, quanto custa?")).toEqual(["estela", "carol"]);
+    expect(rotasDeterministicas("Quero entender como funciona o Day Spa e qual o valor?")).toEqual(["fabricia", "estela"]);
+    expect(rotasDeterministicas("Quero entender como funciona o voucher, qual o valor e depois comprar.")).toEqual(["diana", "estela", "diana"]);
+    expect(rotasDeterministicas("Quero emitir um voucher, quanto custa?")).toEqual(["estela", "diana"]);
     expect(rotasDeterministicas("Tenho voucher e quero agendar para sábado")).toEqual(["carol"]);
-    expect(rotasDeterministicas("Ganhei um voucher de massagem e quero usar")).toEqual(["bianca", "carol"]);
+    expect(rotasDeterministicas("Ganhei um voucher de massagem e quero usar")).toEqual(["carol"]);
     expect(rotasDeterministicas("Preciso de nota fiscal e quero saber o valor")).toEqual(["humano"]);
   });
 

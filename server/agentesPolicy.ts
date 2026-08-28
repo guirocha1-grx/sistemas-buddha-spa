@@ -48,25 +48,42 @@ export function motivoEscalonamentoHumano(texto: string): string | null {
 export function rotasDeterministicas(texto: string): Array<ChaveAgente | "humano"> {
   const normalizado = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   if (motivoEscalonamentoHumano(texto)) return ["humano"];
-  const rotas: ChaveAgente[] = [];
-  if (/\b(massagem|massagens|terapia|terapias|shiatsu|relaxante|drenagem|ayurvedica|reflexologia|candle|estetica)\b/.test(normalizado)) rotas.push("bianca");
-  if (/\b(day spa|mini day|day spa prime|banheira|sala de casal|wellhub|totalpass|gympass|estrutura)\b/.test(normalizado)) rotas.push("fabricia");
+  const explicacoes: ChaveAgente[] = [];
+  const transacoes: ChaveAgente[] = [];
+  const mencionaTerapia = /\b(massagem|massagens|terapia|terapias|shiatsu|relaxante|drenagem|ayurvedica|reflexologia|candle|estetica)\b/.test(normalizado);
+  const mencionaDaySpa = /\b(day spa|mini day|day spa prime|banheira|sala de casal|wellhub|totalpass|gympass|estrutura)\b/.test(normalizado);
+  const pedeExplicacao = /\b(como funciona|como e|o que e|o que esta incluso|qual a diferenca|quais|explica|explicar|entender|indicad[ao]|benefici[oa]|serve para|regras|informacoes|informacao|duvida|duvidas)\b/.test(normalizado);
+  if (mencionaTerapia && pedeExplicacao) explicacoes.push("bianca");
   const mencionaVoucher = /\b(voucher|vale presente|cartao presente|presentear|presente)\b/.test(normalizado);
   const possuiVoucherExistente = mencionaVoucher && (
     /\b(ja|tenho|possuo|ganhei|recebi|usar|utilizar|agendar|marcar)\b[^.!?\n]{0,50}\b(voucher|vale presente|cartao presente)\b/.test(normalizado)
     || /\b(voucher|vale presente|cartao presente)\b[^.!?\n]{0,50}\b(ja|tenho|possuo|ganhei|recebi|usar|utilizar|agendar|marcar)\b/.test(normalizado)
   );
-  const querEmitirVoucher = !possuiVoucherExistente && /\b(emitir|emissao|gerar|comprar|adquirir|fazer)\b/.test(normalizado) && mencionaVoucher;
-  if (mencionaVoucher && !possuiVoucherExistente) rotas.push("diana");
-  if (/\b(preco|precos|valor|valores|quanto custa|promocao|promocoes|desconto|descontos|oferta|ofertas|combo|campanha)\b/.test(normalizado)) rotas.push("estela");
-  if (/\b(agendar|agendamento|reservar|reserva|horario|horarios|disponibilidade|marcar)\b/.test(normalizado)) rotas.push("carol");
-  // Quem já possui voucher não está pedindo emissão. O próximo passo é a
-  // triagem de uso/agendamento, depois das explicações eventualmente pedidas.
-  if (possuiVoucherExistente && !rotas.includes("carol")) rotas.push("carol");
-  // Diana pode aparecer de novo no fim: primeiro explica voucher, depois de
-  // preço/experiência a emissão é preparada sem atropelar as etapas anteriores.
-  if (querEmitirVoucher && rotas.length > 1) rotas.push("diana");
-  return rotas;
+  const perguntaVoucher = mencionaVoucher && (
+    pedeExplicacao
+    || /\b(fisico|virtual|validade|receber|recebimento|entrega|regras|trabalham|aceitam|oferecem)\b/.test(normalizado)
+  );
+  const querEmitirVoucher = !possuiVoucherExistente && /\b(emitir|emissao|gerar|comprar|adquirir|fazer|presentear)\b/.test(normalizado) && mencionaVoucher;
+  if (perguntaVoucher) explicacoes.push("diana");
+  if (mencionaDaySpa && (pedeExplicacao || !/\b(preco|precos|valor|valores|quanto custa|agendar|agendamento|reservar|reserva|horario|horarios|disponibilidade|marcar)\b/.test(normalizado))) {
+    explicacoes.push("fabricia");
+  }
+
+  const perguntaValor = /\b(preco|precos|valor|valores|quanto custa|promocao|promocoes|desconto|descontos|oferta|ofertas|combo|campanha)\b/.test(normalizado);
+  if (perguntaValor) transacoes.push("estela");
+  if (/\b(agendar|agendamento|reservar|reserva|horario|horarios|disponibilidade|marcar)\b/.test(normalizado) || possuiVoucherExistente) {
+    transacoes.push("carol");
+  }
+  // Diana permanece uma única especialista: ela aparece primeiro quando a
+  // dúvida é explicativa e volta ao fim somente para uma emissão explícita.
+  if (querEmitirVoucher) transacoes.push("diana");
+
+  // Prioridade comercial imutável: explicação do valor percebido, valor e
+  // somente depois a transação. Remove duplicidade dentro de cada etapa, mas
+  // preserva Diana no começo e no fim quando a mesma conversa exige ambos.
+  return [...explicacoes, ...transacoes].filter((rota, indice, todas) => (
+    rota !== "diana" || indice === todas.indexOf("diana") || indice === todas.lastIndexOf("diana")
+  ));
 }
 
 /** Detecta uma primeira mensagem cordial, curta e ainda sem demanda comercial. */

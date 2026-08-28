@@ -502,3 +502,7 @@
 - [x] Interceptar solicitações que exigem atendimento humano antes do roteamento por IA, com registro auditável e sem sugestão comercial
 - [x] Criar uma versão auditada do prompt da Áurea no RBS com exemplos de intenção e destinos compatíveis com o contrato
 - [x] Cobrir confiança calculada, escalonamento humano e roteamento de Day Spa com testes antes do push
+- [x] Formalizar a prioridade de explicação, preço e transação no roteamento da Áurea
+- [x] Distinguir a explicação de voucher da emissão transacional para evitar encaminhamento antecipado à Diana
+- [x] Versionar o prompt ativo da Áurea no RBS com a nova ordem comercial e validar intenções combinadas
+- [ ] Manter a Diana unificada nesta etapa e observar em teste real se explicação e emissão de voucher exigem separação futura

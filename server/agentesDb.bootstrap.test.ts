@@ -27,5 +27,7 @@ describe("PROMPTS_BOOTSTRAP", () => {
     expect(PROMPTS_BOOTSTRAP.aurea).toContain("calculado de verdade");
     expect(PROMPTS_BOOTSTRAP.aurea).toContain('nunca invente o destino "humano"');
     expect(PROMPTS_BOOTSTRAP.aurea).toContain("EXEMPLOS DE INTENÇÃO");
+    expect(PROMPTS_BOOTSTRAP.aurea).toContain("ORDEM COMERCIAL OBRIGATÓRIA");
+    expect(PROMPTS_BOOTSTRAP.aurea).toContain("Diana permanece uma única especialista");
   });
 });
