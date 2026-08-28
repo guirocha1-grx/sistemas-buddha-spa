@@ -496,3 +496,5 @@
 - [x] Investigar por que o botão Iniciar sincronização não está acessível no painel de Sincronização Geral
 - [x] Corrigir o comportamento responsivo e a condição de exibição da ação de início sem alterar fontes ou dados sincronizados
 - [x] Validar a Sincronização Geral em desktop e mobile antes de enviar a correção ao GitHub
+- [x] Extrair e comparar uma amostra de sugestões editadas da Carol com os textos enviados pela recepção
+- [x] Identificar padrões de edição da Carol e propor ajustes para aprovação, sem modificar o prompt nesta etapa
