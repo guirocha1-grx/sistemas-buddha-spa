@@ -183,6 +183,24 @@ describe("orquestrador de agentes", () => {
     }));
   });
 
+  it("escalona caso sensível sem chamar a Áurea e registra o motivo de forma auditável", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Estou sofrendo assédio e preciso falar com uma pessoa"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [biancaAssistida]);
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 441 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
+
+    expect(invokeLLM).not.toHaveBeenCalled();
+    expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
+      agenteId: 1,
+      statusAgente: "failure",
+      variaveis: { motivo_escalonamento: "situação sensível ou potencialmente insegura" },
+    }));
+    expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({
+      classificacao: "humano",
+      rastro: { origem: "regra_deterministica", motivoEscalonamento: "situação sensível ou potencialmente insegura" },
+    }));
+  });
+
   it.each(["bloqueada_temporariamente", "bloqueada_permanentemente"] as const)("não executa os agentes quando a automação está %s", async (modo) => {
     agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quero saber sobre massagens", modo));
 

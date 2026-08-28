@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aberturaSemIntencao, destinoEspecialistaValido, envioAutomaticoPermitido, rotaDeterministica, rotasDeterministicas, taxaAprovacaoHumana } from "./agentesPolicy";
+import { aberturaSemIntencao, destinoEspecialistaValido, envioAutomaticoPermitido, motivoEscalonamentoHumano, rotaDeterministica, rotasDeterministicas, taxaAprovacaoHumana } from "./agentesPolicy";
 
 describe("políticas dos agentes", () => {
   it("aceita apenas destinos presentes entre os especialistas ativos", () => {
@@ -20,6 +20,13 @@ describe("regras híbridas de atendimento", () => {
     expect(rotaDeterministica("Quero saber o valor da relaxante")).toBe("bianca");
     expect(rotaDeterministica("Quero falar com um atendente humano")).toBe("humano");
     expect(rotaDeterministica("Vocês trabalham com voucher?")).toBe("diana");
+  });
+
+  it("classifica situações humanas sem pedir que a IA invente um destino", () => {
+    expect(motivoEscalonamentoHumano("Quero falar com um atendente humano")).toBe("solicitação explícita de atendimento humano");
+    expect(motivoEscalonamentoHumano("Vou registrar uma reclamação no Procon")).toBe("reclamação ou questão jurídica");
+    expect(motivoEscalonamentoHumano("Estou sofrendo assédio")).toBe("situação sensível ou potencialmente insegura");
+    expect(rotasDeterministicas("Estou sofrendo assédio")).toEqual(["humano"]);
   });
 
   it("mantém a fila comercial: explicação, preço e depois agendamento", () => {

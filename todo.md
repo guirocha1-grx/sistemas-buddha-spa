@@ -498,3 +498,7 @@
 - [x] Validar a Sincronização Geral em desktop e mobile antes de enviar a correção ao GitHub
 - [x] Extrair e comparar uma amostra de sugestões editadas da Carol com os textos enviados pela recepção
 - [x] Identificar padrões de edição da Carol e propor ajustes para aprovação, sem modificar o prompt nesta etapa
+- [x] Remover exemplos de confiança fixa da Áurea na base de prompts e na versão ativa do RBS
+- [x] Interceptar solicitações que exigem atendimento humano antes do roteamento por IA, com registro auditável e sem sugestão comercial
+- [x] Criar uma versão auditada do prompt da Áurea no RBS com exemplos de intenção e destinos compatíveis com o contrato
+- [x] Cobrir confiança calculada, escalonamento humano e roteamento de Day Spa com testes antes do push

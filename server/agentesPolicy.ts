@@ -30,6 +30,16 @@ export function normalizarVariaveis(valor: unknown): Record<string, string | num
   )).slice(0, 30));
 }
 
+/** Identifica casos que não devem depender de uma escolha de especialista pela IA. */
+export function motivoEscalonamentoHumano(texto: string): string | null {
+  const normalizado = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/\b(humano|atendente|pessoa de verdade)\b/.test(normalizado)) return "solicitação explícita de atendimento humano";
+  if (/\b(reclamacao|reclamar|insatisfacao|procon|advogado|processo)\b/.test(normalizado)) return "reclamação ou questão jurídica";
+  if (/\b(ameaca|ameacar|ameaçou|ameaçando|assedio|constrangimento|violencia)\b/.test(normalizado)) return "situação sensível ou potencialmente insegura";
+  if (/\b(nota fiscal|recibo fiscal)\b/.test(normalizado)) return "solicitação fiscal para a recepção";
+  return null;
+}
+
 /**
  * Extrai intenções explícitas na ordem comercial: explicar valor percebido,
  * informar preço e só então concluir agendamento ou emissão. Isso evita que
@@ -37,7 +47,7 @@ export function normalizarVariaveis(valor: unknown): Record<string, string | num
  */
 export function rotasDeterministicas(texto: string): Array<ChaveAgente | "humano"> {
   const normalizado = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  if (/\b(humano|atendente|pessoa de verdade|reclamacao|reclamar|procon|advogado|processo|nota fiscal|recibo fiscal)\b/.test(normalizado)) return ["humano"];
+  if (motivoEscalonamentoHumano(texto)) return ["humano"];
   const rotas: ChaveAgente[] = [];
   if (/\b(massagem|massagens|terapia|terapias|shiatsu|relaxante|drenagem|ayurvedica|reflexologia|candle|estetica)\b/.test(normalizado)) rotas.push("bianca");
   if (/\b(day spa|mini day|day spa prime|banheira|sala de casal|wellhub|totalpass|gympass|estrutura)\b/.test(normalizado)) rotas.push("fabricia");

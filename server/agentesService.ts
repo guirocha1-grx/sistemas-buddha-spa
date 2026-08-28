@@ -8,6 +8,7 @@ import {
   aberturaSemIntencao,
   destinoEspecialistaValido,
   envioAutomaticoPermitido,
+  motivoEscalonamentoHumano,
   normalizarVariaveis,
   rotasDeterministicas,
   statusAgenteValido,
@@ -533,13 +534,14 @@ export async function processarMensagemRecebida(params: { conversaId: number; me
   let especialista: AgenteConfigurado | undefined;
   try {
     if (rotaSegura === "humano") {
+      const motivoEscalonamento = motivoEscalonamentoHumano(textoEntrada) ?? "situação que exige atendimento humano";
       const sugestaoId = await criarSugestaoFinal({
         execucaoId,
         especialista: receptor,
         contexto,
-        resposta: { message: "Por favor, aguarde um momento.", status: "failure", summary: "Cliente solicitou atendimento humano ou apresentou situação sensível.", variables: {}, action: null, scriptId: null, excecaoOperacional: false },
+        resposta: { message: "Por favor, aguarde um momento.", status: "failure", summary: `Escalonamento humano: ${motivoEscalonamento}.`, variables: { motivo_escalonamento: motivoEscalonamento }, action: null, scriptId: null, excecaoOperacional: false },
       });
-      await agentesDb.concluirExecucao(execucaoId, { status: "concluida", classificacao: "humano", rastro: { origem: "regra_deterministica" } });
+      await agentesDb.concluirExecucao(execucaoId, { status: "concluida", classificacao: "humano", rastro: { origem: "regra_deterministica", motivoEscalonamento } });
       return { status: "concluida" as const, sugestaoId };
     }
 

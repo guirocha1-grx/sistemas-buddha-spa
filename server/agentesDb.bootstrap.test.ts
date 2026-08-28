@@ -21,4 +21,11 @@ describe("PROMPTS_BOOTSTRAP", () => {
       expect(PROMPTS_BOOTSTRAP[chave]).toContain("no máximo duas informações");
     }
   });
+
+  it("não reintroduz confiança fixa nem destino humano inválido no prompt da Áurea", () => {
+    expect(PROMPTS_BOOTSTRAP.aurea).not.toContain('"confianca":0');
+    expect(PROMPTS_BOOTSTRAP.aurea).toContain("calculado de verdade");
+    expect(PROMPTS_BOOTSTRAP.aurea).toContain('nunca invente o destino "humano"');
+    expect(PROMPTS_BOOTSTRAP.aurea).toContain("EXEMPLOS DE INTENÇÃO");
+  });
 });
