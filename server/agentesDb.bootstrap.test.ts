@@ -29,5 +29,7 @@ describe("PROMPTS_BOOTSTRAP", () => {
     expect(PROMPTS_BOOTSTRAP.aurea).toContain("EXEMPLOS DE INTENÇÃO");
     expect(PROMPTS_BOOTSTRAP.aurea).toContain("ORDEM COMERCIAL OBRIGATÓRIA");
     expect(PROMPTS_BOOTSTRAP.aurea).toContain("Diana permanece uma única especialista");
+    expect(PROMPTS_BOOTSTRAP.carol).toContain("BLOQUEIO DE ETAPA");
+    expect(PROMPTS_BOOTSTRAP.carol).toContain("preferência de terapeuta somente se ela ainda estiver ausente");
   });
 });

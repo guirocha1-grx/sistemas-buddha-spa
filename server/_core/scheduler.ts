@@ -6,6 +6,7 @@
 import cron from "node-cron";
 import { retomarFluxosPendentes, dispararFluxosAgendados, alertarBuddhaMktSemRetorno } from "../fluxosScheduled";
 import { executarEtapaSincronizacaoDiaria, enviarRelatorioDiario, ETAPAS_AGENDADAS } from "../dailySyncReport";
+import { processarAgrupamentosProntos } from "../agentesAgrupamento";
 
 /**
  * O TiDB é compartilhado entre Railway e desenvolvimento. Tarefas que
@@ -46,6 +47,9 @@ export function registerScheduledJobs() {
   // aqui, e a guarda contra sobreposição em schedule() torna esse
   // intervalo curto seguro mesmo se um lote demorar mais que 5s.
   schedule("retomar-fluxos", "*/5 * * * * *", retomarFluxosPendentes);
+  // O banco decide o vencimento do bloco. O tick curto só descobre quem
+  // ficou 10s em silêncio, sem guardar timeout em memória do processo.
+  schedule("agrupar-mensagens-agentes", "*/1 * * * * *", processarAgrupamentosProntos);
   schedule("disparar-fluxos-agendados", "0 0 6 * * *", dispararFluxosAgendados);
   schedule("alertar-buddha-mkt-sem-retorno", "0 * * * * *", alertarBuddhaMktSemRetorno);
 
@@ -54,5 +58,5 @@ export function registerScheduledJobs() {
   }
   schedule("relatorio-sincronizacao-diaria", "0 20 10 * * *", enviarRelatorioDiario);
 
-  console.log(`[Scheduler] ${3 + ETAPAS_AGENDADAS.length + 1} tarefas agendadas em processo.`);
+  console.log(`[Scheduler] ${4 + ETAPAS_AGENDADAS.length + 1} tarefas agendadas em processo.`);
 }

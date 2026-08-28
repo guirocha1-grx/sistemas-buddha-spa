@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, inArray, isNull, like, lte, or, sql } from "drizzle-orm";
 import {
   agentesAcoesConversa,
+  agentesAgrupamentosMensagens,
   agentesAtendimento,
   agentesConfiguracoes,
   agentesConversas,
@@ -23,6 +24,7 @@ import {
 } from "../drizzle/schema";
 import { getDb, obterModoEfetivoAutomacaoAgentes } from "./db";
 import { taxaAprovacaoHumana } from "./agentesPolicy";
+import { asc, ne } from "drizzle-orm";
 
 export type VariaveisAgente = Record<string, string | number | boolean | null>;
 export type TipoRecursoAgente = "preco" | "promocao" | "conteudo" | "midia" | "modelo_voucher";
@@ -97,7 +99,7 @@ Você é Fabricia, especialista em Day Spa, experiências e estrutura. Esclareç
 Você é Estela, especialista comercial. Informe somente valores presentes na Tabela comercial oficial recebida no contexto. LINGUAGEM: use sempre a palavra "valor", nunca "preço" ou "custa" — é mais sofisticado. Formato padrão: "[Terapia] tem o valor de R$X (segunda a sábado, exceto feriados)." APRESENTAÇÃO DO VALOR DE DOMINGO: por padrão, informe apenas o valor de segunda a sábado com essa observação entre parênteses — ela já sinaliza que domingo tem condição própria, sem precisar repetir os dois valores toda mensagem. Só inclua também o valor de domingo quando o cliente perguntar num domingo, mencionar domingo explicitamente, ou pedir para confirmar o valor desse dia. Caso falte valor, promoção ou condição, não estime: peça confirmação interna. Não negocie desconto e não prometa disponibilidade. Para seguir para agendamento, use status "carol". ${REGRA_SEM_IDENTIFICACAO} ${REGRA_CONVERSA_PROGRESSIVA}`,
   carol: `${CONTEXTO_OPERACIONAL_COMUM}
 
-Você é Carol, especialista em preparação de agendamento. Colete serviço desejado, preferência de data, faixa de horário e quantidade de pessoas. Registre os campos em variables. Nunca confirme vaga, profissional, horário ou pagamento. Quando os dados mínimos estiverem completos, use status "success" e deixe no summary um pedido estruturado para o consultor confirmar. ${REGRA_SEM_IDENTIFICACAO} ${REGRA_CONVERSA_PROGRESSIVA}`,
+Você é Carol, especialista em preparação de agendamento. Colete serviço desejado, preferência de data, faixa de horário e quantidade de pessoas. Registre os campos em variables. Nunca confirme vaga, profissional, horário ou pagamento. BLOQUEIO DE ETAPA: antes de formular uma pergunta, confira a última mensagem e as variáveis já coletadas. Pergunte somente o próximo dado realmente ausente. Nunca repita pergunta já respondida, não retome a coleta quando o cliente estiver agradecendo ou encerrando e não crie nova pergunta depois de a solicitação estar completa. Quando a recepção precisar apenas consultar ou confirmar a agenda, use saída silenciosa de não intervenção; não envie despedida nem promessa ao cliente. Pergunte sobre preferência de terapeuta somente se ela ainda estiver ausente e for relevante; se o cliente já informou profissional, gênero ou indiferença, registre e siga sem repetir. Quando os dados mínimos estiverem completos, use status "success" e deixe no summary um pedido estruturado para o consultor confirmar. ${REGRA_SEM_IDENTIFICACAO} ${REGRA_CONVERSA_PROGRESSIVA}`,
   diana: `${CONTEXTO_OPERACIONAL_COMUM}
 
 Você é Diana, especialista em vouchers. Explique o processo usando somente regras oficiais e colete serviço ou valor, nome do presenteado e mensagem opcional. Registre os campos em variables. Nunca emita voucher, solicite pagamento ou confirme pagamento. Quando a solicitação estiver completa, use status "success" e deixe no summary um pedido claro para o consultor emitir o voucher. ${REGRA_SEM_IDENTIFICACAO} ${REGRA_CONVERSA_PROGRESSIVA}`,
@@ -362,6 +364,115 @@ export async function concluirExecucao(id: number, dados: {
   const db = await getDb();
   if (!db) return;
   await db.update(agentesExecucoes).set({ ...dados, concludedAt: new Date() }).where(eq(agentesExecucoes.id, id));
+}
+
+const JANELA_AGRUPAMENTO_MENSAGENS_MS = 10_000;
+const LIMITE_RECUPERAR_AGRUPAMENTO_MS = 2 * 60_000;
+
+export function dataLiberacaoAgrupamento(agora = new Date()): Date {
+  return new Date(agora.getTime() + JANELA_AGRUPAMENTO_MENSAGENS_MS);
+}
+
+/**
+ * Uma conversa possui um único bloco pendente. Toda mensagem nova reinicia
+ * sua janela e troca somente a última mensagem que será usada como marco da
+ * execução; o histórico continua intacto em inbox_mensagens.
+ */
+export async function agendarAgrupamentoMensagem(params: {
+  conversaId: number;
+  unidadeId: number;
+  mensagemId: number;
+  agora?: Date;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Banco indisponível");
+  const processarApos = dataLiberacaoAgrupamento(params.agora);
+  await db.insert(agentesAgrupamentosMensagens).values({
+    conversaId: params.conversaId,
+    unidadeId: params.unidadeId,
+    primeiraMensagemId: params.mensagemId,
+    ultimaMensagemId: params.mensagemId,
+    versao: 1,
+    processarApos,
+    status: "pendente",
+  }).onDuplicateKeyUpdate({ set: {
+    unidadeId: sql`VALUES(unidadeId)`,
+    primeiraMensagemId: sql`IF(${agentesAgrupamentosMensagens.status} = 'processando', ${agentesAgrupamentosMensagens.primeiraMensagemId}, VALUES(primeiraMensagemId))`,
+    ultimaMensagemId: sql`VALUES(ultimaMensagemId)`,
+    versao: sql`${agentesAgrupamentosMensagens.versao} + 1`,
+    processarApos: sql`VALUES(processarApos)`,
+    status: sql`IF(${agentesAgrupamentosMensagens.status} = 'processando', 'processando', 'pendente')`,
+    processadoEm: null,
+    ultimoErro: null,
+  } });
+  return processarApos;
+}
+
+export async function recuperarAgrupamentosTravados(agora = new Date()) {
+  const db = await getDb();
+  if (!db) return;
+  const limite = new Date(agora.getTime() - LIMITE_RECUPERAR_AGRUPAMENTO_MS);
+  await db.update(agentesAgrupamentosMensagens).set({ status: "pendente", processandoEm: null })
+    .where(and(
+      eq(agentesAgrupamentosMensagens.status, "processando"),
+      lte(agentesAgrupamentosMensagens.processandoEm, limite),
+    ));
+}
+
+export async function listarAgrupamentosProntos(agora = new Date()) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(agentesAgrupamentosMensagens)
+    .where(and(
+      eq(agentesAgrupamentosMensagens.status, "pendente"),
+      lte(agentesAgrupamentosMensagens.processarApos, agora),
+    ))
+    .orderBy(asc(agentesAgrupamentosMensagens.processarApos))
+    .limit(50);
+}
+
+export async function assumirAgrupamentoMensagem(id: number, versao: number, agora = new Date()) {
+  const db = await getDb();
+  if (!db) return false;
+  const resultado = await db.update(agentesAgrupamentosMensagens)
+    .set({ status: "processando", processandoEm: agora })
+    .where(and(
+      eq(agentesAgrupamentosMensagens.id, id),
+      eq(agentesAgrupamentosMensagens.versao, versao),
+      eq(agentesAgrupamentosMensagens.status, "pendente"),
+      lte(agentesAgrupamentosMensagens.processarApos, agora),
+    ));
+  return Number((resultado as any)[0]?.affectedRows ?? (resultado as any).affectedRows ?? 0) === 1;
+}
+
+export async function concluirAgrupamentoMensagem(params: {
+  id: number;
+  versao: number;
+  erro?: string | null;
+  agora?: Date;
+}) {
+  const db = await getDb();
+  if (!db) return "indisponivel" as const;
+  const agora = params.agora ?? new Date();
+  const resultado = await db.update(agentesAgrupamentosMensagens).set({
+    status: params.erro ? "erro" : "processado",
+    processadoEm: agora,
+    processandoEm: null,
+    ultimoErro: params.erro?.slice(0, 4000) ?? null,
+  }).where(and(
+    eq(agentesAgrupamentosMensagens.id, params.id),
+    eq(agentesAgrupamentosMensagens.versao, params.versao),
+    eq(agentesAgrupamentosMensagens.status, "processando"),
+  ));
+  const concluiu = Number((resultado as any)[0]?.affectedRows ?? (resultado as any).affectedRows ?? 0) === 1;
+  if (concluiu) return "concluido" as const;
+  await db.update(agentesAgrupamentosMensagens).set({ status: "pendente", processandoEm: null })
+    .where(and(
+      eq(agentesAgrupamentosMensagens.id, params.id),
+      ne(agentesAgrupamentosMensagens.versao, params.versao),
+      eq(agentesAgrupamentosMensagens.status, "processando"),
+    ));
+  return "substituido" as const;
 }
 
 /** Histórico operacional seguro para diagnóstico administrativo no Inbox. Nunca inclui prompts ou credenciais. */

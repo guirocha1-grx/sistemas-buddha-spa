@@ -1643,6 +1643,28 @@ export const agentesExecucoes = mysqlTable("agentes_execucoes", {
 export type AgenteExecucao = typeof agentesExecucoes.$inferSelect;
 export type InsertAgenteExecucao = typeof agentesExecucoes.$inferInsert;
 
+/** Janela durável de silêncio antes de enviar mensagens consecutivas à Áurea. */
+export const agentesAgrupamentosMensagens = mysqlTable("agentes_agrupamentos_mensagens", {
+  id: int("id").autoincrement().primaryKey(),
+  conversaId: int("conversaId").notNull(),
+  unidadeId: int("unidadeId").notNull(),
+  primeiraMensagemId: int("primeiraMensagemId").notNull(),
+  ultimaMensagemId: int("ultimaMensagemId").notNull(),
+  versao: int("versao").default(1).notNull(),
+  processarApos: timestamp("processarApos").notNull(),
+  status: mysqlEnum("status", ["pendente", "processando", "processado", "erro"]).default("pendente").notNull(),
+  processandoEm: timestamp("processandoEm"),
+  processadoEm: timestamp("processadoEm"),
+  ultimoErro: text("ultimoErro"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  conversaUnica: uniqueIndex("agentes_agrupamentos_conversa_unica_idx").on(table.conversaId),
+  filaIdx: index("agentes_agrupamentos_fila_idx").on(table.status, table.processarApos),
+}));
+export type AgenteAgrupamentoMensagem = typeof agentesAgrupamentosMensagens.$inferSelect;
+export type InsertAgenteAgrupamentoMensagem = typeof agentesAgrupamentosMensagens.$inferInsert;
+
 /** Sugestões geradas para avaliação explícita do consultor. */
 export const agentesSugestoes = mysqlTable("agentes_sugestoes", {
   id: int("id").autoincrement().primaryKey(),

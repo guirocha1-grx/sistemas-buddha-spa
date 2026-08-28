@@ -506,3 +506,8 @@
 - [x] Distinguir a explicação de voucher da emissão transacional para evitar encaminhamento antecipado à Diana
 - [x] Versionar o prompt ativo da Áurea no RBS com a nova ordem comercial e validar intenções combinadas
 - [ ] Manter a Diana unificada nesta etapa e observar em teste real se explicação e emissão de voucher exigem separação futura
+- [x] Revisar a versão ativa mais recente da Carol frente às edições humanas e propor apenas ajustes incrementais para aprovação
+- [x] Aplicar à Carol o bloqueio de etapa e a coleta de preferência apenas quando esse dado ainda estiver ausente
+- [x] Agrupar mensagens consecutivas por conversa e encaminhar à Áurea somente após dez segundos de silêncio
+- [x] Reiniciar a janela de agrupamento a cada mensagem nova sem perder mensagens, reprocessar blocos ou enviar sugestão antecipada
+- [x] Validar o agrupamento com cenários de mensagens parceladas e a regressão da Carol antes do envio ao GitHub

@@ -635,13 +635,13 @@ function registerZapiWebhook(app: Express) {
         })();
       }
 
-      // Copilot assistido: gera somente uma sugestão para revisão humana.
-      // Executa fora da resposta do webhook; sem configuração ativa por unidade,
-      // o serviço apenas retorna "nao_configurada" e não envia nada.
+      // Copilot assistido: toda mensagem 1:1 reinicia uma janela persistida de
+      // 10s. A Áurea só é chamada pelo agendador depois de silêncio contínuo,
+      // para receber o bloco completo de mensagens parceladas do cliente.
       if (!payload.isGroup && !payload.fromMe && mensagemId && tipo !== "audio") {
-        void import("./agentesService")
-          .then(({ processarMensagemRecebida }) => processarMensagemRecebida({ conversaId, mensagemEntradaId: mensagemId }))
-          .catch((error) => console.error("[Webhook Z-API] Falha ao processar agentes:", error));
+        void import("./agentesDb")
+          .then(({ agendarAgrupamentoMensagem }) => agendarAgrupamentoMensagem({ conversaId, unidadeId, mensagemId }))
+          .catch((error) => console.error("[Webhook Z-API] Falha ao agendar agrupamento dos agentes:", error));
       }
 
       if (tipo === "audio" && payload.audio?.audioUrl && mensagemId) {
@@ -655,8 +655,8 @@ function registerZapiWebhook(app: Express) {
               // renderiza quando transcricao é truthy).
               await db.updateInboxMensagemTranscricao(mensagemId, result.text.trim() || "(sem fala identificada)");
               if (!payload.isGroup && !payload.fromMe) {
-                const { processarMensagemRecebida } = await import("./agentesService");
-                await processarMensagemRecebida({ conversaId, mensagemEntradaId: mensagemId });
+                const { agendarAgrupamentoMensagem } = await import("./agentesDb");
+                await agendarAgrupamentoMensagem({ conversaId, unidadeId, mensagemId });
               }
               return;
             }
