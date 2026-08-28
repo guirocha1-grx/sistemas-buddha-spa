@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AlertCircle,
   Check,
@@ -150,8 +151,8 @@ export default function Terapeutas() {
     { enabled: Boolean(unidadeId && abaAtiva === "liberacoes") },
   );
   const preferenciaisQuery = trpc.terapeutasPreferenciais.listar.useQuery(
-    unidadeInput,
-    { enabled: Boolean(unidadeId && abaAtiva === "preferenciais") },
+    fidelizacaoInput,
+    { enabled: Boolean(unidadeId && periodoValido && abaAtiva === "preferenciais") },
   );
   const servicosQuery = trpc.servicos.list.useQuery(
     unidadeInput,
@@ -216,21 +217,9 @@ export default function Terapeutas() {
           Selecione uma unidade para continuar.
         </div>
       ) : (
-        <Tabs value={abaAtiva} onValueChange={mudarAba} className="space-y-4">
-          <TabsList className="h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
-            <TabsTrigger value="fidelizacao" className="border border-border/60 bg-card data-[state=active]:border-primary/40 data-[state=active]:bg-primary/10">
-              Fidelização
-            </TabsTrigger>
-            <TabsTrigger value="liberacoes" className="border border-border/60 bg-card data-[state=active]:border-primary/40 data-[state=active]:bg-primary/10">
-              Liberações de terapia
-            </TabsTrigger>
-            <TabsTrigger value="preferenciais" className="border border-border/60 bg-card data-[state=active]:border-primary/40 data-[state=active]:bg-primary/10">
-              Preferenciais
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="fidelizacao" className="space-y-4">
-            <Card className="border-border/50 shadow-sm">
+        <>
+          {(abaAtiva === "fidelizacao" || abaAtiva === "preferenciais") && (
+            <Card className="mb-4 border-border/50 shadow-sm">
               <CardContent className="flex flex-wrap items-end gap-3 p-4">
                 <div className="space-y-1">
                   <Label htmlFor="terapeutas-data-inicio" className="text-xs">Data início</Label>
@@ -255,16 +244,33 @@ export default function Terapeutas() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => fidelizacaoQuery.refetch()}
-                  disabled={!periodoValido || fidelizacaoQuery.isFetching}
+                  onClick={() => {
+                    if (abaAtiva === "preferenciais") void preferenciaisQuery.refetch();
+                    else void fidelizacaoQuery.refetch();
+                  }}
+                  disabled={!periodoValido || fidelizacaoQuery.isFetching || preferenciaisQuery.isFetching}
                 >
-                  {fidelizacaoQuery.isFetching ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+                  {(fidelizacaoQuery.isFetching || preferenciaisQuery.isFetching) ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
                   Atualizar
                 </Button>
                 {!periodoValido && <p className="text-xs text-red-600">Informe um período válido.</p>}
               </CardContent>
             </Card>
+          )}
+          <Tabs value={abaAtiva} onValueChange={mudarAba} className="space-y-4">
+          <TabsList className="h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
+            <TabsTrigger value="fidelizacao" className="border border-border/60 bg-card data-[state=active]:border-primary/40 data-[state=active]:bg-primary/10">
+              Fidelização
+            </TabsTrigger>
+            <TabsTrigger value="liberacoes" className="border border-border/60 bg-card data-[state=active]:border-primary/40 data-[state=active]:bg-primary/10">
+              Liberações de terapia
+            </TabsTrigger>
+            <TabsTrigger value="preferenciais" className="border border-border/60 bg-card data-[state=active]:border-primary/40 data-[state=active]:bg-primary/10">
+              Preferenciais
+            </TabsTrigger>
+          </TabsList>
 
+          <TabsContent value="fidelizacao" className="space-y-4">
             {fidelizacaoQuery.isError && <EstadoErro mensagem={`Não foi possível carregar a fidelização: ${fidelizacaoQuery.error.message}`} />}
             {fidelizacaoQuery.isLoading ? <EstadoCarregando texto="Calculando fidelização..." /> : !fidelizacaoQuery.isError && (
               <>
@@ -386,7 +392,7 @@ export default function Terapeutas() {
                     <div>
                       <CardTitle className="text-base" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Clientes com terapeuta preferencial</CardTitle>
                       <CardDescription>
-                        Contagem de clientes distintos com preferência cadastrada na unidade. Não é um indicador de atendimentos e não usa filtro de período.
+                        Contagem de clientes distintos com preferência atendidos no período selecionado. Passe o mouse sobre o número para ver o detalhamento.
                       </CardDescription>
                     </div>
                     <Badge variant="outline" className="shrink-0">{formatarNumero((preferenciaisQuery.data ?? []).reduce((total, linha) => total + linha.clientesPreferenciais, 0))} registros</Badge>
@@ -399,7 +405,7 @@ export default function Terapeutas() {
                         <TableRow>
                           <TableHead className="w-16 text-center">#</TableHead>
                           <TableHead>Terapeuta</TableHead>
-                          <TableHead className="text-right">Clientes preferenciais</TableHead>
+                          <TableHead className="text-right">Clientes atendidos no período</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -409,18 +415,51 @@ export default function Terapeutas() {
                           <TableRow key={linha.terapeutaId}>
                             <TableCell className="text-center text-muted-foreground">{index + 1}</TableCell>
                             <TableCell className="font-medium">{linha.terapeutaNome}</TableCell>
-                            <TableCell className="text-right font-semibold">{formatarNumero(linha.clientesPreferenciais)}</TableCell>
+                            <TableCell className="text-right font-semibold">
+                              {linha.clientes.length > 0 ? (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className="rounded px-2 py-1 text-primary underline decoration-dotted underline-offset-4 transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                      aria-label={`Ver clientes preferenciais de ${linha.terapeutaNome}`}
+                                    >
+                                      {formatarNumero(linha.clientesPreferenciais)}
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="left" align="end" className="w-80 max-w-[calc(100vw-2rem)] p-0">
+                                    <div className="border-b px-3 py-2">
+                                      <p className="font-semibold">{linha.terapeutaNome}</p>
+                                      <p className="text-xs text-muted-foreground">Clientes preferenciais atendidos no período</p>
+                                    </div>
+                                    <div className="max-h-72 overflow-y-auto px-3 py-2">
+                                      {linha.clientes.map((cliente) => (
+                                        <div key={`${cliente.clienteId ?? "nome"}-${cliente.clienteNome}`} className="flex items-center justify-between gap-3 border-b py-2 last:border-b-0">
+                                          <span className="min-w-0 truncate text-sm">{cliente.clienteNome}</span>
+                                          <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                                            {formatarNumero(cliente.atendimentos)} {cliente.atendimentos === 1 ? "atendimento" : "atendimentos"}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              ) : (
+                                <span className="text-muted-foreground">0</span>
+                              )}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
                   </div>
-                  {preferenciaisQuery.data?.length ? <p className="border-t px-4 py-3 text-xs text-muted-foreground">A ordenação prioriza quem tem mais clientes com preferência cadastrada.</p> : null}
+                  {preferenciaisQuery.data?.length ? <p className="border-t px-4 py-3 text-xs text-muted-foreground">O número representa clientes distintos atendidos com preferência no período. Passe o mouse sobre ele para ver a ordem por quantidade de atendimentos.</p> : null}
                 </CardContent>
               </Card>
             )}
           </TabsContent>
-        </Tabs>
+          </Tabs>
+        </>
       )}
     </div>
   );

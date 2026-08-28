@@ -14,7 +14,7 @@ import { storageGetSignedUrl, storageExists } from "./storage";
 import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, terapeutasLiberacoes, type InsertChamadoParametro } from "../drizzle/schema";
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
-import { calcularFidelizacao, calcularPreferenciais } from "./terapeutasRelatorios";
+import { calcularFidelizacao, calcularPreferenciaisPorAtendimento } from "./terapeutasRelatorios";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -3909,25 +3909,32 @@ export async function listarFidelizacaoTerapeutas(unidadeId: number, dataInicio:
   return calcularFidelizacao(terapeutasAtivos, atendimentos);
 }
 
-export async function listarPreferenciaisTerapeutas(unidadeId: number) {
+export async function listarPreferenciaisTerapeutas(unidadeId: number, dataInicio: string, dataFim: string) {
   const db = await getDb();
   if (!db) return [];
 
-  const [terapeutasAtivos, preferencias] = await Promise.all([
+  const [terapeutasAtivos, atendimentos] = await Promise.all([
     db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
       .from(terapeutas)
       .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true)))
       .orderBy(asc(terapeutas.nomeAbreviado)),
     db.select({
-      clienteId: clientesPreferenciasTerapeuta.clienteId,
-      terapeutaId: clientesPreferenciasTerapeuta.terapeutaId,
-      terapeutaNome: clientesPreferenciasTerapeuta.terapeutaNome,
+      clienteId: belleAtendimentos.clienteId,
+      clienteNome: belleAtendimentos.clienteNome,
+      profissionalNome: belleAtendimentos.profissionalNome,
+      temPreferencia: belleAtendimentos.temPreferencia,
     })
-      .from(clientesPreferenciasTerapeuta)
-      .where(eq(clientesPreferenciasTerapeuta.unidadeId, unidadeId)),
+      .from(belleAtendimentos)
+      .where(and(
+        eq(belleAtendimentos.unidadeId, unidadeId),
+        gte(belleAtendimentos.dataAtendimento, dataInicio),
+        lte(belleAtendimentos.dataAtendimento, dataFim),
+        eq(belleAtendimentos.status, "Atendido"),
+        eq(belleAtendimentos.temPreferencia, true),
+      )),
   ]);
 
-  return calcularPreferenciais(terapeutasAtivos, preferencias);
+  return calcularPreferenciaisPorAtendimento(terapeutasAtivos, atendimentos);
 }
 
 export async function listarTerapeutasComLiberacoes(unidadeId: number) {

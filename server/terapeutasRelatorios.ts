@@ -21,16 +21,24 @@ export interface FidelizacaoTerapeuta {
   percentualNaoFidelizacao: number | null;
 }
 
-export interface PreferenciaTerapeutaInput {
-  clienteId: number;
-  terapeutaId: number | null;
-  terapeutaNome: string | null;
+export interface AtendimentoPreferencialInput {
+  clienteId: number | null;
+  clienteNome: string;
+  profissionalNome: string | null;
+  temPreferencia: boolean;
+}
+
+export interface ClientePreferencialDetalhe {
+  clienteId: number | null;
+  clienteNome: string;
+  atendimentos: number;
 }
 
 export interface PreferenciaisTerapeuta {
   terapeutaId: number;
   terapeutaNome: string;
   clientesPreferenciais: number;
+  clientes: ClientePreferencialDetalhe[];
 }
 
 export function normalizarNomeTerapeuta(nome: string | null | undefined): string {
@@ -94,28 +102,52 @@ export function calcularFidelizacao(
   });
 }
 
-export function calcularPreferenciais(
+export function calcularPreferenciaisPorAtendimento(
   terapeutas: TerapeutaRelatorioBase[],
-  preferencias: PreferenciaTerapeutaInput[],
+  atendimentos: AtendimentoPreferencialInput[],
 ): PreferenciaisTerapeuta[] {
   const indice = indiceTerapeutas(terapeutas);
-  const clientesPorTerapeuta = new Map<number, Set<number>>();
+  const clientesPorTerapeuta = new Map<number, Map<string, ClientePreferencialDetalhe>>();
 
-  for (const preferencia of preferencias) {
-    const terapeuta = preferencia.terapeutaId
-      ? terapeutas.find((item) => item.id === preferencia.terapeutaId)
-      : indice.get(normalizarNomeTerapeuta(preferencia.terapeutaNome));
-    if (!terapeuta || !Number.isInteger(preferencia.clienteId)) continue;
-    const clientes = clientesPorTerapeuta.get(terapeuta.id) ?? new Set<number>();
-    clientes.add(preferencia.clienteId);
+  for (const atendimento of atendimentos) {
+    if (!atendimento.temPreferencia) continue;
+    const terapeuta = indice.get(normalizarNomeTerapeuta(atendimento.profissionalNome));
+    if (!terapeuta) continue;
+
+    const nomeNormalizado = atendimento.clienteNome
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .toLocaleLowerCase("pt-BR");
+    const chaveCliente = atendimento.clienteId !== null && Number.isInteger(atendimento.clienteId)
+      ? `id:${atendimento.clienteId}`
+      : nomeNormalizado ? `nome:${nomeNormalizado}` : null;
+    if (!chaveCliente) continue;
+
+    const clientes = clientesPorTerapeuta.get(terapeuta.id) ?? new Map<string, ClientePreferencialDetalhe>();
+    const atual = clientes.get(chaveCliente) ?? {
+      clienteId: atendimento.clienteId,
+      clienteNome: atendimento.clienteNome.trim() || "Cliente sem nome",
+      atendimentos: 0,
+    };
+    atual.atendimentos += 1;
+    clientes.set(chaveCliente, atual);
     clientesPorTerapeuta.set(terapeuta.id, clientes);
   }
 
-  return terapeutas.map((terapeuta) => ({
-    terapeutaId: terapeuta.id,
-    terapeutaNome: terapeuta.nomeAbreviado || terapeuta.nomeCompleto,
-    clientesPreferenciais: clientesPorTerapeuta.get(terapeuta.id)?.size ?? 0,
-  })).sort((a, b) => {
+  return terapeutas.map((terapeuta) => {
+    const clientes = Array.from(clientesPorTerapeuta.get(terapeuta.id)?.values() ?? []).sort((a, b) => {
+      if (b.atendimentos !== a.atendimentos) return b.atendimentos - a.atendimentos;
+      return a.clienteNome.localeCompare(b.clienteNome, "pt-BR");
+    });
+    return {
+      terapeutaId: terapeuta.id,
+      terapeutaNome: terapeuta.nomeAbreviado || terapeuta.nomeCompleto,
+      clientesPreferenciais: clientes.length,
+      clientes,
+    };
+  }).sort((a, b) => {
     if (b.clientesPreferenciais !== a.clientesPreferenciais) return b.clientesPreferenciais - a.clientesPreferenciais;
     return a.terapeutaNome.localeCompare(b.terapeutaNome, "pt-BR");
   });

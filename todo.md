@@ -539,3 +539,5 @@
 - [x] Validar unidade, permissões, estados vazios/erro, persistência das liberações e isolamento dos dados antes do commit
 
 - [x] Corrigir regex de datas do relatório de Fidelização para aceitar entradas YYYY-MM-DD do campo date
+
+- [x] Exibir no hover de Preferenciais os clientes com atendimento preferencial no período, ordenados pela quantidade de atendimentos

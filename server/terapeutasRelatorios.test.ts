@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calcularFidelizacao, calcularPreferenciais, DATA_ISO_REGEX } from "./terapeutasRelatorios";
+import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, DATA_ISO_REGEX } from "./terapeutasRelatorios";
 
 const terapeutas = [
   { id: 1, nomeCompleto: "Ana Paula Silva", nomeAbreviado: "Ana" },
@@ -50,17 +50,30 @@ describe("relatórios de terapeutas", () => {
     expect(resultado.every((linha) => linha.percentualFidelizacao === null)).toBe(true);
   });
 
-  it("conta clientes distintos com preferência, sem transformar preferência em atendimento", () => {
-    const resultado = calcularPreferenciais(terapeutas, [
-      { clienteId: 10, terapeutaId: 1, terapeutaNome: "Ana" },
-      { clienteId: 10, terapeutaId: 1, terapeutaNome: "Ana" },
-      { clienteId: 11, terapeutaId: null, terapeutaNome: "Maria Angelica Souza" },
-      { clienteId: 12, terapeutaId: 999, terapeutaNome: "Ana" },
+  it("lista clientes distintos por preferência e ordena pelo número de atendimentos", () => {
+    const resultado = calcularPreferenciaisPorAtendimento(terapeutas, [
+      { clienteId: 10, clienteNome: "Cliente Ana 1", profissionalNome: "Ana", temPreferencia: true },
+      { clienteId: 10, clienteNome: "Cliente Ana 1", profissionalNome: "Ana", temPreferencia: true },
+      { clienteId: 11, clienteNome: "Cliente Ana 2", profissionalNome: "Ana Paula Silva", temPreferencia: true },
+      { clienteId: 12, clienteNome: "Cliente não preferencial", profissionalNome: "Ana", temPreferencia: false },
+      { clienteId: 13, clienteNome: "Cliente Maria", profissionalNome: "Maria Angelica Souza", temPreferencia: true },
+      { clienteId: 13, clienteNome: "Cliente Maria", profissionalNome: "Maria Angelica Souza", temPreferencia: true },
     ]);
 
-    expect(resultado).toEqual([
-      { terapeutaId: 1, terapeutaNome: "Ana", clientesPreferenciais: 1 },
-      { terapeutaId: 2, terapeutaNome: "Maria", clientesPreferenciais: 1 },
-    ]);
+    expect(resultado[0]).toEqual({
+      terapeutaId: 1,
+      terapeutaNome: "Ana",
+      clientesPreferenciais: 2,
+      clientes: [
+        { clienteId: 10, clienteNome: "Cliente Ana 1", atendimentos: 2 },
+        { clienteId: 11, clienteNome: "Cliente Ana 2", atendimentos: 1 },
+      ],
+    });
+    expect(resultado[1]).toEqual({
+      terapeutaId: 2,
+      terapeutaNome: "Maria",
+      clientesPreferenciais: 1,
+      clientes: [{ clienteId: 13, clienteNome: "Cliente Maria", atendimentos: 2 }],
+    });
   });
 });

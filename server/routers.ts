@@ -4261,9 +4261,16 @@ Diretrizes:
   }),
 
   terapeutasPreferenciais: router({
-    listar: protectedProcedure.input(z.object({ unidadeId: z.number().int().positive() })).query(async ({ input, ctx }) => {
+    listar: protectedProcedure.input(z.object({
+      unidadeId: z.number().int().positive(),
+      dataInicio: z.string().regex(DATA_ISO_REGEX, "Data inicial inválida"),
+      dataFim: z.string().regex(DATA_ISO_REGEX, "Data final inválida"),
+    }).refine((input) => input.dataInicio <= input.dataFim, {
+      message: "A data inicial não pode ser posterior à data final",
+      path: ["dataFim"],
+    })).query(async ({ input, ctx }) => {
       if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
-      return db.listarPreferenciaisTerapeutas(input.unidadeId);
+      return db.listarPreferenciaisTerapeutas(input.unidadeId, input.dataInicio, input.dataFim);
     }),
   }),
 
