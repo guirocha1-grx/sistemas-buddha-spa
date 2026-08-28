@@ -490,3 +490,9 @@
 - [x] Usar somente mensagens recentes para sugerir data, horário e serviço em uma prévia de atendimento sempre editável
 - [x] Adicionar botão pequeno de inclusão de próximo atendimento ao lado da edição e preservar o envio manual pela recepção
 - [x] Validar a sugestão de próximo atendimento, a inclusão manual e a edição com testes e build antes do push
+- [ ] Analisar a evolução dos agentes por unidade, agente, tipo de resposta e resultado de revisão
+- [ ] Identificar causas prioritárias de sugestões corrigidas, rejeitadas, atrasadas ou com falha
+- [ ] Entregar recomendações operacionais priorizadas sem alterar prompts, regras ou dados de produção
+- [x] Investigar por que o botão Iniciar sincronização não está acessível no painel de Sincronização Geral
+- [x] Corrigir o comportamento responsivo e a condição de exibição da ação de início sem alterar fontes ou dados sincronizados
+- [x] Validar a Sincronização Geral em desktop e mobile antes de enviar a correção ao GitHub

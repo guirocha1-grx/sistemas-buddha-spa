@@ -82,6 +82,8 @@ describe("GlobalSyncCenter", () => {
     const startButton = screen.getByRole("button", { name: "Iniciar sincronização" });
 
     expect(dialog).toHaveClass("flex", "h-[92dvh]", "flex-col");
+    expect(dialog).toHaveClass("sm:h-[86vh]");
+    expect(startButton.parentElement?.parentElement).toHaveClass("sticky", "bottom-0", "shrink-0");
     expect(startButton).toHaveClass("w-full", "sm:w-auto");
     expect(startButton).not.toBeDisabled();
   });
