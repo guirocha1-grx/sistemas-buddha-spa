@@ -11,9 +11,10 @@ import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
 import { storageGetSignedUrl, storageExists } from "./storage";
-import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, type InsertChamadoParametro } from "../drizzle/schema";
+import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, terapeutasLiberacoes, type InsertChamadoParametro } from "../drizzle/schema";
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
+import { calcularFidelizacao, calcularPreferenciais } from "./terapeutasRelatorios";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -3884,6 +3885,106 @@ export async function atualizarTerapeuta(id: number, dados: {
   const db = await getDb();
   if (!db) return;
   await db.update(terapeutas).set(dados).where(eq(terapeutas.id, id));
+}
+
+export async function listarFidelizacaoTerapeutas(unidadeId: number, dataInicio: string, dataFim: string) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [terapeutasAtivos, atendimentos] = await Promise.all([
+    db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
+      .from(terapeutas)
+      .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true)))
+      .orderBy(asc(terapeutas.nomeAbreviado)),
+    db.select({ profissionalNome: belleAtendimentos.profissionalNome, temPreferencia: belleAtendimentos.temPreferencia })
+      .from(belleAtendimentos)
+      .where(and(
+        eq(belleAtendimentos.unidadeId, unidadeId),
+        gte(belleAtendimentos.dataAtendimento, dataInicio),
+        lte(belleAtendimentos.dataAtendimento, dataFim),
+        eq(belleAtendimentos.status, "Atendido"),
+      )),
+  ]);
+
+  return calcularFidelizacao(terapeutasAtivos, atendimentos);
+}
+
+export async function listarPreferenciaisTerapeutas(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [terapeutasAtivos, preferencias] = await Promise.all([
+    db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
+      .from(terapeutas)
+      .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true)))
+      .orderBy(asc(terapeutas.nomeAbreviado)),
+    db.select({
+      clienteId: clientesPreferenciasTerapeuta.clienteId,
+      terapeutaId: clientesPreferenciasTerapeuta.terapeutaId,
+      terapeutaNome: clientesPreferenciasTerapeuta.terapeutaNome,
+    })
+      .from(clientesPreferenciasTerapeuta)
+      .where(eq(clientesPreferenciasTerapeuta.unidadeId, unidadeId)),
+  ]);
+
+  return calcularPreferenciais(terapeutasAtivos, preferencias);
+}
+
+export async function listarTerapeutasComLiberacoes(unidadeId: number) {
+  const db = await getDb();
+  if (!db) return { terapeutas: [], liberacoes: [] };
+
+  const [terapeutasAtivos, liberacoes] = await Promise.all([
+    db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
+      .from(terapeutas)
+      .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true)))
+      .orderBy(asc(terapeutas.nomeAbreviado)),
+    db.select({
+      terapeutaId: terapeutasLiberacoes.terapeutaId,
+      servicoCodigo: terapeutasLiberacoes.servicoCodigo,
+      servicoNome: terapeutasLiberacoes.servicoNome,
+    })
+      .from(terapeutasLiberacoes)
+      .where(eq(terapeutasLiberacoes.unidadeId, unidadeId)),
+  ]);
+
+  return { terapeutas: terapeutasAtivos, liberacoes };
+}
+
+export async function salvarLiberacaoTerapeuta(params: {
+  unidadeId: number;
+  terapeutaId: number;
+  servicoCodigo: number;
+  servicoNome: string;
+  liberada: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return;
+
+  const terapeuta = await db.select({ id: terapeutas.id })
+    .from(terapeutas)
+    .where(and(eq(terapeutas.id, params.terapeutaId), eq(terapeutas.unidadeId, params.unidadeId)))
+    .limit(1);
+  if (!terapeuta[0]) throw new Error("Terapeuta não encontrado nesta unidade");
+
+  if (!params.liberada) {
+    await db.delete(terapeutasLiberacoes).where(and(
+      eq(terapeutasLiberacoes.unidadeId, params.unidadeId),
+      eq(terapeutasLiberacoes.terapeutaId, params.terapeutaId),
+      eq(terapeutasLiberacoes.servicoCodigo, params.servicoCodigo),
+    ));
+    return;
+  }
+
+  await db.insert(terapeutasLiberacoes).values({
+    unidadeId: params.unidadeId,
+    terapeutaId: params.terapeutaId,
+    servicoCodigo: params.servicoCodigo,
+    servicoNome: params.servicoNome.trim(),
+  }).onDuplicateKeyUpdate({ set: {
+    servicoNome: params.servicoNome.trim(),
+    updatedAt: new Date(),
+  } });
 }
 
 /**

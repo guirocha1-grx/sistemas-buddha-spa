@@ -32,7 +32,8 @@ const requireUser = t.middleware(async opts => {
  * → "clientes") pro módulo correspondente em shared/modulos.ts — ver
  * controle de acesso por módulo, 2026-08-10. Vários routers do
  * Financeiro compartilham o mesmo módulo "financeiro" (é uma aba só na
- * navegação, com várias sub-seções por baixo). Router não listado aqui
+ * navegação, com várias sub-seções por baixo), e os routers de Terapeutas
+ * compartilham o módulo "terapeutas". Router não listado aqui
  * fica de fora do controle de propósito (nunca restringido) — inclui
  * infra que precisa funcionar mesmo pra conta restrita (unidades,
  * atendentes, auth) e o que não tem tela dedicada hoje (servicos,
@@ -42,6 +43,10 @@ const ROUTER_MODULO: Record<string, string> = {
   clientes: "clientes",
   kanban: "reativacao",
   agenda: "agenda",
+  terapeutas: "terapeutas",
+  terapeutasFidelizacao: "terapeutas",
+  terapeutasLiberacoes: "terapeutas",
+  terapeutasPreferenciais: "terapeutas",
   inbox: "mensagens",
   mensageria: "mensagens",
   scripts: "scripts",
@@ -71,12 +76,15 @@ const ROUTER_MODULO: Record<string, string> = {
  * Um nível abaixo de ROUTER_MODULO — mapeia pra sub-seção (ver
  * shared/subsecoes.ts) quando o router serve uma tela específica
  * dentro de um módulo com mais de uma. Só faz sentido hoje pros
- * routers do Financeiro; router não listado aqui nunca é restringido
+ * routers do Financeiro e de Terapeutas; router não listado aqui nunca é restringido
  * por sub-seção (mesmo se o módulo dele tiver sub-seções).
  */
 const ROUTER_SUBSECAO: Record<string, string> = {
   agenda: "agenda:agenda",
   proximosAtendimentos: "agenda:proximos-atendimentos",
+  terapeutasFidelizacao: "terapeutas:fidelizacao",
+  terapeutasLiberacoes: "terapeutas:liberacoes",
+  terapeutasPreferenciais: "terapeutas:preferenciais",
   financeiro: "financeiro:visao-geral",
   contas: "financeiro:contas",
   inter: "financeiro:contas",

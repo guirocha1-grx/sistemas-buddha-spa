@@ -1,6 +1,6 @@
 /**
- * Sub-seções dentro de um módulo que tem mais de uma tela (hoje só
- * Financeiro — ver os `children` de "Financeiro" em
+ * Sub-seções dentro de um módulo que tem mais de uma tela (por exemplo,
+ * Financeiro e Terapeutas — ver os `children` no
  * DashboardLayout.tsx). Permite restringir uma conta a, por exemplo,
  * só "Comanda Recepção" dentro de Financeiro, sem liberar Contas/
  * Parâmetros/Adquirentes (2026-08-10, mesmo padrão de shared/modulos.ts
@@ -10,6 +10,11 @@ export const SUBSECOES: Record<string, { chave: string; label: string }[]> = {
   agenda: [
     { chave: "agenda:agenda", label: "Agenda" },
     { chave: "agenda:proximos-atendimentos", label: "Próximos atendimentos" },
+  ],
+  terapeutas: [
+    { chave: "terapeutas:fidelizacao", label: "Fidelização" },
+    { chave: "terapeutas:liberacoes", label: "Liberações de terapia" },
+    { chave: "terapeutas:preferenciais", label: "Preferenciais" },
   ],
   tabela_precos: [
     { chave: "tabela_precos:campanha_mes", label: "Gerenciar Campanha do Mês" },

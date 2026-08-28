@@ -9,7 +9,8 @@ import DashboardLayout from "./components/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
 import Clientes from "./pages/Clientes";
 import Reativacao from "./pages/Reativacao";
-import Agenda from "./pages/Agenda";
+import Agenda from "@/pages/Agenda";
+import Terapeutas from "@/pages/Terapeutas";
 import ProximosAtendimentos from "./pages/ProximosAtendimentos";
 import Mensagens from "./pages/Mensagens";
 import Scripts from "./pages/Scripts";
@@ -46,6 +47,8 @@ function Router() {
         <Route path="/clientes" component={Clientes} />
         <Route path="/reativacao" component={Reativacao} />
         <Route path="/agenda" component={Agenda} />
+        <Route path="/terapeutas" component={Terapeutas} />
+        <Route path="/terapeutas/:subsecao" component={Terapeutas} />
         <Route path="/proximos-atendimentos" component={ProximosAtendimentos} />
         <Route path="/mensagens" component={Mensagens} />
         <Route path="/scripts" component={Scripts} />

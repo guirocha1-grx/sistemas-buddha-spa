@@ -20,6 +20,18 @@ const proximosAtendimentosProbe = router({
   }),
 });
 
+const terapeutasProbe = router({
+  terapeutasFidelizacao: router({
+    listar: protectedProcedure.query(() => ({ allowed: "fidelizacao" })),
+  }),
+  terapeutasLiberacoes: router({
+    listar: protectedProcedure.query(() => ({ allowed: "liberacoes" })),
+  }),
+  terapeutasPreferenciais: router({
+    listar: protectedProcedure.query(() => ({ allowed: "preferenciais" })),
+  }),
+});
+
 function contextWith(modulos: string[], subsecoes: string[] = []): TrpcContext {
   return {
     user: {
@@ -70,5 +82,19 @@ describe("permissão de sincronização global", () => {
 
     const semPermissao = proximosAtendimentosProbe.createCaller(contextWith(["agenda"], ["agenda:agenda"]));
     await expect(semPermissao.proximosAtendimentos.listar()).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("isola as subseções de Terapeutas para contas restritas", async () => {
+    expect(MODULOS).toContainEqual({ chave: "terapeutas", label: "Terapeutas" });
+    expect(SUBSECOES.terapeutas).toEqual([
+      { chave: "terapeutas:fidelizacao", label: "Fidelização" },
+      { chave: "terapeutas:liberacoes", label: "Liberações de terapia" },
+      { chave: "terapeutas:preferenciais", label: "Preferenciais" },
+    ]);
+
+    const somenteFidelizacao = terapeutasProbe.createCaller(contextWith(["terapeutas"], ["terapeutas:fidelizacao"]));
+    await expect(somenteFidelizacao.terapeutasFidelizacao.listar()).resolves.toEqual({ allowed: "fidelizacao" });
+    await expect(somenteFidelizacao.terapeutasLiberacoes.listar()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(somenteFidelizacao.terapeutasPreferenciais.listar()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

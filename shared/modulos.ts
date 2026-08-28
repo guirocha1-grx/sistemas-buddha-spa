@@ -20,6 +20,7 @@ export const MODULOS = [
   { chave: "clientes", label: "Clientes" },
   { chave: "reativacao", label: "Reativação" },
   { chave: "agenda", label: "Agenda" },
+  { chave: "terapeutas", label: "Terapeutas" },
   { chave: "mensagens", label: "Mensagens (Inbox)" },
   { chave: "tabela_precos", label: "Tabela de Preços" },
   { chave: "scripts", label: "Scripts" },

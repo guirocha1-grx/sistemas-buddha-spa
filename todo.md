@@ -531,3 +531,9 @@
 - [x] Aplicar à base e à regra de sistema dos especialistas RBS o acolhimento da saudação inicial, sem dar voz à Áurea silenciosa.
 - [x] Impedir que Carol ofereça horários do mesmo dia que já não sejam operacionalmente viáveis no momento da sugestão.
 - [x] Cobrir com testes a saudação combinada e o bloqueio de horários inviáveis antes do envio ao GitHub.
+
+- [x] Criar a seção Terapeutas com as subseções Fidelização, Liberações de terapia e Preferenciais
+- [x] Implementar o relatório de Fidelização por período, com atendimentos totais, fidelizados, não fidelizados e percentuais por terapeuta
+- [x] Criar a matriz por unidade de Liberações de terapia, relacionando terapeutas ativos e serviços Belle
+- [x] Implementar o relatório de Preferenciais por unidade, contando clientes distintos com terapeuta de preferência cadastrado
+- [x] Validar unidade, permissões, estados vazios/erro, persistência das liberações e isolamento dos dados antes do commit

@@ -423,6 +423,23 @@ export const terapeutas = mysqlTable("terapeutas", {
 export type Terapeuta = typeof terapeutas.$inferSelect;
 export type InsertTerapeuta = typeof terapeutas.$inferInsert;
 
+/** Relação operacional entre terapeuta e terapia liberada, isolada por unidade. */
+export const terapeutasLiberacoes = mysqlTable("terapeutas_liberacoes", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  terapeutaId: int("terapeutaId").notNull(),
+  servicoCodigo: int("servicoCodigo").notNull(),
+  servicoNome: varchar("servicoNome", { length: 250 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeTerapeutaServicoUnico: uniqueIndex("terapeutas_liberacoes_unidade_terapeuta_servico_idx").on(table.unidadeId, table.terapeutaId, table.servicoCodigo),
+  unidadeTerapeutaIdx: index("terapeutas_liberacoes_unidade_terapeuta_idx").on(table.unidadeId, table.terapeutaId),
+}));
+
+export type TerapeutaLiberacao = typeof terapeutasLiberacoes.$inferSelect;
+export type InsertTerapeutaLiberacao = typeof terapeutasLiberacoes.$inferInsert;
+
 /**
  * Sessão do atendente após validar o PIN — token opaco (não é o JWT do
  * login, cookie separado), com expiração curta (um turno). DB-backed

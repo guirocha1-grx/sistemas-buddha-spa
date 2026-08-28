@@ -4221,6 +4221,51 @@ Diretrizes:
     }),
   }),
 
+  terapeutasFidelizacao: router({
+    listar: protectedProcedure.input(z.object({
+      unidadeId: z.number().int().positive(),
+      dataInicio: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/, "Data inicial inválida"),
+      dataFim: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/, "Data final inválida"),
+    }).refine((input) => input.dataInicio <= input.dataFim, {
+      message: "A data inicial não pode ser posterior à data final",
+      path: ["dataFim"],
+    })).query(async ({ input, ctx }) => {
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
+      return db.listarFidelizacaoTerapeutas(input.unidadeId, input.dataInicio, input.dataFim);
+    }),
+  }),
+
+  terapeutasLiberacoes: router({
+    listar: protectedProcedure.input(z.object({ unidadeId: z.number().int().positive() })).query(async ({ input, ctx }) => {
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
+      const [dados, unidade] = await Promise.all([
+        db.listarTerapeutasComLiberacoes(input.unidadeId),
+        db.getUnidadeById(input.unidadeId),
+      ]);
+      if (!unidade) throw new Error("Unidade não encontrada");
+      return dados;
+    }),
+
+    salvar: protectedProcedure.input(z.object({
+      unidadeId: z.number().int().positive(),
+      terapeutaId: z.number().int().positive(),
+      servicoCodigo: z.number().int().positive(),
+      servicoNome: z.string().trim().min(1).max(250),
+      liberada: z.boolean(),
+    })).mutation(async ({ input, ctx }) => {
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
+      await db.salvarLiberacaoTerapeuta(input);
+      return { success: true } as const;
+    }),
+  }),
+
+  terapeutasPreferenciais: router({
+    listar: protectedProcedure.input(z.object({ unidadeId: z.number().int().positive() })).query(async ({ input, ctx }) => {
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
+      return db.listarPreferenciaisTerapeutas(input.unidadeId);
+    }),
+  }),
+
   // ===== Controle de acesso por módulo (ver shared/modulos.ts) =====
   permissoes: router({
     // Não é adminProcedure — todo mundo precisa saber os próprios

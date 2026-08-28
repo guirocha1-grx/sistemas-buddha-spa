@@ -56,6 +56,14 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
       { label: "Próximos atendimentos", path: "/proximos-atendimentos", subsecao: "agenda:proximos-atendimentos" },
     ],
   },
+  {
+    icon: Users2, label: "Terapeutas", path: "/terapeutas", modulo: "terapeutas",
+    children: [
+      { label: "Fidelização", path: "/terapeutas/fidelizacao", subsecao: "terapeutas:fidelizacao" },
+      { label: "Liberações de terapia", path: "/terapeutas/liberacoes", subsecao: "terapeutas:liberacoes" },
+      { label: "Preferenciais", path: "/terapeutas/preferenciais", subsecao: "terapeutas:preferenciais" },
+    ],
+  },
   { icon: MessageCircle, label: "WhatsApp", path: "/mensagens", modulo: "mensagens" },
   { icon: BookOpenCheck, label: "Tabela de Preços", path: "/tabela-precos", modulo: "tabela_precos" },
   { icon: ScrollText, label: "Scripts", path: "/scripts", modulo: "scripts" },
@@ -230,7 +238,14 @@ function DashboardLayoutContent({
       if (item.modulo && user?.role !== "admin" && minhasPermissoes?.restrito && !minhasPermissoes.modulos.includes(item.modulo)) return false;
       return true;
     });
-    if (primeiroLiberado) setLocation(primeiroLiberado.path);
+    if (primeiroLiberado) {
+      const primeiroFilhoLiberado = primeiroLiberado.children?.find((child) => {
+        if (!child.subsecao || user?.role === "admin" || !minhasPermissoes?.restrito) return true;
+        const subsecoesDoModulo = minhasPermissoes.subsecoes.filter((s) => s.startsWith(`${primeiroLiberado.modulo}:`));
+        return subsecoesDoModulo.length === 0 || subsecoesDoModulo.includes(child.subsecao);
+      });
+      setLocation(primeiroFilhoLiberado?.path ?? primeiroLiberado.path);
+    }
   }, [location, podeVerDashboard, minhasPermissoes, user, setLocation]);
 
   useEffect(() => {
