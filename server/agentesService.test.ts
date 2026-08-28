@@ -42,7 +42,7 @@ vi.mock("./zapiApi", () => ({ zapiApi: { sendText, sendDocument, sendImage } }))
 vi.mock("./buddhaMktApi", () => ({ buddhaMktApi: { sendText: vi.fn() } }));
 vi.mock("./fluxos", () => ({ iniciarExecucaoFluxo }));
 
-import { aprovarEEnviarSugestao, extrairConteudoRespostaLLM, instrucaoContextoRelacionamento, liberarSugestaoParaEdicao, limitarMensagemCliente, processarMensagemRecebida, removerIdentificacaoAgente, reprovarSugestao } from "./agentesService";
+import { aplicarSaudacaoInicialEspecialista, aprovarEEnviarSugestao, extrairConteudoRespostaLLM, instrucaoContextoRelacionamento, liberarSugestaoParaEdicao, limitarMensagemCliente, processarMensagemRecebida, removerIdentificacaoAgente, reprovarSugestao } from "./agentesService";
 
 const respostaJson = (message: string, status = "in_process", action: string | null = null, excecaoOperacional: boolean = false) => JSON.stringify({
   message,
@@ -102,6 +102,24 @@ describe("orquestrador de agentes", () => {
   it("remove a identificação nominal do especialista antes de sugerir o texto", () => {
     expect(removerIdentificacaoAgente("Olá! Eu sou a Bianca, especialista em terapias. Posso ajudar você.", "Bianca")).toBe("Posso ajudar você.");
     expect(removerIdentificacaoAgente("Boa tarde! Sou a Estela. Vou verificar os valores.", "Estela")).toBe("Vou verificar os valores.");
+  });
+
+  it("acolhe a primeira mensagem direcionada a um especialista sem dar voz à Áurea", () => {
+    const primeiraMensagem = contexto("Bom dia, tudo bem? Gostaria de saber sobre vouchers.");
+    const agora = new Date("2026-08-28T16:00:00.000Z");
+
+    expect(aplicarSaudacaoInicialEspecialista({
+      contexto: primeiraMensagem,
+      chaveAgente: "diana",
+      mensagem: "Olá! Temos opções físicas e virtuais.",
+      agora,
+    })).toBe("Boa tarde, tudo bem e você?\n\nTemos opções físicas e virtuais.");
+    expect(aplicarSaudacaoInicialEspecialista({
+      contexto: primeiraMensagem,
+      chaveAgente: "aurea",
+      mensagem: "Classificação interna.",
+      agora,
+    })).toBe("Classificação interna.");
   });
 
   beforeEach(() => {
@@ -302,7 +320,7 @@ describe("orquestrador de agentes", () => {
     expect(invokeLLM).not.toHaveBeenCalled();
     expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
       agenteId: 3,
-      sugestao: "Claro. Vou enviar as opções gerais de Day Spa para você conhecer.",
+      sugestao: "Boa tarde!\n\nClaro. Vou enviar as opções gerais de Day Spa para você conhecer.",
       acaoPendente: "script_fluxo:210002",
     }));
   });
@@ -345,18 +363,24 @@ describe("orquestrador de agentes", () => {
     }));
   });
 
-  it("oferece os slots padronizados quando o cliente já informou o período", async () => {
-    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Tem horário para hoje à tarde?"));
-    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);
+  it("oferece apenas slots com tempo hábil quando o cliente pede hoje à tarde", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T16:00:00.000Z"));
+    try {
+      agentesDb.obterContextoConversa.mockResolvedValue(contexto("Tem horário para hoje à tarde?"));
+      agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);
 
-    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 436 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
+      await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 436 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
 
-    expect(invokeLLM).not.toHaveBeenCalled();
-    expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
-      agenteId: 5,
-      sugestao: "Tenho para hoje disponíveis os horários 13:00 e 14:15. Algum desses fica bom para você?",
-      variaveis: expect.objectContaining({ triagem_horario: "aguardando_escolha_slot", slots_oferecidos: "13:00, 14:15" }),
-    }));
+      expect(invokeLLM).not.toHaveBeenCalled();
+      expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
+        agenteId: 5,
+        sugestao: "Para hoje, posso verificar 15:30 e 16:45. Algum desses fica melhor para você?",
+        variaveis: expect.objectContaining({ triagem_horario: "aguardando_escolha_slot", slots_oferecidos: "15:30, 16:45" }),
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("mantém a coleta com Carol quando o cliente informa um horário específico", async () => {
@@ -380,7 +404,7 @@ describe("orquestrador de agentes", () => {
 
     expect(invokeLLM).not.toHaveBeenCalled();
     expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
-      sugestao: "Tenho para domingo disponíveis os horários 14:00 e 15:15. Algum desses fica bom para você?",
+      sugestao: "Para domingo, posso verificar 14:00 e 15:15. Algum desses fica melhor para você?",
       variaveis: expect.objectContaining({ slots_oferecidos: "14:00, 15:15" }),
     }));
   });

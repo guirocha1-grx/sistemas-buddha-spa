@@ -528,3 +528,6 @@
 - [x] Registrar métricas conhecidas, regras de não intervenção, riscos e pendências para continuidade em tópico específico
 - [x] Revisar e enviar ao GitHub o documento de estado dos agentes
 - [x] Atualizar descrição e instruções permanentes do projeto com a produção Railway, GitHub canônico e integrações atuais
+- [x] Aplicar à base e à regra de sistema dos especialistas RBS o acolhimento da saudação inicial, sem dar voz à Áurea silenciosa.
+- [x] Impedir que Carol ofereça horários do mesmo dia que já não sejam operacionalmente viáveis no momento da sugestão.
+- [x] Cobrir com testes a saudação combinada e o bloqueio de horários inviáveis antes do envio ao GitHub.
