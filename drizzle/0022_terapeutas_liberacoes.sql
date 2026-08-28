@@ -1,6 +1,8 @@
 -- Liberações de terapias por terapeuta e unidade.
 -- Migration aditiva: não altera nem remove dados existentes.
-CREATE TABLE terapeutas_liberacoes (
+-- IF NOT EXISTS mantém a migração segura quando a tabela foi aplicada manualmente
+-- com a mesma estrutura antes do código desta seção chegar ao repositório.
+CREATE TABLE IF NOT EXISTS terapeutas_liberacoes (
   id INT AUTO_INCREMENT PRIMARY KEY,
   unidadeId INT NOT NULL,
   terapeutaId INT NOT NULL,
