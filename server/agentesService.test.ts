@@ -139,8 +139,30 @@ describe("orquestrador de agentes", () => {
     expect(agentesDb.descartarSugestoesPendentesDaConversa).toHaveBeenCalledWith(10);
     expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({ status: "concluida", classificacao: "bianca" }));
     expect(sendText).not.toHaveBeenCalled();
-    expect(invokeLLM.mock.calls[0]?.[0]).toMatchObject({ tool_choice: "none", tools: [], reasoningEffort: "low" });
+    expect(invokeLLM.mock.calls[0]?.[0]).toMatchObject({ tool_choice: "none", tools: [], reasoningEffort: "minimal" });
     expect(invokeLLM.mock.calls[0]?.[0]).not.toHaveProperty("response_format");
+  });
+
+  // Regressão do P0 do relatório 2026-08-28 (analise_evolucao_agentes_2026-08-28.md):
+  // 58 de 59 falhas recentes da Aurea foram resposta vazia depois de
+  // esgotar o orçamento de tokens só em raciocínio interno
+  // (finish_reason "length"). invokeLLM real lança nesse caso
+  // (normalizarRespostaLLM, ver server/_core/llm.ts) — o teste simula
+  // exatamente essa falha e confirma que o sistema falha de forma
+  // recuperável (execução marcada como erro, sem sugestão enganosa),
+  // não trava nem quebra o fluxo pro cliente.
+  it("marca a execução como erro (sem criar sugestão) quando a Aurea esgota o orçamento em raciocínio", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Preciso de ajuda para escolher uma experiência"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [biancaAssistida]);
+    invokeLLM.mockRejectedValueOnce(new Error(
+      'LLM response did not contain output text; finish_reason: length; usage: {"completion_tokens":600,"reasoning_tokens":600}',
+    ));
+
+    const resultado = await processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 45 });
+
+    expect(resultado).toEqual({ status: "erro" });
+    expect(agentesDb.criarSugestao).not.toHaveBeenCalled();
+    expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({ status: "erro" }));
   });
 
   it("acolhe uma abertura sem intenção e aguarda o cliente explicar a necessidade", async () => {

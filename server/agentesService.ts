@@ -388,14 +388,21 @@ async function obterRotaComAurea(params: {
   const destinos = params.especialistas.map(({ agente }) => ({ chave: agente.chave, nome: agente.nome, descricao: agente.descricao ?? "" }));
   const resposta = await invokeLLM({
     model: params.receptor.agente.modelo,
-    // maxTokens alto o bastante pra sobrar espaço pra resposta mesmo se o
-    // modelo gastar tokens de raciocínio interno antes do JSON final. O proxy
-    // de produção pode encaminhar a chamada à Responses API e anexar
-    // web_search; nessa superfície Azure rejeita reasoning effort "minimal"
-    // quando há ferramenta. "low" preserva um raciocínio econômico e é
-    // compatível com a ferramenta inevitavelmente anexada pelo provedor.
-    maxTokens: 600,
-    reasoningEffort: "low",
+    // "low" existia por causa do proxy Forge/Azure (migração já concluída,
+    // ver git log) — nessa superfície, quando o provedor anexava
+    // web_search por conta própria, "minimal" era rejeitado junto com
+    // ferramenta. Falando direto com a OpenAI, com tools:[] explícito,
+    // essa restrição não existe mais. "minimal" é o efeito certo pra uma
+    // classificação simples (só escolher 1 de N destinos).
+    //
+    // Mesmo assim, relatório de produção (analise_evolucao_agentes_2026-08-28.md)
+    // mediu 58 de 59 falhas recentes da Aurea como resposta vazia após
+    // esgotar maxTokens=600 SÓ em raciocínio interno (finish_reason:
+    // "length", completion_tokens e reasoning_tokens ambos no teto) —
+    // mesmo com "low". maxTokens maior aqui é rede de segurança pro caso
+    // de "minimal" ainda assim gastar mais que o esperado em algum caso.
+    maxTokens: 1200,
+    reasoningEffort: "minimal",
     tools: [],
     tool_choice: "none",
     messages: [
