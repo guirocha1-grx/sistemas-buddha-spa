@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calcularFechamentoAgenda, calcularFidelizacao, calcularPreferenciaisPorAtendimento, DATA_ISO_REGEX } from "./terapeutasRelatorios";
+import { calcularEvolucaoFidelizacao, calcularFechamentoAgenda, calcularFidelizacao, calcularPreferenciaisPorAtendimento, DATA_ISO_REGEX } from "./terapeutasRelatorios";
 
 const terapeutas = [
   { id: 1, nomeCompleto: "Ana Paula Silva", nomeAbreviado: "Ana" },
@@ -48,6 +48,34 @@ describe("relatórios de terapeutas", () => {
     expect(resultado).toHaveLength(2);
     expect(resultado.every((linha) => linha.totalAtendimentos === 0)).toBe(true);
     expect(resultado.every((linha) => linha.percentualFidelizacao === null)).toBe(true);
+  });
+
+  it("bucketa a evolução de fidelização por mês, ignorando outros terapeutas", () => {
+    const resultado = calcularEvolucaoFidelizacao([
+      { profissionalNome: "Ana Paula Silva", temPreferencia: true, dataAtendimento: "2026-06-10" },
+      { profissionalNome: "Ana", temPreferencia: false, dataAtendimento: "2026-06-20" },
+      { profissionalNome: "Ana", temPreferencia: true, dataAtendimento: "2026-07-05" },
+      { profissionalNome: "Maria Angélica Souza", temPreferencia: true, dataAtendimento: "2026-06-15" },
+    ], terapeutas[0], "mes");
+
+    expect(resultado).toEqual([
+      { periodo: "2026-06", rotulo: "Jun/26", totalAtendimentos: 2, atendimentosFidelizados: 1, percentualFidelizacao: 50 },
+      { periodo: "2026-07", rotulo: "Jul/26", totalAtendimentos: 1, atendimentosFidelizados: 1, percentualFidelizacao: 100 },
+    ]);
+  });
+
+  it("bucketa a evolução de fidelização por semana (segunda-feira como início)", () => {
+    // 2026-08-03 é uma segunda-feira; 2026-08-05 cai na mesma semana.
+    const resultado = calcularEvolucaoFidelizacao([
+      { profissionalNome: "Ana", temPreferencia: true, dataAtendimento: "2026-08-03" },
+      { profissionalNome: "Ana", temPreferencia: false, dataAtendimento: "2026-08-05" },
+      { profissionalNome: "Ana", temPreferencia: true, dataAtendimento: "2026-08-11" },
+    ], terapeutas[0], "semana");
+
+    expect(resultado).toEqual([
+      { periodo: "2026-08-03", rotulo: "03/08", totalAtendimentos: 2, atendimentosFidelizados: 1, percentualFidelizacao: 50 },
+      { periodo: "2026-08-10", rotulo: "10/08", totalAtendimentos: 1, atendimentosFidelizados: 1, percentualFidelizacao: 100 },
+    ]);
   });
 
   it("calcula dias sem atendimento por profissional e dia da semana", () => {

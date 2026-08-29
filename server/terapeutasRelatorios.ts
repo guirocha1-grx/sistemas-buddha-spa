@@ -112,6 +112,74 @@ export function calcularFidelizacao(
   });
 }
 
+export interface AtendimentoFidelizacaoComDataInput extends AtendimentoFidelizacaoInput {
+  dataAtendimento: string;
+}
+
+export type GranularidadeEvolucao = "semana" | "mes";
+
+export interface PontoEvolucaoFidelizacao {
+  periodo: string; // chave ordenável (AAAA-MM ou AAAA-MM-DD do início da semana)
+  rotulo: string; // rótulo curto pro eixo do gráfico
+  totalAtendimentos: number;
+  atendimentosFidelizados: number;
+  percentualFidelizacao: number | null;
+}
+
+const NOMES_MES_ABREVIADO = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+// Segunda-feira como início da semana (dia 0 do JS é domingo).
+function inicioDaSemana(data: string): string {
+  const dia = diaUTC(data);
+  if (!dia) return data;
+  const deslocamento = dia.getUTCDay() === 0 ? 6 : dia.getUTCDay() - 1;
+  const inicio = new Date(dia.getTime() - deslocamento * 24 * 60 * 60 * 1000);
+  return inicio.toISOString().slice(0, 10);
+}
+
+function rotuloPeriodo(chave: string, granularidade: GranularidadeEvolucao): string {
+  if (granularidade === "semana") {
+    const [, mes, dia] = chave.split("-");
+    return `${dia}/${mes}`;
+  }
+  const [ano, mes] = chave.split("-").map(Number);
+  return `${NOMES_MES_ABREVIADO[mes - 1]}/${String(ano).slice(2)}`;
+}
+
+/**
+ * Série temporal de fidelização de UM terapeuta, pra alimentar o
+ * gráfico de evolução (hover no nome, ver Terapeutas.tsx) — mesmo
+ * cálculo de calcularFidelizacao, mas bucketado por semana ou mês em
+ * vez de agregado no período inteiro.
+ */
+export function calcularEvolucaoFidelizacao(
+  atendimentos: AtendimentoFidelizacaoComDataInput[],
+  terapeuta: TerapeutaRelatorioBase,
+  granularidade: GranularidadeEvolucao,
+): PontoEvolucaoFidelizacao[] {
+  const chavesTerapeuta = new Set([normalizarNomeTerapeuta(terapeuta.nomeCompleto), normalizarNomeTerapeuta(terapeuta.nomeAbreviado)]);
+  const buckets = new Map<string, { total: number; fidelizados: number }>();
+
+  for (const atendimento of atendimentos) {
+    if (!chavesTerapeuta.has(normalizarNomeTerapeuta(atendimento.profissionalNome))) continue;
+    const chave = granularidade === "mes" ? atendimento.dataAtendimento.slice(0, 7) : inicioDaSemana(atendimento.dataAtendimento);
+    const atual = buckets.get(chave) ?? { total: 0, fidelizados: 0 };
+    atual.total += 1;
+    if (atendimento.temPreferencia) atual.fidelizados += 1;
+    buckets.set(chave, atual);
+  }
+
+  return Array.from(buckets.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([chave, { total, fidelizados }]) => ({
+      periodo: chave,
+      rotulo: rotuloPeriodo(chave, granularidade),
+      totalAtendimentos: total,
+      atendimentosFidelizados: fidelizados,
+      percentualFidelizacao: total ? (fidelizados / total) * 100 : null,
+    }));
+}
+
 export function calcularPreferenciaisPorAtendimento(
   terapeutas: TerapeutaRelatorioBase[],
   atendimentos: AtendimentoPreferencialInput[],

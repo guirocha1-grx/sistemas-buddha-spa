@@ -4256,6 +4256,20 @@ Diretrizes:
       if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
       return db.listarFidelizacaoTerapeutas(input.unidadeId, input.dataInicio, input.dataFim);
     }),
+
+    evolucao: protectedProcedure.input(z.object({
+      unidadeId: z.number().int().positive(),
+      terapeutaId: z.number().int().positive(),
+      dataInicio: z.string().regex(DATA_ISO_REGEX, "Data inicial inválida"),
+      dataFim: z.string().regex(DATA_ISO_REGEX, "Data final inválida"),
+      granularidade: z.enum(["semana", "mes"]),
+    }).refine((input) => input.dataInicio <= input.dataFim, {
+      message: "A data inicial não pode ser posterior à data final",
+      path: ["dataFim"],
+    })).query(async ({ input, ctx }) => {
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
+      return db.listarEvolucaoFidelizacaoTerapeuta(input.unidadeId, input.terapeutaId, input.dataInicio, input.dataFim, input.granularidade);
+    }),
   }),
 
   terapeutasLiberacoes: router({

@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
 import {
   AlertCircle,
   AlertTriangle,
@@ -59,6 +61,56 @@ function periodoMesVigente(): { inicio: string; fim: string } {
     inicio: dataLocalParaInput(new Date(hoje.getFullYear(), hoje.getMonth(), 1)),
     fim: dataLocalParaInput(hoje),
   };
+}
+
+function periodoUltimosDias(dias: number): { inicio: string; fim: string } {
+  const hoje = new Date();
+  const inicio = new Date(hoje);
+  inicio.setDate(inicio.getDate() - dias);
+  return { inicio: dataLocalParaInput(inicio), fim: dataLocalParaInput(hoje) };
+}
+
+function periodoUltimosMeses(meses: number): { inicio: string; fim: string } {
+  const hoje = new Date();
+  const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - meses, hoje.getDate());
+  return { inicio: dataLocalParaInput(inicio), fim: dataLocalParaInput(hoje) };
+}
+
+function periodoAnoVigente(): { inicio: string; fim: string } {
+  const hoje = new Date();
+  return { inicio: dataLocalParaInput(new Date(hoje.getFullYear(), 0, 1)), fim: dataLocalParaInput(hoje) };
+}
+
+const PRESETS_PERIODO: { label: string; periodo: () => { inicio: string; fim: string } }[] = [
+  { label: "Mês atual", periodo: periodoMesVigente },
+  { label: "30 dias", periodo: () => periodoUltimosDias(30) },
+  { label: "3 meses", periodo: () => periodoUltimosMeses(3) },
+  { label: "6 meses", periodo: () => periodoUltimosMeses(6) },
+  { label: "1 ano", periodo: () => periodoUltimosMeses(12) },
+  { label: "Ano atual", periodo: periodoAnoVigente },
+];
+
+// Regressão linear simples (mínimos quadrados) sobre os pontos com
+// valor conhecido — buckets sem atendimento (percentual null) ficam de
+// fora do ajuste, mas a reta é estendida por todos os índices pra
+// cobrir o gráfico inteiro.
+function calcularTendenciaLinear(valores: (number | null)[]): (number | null)[] {
+  const pontos = valores
+    .map((valor, indice) => (valor === null ? null : { x: indice, y: valor }))
+    .filter((ponto): ponto is { x: number; y: number } => ponto !== null);
+  if (pontos.length < 2) return valores.map(() => null);
+
+  const n = pontos.length;
+  const somaX = pontos.reduce((soma, p) => soma + p.x, 0);
+  const somaY = pontos.reduce((soma, p) => soma + p.y, 0);
+  const somaXY = pontos.reduce((soma, p) => soma + p.x * p.y, 0);
+  const somaX2 = pontos.reduce((soma, p) => soma + p.x * p.x, 0);
+  const denominador = n * somaX2 - somaX * somaX;
+  if (denominador === 0) return valores.map(() => null);
+
+  const inclinacao = (n * somaXY - somaX * somaY) / denominador;
+  const intercepto = (somaY - inclinacao * somaX) / n;
+  return valores.map((_, indice) => inclinacao * indice + intercepto);
 }
 
 function formatarPercentual(valor: number | null | undefined): string {
@@ -138,6 +190,98 @@ function Indicador({ titulo, valor, detalhe, icon: Icon }: {
         {detalhe && <p className="mt-1 text-xs text-muted-foreground">{detalhe}</p>}
       </CardContent>
     </Card>
+  );
+}
+
+const GRANULARIDADES_EVOLUCAO = [
+  { valor: "semana" as const, label: "Semana" },
+  { valor: "mes" as const, label: "Mês" },
+];
+
+/**
+ * Nome do terapeuta na tabela de Fidelização — passar o mouse abre um
+ * gráfico de linha da evolução da fidelização (bucketada por semana ou
+ * mês) com uma reta de tendência. A query só é habilitada quando o
+ * HoverCard está de fato aberto, pra não disparar N queries (uma por
+ * terapeuta da lista) já no carregamento da página.
+ */
+function NomeTerapeutaComEvolucao({
+  unidadeId, terapeutaId, terapeutaNome, dataInicio, dataFim,
+}: { unidadeId: number; terapeutaId: number; terapeutaNome: string; dataInicio: string; dataFim: string }) {
+  const [aberto, setAberto] = useState(false);
+  const [granularidade, setGranularidade] = useState<"semana" | "mes">("mes");
+
+  const evolucaoQuery = trpc.terapeutasFidelizacao.evolucao.useQuery(
+    { unidadeId, terapeutaId, dataInicio, dataFim, granularidade },
+    { enabled: aberto },
+  );
+
+  const dados = useMemo(() => {
+    const pontos = evolucaoQuery.data ?? [];
+    const tendencia = calcularTendenciaLinear(pontos.map((ponto) => ponto.percentualFidelizacao));
+    return pontos.map((ponto, indice) => ({
+      rotulo: ponto.rotulo,
+      percentual: ponto.percentualFidelizacao,
+      tendencia: tendencia[indice],
+    }));
+  }, [evolucaoQuery.data]);
+
+  return (
+    <HoverCard openDelay={150} closeDelay={100} onOpenChange={setAberto}>
+      <HoverCardTrigger asChild>
+        <span className="cursor-default underline decoration-dotted underline-offset-4">{terapeutaNome}</span>
+      </HoverCardTrigger>
+      <HoverCardContent side="right" align="start" className="w-96">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold">{terapeutaNome}</p>
+            <p className="text-[11px] text-muted-foreground">Evolução da fidelização</p>
+          </div>
+          <div className="flex gap-1">
+            {GRANULARIDADES_EVOLUCAO.map((opcao) => (
+              <button
+                key={opcao.valor}
+                type="button"
+                onClick={() => setGranularidade(opcao.valor)}
+                className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
+                  granularidade === opcao.valor ? "bg-primary text-primary-foreground" : "border text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {opcao.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {evolucaoQuery.isLoading ? (
+          <div className="flex h-40 items-center justify-center">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : dados.length === 0 ? (
+          <p className="flex h-40 items-center justify-center text-center text-xs text-muted-foreground">
+            Sem atendimentos suficientes no período.
+          </p>
+        ) : (
+          <div className="h-40 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={dados} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.91 0.005 70)" vertical={false} />
+                <XAxis dataKey="rotulo" tick={{ fontSize: 10 }} stroke="oklch(0.55 0.01 60)" />
+                <YAxis tick={{ fontSize: 10 }} stroke="oklch(0.55 0.01 60)" unit="%" domain={[0, 100]} />
+                <RechartsTooltip
+                  formatter={(valor: number) => `${valor.toFixed(1)}%`}
+                  contentStyle={{ fontSize: 12 }}
+                />
+                <Line type="monotone" dataKey="percentual" name="Fidelização" stroke="oklch(0.50 0.12 30)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                <Line type="monotone" dataKey="tendencia" name="Tendência" stroke="oklch(0.65 0.01 60)" strokeWidth={1.5} strokeDasharray="4 4" dot={false} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          % de fidelização por {granularidade === "semana" ? "semana" : "mês"} no período selecionado.
+        </p>
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 
@@ -263,6 +407,28 @@ export default function Terapeutas() {
         <>
           {(abaAtiva === "fidelizacao" || abaAtiva === "preferenciais" || abaAtiva === "fechamento" || abaAtiva === "tempos") && (
             <Card className="mb-4 border-border/50 shadow-sm">
+              <CardContent className="flex flex-wrap items-center gap-3 p-4 pb-0">
+                <span className="text-xs font-medium text-muted-foreground">Período rápido:</span>
+                {PRESETS_PERIODO.map((preset) => {
+                  const range = preset.periodo();
+                  const ativo = dataInicio === range.inicio && dataFim === range.fim;
+                  return (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => {
+                        setDataInicio(range.inicio);
+                        setDataFim(range.fim);
+                      }}
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                        ativo ? "bg-primary text-primary-foreground" : "border bg-background text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </CardContent>
               <CardContent className="flex flex-wrap items-end gap-3 p-4">
                 <div className="space-y-1">
                   <Label htmlFor="terapeutas-data-inicio" className="text-xs">Data início</Label>
@@ -356,7 +522,15 @@ export default function Terapeutas() {
                             <TableRow><TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">Nenhum terapeuta ativo cadastrado nesta unidade.</TableCell></TableRow>
                           ) : fidelizacao.map((linha) => (
                             <TableRow key={linha.terapeutaId}>
-                              <TableCell className="font-medium">{linha.terapeutaNome}</TableCell>
+                              <TableCell className="font-medium">
+                                <NomeTerapeutaComEvolucao
+                                  unidadeId={unidadeId ?? 0}
+                                  terapeutaId={linha.terapeutaId}
+                                  terapeutaNome={linha.terapeutaNome}
+                                  dataInicio={dataInicio}
+                                  dataFim={dataFim}
+                                />
+                              </TableCell>
                               <TableCell className="text-right">{formatarNumero(linha.totalAtendimentos)}</TableCell>
                               <TableCell className="text-right">{formatarNumero(linha.atendimentosFidelizados)}</TableCell>
                               <TableCell className="text-right font-medium text-emerald-700">{formatarPercentual(linha.percentualFidelizacao)}</TableCell>

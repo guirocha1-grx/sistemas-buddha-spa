@@ -14,7 +14,7 @@ import { storageGetSignedUrl, storageExists } from "./storage";
 import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, atendimentoTempoEventos, terapeutasLiberacoes, type InsertChamadoParametro } from "../drizzle/schema";
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
-import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda } from "./terapeutasRelatorios";
+import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda, calcularEvolucaoFidelizacao, type GranularidadeEvolucao } from "./terapeutasRelatorios";
 import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, nomesCorrespondem, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -4347,6 +4347,40 @@ export async function listarFidelizacaoTerapeutas(unidadeId: number, dataInicio:
   ]);
 
   return calcularFidelizacao(terapeutasAtivos, atendimentos);
+}
+
+// Série temporal (hover no nome do terapeuta em Fidelização) — mesmos
+// atendimentos de listarFidelizacaoTerapeutas, mas de UM terapeuta só e
+// bucketados por semana/mês em vez de agregados no período inteiro.
+export async function listarEvolucaoFidelizacaoTerapeuta(
+  unidadeId: number,
+  terapeutaId: number,
+  dataInicio: string,
+  dataFim: string,
+  granularidade: GranularidadeEvolucao,
+) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [terapeuta] = await db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
+    .from(terapeutas)
+    .where(and(eq(terapeutas.id, terapeutaId), eq(terapeutas.unidadeId, unidadeId)))
+    .limit(1);
+  if (!terapeuta) return [];
+
+  const atendimentos = await db.select({
+    profissionalNome: belleAtendimentos.profissionalNome,
+    temPreferencia: belleAtendimentos.temPreferencia,
+    dataAtendimento: belleAtendimentos.dataAtendimento,
+  }).from(belleAtendimentos)
+    .where(and(
+      eq(belleAtendimentos.unidadeId, unidadeId),
+      gte(belleAtendimentos.dataAtendimento, dataInicio),
+      lte(belleAtendimentos.dataAtendimento, dataFim),
+      eq(belleAtendimentos.status, "Atendido"),
+    ));
+
+  return calcularEvolucaoFidelizacao(atendimentos, terapeuta, granularidade);
 }
 
 export async function listarPreferenciaisTerapeutas(unidadeId: number, dataInicio: string, dataFim: string) {
