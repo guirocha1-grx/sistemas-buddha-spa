@@ -1009,7 +1009,6 @@ async function associarEventoTempoAtendimento(eventoId: number): Promise<Resulta
       servicoNome: linha.servicoNome,
       sala: linha.sala,
     })),
-    true,
   );
   if (!candidato) {
     const motivo = candidatosDoTerapeuta.length > 1 ? "Mais de um atendimento possível sem identificador único" : "Nenhum atendimento chamado pendente encontrado";

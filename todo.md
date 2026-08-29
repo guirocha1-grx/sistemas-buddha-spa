@@ -560,3 +560,5 @@
 - [x] Adicionar identidade WhatsApp editável ao cadastro de terapeutas, com telefone e ID do participante
 - [x] Persistir todos os eventos candidatos de início/fim antes do pareamento e permitir reconciliação sem perda
 - [x] Corrigir o pareamento do tempo por terapeuta identificado, atendimento e evento específico
+
+- [x] Impedir que início/fim genérico seja atribuído sequencialmente quando houver mais de um atendimento pendente do mesmo terapeuta
