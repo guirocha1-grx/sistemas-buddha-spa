@@ -566,3 +566,6 @@
 - [x] Validar a estrutura final de atendimentos_operacional sem alterar registros existentes
 - [x] Verificar e aplicar, se ausentes, terapeutaId, whatsappParticipanteId, participanteLid e atendimento_tempo_eventos para restaurar o Inbox
 - [x] Validar leitura e inserção de mensagens após a migração de identidade e tempo
+- [x] Verificar e adicionar, se ausentes, vínculo e nível no cadastro de terapeutas
+- [x] Validar os valores padrão de vínculo e nível sem alterar os terapeutas já cadastrados
+- [x] Atualizar o schema e a migração versionada com vínculo e nível para manter compatibilidade com o TiDB
