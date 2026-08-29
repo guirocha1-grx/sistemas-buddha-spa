@@ -104,12 +104,13 @@ export function pontuarIdentificadorAtendimento(conteudo: string | null | undefi
   const cliente = normalizarTexto(identificadores.clienteNome);
   const servico = normalizarTexto(identificadores.servicoNome);
   const sala = normalizarTexto(identificadores.sala);
+  const palavras = texto.split(/[^a-z0-9]+/).filter(Boolean);
   let pontos = 0;
 
   if (cliente && cliente.length >= 3 && texto.includes(cliente)) pontos += 100;
   else {
     const primeiroNomeCliente = cliente.split(/\s+/)[0];
-    if (primeiroNomeCliente.length >= 3 && texto.split(/\s+/).includes(primeiroNomeCliente)) pontos += 70;
+    if (primeiroNomeCliente.length >= 3 && palavras.includes(primeiroNomeCliente)) pontos += 70;
   }
   if (servico && servico.length >= 5 && texto.includes(servico)) pontos += 40;
   if (sala && sala.length >= 3 && texto.includes(sala)) pontos += 30;

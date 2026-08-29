@@ -66,7 +66,7 @@ describe("tempo de atendimento", () => {
       { atendimentoBelleId: 101, terapeutaNome: "Ana", clienteNome: "Maria Paula", servicoNome: "Massagem Relaxante", sala: "Sala 1" },
       { atendimentoBelleId: 102, terapeutaNome: "Ana", clienteNome: "João Pedro", servicoNome: "Drenagem Linfática", sala: "Sala 2" },
     ];
-    expect(escolherAtendimentoPorEvento("Ana Souza", "Iniciei João Pedro na Sala 2 para Drenagem Linfática", candidatos)?.atendimentoBelleId).toBe(102);
+    expect(escolherAtendimentoPorEvento("Ana Souza", "Iniciei João Pedro, na Sala 2 para Drenagem Linfática", candidatos)?.atendimentoBelleId).toBe(102);
     expect(escolherAtendimentoPorEvento("Ana Souza", "Iniciei o próximo atendimento", candidatos)).toBeNull();
   });
 
