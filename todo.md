@@ -562,3 +562,5 @@
 - [x] Corrigir o pareamento do tempo por terapeuta identificado, atendimento e evento específico
 
 - [x] Impedir que início/fim genérico seja atribuído sequencialmente quando houver mais de um atendimento pendente do mesmo terapeuta
+- [x] Verificar e adicionar, se ausentes, os marcos chamadoEm, inicioEm e fimEm em atendimentos_operacional
+- [x] Validar a estrutura final de atendimentos_operacional sem alterar registros existentes
