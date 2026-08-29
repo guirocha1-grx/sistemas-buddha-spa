@@ -551,6 +551,12 @@
 - [x] Permitir ordenar a tabela de Clientes pelo último contato, do mais recente ao mais antigo e vice-versa
 - [x] Validar a coluna Último contato com clientes sem conversa, múltiplas conversas e isolamento por unidade
 - [x] Associar os identificadores WhatsApp fornecidos às terapeutas do RBS e validar todos os vínculos atualizados
+- [x] Verificar e adicionar, se ausente, o indicador belleAtivo na tabela de unidades
+- [x] Validar os valores padrão de belleAtivo sem alterar as unidades existentes além do novo campo
+- [x] Verificar e cadastrar, se ausentes, as oito terapeutas fixas fornecidas para o Shopping Santa Úrsula
+- [x] Validar os dados, vínculo e nível dos cadastros de terapeutas inseridos no SSU
+- [x] Verificar e criar, se ausente, a tabela belle_registros_financeiros no TiDB compartilhado
+- [x] Validar a chave única e o índice por unidade e data dos registros financeiros Belle
 - [x] Adicionar hora do chamado, início e fim na linha operacional de cada atendimento
 - [x] Registrar o chamado no envio e capturar início/fim do Grupo Geral com pareamento idempotente
 - [x] Criar a subseção Tempos de atendimento com espera, duração e desvios do tempo Belle
