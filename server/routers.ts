@@ -584,15 +584,17 @@ export const appRouter = router({
 
   // ===== Agenda =====
   agenda: router({
+    // Relatório de todos os atendimentos (qualquer status, passado ou
+    // futuro) de um período — filtro define o recorte, sem status fixo.
     // Antes chamava a API ao vivo do Belle (belleApi.listarAgendamentos) —
     // nunca teve token configurado nesse projeto (tudo migrou pra
-    // importação de planilha). Lê belle_atendimentos direto, mesma fonte
-    // já usada por "Próximos atendimentos" e pelo painel do Inbox.
+    // importação de planilha). Lê belle_atendimentos direto.
     list: protectedProcedure.input(z.object({
       unidadeId: z.number(),
-      dias: z.number().int().positive().max(60).optional(),
+      dataInicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      dataFim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     })).query(async ({ input }) => {
-      return db.listarAgendaProximosDias(input.unidadeId, input.dias);
+      return db.listarAgendaPeriodo(input.unidadeId, input.dataInicio, input.dataFim);
     }),
   }),
   proximosAtendimentos: router({

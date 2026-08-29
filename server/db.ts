@@ -853,18 +853,17 @@ export async function listarProximosAtendimentosHoje(unidadeId: number) {
 }
 
 /**
- * Agenda de vários dias (hoje + próximos) — diferente de
- * listarProximosAtendimentosHoje (só hoje, com organização de
- * terapeuta/sala/chamado), essa é uma visão simples só de leitura pra
- * planejamento, sem nenhuma ação operacional em cima. Lê belle_atendimentos
- * direto (planilha importada + "Agendado (IA)"), sem depender da API ao
- * vivo do Belle — que nunca chegou a ter token configurado nesse projeto.
+ * Relatório de agenda — todos os atendimentos (passados e futuros,
+ * qualquer status: Atendido/Marcado/Desmarcado/Cancelado/Agendado IA/
+ * etc.) de um período. Diferente de listarProximosAtendimentosHoje (só
+ * hoje, só status "agendado", com organização de terapeuta/sala/chamado),
+ * essa é uma visão de leitura simples pra relatório, sem ação operacional.
+ * Lê belle_atendimentos direto, sem depender da API ao vivo do Belle —
+ * que nunca chegou a ter token configurado nesse projeto.
  */
-export async function listarAgendaProximosDias(unidadeId: number, dias = 14) {
+export async function listarAgendaPeriodo(unidadeId: number, dataInicio: string, dataFim: string) {
   const db = await getDb();
   if (!db) return [];
-  const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const limiteBrt = new Date(Date.now() - 3 * 60 * 60 * 1000 + dias * 86_400_000).toISOString().slice(0, 10);
   const registros = await db.select({
     id: belleAtendimentos.id,
     clienteNome: belleAtendimentos.clienteNome,
@@ -876,11 +875,14 @@ export async function listarAgendaProximosDias(unidadeId: number, dias = 14) {
   }).from(belleAtendimentos)
     .where(and(
       eq(belleAtendimentos.unidadeId, unidadeId),
-      gte(belleAtendimentos.dataAtendimento, hojeBrt),
-      lte(belleAtendimentos.dataAtendimento, limiteBrt),
-      inArray(belleAtendimentos.status, STATUS_ATENDIMENTO_AGENDADO),
+      gte(belleAtendimentos.dataAtendimento, dataInicio),
+      lte(belleAtendimentos.dataAtendimento, dataFim),
     ))
     .orderBy(asc(belleAtendimentos.dataAtendimento), asc(belleAtendimentos.horario), asc(belleAtendimentos.clienteNome));
+  // "Agendado (IA)" só é ruído aqui quando o mesmo atendimento também já
+  // chegou pela planilha real — deduplicarProximosAtendimentos cuida disso
+  // igual nas outras telas; casos que só existem como IA (planilha ainda
+  // não trouxe) continuam aparecendo normalmente.
   return deduplicarProximosAtendimentos(registros, STATUS_AGENDADO_POR_IA);
 }
 
