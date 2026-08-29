@@ -411,6 +411,11 @@ export const terapeutas = mysqlTable("terapeutas", {
   celular: varchar("celular", { length: 20 }),
   whatsappParticipanteId: varchar("whatsappParticipanteId", { length: 100 }),
   cpf: varchar("cpf", { length: 14 }),
+  vinculo: mysqlEnum("vinculo", ["fixo", "freelancer"]).default("fixo").notNull(),
+  // Símbolo por nível (só na exibição, ver TerapeutasSection.tsx): 💎
+  // diamante, 🥇 ouro, 🥈 prata, 🥉 bronze — compacto o bastante pra
+  // não poluir relatório/lista.
+  nivel: mysqlEnum("nivel", ["diamante", "ouro", "prata", "bronze"]).default("bronze").notNull(),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

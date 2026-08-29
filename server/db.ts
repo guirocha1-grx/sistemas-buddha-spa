@@ -4255,6 +4255,8 @@ export async function criarTerapeuta(params: {
   celular?: string | null;
   whatsappParticipanteId?: string | null;
   cpf?: string | null;
+  vinculo?: "fixo" | "freelancer";
+  nivel?: "diamante" | "ouro" | "prata" | "bronze";
 }) {
   const db = await getDb();
   if (!db) return undefined;
@@ -4268,6 +4270,8 @@ export async function atualizarTerapeuta(unidadeId: number, id: number, dados: {
   celular?: string | null;
   whatsappParticipanteId?: string | null;
   cpf?: string | null;
+  vinculo?: "fixo" | "freelancer";
+  nivel?: "diamante" | "ouro" | "prata" | "bronze";
   ativo?: boolean;
 }) {
   const db = await getDb();

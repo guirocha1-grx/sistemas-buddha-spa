@@ -4213,6 +4213,8 @@ Diretrizes:
       celular: z.string().optional(),
       whatsappParticipanteId: z.string().trim().max(100).optional(),
       cpf: z.string().optional(),
+      vinculo: z.enum(["fixo", "freelancer"]).optional(),
+      nivel: z.enum(["diamante", "ouro", "prata", "bronze"]).optional(),
     })).mutation(async ({ input }) => {
       const id = await db.criarTerapeuta({
         unidadeId: input.unidadeId,
@@ -4221,6 +4223,8 @@ Diretrizes:
         celular: input.celular || null,
         whatsappParticipanteId: input.whatsappParticipanteId || null,
         cpf: input.cpf || null,
+        vinculo: input.vinculo,
+        nivel: input.nivel,
       });
       await db.reprocessarEventosTempoAtendimento(input.unidadeId);
       return { success: true, id };
@@ -4234,6 +4238,8 @@ Diretrizes:
       celular: z.string().nullable().optional(),
       whatsappParticipanteId: z.string().trim().max(100).nullable().optional(),
       cpf: z.string().nullable().optional(),
+      vinculo: z.enum(["fixo", "freelancer"]).optional(),
+      nivel: z.enum(["diamante", "ouro", "prata", "bronze"]).optional(),
       ativo: z.boolean().optional(),
     })).mutation(async ({ input: { id, unidadeId, ...dados } }) => {
       await db.atualizarTerapeuta(unidadeId, id, dados);
