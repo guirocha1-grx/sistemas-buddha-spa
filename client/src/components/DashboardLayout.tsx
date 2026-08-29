@@ -157,7 +157,7 @@ export default function DashboardLayout({
           <div className="w-full bg-card rounded-2xl shadow-2xl p-6 flex flex-col items-center gap-4">
             <div className="text-center">
               <h1
-                className="text-xl text-foreground"
+                className="text-xl text-primary"
                 style={{ fontFamily: "'Cormorant Garamond', serif" }}
               >
                 Painel de gestão
