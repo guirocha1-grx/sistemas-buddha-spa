@@ -456,43 +456,6 @@ export default function Terapeutas() {
 
                 <Card className="border-border/50 shadow-sm">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Resumo por dia da semana</CardTitle>
-                    <CardDescription>
-                      Compara o movimento realizado com os dias sem atendimento registrado para ajudar a identificar padrões de fechamento.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Dia da semana</TableHead>
-                            <TableHead className="text-right">Atendimentos</TableHead>
-                            <TableHead className="text-right">Dias analisados</TableHead>
-                            <TableHead className="text-right">Dias com atendimento</TableHead>
-                            <TableHead className="text-right">Dias sem atendimento</TableHead>
-                            <TableHead className="text-right">Proporção sem atendimento</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {fechamentoAgendaQuery.data.resumoSemanal.map((dia) => (
-                            <TableRow key={dia.diaSemana}>
-                              <TableCell className="font-medium">{dia.nomeDia}</TableCell>
-                              <TableCell className="text-right">{formatarNumero(dia.atendimentos)}</TableCell>
-                              <TableCell className="text-right">{formatarNumero(dia.diasAnalisados)}</TableCell>
-                              <TableCell className="text-right">{formatarNumero(dia.diasComAtendimento)}</TableCell>
-                              <TableCell className="text-right font-semibold">{formatarNumero(dia.diasSemAtendimento)}</TableCell>
-                              <TableCell className="text-right">{formatarPercentual(dia.percentualDiasSemAtendimento)}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-border/50 shadow-sm">
-                  <CardHeader className="pb-3">
                     <CardTitle className="text-base" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Dias sem atendimento por profissional</CardTitle>
                     <CardDescription>
                       Ranking dos profissionais com mais dias sem atendimento no período. As colunas mostram em qual dia da semana esses registros se concentram.
