@@ -1,10 +1,19 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Loader2, RefreshCw, UploadCloud, ChevronLeft, ChevronRight, Upload, Send } from "lucide-react";
 import { toast } from "sonner";
 import { gerarTextoConciliacao } from "@shared/conciliacao";
@@ -17,6 +26,9 @@ interface ItemDetalhe {
   descricao: string;
   valor: number;
 }
+
+type Fase = "fase1" | "fase2";
+const SUBSECAO_FASE2 = "financeiro:comanda-recepcao-belle";
 
 function fileParaBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -82,9 +94,18 @@ const TODAS_FORMAS_SERVER: FormaServer[] = ["dinheiro", "debito", "credito", "pi
 
 type ValoresForma = { dinheiro: number; cartaoDebito: number; cartaoCredito: number; pix: number };
 
+type DiaConciliacao = {
+  data: string;
+  comanda: ValoresForma;
+  ladoB: ValoresForma;
+  diferenca: ValoresForma;
+};
+
 function total(v: ValoresForma): number {
   return v.dinheiro + v.cartaoDebito + v.cartaoCredito + v.pix;
 }
+
+const LADO_B_LABEL: Record<Fase, string> = { fase1: "Contas bancárias", fase2: "Belle" };
 
 export default function ComandaRecepcao() {
   const { unidadeSelecionada } = useUnidade();
@@ -94,7 +115,15 @@ export default function ComandaRecepcao() {
   // recepção da Shopping Santa Úrsula — Ribeirão Shopping não tem grupo.
   const isRbs = unidadeSelecionada?.slug?.includes("ribeirao") || unidadeSelecionada?.slug?.includes("rbs");
 
-  const [modoVisualizacao, setModoVisualizacao] = useState<"semana" | "mes">("semana");
+  const permissoesQuery = trpc.permissoes.minhas.useQuery();
+  const podeVerFase2 = !permissoesQuery.data?.restrito || (permissoesQuery.data?.subsecoes ?? []).includes(SUBSECAO_FASE2);
+
+  const [faseAtiva, setFaseAtiva] = useState<Fase>("fase1");
+  const [confirmarTrocaFase, setConfirmarTrocaFase] = useState(false);
+
+  // Padrão mensal (2026-08-29) — antes era semanal; mês dá visão mais
+  // ampla pra achar rápido em qual dia está a divergência.
+  const [modoVisualizacao, setModoVisualizacao] = useState<"semana" | "mes">("mes");
   const [inicioSemana, setInicioSemana] = useState(() => toIso(segundaFeiraDa(new Date())));
   const [mesReferencia, setMesReferencia] = useState(() => {
     const hoje = new Date();
@@ -117,9 +146,16 @@ export default function ComandaRecepcao() {
     setMesReferencia(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
   }
 
+  // Fase 1 é buscada sempre (não só quando a aba está ativa) — precisa
+  // do resultado pra decidir se mostra o aviso ao tentar ir pra Fase 2.
   const resumoQuery = trpc.comandaRecepcao.resumo.useQuery(
     { unidadeId: unidadeId!, dataInicio, dataFim },
     { enabled: !!unidadeId },
+  );
+
+  const resumoBelleQuery = trpc.comandaRecepcao.resumoBelle.useQuery(
+    { unidadeId: unidadeId!, dataInicio, dataFim },
+    { enabled: !!unidadeId && faseAtiva === "fase2" },
   );
 
   const detalheQuery = trpc.comandaRecepcao.detalhe.useQuery(
@@ -127,16 +163,19 @@ export default function ComandaRecepcao() {
     { enabled: !!unidadeId },
   );
 
+  const detalheBelleQuery = trpc.comandaRecepcao.detalheBelle.useQuery(
+    { unidadeId: unidadeId!, dataInicio, dataFim },
+    { enabled: !!unidadeId && faseAtiva === "fase2" },
+  );
+
   // Item a item da "Comanda virtual" — alimenta o hover de auditoria da
-  // linha "Comanda (Recepção)", mesmo padrão do detalheQuery acima pro
-  // lado de Contas bancárias.
+  // linha "Comanda (Recepção)", compartilhado pelas duas fases (o lado
+  // Comanda é o mesmo dado independente da fase).
   const itensComandaQuery = trpc.comandaRecepcao.itensDetalhe.useQuery(
     { unidadeId: unidadeId!, dataInicio, dataFim },
     { enabled: !!unidadeId },
   );
 
-  // Agrupa os lançamentos individuais por "data|forma" pra alimentar o
-  // hover de auditoria nas células de Contas bancárias.
   const itensPorCelula = useMemo(() => {
     const mapa = new Map<string, ItemDetalhe[]>();
     for (const item of (detalheQuery.data ?? []) as ItemDetalhe[]) {
@@ -148,6 +187,17 @@ export default function ComandaRecepcao() {
     return mapa;
   }, [detalheQuery.data]);
 
+  const itensBellePorCelula = useMemo(() => {
+    const mapa = new Map<string, ItemDetalhe[]>();
+    for (const item of (detalheBelleQuery.data ?? []) as ItemDetalhe[]) {
+      const chave = `${item.data}|${item.forma}`;
+      const lista = mapa.get(chave) ?? [];
+      lista.push(item);
+      mapa.set(chave, lista);
+    }
+    return mapa;
+  }, [detalheBelleQuery.data]);
+
   const itensComandaPorCelula = useMemo(() => {
     const mapa = new Map<string, ItemDetalhe[]>();
     for (const item of (itensComandaQuery.data ?? []) as ItemDetalhe[]) {
@@ -158,6 +208,8 @@ export default function ComandaRecepcao() {
     }
     return mapa;
   }, [itensComandaQuery.data]);
+
+  const itensLadoBPorCelula = faseAtiva === "fase1" ? itensPorCelula : itensBellePorCelula;
 
   const sincronizarMutation = trpc.comandaRecepcao.sincronizar.useMutation({
     onError: (err) => toast.error(`Erro na sincronização: ${err.message}`),
@@ -242,6 +294,29 @@ export default function ComandaRecepcao() {
     }
   }
 
+  const importarBelleRef = useRef<HTMLInputElement>(null);
+  const importarBelleMutation = trpc.comandaRecepcao.importarRegistrosFinanceirosBelleXlsx.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Relatório do Belle importado: ${data.processados} lançamento(s).`);
+      utils.comandaRecepcao.resumoBelle.invalidate();
+      utils.comandaRecepcao.detalheBelle.invalidate();
+    },
+    onError: (err) => toast.error(`Erro ao importar relatório do Belle: ${err.message}`),
+  });
+
+  async function handleImportarBelle(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !unidadeId) return;
+    try {
+      const xlsxBase64 = await fileParaBase64(file);
+      importarBelleMutation.mutate({ unidadeId, xlsxBase64 });
+    } catch (err: any) {
+      toast.error(err.message ?? "Falha ao ler o arquivo");
+    } finally {
+      e.target.value = "";
+    }
+  }
+
   const sincronizarContasBancariasMutation = trpc.comandaRecepcao.sincronizarContasBancariasParaDrive.useMutation({
     onError: (err) => toast.error(`Erro ao enviar pro Drive: ${err.message}`),
   });
@@ -281,24 +356,72 @@ export default function ComandaRecepcao() {
     setInicioSemana(toIso(d));
   }
 
-  const dias = resumoQuery.data ?? [];
-  const carregando = resumoQuery.isLoading;
+  const diasFase1: DiaConciliacao[] = useMemo(() => (resumoQuery.data ?? []).map((d) => ({
+    data: d.data,
+    comanda: d.comanda,
+    ladoB: d.contasBancarias,
+    diferenca: d.diferenca,
+  })), [resumoQuery.data]);
+
+  const diasFase2: DiaConciliacao[] = useMemo(() => (resumoBelleQuery.data ?? []).map((d) => ({
+    data: d.data,
+    comanda: d.comanda,
+    ladoB: d.belle,
+    diferenca: d.diferenca,
+  })), [resumoBelleQuery.data]);
+
+  const dias = faseAtiva === "fase1" ? diasFase1 : diasFase2;
+  const carregando = faseAtiva === "fase1" ? resumoQuery.isLoading : resumoBelleQuery.isLoading;
+
+  const fase1TemDivergencia = diasFase1.some((dia) => Math.abs(total(dia.diferenca)) > 0.005);
+
+  function tentarMudarFase(fase: Fase) {
+    if (fase === "fase2" && fase1TemDivergencia) {
+      setConfirmarTrocaFase(true);
+      return;
+    }
+    setFaseAtiva(fase);
+  }
 
   // Texto de conciliação por dia (server/shared/conciliacao.ts) — mesma
   // lógica usada pelo server pra escrever a linha 20 da planilha, aqui
   // calculada ao vivo com os itens já carregados (nenhuma chamada extra)
   // pra alimentar o hover das células vermelhas em "Diferença".
-  const conciliacaoPorDia = useMemo(() => {
+  const conciliacaoPorDiaFase1 = useMemo(() => {
     const mapa = new Map<string, string | null>();
-    for (const dia of dias) {
+    for (const dia of diasFase1) {
       const comandaItens = TODAS_FORMAS_SERVER.flatMap((f) => itensComandaPorCelula.get(`${dia.data}|${f}`) ?? []);
       const contasItens = TODAS_FORMAS_SERVER.flatMap((f) => itensPorCelula.get(`${dia.data}|${f}`) ?? []);
       mapa.set(dia.data, gerarTextoConciliacao(dia.data, comandaItens, contasItens));
     }
     return mapa;
-  }, [dias, itensComandaPorCelula, itensPorCelula]);
+  }, [diasFase1, itensComandaPorCelula, itensPorCelula]);
 
-  function totais(campo: "comanda" | "contasBancarias" | "diferenca") {
+  const conciliacaoPorDiaFase2 = useMemo(() => {
+    const mapa = new Map<string, string | null>();
+    for (const dia of diasFase2) {
+      const comandaItens = TODAS_FORMAS_SERVER.flatMap((f) => itensComandaPorCelula.get(`${dia.data}|${f}`) ?? []);
+      const belleItens = TODAS_FORMAS_SERVER.flatMap((f) => itensBellePorCelula.get(`${dia.data}|${f}`) ?? []);
+      mapa.set(dia.data, gerarTextoConciliacao(dia.data, comandaItens, belleItens, "Belle"));
+    }
+    return mapa;
+  }, [diasFase2, itensComandaPorCelula, itensBellePorCelula]);
+
+  const conciliacaoPorDia = faseAtiva === "fase1" ? conciliacaoPorDiaFase1 : conciliacaoPorDiaFase2;
+
+  // Ao entrar no mês, o primeiro dia visível (esquerda) costumava ser
+  // sempre dia 1 — mesmo quando ele está tudo certo e a divergência
+  // real está lá na frente. Rola a tabela pra trazer o primeiro dia
+  // com diferença pra a tela, sem precisar arrastar manualmente.
+  useEffect(() => {
+    if (modoVisualizacao !== "mes" || carregando) return;
+    const diaComDivergencia = dias.find((dia) => Math.abs(total(dia.diferenca)) > 0.005);
+    if (!diaComDivergencia) return;
+    const el = document.getElementById(`conciliacao-dia-${diaComDivergencia.data}`);
+    el?.scrollIntoView({ inline: "start", block: "nearest", behavior: "smooth" });
+  }, [dias, modoVisualizacao, carregando]);
+
+  function totais(campo: "comanda" | "ladoB" | "diferenca") {
     return dias.reduce<ValoresForma>(
       (acc, dia) => {
         const v = dia[campo];
@@ -313,12 +436,8 @@ export default function ComandaRecepcao() {
     );
   }
 
-  function itensDoDia(data: string, formas: FormaServer[]): ItemDetalhe[] {
-    return formas.flatMap((f) => itensPorCelula.get(`${data}|${f}`) ?? []);
-  }
-
-  function itensDoDiaComanda(data: string, formas: FormaServer[]): ItemDetalhe[] {
-    return formas.flatMap((f) => itensComandaPorCelula.get(`${data}|${f}`) ?? []);
+  function itensDoDia(mapa: Map<string, ItemDetalhe[]>, data: string, formas: FormaServer[]): ItemDetalhe[] {
+    return formas.flatMap((f) => mapa.get(`${data}|${f}`) ?? []);
   }
 
   function ConteudoAuditoria({ itens, valor }: { itens: ItemDetalhe[]; valor: number }) {
@@ -397,7 +516,7 @@ export default function ComandaRecepcao() {
     buscarTextoConciliacao,
   }: {
     titulo: string;
-    campo: "comanda" | "contasBancarias" | "diferenca";
+    campo: "comanda" | "ladoB" | "diferenca";
     destacarDiferenca?: boolean;
     auditavel?: boolean;
     acao?: ReactNode;
@@ -475,14 +594,9 @@ export default function ComandaRecepcao() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-            Comanda Recepção
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Conciliação semanal: comanda lançada pela recepção x o que realmente entrou nas contas.
-          </p>
-        </div>
+        <h1 className="text-2xl font-semibold tracking-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+          Conciliação PDV
+        </h1>
         <UnidadeSelector />
       </div>
 
@@ -492,6 +606,13 @@ export default function ComandaRecepcao() {
         </div>
       ) : (
         <>
+          <Tabs value={faseAtiva} onValueChange={(v) => tentarMudarFase(v as Fase)}>
+            <TabsList>
+              <TabsTrigger value="fase1">Fase 1: Comanda x Caixa</TabsTrigger>
+              {podeVerFase2 && <TabsTrigger value="fase2">Fase 2: Comanda x Belle</TabsTrigger>}
+            </TabsList>
+          </Tabs>
+
           <div className="flex items-center gap-1 flex-wrap">
             <div className="flex items-center gap-1 rounded-lg border border-border p-1 mr-1">
               <Button
@@ -561,13 +682,13 @@ export default function ComandaRecepcao() {
                         {" "}
                       </th>
                       {dias.map((dia) => (
-                        <th key={dia.data} className="px-3 py-2 text-right text-xs font-medium whitespace-nowrap">
+                        <th key={dia.data} id={`conciliacao-dia-${dia.data}`} className="px-3 py-2 text-right text-xs font-medium whitespace-nowrap">
                           {fmtDiaCurto(dia.data)}
                           <span className="text-muted-foreground font-normal ml-1">{fmtDiaSemana(dia.data)}</span>
                         </th>
                       ))}
                       <th className="px-3 py-2 text-right text-xs font-medium whitespace-nowrap border-l">
-                        Semana
+                        {modoVisualizacao === "semana" ? "Semana" : "Mês"}
                       </th>
                     </tr>
                   </thead>
@@ -576,8 +697,8 @@ export default function ComandaRecepcao() {
                       titulo="Comanda (Recepção)"
                       campo="comanda"
                       auditavel
-                      buscarItens={itensDoDiaComanda}
-                      acao={
+                      buscarItens={(data, formas) => itensDoDia(itensComandaPorCelula, data, formas)}
+                      acao={faseAtiva === "fase1" ? (
                         <div className="flex items-center gap-1">
                           <Button
                             size="sm"
@@ -616,51 +737,86 @@ export default function ComandaRecepcao() {
                             )}
                           </Button>
                         </div>
-                      }
+                      ) : undefined}
                     />
-                    <Secao
-                      titulo="Contas bancárias"
-                      campo="contasBancarias"
-                      auditavel
-                      buscarItens={itensDoDia}
-                      formasSemAuditoria={["dinheiro"]}
-                      acao={
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 px-2 text-xs font-normal"
-                            disabled={sincronizarContasBancariasMutation.isPending}
-                            onClick={handleSincronizarContasBancarias}
-                            title="Enviar Débito, Crédito e Pix pra planilha Drive (linhas 10-12) + conciliação dos dias com diferença (linha 20)"
-                          >
-                            {sincronizarContasBancariasMutation.isPending ? (
-                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                            ) : (
-                              <UploadCloud className="h-3 w-3 mr-1" />
-                            )}
-                            Sincronizar com Drive
-                          </Button>
-                          {!isRbs && (
+                    {faseAtiva === "fase1" ? (
+                      <Secao
+                        titulo={LADO_B_LABEL.fase1}
+                        campo="ladoB"
+                        auditavel
+                        buscarItens={(data, formas) => itensDoDia(itensLadoBPorCelula, data, formas)}
+                        formasSemAuditoria={["dinheiro"]}
+                        acao={
+                          <div className="flex gap-1">
                             <Button
                               size="sm"
                               variant="outline"
                               className="h-6 px-2 text-xs font-normal"
-                              disabled={enviarRelatorioRecepcaoMutation.isPending || !!statusEnvioRecepcaoQuery.data?.jaEnviadoHoje}
-                              onClick={handleEnviarRecepcao}
-                              title={statusEnvioRecepcaoQuery.data?.jaEnviadoHoje ? "Já enviado hoje pro grupo da recepção" : "Enviar o relatório de pendências do período pro grupo da recepção no Telegram"}
+                              disabled={sincronizarContasBancariasMutation.isPending}
+                              onClick={handleSincronizarContasBancarias}
+                              title="Enviar Débito, Crédito e Pix pra planilha Drive (linhas 10-12) + conciliação dos dias com diferença (linha 20)"
                             >
-                              {enviarRelatorioRecepcaoMutation.isPending ? (
+                              {sincronizarContasBancariasMutation.isPending ? (
                                 <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                               ) : (
-                                <Send className="h-3 w-3 mr-1" />
+                                <UploadCloud className="h-3 w-3 mr-1" />
                               )}
-                              {statusEnvioRecepcaoQuery.data?.jaEnviadoHoje ? "Enviado hoje" : "Enviar recepção"}
+                              Sincronizar com Drive
                             </Button>
-                          )}
-                        </div>
-                      }
-                    />
+                            {!isRbs && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 px-2 text-xs font-normal"
+                                disabled={enviarRelatorioRecepcaoMutation.isPending || !!statusEnvioRecepcaoQuery.data?.jaEnviadoHoje}
+                                onClick={handleEnviarRecepcao}
+                                title={statusEnvioRecepcaoQuery.data?.jaEnviadoHoje ? "Já enviado hoje pro grupo da recepção" : "Enviar o relatório de pendências do período pro grupo da recepção no Telegram"}
+                              >
+                                {enviarRelatorioRecepcaoMutation.isPending ? (
+                                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                ) : (
+                                  <Send className="h-3 w-3 mr-1" />
+                                )}
+                                {statusEnvioRecepcaoQuery.data?.jaEnviadoHoje ? "Enviado hoje" : "Enviar recepção"}
+                              </Button>
+                            )}
+                          </div>
+                        }
+                      />
+                    ) : (
+                      <Secao
+                        titulo={LADO_B_LABEL.fase2}
+                        campo="ladoB"
+                        auditavel
+                        buscarItens={(data, formas) => itensDoDia(itensLadoBPorCelula, data, formas)}
+                        acao={
+                          <div className="flex items-center gap-1">
+                            <input
+                              ref={importarBelleRef}
+                              type="file"
+                              accept=".xlsx"
+                              className="hidden"
+                              onChange={handleImportarBelle}
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-xs font-normal"
+                              disabled={importarBelleMutation.isPending}
+                              onClick={() => importarBelleRef.current?.click()}
+                              title="Importar relatório 'Registros Financeiros' do Belle (.xlsx)"
+                            >
+                              {importarBelleMutation.isPending ? (
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              ) : (
+                                <Upload className="h-3 w-3 mr-1" />
+                              )}
+                              Importar relatório do Belle
+                            </Button>
+                          </div>
+                        }
+                      />
+                    )}
                     <Secao
                       titulo="Diferença"
                       campo="diferenca"
@@ -676,15 +832,28 @@ export default function ComandaRecepcao() {
             Diferença positiva = recepção lançou a mais na comanda; negativa = lançou a menos.
             Células destacadas em vermelho indicam uma diferença a investigar. Passe o mouse
             sobre os valores sublinhados pra ver os lançamentos individuais que compõem a
-            soma — em "Comanda (Recepção)", vem da Comanda virtual (item a item); em "Contas
-            bancárias" (exceto Dinheiro), vem do que já está sincronizado nas contas. Na linha
-            "Diferença", passe o mouse pra ver a conciliação completa do dia (Comanda x Contas
-            + ações corretivas sugeridas) — o mesmo texto é gravado na linha 20 da planilha
-            "Consolidado comanda" ao clicar em "Sincronizar com Drive", e some de lá sozinho
-            quando a diferença é corrigida.
+            soma — em "Comanda (Recepção)", vem da Comanda virtual (item a item); em "{LADO_B_LABEL[faseAtiva]}",
+            vem {faseAtiva === "fase1" ? "do que já está sincronizado nas contas (exceto Dinheiro)" : "do relatório financeiro importado do Belle"}.
+            Na linha "Diferença", passe o mouse pra ver a conciliação completa do dia (Comanda x {LADO_B_LABEL[faseAtiva]}
+            {faseAtiva === "fase1" ? " + ações corretivas sugeridas) — o mesmo texto é gravado na linha 20 da planilha \"Consolidado comanda\" ao clicar em \"Sincronizar com Drive\", e some de lá sozinho quando a diferença é corrigida." : " + ações corretivas sugeridas)."}
           </p>
         </>
       )}
+
+      <Dialog open={confirmarTrocaFase} onOpenChange={setConfirmarTrocaFase}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Comanda não está batendo com o caixa</DialogTitle>
+            <DialogDescription>
+              Recomendamos finalizar a Fase 1 antes de seguir para a Fase 2. Confirma que deseja mudar de aba mesmo assim?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmarTrocaFase(false)}>Cancelar</Button>
+            <Button onClick={() => { setFaseAtiva("fase2"); setConfirmarTrocaFase(false); }}>Confirmar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

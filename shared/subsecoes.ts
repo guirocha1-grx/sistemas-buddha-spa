@@ -24,7 +24,8 @@ export const SUBSECOES: Record<string, { chave: string; label: string }[]> = {
   financeiro: [
     { chave: "financeiro:visao-geral", label: "Visão Geral" },
     { chave: "financeiro:contas", label: "Contas" },
-    { chave: "financeiro:comanda-recepcao", label: "Comanda Recepção" },
+    { chave: "financeiro:comanda-recepcao", label: "Conciliação PDV — Fase 1 (Comanda x Caixa)" },
+    { chave: "financeiro:comanda-recepcao-belle", label: "Conciliação PDV — Fase 2 (Comanda x Belle)" },
     { chave: "financeiro:confirmacao-pagamento", label: "Confirmação de Pagamento" },
     { chave: "financeiro:adquirentes", label: "Adquirentes" },
     { chave: "financeiro:transacoes-entre-unidades", label: "Transações entre Unidades" },

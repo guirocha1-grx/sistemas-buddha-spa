@@ -261,6 +261,7 @@ export function gerarTextoConciliacao(
   dataIso: string,
   comandaBruta: ItemConciliacao[],
   contasBruta: ItemConciliacao[],
+  labelLadoB: string = "Contas",
 ): string | null {
   const comanda = semValorZero(comandaBruta);
   const contas = semValorZero(contasBruta);
@@ -278,7 +279,7 @@ export function gerarTextoConciliacao(
   const linhas: string[] = [];
   linhas.push(`Conciliação dia ${dia}/${mes}:`);
   linhas.push(`Comanda: ${fmtMoeda(totalComanda)}`);
-  linhas.push(`Contas: ${fmtMoeda(totalContas)}`);
+  linhas.push(`${labelLadoB}: ${fmtMoeda(totalContas)}`);
   linhas.push(`Diferença: ${fmtMoeda(totalComanda - totalContas)}`);
   linhas.push("");
   linhas.push("Ações corretivas:");

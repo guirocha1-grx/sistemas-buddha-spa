@@ -22,6 +22,7 @@ import { parseFaturaInterPdf } from "./interFaturaPdfParser";
 import { parseFaturaSicrediPdf } from "./sicrediFaturaPdfParser";
 import { parseClientesXlsx } from "./clientesXlsxParser";
 import { parseAtendimentosBelleXlsx } from "./atendimentosBelleXlsxParser";
+import { parseRegistrosFinanceirosBelleXlsx } from "./registrosFinanceirosBelleXlsxParser";
 import { parsePlanosBelleXls, parseVinculosPlanosBelleXlsx } from "./planosBelleXlsParser";
 import { parseComandaVirtualXlsx } from "./comandaVirtualXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
@@ -3600,6 +3601,70 @@ Diretrizes:
             cartaoDebito: comandaDia.cartaoDebito - contasDia.cartaoDebito,
             cartaoCredito: comandaDia.cartaoCredito - contasDia.cartaoCredito,
             pix: comandaDia.pix - contasDia.pix,
+          },
+        };
+      });
+    }),
+
+    // ===== Conciliação PDV — Fase 2 (Comanda x Belle) =====
+    importarRegistrosFinanceirosBelleXlsx: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      xlsxBase64: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      const buffer = Buffer.from(input.xlsxBase64, "base64");
+      const linhas = parseRegistrosFinanceirosBelleXlsx(buffer);
+      if (linhas.length === 0) {
+        throw new Error('Nenhum lançamento encontrado na planilha (verifique se tem as colunas "Cód.", "Valor" e "Forma Pagto.").');
+      }
+      const resultado = await db.upsertRegistrosFinanceirosBelle(input.unidadeId, linhas);
+      return { success: true, totalLinhas: linhas.length, ...resultado };
+    }),
+
+    detalheBelle: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).query(async ({ input }) => {
+      return db.detalheBelleRegistrosPorDia(input.unidadeId, input.dataInicio, input.dataFim);
+    }),
+
+    resumoBelle: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).query(async ({ input }) => {
+      const [comanda, belle] = await Promise.all([
+        db.listComandaDiaria(input.unidadeId, input.dataInicio, input.dataFim),
+        db.resumoBelleRegistrosPorDia(input.unidadeId, input.dataInicio, input.dataFim),
+      ]);
+
+      const porData = new Map(comanda.map((c) => [c.data, c]));
+      const datas = Array.from(new Set([...Array.from(porData.keys()), ...Array.from(belle.keys())])).sort();
+
+      return datas.map((data) => {
+        const c = porData.get(data);
+        const b = belle.get(data);
+        const comandaDia = {
+          dinheiro: Number(c?.dinheiro ?? 0),
+          cartaoDebito: Number(c?.cartaoDebito ?? 0),
+          cartaoCredito: Number(c?.cartaoCredito ?? 0),
+          pix: Number(c?.pix ?? 0),
+        };
+        const belleDia = {
+          dinheiro: b?.dinheiro ?? 0,
+          cartaoDebito: b?.cartaoDebito ?? 0,
+          cartaoCredito: b?.cartaoCredito ?? 0,
+          pix: b?.pix ?? 0,
+        };
+        return {
+          data,
+          comanda: comandaDia,
+          belle: belleDia,
+          diferenca: {
+            dinheiro: comandaDia.dinheiro - belleDia.dinheiro,
+            cartaoDebito: comandaDia.cartaoDebito - belleDia.cartaoDebito,
+            cartaoCredito: comandaDia.cartaoCredito - belleDia.cartaoCredito,
+            pix: comandaDia.pix - belleDia.pix,
           },
         };
       });

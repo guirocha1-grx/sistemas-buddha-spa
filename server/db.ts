@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
 import { eq, asc, desc, and, or, gte, lte, isNull, isNotNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, bellePlanosClientes, bellePlanosServicos, lidMapping, atendentes, atendenteSessoes, terapeutas, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertBellePlanoCliente, type InsertBellePlanoServico, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, belleRegistrosFinanceiros, bellePlanosClientes, bellePlanosServicos, lidMapping, atendentes, atendenteSessoes, terapeutas, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertBelleRegistroFinanceiro, type InsertBellePlanoCliente, type InsertBellePlanoServico, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import type { LinhaAtendimentoBelleImportada } from "./atendimentosBelleXlsxParser";
+import type { LinhaRegistroFinanceiroBelleImportada } from "./registrosFinanceirosBelleXlsxParser";
 import type { RelatorioPlanosBelleImportado, VinculoPlanoBelleImportado } from "./planosBelleXlsParser";
 import { normalizarTelefone, variantesTelefone, telefoneCanonico, telefonesCorrespondem } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
@@ -3017,6 +3018,180 @@ export async function resumoContasBancariasPorDia(
     else l.pix += item.valor;
   }
   return porDia;
+}
+
+// Mapeia o texto livre de "Forma Pagto." do Belle pros 4 baldes usados
+// em toda a conciliação — funde as 2 variantes de Pix (Máquina/Conta
+// Corrente) num só. "Boleto Bancário" não tem balde correspondente na
+// Comanda (não é recebido no caixa físico) — fica de fora da
+// conciliação por dia, não conta como diferença.
+function baldeFormaPagamentoBelle(formaPagamento: string): "dinheiro" | "debito" | "credito" | "pix" | null {
+  const normalizado = formaPagamento.trim().toLowerCase();
+  if (normalizado === "dinheiro") return "dinheiro";
+  if (normalizado === "cartão de débito") return "debito";
+  if (normalizado === "cartão de crédito") return "credito";
+  if (normalizado.startsWith("pix")) return "pix";
+  return null;
+}
+
+/**
+ * Import manual (.xlsx) do relatório "Registros Financeiros" do Belle
+ * — dedupe por (unidadeId, codigo), mesmo padrão de upsert em lote
+ * usado pra belle_atendimentos.
+ */
+export async function upsertRegistrosFinanceirosBelle(
+  unidadeId: number,
+  linhas: LinhaRegistroFinanceiroBelleImportada[],
+): Promise<{ processados: number }> {
+  const db = await getDb();
+  if (!db || linhas.length === 0) return { processados: 0 };
+
+  const unicosPorCodigo = new Map<number, LinhaRegistroFinanceiroBelleImportada>();
+  for (const linha of linhas) unicosPorCodigo.set(linha.codigo, linha);
+  const registros = Array.from(unicosPorCodigo.values());
+
+  const valores: InsertBelleRegistroFinanceiro[] = registros.map((linha) => ({
+    unidadeId,
+    codigo: linha.codigo,
+    dataLancamento: linha.dataLancamento,
+    clienteNome: linha.clienteNome,
+    valor: linha.valor.toString(),
+    formaPagamento: linha.formaPagamento,
+    atendimentoBelleId: linha.atendimentoBelleId,
+    observacao: linha.observacao,
+  }));
+
+  await db.insert(belleRegistrosFinanceiros).values(valores).onDuplicateKeyUpdate({
+    set: {
+      dataLancamento: sql`VALUES(dataLancamento)`,
+      clienteNome: sql`VALUES(clienteNome)`,
+      valor: sql`VALUES(valor)`,
+      formaPagamento: sql`VALUES(formaPagamento)`,
+      atendimentoBelleId: sql`VALUES(atendimentoBelleId)`,
+      observacao: sql`VALUES(observacao)`,
+    },
+  });
+
+  return { processados: registros.length };
+}
+
+export interface ItemRegistroFinanceiroBelle {
+  data: string;
+  forma: "dinheiro" | "debito" | "credito" | "pix";
+  horario: string;
+  descricao: string;
+  valor: number;
+}
+
+/**
+ * Item a item do relatório financeiro do Belle no período — alimenta o
+ * hover de auditoria da linha "Belle" na Conciliação PDV Fase 2, mesmo
+ * padrão de detalheContasBancariasPorDia pro lado de Contas bancárias.
+ * dataLancamento (não a data do atendimento) é a data de agrupamento —
+ * pagamento não tem relação fixa com quando o serviço é prestado
+ * (adiantado, pendente, plano/voucher sem atendimento).
+ */
+export async function detalheBelleRegistrosPorDia(
+  unidadeId: number,
+  dataInicio: string,
+  dataFim: string,
+): Promise<ItemRegistroFinanceiroBelle[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const registros = await db.select().from(belleRegistrosFinanceiros).where(and(
+    eq(belleRegistrosFinanceiros.unidadeId, unidadeId),
+    gte(belleRegistrosFinanceiros.dataLancamento, dataInicio),
+    lte(belleRegistrosFinanceiros.dataLancamento, dataFim),
+  ));
+
+  const itens: ItemRegistroFinanceiroBelle[] = [];
+  for (const r of registros) {
+    const forma = baldeFormaPagamentoBelle(r.formaPagamento);
+    if (!forma) continue;
+    itens.push({
+      data: r.dataLancamento,
+      forma,
+      horario: "",
+      descricao: `${r.clienteNome ?? "Cliente não identificado"}${r.observacao ? ` — ${r.observacao}` : ""}`,
+      valor: Number(r.valor),
+    });
+  }
+  return itens;
+}
+
+export async function resumoBelleRegistrosPorDia(
+  unidadeId: number,
+  dataInicio: string,
+  dataFim: string,
+): Promise<Map<string, ResumoContasBancariasDia>> {
+  const itens = await detalheBelleRegistrosPorDia(unidadeId, dataInicio, dataFim);
+  const porDia = new Map<string, ResumoContasBancariasDia>();
+  const linha = (data: string) => {
+    let l = porDia.get(data);
+    if (!l) {
+      l = { data, dinheiro: 0, cartaoDebito: 0, cartaoCredito: 0, pix: 0 };
+      porDia.set(data, l);
+    }
+    return l;
+  };
+  for (const item of itens) {
+    const l = linha(item.data);
+    if (item.forma === "dinheiro") l.dinheiro += item.valor;
+    else if (item.forma === "debito") l.cartaoDebito += item.valor;
+    else if (item.forma === "credito") l.cartaoCredito += item.valor;
+    else l.pix += item.valor;
+  }
+  return porDia;
+}
+
+/**
+ * Conciliação Comanda x Belle dia a dia — mesmo formato de
+ * calcularConciliacaoPorDia (Comanda x Contas), reaproveitando o
+ * mesmo motor de pareamento (shared/conciliacao.ts), só trocando o
+ * lado B e o rótulo do texto gerado.
+ */
+export async function calcularConciliacaoBellePorDia(
+  unidadeId: number,
+  dataInicio: string,
+  dataFim: string,
+): Promise<ConciliacaoDia[]> {
+  const [resumo, itensComanda, itensBelle] = await Promise.all([
+    resumoBelleRegistrosPorDia(unidadeId, dataInicio, dataFim),
+    listComandaItensDetalhe(unidadeId, dataInicio, dataFim),
+    detalheBelleRegistrosPorDia(unidadeId, dataInicio, dataFim),
+  ]);
+
+  const comandaPorDia = new Map<string, ItemConciliacao[]>();
+  for (const it of itensComanda) {
+    const lista = comandaPorDia.get(it.data) ?? [];
+    lista.push({ forma: it.forma, descricao: it.descricao, valor: it.valor });
+    comandaPorDia.set(it.data, lista);
+  }
+  const bellePorDia = new Map<string, ItemConciliacao[]>();
+  for (const it of itensBelle) {
+    const lista = bellePorDia.get(it.data) ?? [];
+    lista.push({ forma: it.forma, descricao: it.descricao, valor: it.valor });
+    bellePorDia.set(it.data, lista);
+  }
+
+  const dias = new Set<string>([
+    ...Array.from(resumo.keys()),
+    ...Array.from(comandaPorDia.keys()),
+    ...Array.from(bellePorDia.keys()),
+  ]);
+
+  return Array.from(dias).map((data) => {
+    const valores = resumo.get(data);
+    const texto = gerarTextoConciliacao(data, comandaPorDia.get(data) ?? [], bellePorDia.get(data) ?? [], "Belle");
+    return {
+      data,
+      cartaoDebito: valores?.cartaoDebito ?? 0,
+      cartaoCredito: valores?.cartaoCredito ?? 0,
+      pix: valores?.pix ?? 0,
+      texto,
+    };
+  });
 }
 
 /**

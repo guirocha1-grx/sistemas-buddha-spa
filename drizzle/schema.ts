@@ -626,6 +626,38 @@ export const belleAtendimentos = mysqlTable("belle_atendimentos", {
 export type BelleAtendimento = typeof belleAtendimentos.$inferSelect;
 export type InsertBelleAtendimento = typeof belleAtendimentos.$inferInsert;
 
+/**
+ * Relatório "Registros Financeiros" do Belle (import manual, .xlsx) —
+ * um lançamento por transação (Cód. único), usado só pra conciliação
+ * financeira Comanda x Belle (Conciliação PDV, Fase 2). dataLancamento
+ * é a data de fechamento financeiro no Belle ("Lcto."), não a data do
+ * atendimento — agendamento não garante pagamento no dia (venda com
+ * pagamento pendente, pagamento antecipado, plano/voucher sem
+ * atendimento vinculado), então a conciliação é só por dia+forma de
+ * pagamento, nunca por atendimento individual.
+ */
+export const belleRegistrosFinanceiros = mysqlTable("belle_registros_financeiros", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  codigo: bigint("codigo", { mode: "number" }).notNull(),
+  dataLancamento: varchar("dataLancamento", { length: 10 }).notNull(),
+  clienteNome: varchar("clienteNome", { length: 200 }),
+  valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
+  formaPagamento: varchar("formaPagamento", { length: 40 }).notNull(),
+  // Extraído de "Agendamento #NNNNN" na Observação quando existe — não
+  // usado na conciliação por dia (ver comentário acima), guardado só
+  // como referência bruta pra investigação manual pontual.
+  atendimentoBelleId: bigint("atendimentoBelleId", { mode: "number" }),
+  observacao: varchar("observacao", { length: 300 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  unidadeCodigoUnico: uniqueIndex("belle_registros_financeiros_unidade_codigo_idx").on(table.unidadeId, table.codigo),
+  unidadeDataIdx: index("belle_registros_financeiros_unidade_data_idx").on(table.unidadeId, table.dataLancamento),
+}));
+
+export type BelleRegistroFinanceiro = typeof belleRegistrosFinanceiros.$inferSelect;
+export type InsertBelleRegistroFinanceiro = typeof belleRegistrosFinanceiros.$inferInsert;
+
 /** Cabeçalho de cada plano exportado pelo Belle, isolado por unidade. */
 export const bellePlanosClientes = mysqlTable("belle_planos_clientes", {
   id: int("id").autoincrement().primaryKey(),
