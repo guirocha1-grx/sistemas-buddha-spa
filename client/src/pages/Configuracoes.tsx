@@ -93,6 +93,12 @@ export default function Configuracoes() {
 
   const updateUnidade = trpc.unidades.update.useMutation({
     onSuccess: (_data, vars) => {
+      // Sem isso, campos com estado local próprio (token, que usa
+      // `tokens[unidade.id]`) pareciam salvar normalmente, mas qualquer
+      // controle ligado direto ao dado do servidor (ex.: o switch de
+      // belleAtivo) ficava preso no valor antigo até um F5 — a lista de
+      // unidades nunca era revalidada depois de um update.
+      utils.unidades.list.invalidate();
       if (vars.belleToken !== undefined) {
         setSaved(vars.id);
         setTimeout(() => setSaved(null), 3000);
