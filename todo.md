@@ -564,3 +564,5 @@
 - [x] Impedir que início/fim genérico seja atribuído sequencialmente quando houver mais de um atendimento pendente do mesmo terapeuta
 - [x] Verificar e adicionar, se ausentes, os marcos chamadoEm, inicioEm e fimEm em atendimentos_operacional
 - [x] Validar a estrutura final de atendimentos_operacional sem alterar registros existentes
+- [x] Verificar e aplicar, se ausentes, terapeutaId, whatsappParticipanteId, participanteLid e atendimento_tempo_eventos para restaurar o Inbox
+- [x] Validar leitura e inserção de mensagens após a migração de identidade e tempo
