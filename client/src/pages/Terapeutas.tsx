@@ -519,9 +519,24 @@ export default function Terapeutas() {
                               <TableCell className="font-medium">{linha.terapeutaNome}</TableCell>
                               <TableCell className="text-right font-semibold">{formatarNumero(linha.diasSemAtendimento)}</TableCell>
                               <TableCell className="text-right">{formatarPercentual(linha.percentualDiasSemAtendimento)}</TableCell>
-                              {fechamentoAgendaQuery.data.resumoSemanal.map((dia) => (
-                                <TableCell key={dia.diaSemana} className="text-right">{formatarNumero(linha.diasSemAtendimentoPorDiaSemana[String(dia.diaSemana)] ?? 0)}</TableCell>
-                              ))}
+                              {fechamentoAgendaQuery.data.resumoSemanal.map((dia) => {
+                                const contagem = linha.diasSemAtendimentoPorDiaSemana[String(dia.diaSemana)] ?? 0;
+                                const percentual = dia.diasAnalisados ? (contagem / dia.diasAnalisados) * 100 : 0;
+                                return (
+                                  <TableCell key={dia.diaSemana} className="text-right">
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="cursor-default underline decoration-dotted underline-offset-4">
+                                          {formatarNumero(contagem)}
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top">
+                                        {formatarNumero(contagem)} de {formatarNumero(dia.diasAnalisados)} {dia.nomeDia} sem atendimento — {formatarPercentual(percentual)}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TableCell>
+                                );
+                              })}
                             </TableRow>
                           ))}
                         </TableBody>
