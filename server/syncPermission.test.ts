@@ -33,6 +33,9 @@ const terapeutasProbe = router({
   terapeutasFechamento: router({
     listar: protectedProcedure.query(() => ({ allowed: "fechamento" })),
   }),
+  terapeutasTempos: router({
+    listar: protectedProcedure.query(() => ({ allowed: "tempos" })),
+  }),
 });
 
 function contextWith(modulos: string[], subsecoes: string[] = []): TrpcContext {
@@ -94,6 +97,7 @@ describe("permissão de sincronização global", () => {
       { chave: "terapeutas:liberacoes", label: "Liberações de terapia" },
       { chave: "terapeutas:preferenciais", label: "Preferenciais" },
       { chave: "terapeutas:fechamento", label: "Fechamento de agenda" },
+      { chave: "terapeutas:tempos", label: "Tempo de atendimento" },
     ]);
 
     const somenteFidelizacao = terapeutasProbe.createCaller(contextWith(["terapeutas"], ["terapeutas:fidelizacao"]));
@@ -101,5 +105,6 @@ describe("permissão de sincronização global", () => {
     await expect(somenteFidelizacao.terapeutasLiberacoes.listar()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(somenteFidelizacao.terapeutasPreferenciais.listar()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(somenteFidelizacao.terapeutasFechamento.listar()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(somenteFidelizacao.terapeutasTempos.listar()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

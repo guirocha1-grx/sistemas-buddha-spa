@@ -13,14 +13,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AlertCircle,
+  AlertTriangle,
   BarChart3,
   CalendarDays,
   CalendarX2,
+  Clock3,
   Check,
   HeartHandshake,
   Loader2,
   RefreshCw,
   Search,
+  Timer,
   UsersRound,
 } from "lucide-react";
 import {
@@ -33,13 +36,14 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 
-type AbaTerapeutas = "fidelizacao" | "liberacoes" | "preferenciais" | "fechamento";
+type AbaTerapeutas = "fidelizacao" | "liberacoes" | "preferenciais" | "fechamento" | "tempos";
 
 const ROTAS_ABAS: Record<AbaTerapeutas, string> = {
   fidelizacao: "/terapeutas/fidelizacao",
   liberacoes: "/terapeutas/liberacoes",
   preferenciais: "/terapeutas/preferenciais",
   fechamento: "/terapeutas/fechamento",
+  tempos: "/terapeutas/tempos",
 };
 
 function dataLocalParaInput(data: Date): string {
@@ -62,14 +66,40 @@ function formatarPercentual(valor: number | null | undefined): string {
   return `${valor.toFixed(1).replace(".", ",")}%`;
 }
 
+function formatarMinutos(valor: number | null | undefined): string {
+  if (valor === null || valor === undefined || !Number.isFinite(valor)) return "—";
+  const minutos = Math.max(0, Math.round(valor));
+  const horas = Math.floor(minutos / 60);
+  const restantes = minutos % 60;
+  return horas ? `${horas}h ${String(restantes).padStart(2, "0")}min` : `${minutos} min`;
+}
+
+function formatarDataHora(valor: Date | string | null | undefined): string {
+  if (!valor) return "—";
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) return "—";
+  return data.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+}
+
 function formatarNumero(valor: number): string {
   return new Intl.NumberFormat("pt-BR").format(valor);
+}
+
+function rotuloClassificacao(classificacao: string): string {
+  switch (classificacao) {
+    case "abaixo_do_tempo": return "Abaixo do tempo";
+    case "dentro_do_tempo": return "Dentro do tempo";
+    case "acima_do_tempo": return "Acima do tempo";
+    case "muito_acima_do_tempo": return "Muito acima";
+    default: return "Sem referência";
+  }
 }
 
 function abaPelaRota(location: string): AbaTerapeutas {
   if (location === ROTAS_ABAS.liberacoes) return "liberacoes";
   if (location === ROTAS_ABAS.preferenciais) return "preferenciais";
   if (location === ROTAS_ABAS.fechamento) return "fechamento";
+  if (location === ROTAS_ABAS.tempos) return "tempos";
   return "fidelizacao";
 }
 
@@ -163,6 +193,10 @@ export default function Terapeutas() {
     fidelizacaoInput,
     { enabled: Boolean(unidadeId && periodoValido && abaAtiva === "fechamento") },
   );
+  const temposQuery = trpc.terapeutasTempos.listar.useQuery(
+    fidelizacaoInput,
+    { enabled: Boolean(unidadeId && periodoValido && abaAtiva === "tempos") },
+  );
   const servicosQuery = trpc.servicos.list.useQuery(
     unidadeInput,
     { enabled: Boolean(unidadeId && abaAtiva === "liberacoes") },
@@ -227,7 +261,7 @@ export default function Terapeutas() {
         </div>
       ) : (
         <>
-          {(abaAtiva === "fidelizacao" || abaAtiva === "preferenciais" || abaAtiva === "fechamento") && (
+          {(abaAtiva === "fidelizacao" || abaAtiva === "preferenciais" || abaAtiva === "fechamento" || abaAtiva === "tempos") && (
             <Card className="mb-4 border-border/50 shadow-sm">
               <CardContent className="flex flex-wrap items-end gap-3 p-4">
                 <div className="space-y-1">
@@ -256,11 +290,12 @@ export default function Terapeutas() {
                   onClick={() => {
                     if (abaAtiva === "preferenciais") void preferenciaisQuery.refetch();
                     else if (abaAtiva === "fechamento") void fechamentoAgendaQuery.refetch();
+                    else if (abaAtiva === "tempos") void temposQuery.refetch();
                     else void fidelizacaoQuery.refetch();
                   }}
-                  disabled={!periodoValido || fidelizacaoQuery.isFetching || preferenciaisQuery.isFetching || fechamentoAgendaQuery.isFetching}
+                  disabled={!periodoValido || fidelizacaoQuery.isFetching || preferenciaisQuery.isFetching || fechamentoAgendaQuery.isFetching || temposQuery.isFetching}
                 >
-                  {(fidelizacaoQuery.isFetching || preferenciaisQuery.isFetching || fechamentoAgendaQuery.isFetching) ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+                  {(fidelizacaoQuery.isFetching || preferenciaisQuery.isFetching || fechamentoAgendaQuery.isFetching || temposQuery.isFetching) ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
                   Atualizar
                 </Button>
                 {!periodoValido && <p className="text-xs text-red-600">Informe um período válido.</p>}
@@ -280,6 +315,9 @@ export default function Terapeutas() {
             </TabsTrigger>
             <TabsTrigger value="fechamento" className="border border-border/60 bg-card data-[state=active]:border-primary/40 data-[state=active]:bg-primary/10">
               Fechamento de agenda
+            </TabsTrigger>
+            <TabsTrigger value="tempos" className="border border-border/60 bg-card data-[state=active]:border-primary/40 data-[state=active]:bg-primary/10">
+              Tempo de atendimento
             </TabsTrigger>
           </TabsList>
 
@@ -490,6 +528,111 @@ export default function Terapeutas() {
                       </Table>
                     </div>
                     <p className="border-t px-4 py-3 text-xs text-muted-foreground">Este é um indicador gerencial derivado de dias sem atendimento registrado. Ele não confirma sozinho que a agenda foi oficialmente fechada, pois ausência de atendimento também pode ter outras causas.</p>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </TabsContent>
+
+          <TabsContent value="tempos" className="space-y-4">
+            {temposQuery.isError && <EstadoErro mensagem={`Não foi possível carregar os tempos de atendimento: ${temposQuery.error.message}`} />}
+            {temposQuery.isLoading ? <EstadoCarregando texto="Calculando tempos de atendimento..." /> : !temposQuery.isError && temposQuery.data && (
+              <>
+                <div className="grid gap-3 md:grid-cols-4">
+                  <Indicador titulo="Chamados no período" valor={formatarNumero(temposQuery.data.totalChamados)} detalhe={`${formatarNumero(temposQuery.data.atendimentosComInicio)} com início registrado`} icon={Timer} />
+                  <Indicador titulo="Espera média" valor={formatarMinutos(temposQuery.data.esperaMediaMinutos)} detalhe="Entre o chamado e o início" icon={Clock3} />
+                  <Indicador titulo="Maior espera" valor={formatarMinutos(temposQuery.data.esperaMaximaMinutos)} detalhe="Maior tempo observado" icon={Clock3} />
+                  <Indicador titulo="Muito acima do tempo" valor={formatarNumero(temposQuery.data.muitoAcimaDoTempo)} detalhe="Acima de 25% da referência Belle" icon={AlertTriangle} />
+                </div>
+
+                <Card className="border-border/50 shadow-sm">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Resumo por terapeuta</CardTitle>
+                    <CardDescription>O resumo mostra a espera até o início e o desvio da duração realizada em relação à duração de referência do Belle.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Terapeuta</TableHead>
+                            <TableHead className="text-right">Chamados</TableHead>
+                            <TableHead className="text-right">Com início</TableHead>
+                            <TableHead className="text-right">Com fim</TableHead>
+                            <TableHead className="text-right">Espera média</TableHead>
+                            <TableHead className="text-right">Duração média</TableHead>
+                            <TableHead className="text-right">Abaixo</TableHead>
+                            <TableHead className="text-right">Dentro</TableHead>
+                            <TableHead className="text-right">Acima</TableHead>
+                            <TableHead className="text-right">Muito acima</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {temposQuery.data.terapeutas.length === 0 ? (
+                            <TableRow><TableCell colSpan={10} className="py-10 text-center text-sm text-muted-foreground">Nenhum chamado registrado no período selecionado.</TableCell></TableRow>
+                          ) : temposQuery.data.terapeutas.map((linha) => (
+                            <TableRow key={linha.terapeutaNome}>
+                              <TableCell className="font-medium">{linha.terapeutaNome}</TableCell>
+                              <TableCell className="text-right">{formatarNumero(linha.totalChamados)}</TableCell>
+                              <TableCell className="text-right">{formatarNumero(linha.atendimentosComInicio)}</TableCell>
+                              <TableCell className="text-right">{formatarNumero(linha.atendimentosComFim)}</TableCell>
+                              <TableCell className="text-right">{formatarMinutos(linha.esperaMediaMinutos)}</TableCell>
+                              <TableCell className="text-right">{formatarMinutos(linha.duracaoMediaMinutos)}</TableCell>
+                              <TableCell className="text-right">{formatarNumero(linha.abaixoDoTempo)}</TableCell>
+                              <TableCell className="text-right">{formatarNumero(linha.dentroDoTempo)}</TableCell>
+                              <TableCell className="text-right">{formatarNumero(linha.acimaDoTempo)}</TableCell>
+                              <TableCell className="text-right font-semibold text-red-700">{formatarNumero(linha.muitoAcimaDoTempo)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border/50 shadow-sm">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Detalhamento dos chamados</CardTitle>
+                    <CardDescription>Os registros são ordenados pela maior espera. Início e fim permanecem pendentes quando ainda não há mensagem operacional pareada.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Data</TableHead>
+                            <TableHead>Cliente</TableHead>
+                            <TableHead>Terapeuta</TableHead>
+                            <TableHead>Terapia</TableHead>
+                            <TableHead>Chamado</TableHead>
+                            <TableHead>Início</TableHead>
+                            <TableHead>Fim</TableHead>
+                            <TableHead className="text-right">Espera</TableHead>
+                            <TableHead className="text-right">Duração</TableHead>
+                            <TableHead>Classificação</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {temposQuery.data.linhas.length === 0 ? (
+                            <TableRow><TableCell colSpan={10} className="py-10 text-center text-sm text-muted-foreground">Nenhum chamado com registro de tempo no período.</TableCell></TableRow>
+                          ) : temposQuery.data.linhas.map((linha) => (
+                            <TableRow key={linha.atendimentoId}>
+                              <TableCell className="whitespace-nowrap">{linha.dataAtendimento}</TableCell>
+                              <TableCell className="max-w-48 truncate font-medium" title={linha.clienteNome}>{linha.clienteNome}</TableCell>
+                              <TableCell className="whitespace-nowrap">{linha.terapeutaNome}</TableCell>
+                              <TableCell className="max-w-48 truncate" title={linha.servicoNome ?? ""}>{linha.servicoNome || "—"}</TableCell>
+                              <TableCell className="whitespace-nowrap text-xs">{formatarDataHora(linha.chamadoEm)}</TableCell>
+                              <TableCell className="whitespace-nowrap text-xs">{formatarDataHora(linha.inicioEm)}</TableCell>
+                              <TableCell className="whitespace-nowrap text-xs">{formatarDataHora(linha.fimEm)}</TableCell>
+                              <TableCell className="text-right font-medium">{formatarMinutos(linha.esperaMinutos)}</TableCell>
+                              <TableCell className="text-right">{formatarMinutos(linha.duracaoSalaMinutos)}</TableCell>
+                              <TableCell><Badge variant={linha.classificacao === "muito_acima_do_tempo" ? "destructive" : linha.classificacao === "acima_do_tempo" ? "secondary" : "outline"}>{rotuloClassificacao(linha.classificacao)}</Badge></TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <p className="border-t px-4 py-3 text-xs text-muted-foreground">A duração de referência vem do campo Tempo do atendimento Belle. A classificação considera abaixo de 90%, dentro de ±10%, acima de 10% e muito acima de 25% da referência. O início e o fim são eventos operacionais registrados no Grupo Geral.</p>
                   </CardContent>
                 </Card>
               </>

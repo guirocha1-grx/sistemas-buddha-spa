@@ -9,6 +9,7 @@ import { sendTelegramParaRecepcao } from "./telegramApi";
 import { zapiApi } from "./zapiApi";
 import { storagePut, storageGetSignedUrl } from "./storage";
 import { extrairNomeConfirmacaoBelle, extrairAgendamentoConfirmacaoBelle } from "@shared/belleTemplates";
+import { CONVERSA_GRUPO_GERAL_RBS_ID } from "./chamadoTerapeuta";
 import { telefoneCanonico } from "@shared/telefone";
 import { pipeInboxMedia } from "./inboxMediaProxy";
 import { consultarPagamentoPorId } from "./mercadoPagoApi";
@@ -590,6 +591,22 @@ function registerZapiWebhook(app: Express) {
         // que o cliente mandou (ver payload.reaction acima).
         zapiMessageId: payload.messageId ?? null,
       });
+
+      // Mensagens de terapeutas no Grupo Geral são os eventos operacionais
+      // de início/fim. O pareamento é best-effort, idempotente e nunca
+      // bloqueia o recebimento da mensagem no Inbox.
+      if (payload.isGroup && !payload.fromMe && mensagemId) {
+        const nomeGrupo = payload.chatName ?? "";
+        const ehGrupoGeral = conversaId === CONVERSA_GRUPO_GERAL_RBS_ID || /grupo\s+geral/i.test(nomeGrupo);
+        if (ehGrupoGeral) {
+          db.registrarEventoTempoAtendimento({
+            unidadeId,
+            participanteNome: payload.senderName,
+            conteudo,
+            ocorridoEm: new Date(),
+          }).catch((error) => console.error("[Webhook] Falha ao registrar marco de tempo do atendimento:", error));
+        }
+      }
 
       // Confirmação de agendamento fixa do Belle (fromMe) — registra o
       // agendamento visto na conversa antes da próxima planilha trazer o

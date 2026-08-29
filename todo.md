@@ -550,3 +550,7 @@
 - [x] Exibir na tabela de Clientes a data da última mensagem do Inbox, enviada ou recebida, isolada por unidade
 - [x] Permitir ordenar a tabela de Clientes pelo último contato, do mais recente ao mais antigo e vice-versa
 - [x] Validar a coluna Último contato com clientes sem conversa, múltiplas conversas e isolamento por unidade
+- [x] Adicionar hora do chamado, início e fim na linha operacional de cada atendimento
+- [x] Registrar o chamado no envio e capturar início/fim do Grupo Geral com pareamento idempotente
+- [x] Criar a subseção Tempos de atendimento com espera, duração e desvios do tempo Belle
+- [x] Definir e documentar frequência de consolidação sem substituir o registro em tempo real

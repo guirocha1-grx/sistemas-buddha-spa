@@ -4187,6 +4187,13 @@ Diretrizes:
       }
       const texto = montarMensagemChamadoTerapeuta(input);
       const resultado = await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, texto);
+      if (input.modalidade === "chamado" && input.atendimentoBelleId) {
+        try {
+          await db.registrarChamadoAtendimento(input.unidadeId, input.atendimentoBelleId, new Date());
+        } catch (error) {
+          console.error("[Chamados] Falha ao registrar hora do chamado:", error);
+        }
+      }
       await db.insertInboxMensagem({
         conversaId: conversa.id, direcao: "enviada", tipo: "texto", conteudo: texto,
         enviadaPorUserId: ctx.user.id, enviadaPorAtendenteId: ctx.atendente?.id ?? null, zapiMessageId: resultado.messageId ?? null,
@@ -4296,6 +4303,19 @@ Diretrizes:
     })).query(async ({ input, ctx }) => {
       if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
       return db.listarFechamentoAgendaTerapeutas(input.unidadeId, input.dataInicio, input.dataFim);
+    }),
+  }),
+  terapeutasTempos: router({
+    listar: protectedProcedure.input(z.object({
+      unidadeId: z.number().int().positive(),
+      dataInicio: z.string().regex(DATA_ISO_REGEX, "Data inicial inválida"),
+      dataFim: z.string().regex(DATA_ISO_REGEX, "Data final inválida"),
+    }).refine((input) => input.dataInicio <= input.dataFim, {
+      message: "A data inicial não pode ser posterior à data final",
+      path: ["dataFim"],
+    })).query(async ({ input, ctx }) => {
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
+      return db.listarRelatorioTempoAtendimento(input.unidadeId, input.dataInicio, input.dataFim);
     }),
   }),
 

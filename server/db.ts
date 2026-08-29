@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { eq, asc, desc, and, or, gte, lte, isNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
+import { eq, asc, desc, and, or, gte, lte, isNull, isNotNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, bellePlanosClientes, bellePlanosServicos, lidMapping, atendentes, atendenteSessoes, terapeutas, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertBellePlanoCliente, type InsertBellePlanoServico, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
@@ -15,6 +15,7 @@ import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacio
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda } from "./terapeutasRelatorios";
+import { calcularRelatorioTempoAtendimento, identificarEventoTempoAtendimento, nomesCorrespondem, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -869,6 +870,143 @@ export async function salvarOrganizacaoProximoAtendimento(params: {
   } else {
     await db.insert(atendimentosOperacional).values({ unidadeId: params.unidadeId, atendimentoBelleId: params.atendimentoBelleId, terapeutaNome: null, sala: null, preferencial: false, ...dados });
   }
+}
+
+export async function registrarChamadoAtendimento(unidadeId: number, atendimentoBelleId: number, ocorridoEm = new Date()): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+  const existente = await database.select({ id: atendimentosOperacional.id, chamadoEm: atendimentosOperacional.chamadoEm })
+    .from(atendimentosOperacional)
+    .where(and(eq(atendimentosOperacional.unidadeId, unidadeId), eq(atendimentosOperacional.atendimentoBelleId, atendimentoBelleId)))
+    .limit(1);
+  if (existente[0]) {
+    if (!existente[0].chamadoEm) {
+      await database.update(atendimentosOperacional).set({ chamadoEm: ocorridoEm }).where(eq(atendimentosOperacional.id, existente[0].id));
+    }
+    return;
+  }
+  await database.insert(atendimentosOperacional).values({ unidadeId, atendimentoBelleId, preferencial: false, chamadoEm: ocorridoEm });
+}
+
+export async function registrarMarcoTempoAtendimento(params: {
+  unidadeId: number;
+  atendimentoBelleId: number;
+  evento: EventoTempoAtendimento;
+  ocorridoEm?: Date;
+}): Promise<void> {
+  const database = await getDb();
+  if (!database) return;
+  const existente = await database.select({
+    id: atendimentosOperacional.id,
+    inicioEm: atendimentosOperacional.inicioEm,
+    fimEm: atendimentosOperacional.fimEm,
+  }).from(atendimentosOperacional)
+    .where(and(eq(atendimentosOperacional.unidadeId, params.unidadeId), eq(atendimentosOperacional.atendimentoBelleId, params.atendimentoBelleId)))
+    .limit(1);
+  const ocorridoEm = params.ocorridoEm ?? new Date();
+  const campo = params.evento === "inicio" ? "inicioEm" : "fimEm";
+  const jaRegistrado = params.evento === "inicio" ? existente[0]?.inicioEm : existente[0]?.fimEm;
+  if (jaRegistrado) return;
+  if (existente[0]) {
+    await database.update(atendimentosOperacional).set(params.evento === "inicio" ? { inicioEm: ocorridoEm } : { fimEm: ocorridoEm })
+      .where(eq(atendimentosOperacional.id, existente[0].id));
+    return;
+  }
+  await database.insert(atendimentosOperacional).values({
+    unidadeId: params.unidadeId,
+    atendimentoBelleId: params.atendimentoBelleId,
+    preferencial: false,
+    ...(campo === "inicioEm" ? { inicioEm: ocorridoEm } : { fimEm: ocorridoEm }),
+  });
+}
+
+export async function registrarEventoTempoAtendimento(params: {
+  unidadeId: number;
+  participanteNome: string | null | undefined;
+  conteudo: string | null | undefined;
+  ocorridoEm?: Date;
+}): Promise<{ evento: EventoTempoAtendimento; atendimentoBelleId: number } | null> {
+  const evento = identificarEventoTempoAtendimento(params.conteudo);
+  if (!evento || !params.participanteNome?.trim()) return null;
+  const database = await getDb();
+  if (!database) return null;
+
+  const candidatos = await database.select({
+    atendimentoBelleId: belleAtendimentos.id,
+    terapeutaNomeOrganizado: atendimentosOperacional.terapeutaNome,
+    profissionalNome: belleAtendimentos.profissionalNome,
+    chamadoEm: atendimentosOperacional.chamadoEm,
+    inicioEm: atendimentosOperacional.inicioEm,
+    fimEm: atendimentosOperacional.fimEm,
+  }).from(atendimentosOperacional)
+    .innerJoin(belleAtendimentos, and(
+      eq(belleAtendimentos.unidadeId, atendimentosOperacional.unidadeId),
+      eq(belleAtendimentos.id, atendimentosOperacional.atendimentoBelleId),
+    ))
+    .where(and(
+      eq(atendimentosOperacional.unidadeId, params.unidadeId),
+      isNotNull(atendimentosOperacional.chamadoEm),
+      evento === "inicio" ? isNull(atendimentosOperacional.inicioEm) : isNotNull(atendimentosOperacional.inicioEm),
+      evento === "fim" ? isNull(atendimentosOperacional.fimEm) : undefined,
+    ))
+    .orderBy(evento === "inicio" ? asc(atendimentosOperacional.chamadoEm) : asc(atendimentosOperacional.inicioEm))
+    .limit(100);
+
+  const candidato = candidatos.find((linha) => nomesCorrespondem(
+    params.participanteNome,
+    linha.terapeutaNomeOrganizado || linha.profissionalNome,
+  ));
+  if (!candidato) return null;
+  await registrarMarcoTempoAtendimento({
+    unidadeId: params.unidadeId,
+    atendimentoBelleId: candidato.atendimentoBelleId,
+    evento,
+    ocorridoEm: params.ocorridoEm,
+  });
+  return { evento, atendimentoBelleId: candidato.atendimentoBelleId };
+}
+
+export async function listarRelatorioTempoAtendimento(unidadeId: number, dataInicio: string, dataFim: string) {
+  const database = await getDb();
+  if (!database) return calcularRelatorioTempoAtendimento([], dataInicio, dataFim);
+  const registros = await database.select({
+    atendimentoId: belleAtendimentos.id,
+    dataAtendimento: belleAtendimentos.dataAtendimento,
+    horario: belleAtendimentos.horario,
+    clienteNome: belleAtendimentos.clienteNome,
+    profissionalNome: belleAtendimentos.profissionalNome,
+    terapeutaOrganizado: atendimentosOperacional.terapeutaNome,
+    servicoNome: belleAtendimentos.servicoNome,
+    duracaoBelleMinutos: belleAtendimentos.duracaoMinutos,
+    chamadoEm: atendimentosOperacional.chamadoEm,
+    inicioEm: atendimentosOperacional.inicioEm,
+    fimEm: atendimentosOperacional.fimEm,
+  }).from(belleAtendimentos)
+    .innerJoin(atendimentosOperacional, and(
+      eq(atendimentosOperacional.unidadeId, belleAtendimentos.unidadeId),
+      eq(atendimentosOperacional.atendimentoBelleId, belleAtendimentos.id),
+    ))
+    .where(and(
+      eq(belleAtendimentos.unidadeId, unidadeId),
+      gte(belleAtendimentos.dataAtendimento, dataInicio),
+      lte(belleAtendimentos.dataAtendimento, dataFim),
+      isNotNull(atendimentosOperacional.chamadoEm),
+    ))
+    .orderBy(desc(atendimentosOperacional.chamadoEm));
+
+  const linhas: LinhaTempoAtendimento[] = registros.map((registro) => ({
+    atendimentoId: registro.atendimentoId,
+    dataAtendimento: registro.dataAtendimento,
+    horario: registro.horario,
+    clienteNome: registro.clienteNome,
+    terapeutaNome: registro.terapeutaOrganizado || registro.profissionalNome || "Não identificado",
+    servicoNome: registro.servicoNome,
+    duracaoBelleMinutos: registro.duracaoBelleMinutos,
+    chamadoEm: registro.chamadoEm,
+    inicioEm: registro.inicioEm,
+    fimEm: registro.fimEm,
+  }));
+  return calcularRelatorioTempoAtendimento(linhas, dataInicio, dataFim);
 }
 
 export async function retirarProximoAtendimentoDaLista(unidadeId: number, atendimentoBelleId: number, userId: number): Promise<void> {
