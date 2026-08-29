@@ -30,4 +30,12 @@ describe("telefone do Inbox", () => {
   it("telefonesCorrespondem também não confunde DDD 55 com DDI", () => {
     expect(telefonesCorrespondem("55991234567", "5555991234567")).toBe(true);
   });
+
+  // Caso real 2026-08-29: terapeuta cadastrada com celular "com 9"
+  // (formato correto atual) nunca era reconhecida em mensagem de grupo
+  // do WhatsApp, que chegava "sem 9" (formato antigo/incompleto) —
+  // telefonesCorrespondem só tratava diferença de DDI, não essa.
+  it("reconhece o mesmo celular com e sem o 9 do celular, com ou sem DDI", () => {
+    expect(telefonesCorrespondem("38998516356", "553898516356")).toBe(true);
+  });
 });

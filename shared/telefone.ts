@@ -76,12 +76,22 @@ export function telefoneCanonico(valor: string | null | undefined): string | und
   return undefined;
 }
 
+/**
+ * Compara dois telefones considerando toda a ambiguidade de formato
+ * (com/sem DDI, com/sem o "9" do celular) — reaproveita variantesTelefone
+ * em vez de manter uma segunda lógica de comparação mais simples.
+ *
+ * Bug real encontrado 2026-08-29: a versão anterior só tratava diferença
+ * de DDI (comparação exata + sufixo), nunca a diferença "com 9 / sem 9".
+ * Uma terapeuta cadastrada com celular "38998516356" (com 9) nunca batia
+ * contra o número que o WhatsApp realmente manda pra ela,
+ * "553898516356" (sem 9) — resolverIdentidadeParticipante (server/db.ts)
+ * nunca reconhecia essa terapeuta em mensagens de grupo por causa disso,
+ * mesmo com o cadastro certo.
+ */
 export function telefonesCorrespondem(a: string | null | undefined, b: string | null | undefined) {
-  const aDigits = normalizarTelefone(a);
-  const bDigits = normalizarTelefone(b);
-  if (!aDigits || !bDigits) return false;
-
-  const aSemDdi = semDdiELimpo(aDigits);
-  const bSemDdi = semDdiELimpo(bDigits);
-  return aDigits === bDigits || aSemDdi === bSemDdi || aDigits.endsWith(bSemDdi) || bDigits.endsWith(aSemDdi);
+  const variantesA = variantesTelefone(a);
+  if (variantesA.length === 0) return false;
+  const conjuntoA = new Set(variantesA);
+  return variantesTelefone(b).some((variante) => conjuntoA.has(variante));
 }
