@@ -550,6 +550,7 @@
 - [x] Exibir na tabela de Clientes a data da última mensagem do Inbox, enviada ou recebida, isolada por unidade
 - [x] Permitir ordenar a tabela de Clientes pelo último contato, do mais recente ao mais antigo e vice-versa
 - [x] Validar a coluna Último contato com clientes sem conversa, múltiplas conversas e isolamento por unidade
+- [x] Associar os identificadores WhatsApp fornecidos às terapeutas do RBS e validar todos os vínculos atualizados
 - [x] Adicionar hora do chamado, início e fim na linha operacional de cada atendimento
 - [x] Registrar o chamado no envio e capturar início/fim do Grupo Geral com pareamento idempotente
 - [x] Criar a subseção Tempos de atendimento com espera, duração e desvios do tempo Belle
@@ -569,3 +570,6 @@
 - [x] Verificar e adicionar, se ausentes, vínculo e nível no cadastro de terapeutas
 - [x] Validar os valores padrão de vínculo e nível sem alterar os terapeutas já cadastrados
 - [x] Atualizar o schema e a migração versionada com vínculo e nível para manter compatibilidade com o TiDB
+- [ ] Investigar por que o Inbox do Shopping Santa Úrsula exibe lista vazia de conversas
+- [ ] Corrigir o carregamento de conversas sem misturar unidades ou ampliar permissões
+- [ ] Validar o Inbox em SSU e RBS após a correção
