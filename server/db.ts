@@ -15,7 +15,7 @@ import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacio
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda } from "./terapeutasRelatorios";
-import { calcularRelatorioTempoAtendimento, identificarEventoTempoAtendimento, nomesCorrespondem, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
+import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -935,6 +935,9 @@ export async function registrarEventoTempoAtendimento(params: {
     atendimentoBelleId: belleAtendimentos.id,
     terapeutaNomeOrganizado: atendimentosOperacional.terapeutaNome,
     profissionalNome: belleAtendimentos.profissionalNome,
+    clienteNome: belleAtendimentos.clienteNome,
+    servicoNome: belleAtendimentos.servicoNome,
+    sala: atendimentosOperacional.sala,
     chamadoEm: atendimentosOperacional.chamadoEm,
     inicioEm: atendimentosOperacional.inicioEm,
     fimEm: atendimentosOperacional.fimEm,
@@ -952,10 +955,17 @@ export async function registrarEventoTempoAtendimento(params: {
     .orderBy(evento === "inicio" ? asc(atendimentosOperacional.chamadoEm) : asc(atendimentosOperacional.inicioEm))
     .limit(100);
 
-  const candidato = candidatos.find((linha) => nomesCorrespondem(
+  const candidato = escolherAtendimentoPorEvento(
     params.participanteNome,
-    linha.terapeutaNomeOrganizado || linha.profissionalNome,
-  ));
+    params.conteudo,
+    candidatos.map((linha) => ({
+      atendimentoBelleId: linha.atendimentoBelleId,
+      terapeutaNome: linha.terapeutaNomeOrganizado || linha.profissionalNome,
+      clienteNome: linha.clienteNome,
+      servicoNome: linha.servicoNome,
+      sala: linha.sala,
+    })),
+  );
   if (!candidato) return null;
   await registrarMarcoTempoAtendimento({
     unidadeId: params.unidadeId,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   calcularRelatorioTempoAtendimento,
   classificarDesvioDuracao,
+  escolherAtendimentoPorEvento,
   identificarEventoTempoAtendimento,
 } from "./tempoAtendimento";
 
@@ -58,6 +59,15 @@ describe("tempo de atendimento", () => {
       classificacao: "acima_do_tempo",
     });
     expect(resultado.terapeutas[0]).toMatchObject({ terapeutaNome: "Ana", totalChamados: 1, dentroDoTempo: 0, acimaDoTempo: 1 });
+  });
+
+  it("diferencia chamados consecutivos do mesmo terapeuta pelo identificador textual", () => {
+    const candidatos = [
+      { atendimentoBelleId: 101, terapeutaNome: "Ana", clienteNome: "Maria Paula", servicoNome: "Massagem Relaxante", sala: "Sala 1" },
+      { atendimentoBelleId: 102, terapeutaNome: "Ana", clienteNome: "João Pedro", servicoNome: "Drenagem Linfática", sala: "Sala 2" },
+    ];
+    expect(escolherAtendimentoPorEvento("Ana Souza", "Iniciei João Pedro na Sala 2 para Drenagem Linfática", candidatos)?.atendimentoBelleId).toBe(102);
+    expect(escolherAtendimentoPorEvento("Ana Souza", "Iniciei o próximo atendimento", candidatos)).toBeNull();
   });
 
   it("classifica desvios sem transformar ausência de referência em atraso", () => {

@@ -91,6 +91,55 @@ export function nomesCorrespondem(nomeA: string | null | undefined, nomeB: strin
   return primeiroA.length >= 2 && primeiroA === primeiroB;
 }
 
+export interface IdentificadoresAtendimento {
+  clienteNome: string | null | undefined;
+  servicoNome: string | null | undefined;
+  sala: string | null | undefined;
+}
+
+/** Pontua referências específicas para não confundir cinco chamados do mesmo terapeuta. */
+export function pontuarIdentificadorAtendimento(conteudo: string | null | undefined, identificadores: IdentificadoresAtendimento): number {
+  const texto = normalizarTexto(conteudo);
+  if (!texto) return 0;
+  const cliente = normalizarTexto(identificadores.clienteNome);
+  const servico = normalizarTexto(identificadores.servicoNome);
+  const sala = normalizarTexto(identificadores.sala);
+  let pontos = 0;
+
+  if (cliente && cliente.length >= 3 && texto.includes(cliente)) pontos += 100;
+  else {
+    const primeiroNomeCliente = cliente.split(/\s+/)[0];
+    if (primeiroNomeCliente.length >= 3 && texto.split(/\s+/).includes(primeiroNomeCliente)) pontos += 70;
+  }
+  if (servico && servico.length >= 5 && texto.includes(servico)) pontos += 40;
+  if (sala && sala.length >= 3 && texto.includes(sala)) pontos += 30;
+  return pontos;
+}
+
+export interface CandidatoPareamentoAtendimento extends IdentificadoresAtendimento {
+  atendimentoBelleId: number;
+  terapeutaNome: string | null | undefined;
+}
+
+export function escolherAtendimentoPorEvento(
+  participanteNome: string | null | undefined,
+  conteudo: string | null | undefined,
+  candidatos: CandidatoPareamentoAtendimento[],
+): CandidatoPareamentoAtendimento | null {
+  const doTerapeuta = candidatos.filter((candidato) => nomesCorrespondem(participanteNome, candidato.terapeutaNome));
+  if (doTerapeuta.length === 0) return null;
+  if (doTerapeuta.length === 1) return doTerapeuta[0];
+
+  const ranqueados = doTerapeuta.map((linha) => ({
+    linha,
+    pontos: pontuarIdentificadorAtendimento(conteudo, linha),
+  })).sort((a, b) => b.pontos - a.pontos);
+  const melhor = ranqueados[0];
+  const segundo = ranqueados[1];
+  if (!melhor || melhor.pontos === 0 || melhor.pontos === segundo?.pontos) return null;
+  return melhor.linha;
+}
+
 function diferencaMinutos(inicio: Date | null, fim: Date | null): number | null {
   if (!inicio || !fim) return null;
   const minutos = (fim.getTime() - inicio.getTime()) / 60000;

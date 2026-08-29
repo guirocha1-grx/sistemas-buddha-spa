@@ -554,3 +554,5 @@
 - [x] Registrar o chamado no envio e capturar início/fim do Grupo Geral com pareamento idempotente
 - [x] Criar a subseção Tempos de atendimento com espera, duração e desvios do tempo Belle
 - [x] Definir e documentar frequência de consolidação sem substituir o registro em tempo real
+
+- [x] Corrigir o pareamento de início e fim por identificadores do atendimento, suportando vários chamados consecutivos do mesmo terapeuta
