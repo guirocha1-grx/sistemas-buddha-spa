@@ -106,6 +106,10 @@ export const unidades = mysqlTable("unidades", {
   // olhando esse campo. Ver getOrCreateUnidadeBuddhaMkt em db.ts.
   canal: mysqlEnum("canal", ["zapi", "buddha_mkt"]).default("zapi").notNull(),
   belleToken: text("belleToken"),
+  // Liga/desliga as chamadas à API do Belle sem apagar o token — usado
+  // enquanto a unidade não tem acesso liberado pelo Belle Software, pra
+  // parar de tentar (e falhar) chamadas que nunca vão funcionar mesmo.
+  belleAtivo: boolean("belleAtivo").default(true).notNull(),
   zapiInstanceId: text("zapiInstanceId"),
   zapiToken: text("zapiToken"),
   zapiClientToken: text("zapiClientToken"),

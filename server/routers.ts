@@ -41,6 +41,20 @@ import { normalizarSugestaoProximoAtendimento } from "./proximoAtendimentoIa";
 
 const FORMAS_PAGAMENTO_COBRANCA = ["Não especificada", "Pix", "Cartão", "Pix ou cartão"] as const;
 
+// Token configurado sozinho não basta: a unidade pode ter integração
+// desligada em Configurações > Belle (belleAtivo=false) enquanto aguarda
+// liberação de acesso do Belle Software — nesse caso não faz sentido
+// tentar a chamada só pra falhar (rate limit, timeout, erro de auth).
+// Type predicate (em vez de retornar boolean simples) pra manter o
+// narrowing de unidade.belleToken de string|null pra string nos call
+// sites, do jeito que `if (unidade?.belleToken)` já fazia antes.
+type UnidadeComBelleToken = NonNullable<Awaited<ReturnType<typeof db.getUnidadeById>>> & { belleToken: string };
+function belleIntegracaoAtiva(
+  unidade: { belleToken?: string | null; belleAtivo?: boolean } | null | undefined
+): unidade is UnidadeComBelleToken {
+  return !!unidade?.belleToken && unidade.belleAtivo !== false;
+}
+
 function textoCobrancaComLink(texto: string, initPoint: string): string {
   const limpo = texto.trim();
   return limpo.includes(initPoint) ? limpo : `${limpo}\n${initPoint}`;
@@ -240,6 +254,7 @@ export const appRouter = router({
     update: adminProcedure.input(z.object({
       id: z.number(),
       belleToken: z.string().optional(),
+      belleAtivo: z.boolean().optional(),
       zapiInstanceId: z.string().optional(),
       zapiToken: z.string().optional(),
       zapiClientToken: z.string().optional(),
@@ -565,7 +580,7 @@ export const appRouter = router({
       unidadeId: z.number(),
     })).query(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
+      if (!belleIntegracaoAtiva(unidade)) throw new Error("Token Belle não configurado ou integração desativada");
       // Buscar todos os clientes (até 500 = 5 páginas)
       const allClientes: any[] = [];
       for (let p = 0; p < 5; p++) {
@@ -627,7 +642,7 @@ export const appRouter = router({
   servicos: router({
     list: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
+      if (!belleIntegracaoAtiva(unidade)) throw new Error("Token Belle não configurado ou integração desativada");
       return belleApi.listarServicos(unidade.belleToken, unidade.codEstab!);
     }),
   }),
@@ -636,7 +651,7 @@ export const appRouter = router({
   planos: router({
     list: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
+      if (!belleIntegracaoAtiva(unidade)) throw new Error("Token Belle não configurado ou integração desativada");
       return belleApi.listarPlanos(unidade.belleToken, unidade.codEstab!);
     }),
   }),
@@ -649,7 +664,7 @@ export const appRouter = router({
       data_fim: z.string().optional(),
     })).query(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
+      if (!belleIntegracaoAtiva(unidade)) throw new Error("Token Belle não configurado ou integração desativada");
       return belleApi.relatorioVendas(unidade.belleToken, unidade.codEstab!, {
         data_inicio: input.data_inicio,
         data_fim: input.data_fim,
@@ -662,7 +677,7 @@ export const appRouter = router({
       data_fim: z.string().optional(),
     })).query(async ({ input }) => {
       const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
+      if (!belleIntegracaoAtiva(unidade)) throw new Error("Token Belle não configurado ou integração desativada");
       return belleApi.listarRecebimentos(unidade.belleToken, unidade.codEstab!, {
         data_inicio: input.data_inicio,
         data_fim: input.data_fim,
@@ -691,85 +706,67 @@ export const appRouter = router({
       }),
     }),
 
-    // Dashboard consolidado
+    // Dashboard — faturamento/vendas vêm da Comanda (Recepção, planilha
+    // já sincronizada) e agendamentos de belle_atendimentos (import +
+    // reconhecimento automático via IA) — nunca mais depende da API ao
+    // vivo do Belle, que nunca teve token configurado nesse projeto.
     dashboard: protectedProcedure.input(z.object({
       unidadeId: z.number(),
     })).query(async ({ input }) => {
-      const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
-
       const hoje = new Date();
       const dataInicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-      const fmtDate = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+      const dataInicioIso = fmtDateIso(dataInicio);
+      const dataFimIso = fmtDateIso(hoje);
 
-      const [vendas, recebimentosMes, agendamentos] = await Promise.all([
-        belleApi.relatorioVendas(unidade.belleToken, unidade.codEstab!, {
-          data_inicio: fmtDate(dataInicio),
-          data_fim: fmtDate(hoje),
-        }).catch(() => null),
-        totalContasBancariasNoPeriodo(input.unidadeId, fmtDateIso(dataInicio), fmtDateIso(hoje)).catch(() => 0),
-        belleApi.listarAgendamentos(unidade.belleToken, unidade.codEstab!).catch(() => null),
+      const [comandaDias, totalVendasMes, recebimentosMes, agendamentosMes] = await Promise.all([
+        db.listComandaDiaria(input.unidadeId, dataInicioIso, dataFimIso),
+        db.contarVendasComandaPeriodo(input.unidadeId, dataInicioIso, dataFimIso),
+        totalContasBancariasNoPeriodo(input.unidadeId, dataInicioIso, dataFimIso).catch(() => 0),
+        db.listarAgendaPeriodo(input.unidadeId, dataInicioIso, dataFimIso),
       ]);
 
+      const faturamentoMes = comandaDias.reduce((acc, d) =>
+        acc + Number(d.dinheiro) + Number(d.cartaoDebito) + Number(d.cartaoCredito) + Number(d.pix), 0);
+
       return {
-        faturamentoMes: vendas?.valorTotal ?? 0,
-        totalVendasMes: vendas?.totalVendas ?? 0,
+        faturamentoMes,
+        totalVendasMes,
         recebimentosMes,
-        agendamentosHoje: agendamentos?.filter(a => {
-          const today = fmtDate(hoje);
-          return a.data === today;
-        }).length ?? 0,
-        totalAgendamentos: agendamentos?.length ?? 0,
+        agendamentosHoje: agendamentosMes.filter((a) => a.dataAtendimento === dataFimIso).length,
+        totalAgendamentos: agendamentosMes.length,
       };
     }),
 
-    // Dashboard consolidado — ambas as unidades
+    // Dashboard consolidado — ambas as unidades, mesma fonte local
     dashboardConsolidado: protectedProcedure.query(async () => {
       const unidades = await db.getUnidades();
       const hoje = new Date();
       const dataInicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-      const fmtDate = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
       const dataInicioIso = fmtDateIso(dataInicio);
       const dataFimIso = fmtDateIso(hoje);
 
       const resultados = await Promise.all(
         unidades.map(async (unidade) => {
-          // Recebimentos não depende mais de token Belle — calculado
-          // direto das Contas bancárias, então roda pra toda unidade.
-          const recebimentosMes = await totalContasBancariasNoPeriodo(unidade.id, dataInicioIso, dataFimIso).catch(() => 0);
-
-          if (!unidade.belleToken) {
-            return {
-              unidadeId: unidade.id,
-              nome: unidade.nome,
-              corTema: unidade.corTema,
-              faturamentoMes: 0,
-              totalVendasMes: 0,
-              recebimentosMes,
-              agendamentosHoje: 0,
-              totalAgendamentos: 0,
-              semToken: true,
-            };
-          }
           try {
-            const [vendas, agendamentos] = await Promise.all([
-              belleApi.relatorioVendas(unidade.belleToken, unidade.codEstab!, {
-                data_inicio: fmtDate(dataInicio),
-                data_fim: fmtDate(hoje),
-              }).catch(() => null),
-              belleApi.listarAgendamentos(unidade.belleToken, unidade.codEstab!).catch(() => null),
+            const [comandaDias, totalVendasMes, recebimentosMes, agendamentosMes] = await Promise.all([
+              db.listComandaDiaria(unidade.id, dataInicioIso, dataFimIso),
+              db.contarVendasComandaPeriodo(unidade.id, dataInicioIso, dataFimIso),
+              totalContasBancariasNoPeriodo(unidade.id, dataInicioIso, dataFimIso).catch(() => 0),
+              db.listarAgendaPeriodo(unidade.id, dataInicioIso, dataFimIso),
             ]);
 
+            const faturamentoMes = comandaDias.reduce((acc, d) =>
+              acc + Number(d.dinheiro) + Number(d.cartaoDebito) + Number(d.cartaoCredito) + Number(d.pix), 0);
+
             return {
               unidadeId: unidade.id,
               nome: unidade.nome,
               corTema: unidade.corTema,
-              faturamentoMes: vendas?.valorTotal ?? 0,
-              totalVendasMes: vendas?.totalVendas ?? 0,
+              faturamentoMes,
+              totalVendasMes,
               recebimentosMes,
-              agendamentosHoje: agendamentos?.filter((a: any) => a.data === fmtDate(hoje)).length ?? 0,
-              totalAgendamentos: agendamentos?.length ?? 0,
-              semToken: false,
+              agendamentosHoje: agendamentosMes.filter((a) => a.dataAtendimento === dataFimIso).length,
+              totalAgendamentos: agendamentosMes.length,
             };
           } catch {
             return {
@@ -778,10 +775,9 @@ export const appRouter = router({
               corTema: unidade.corTema,
               faturamentoMes: 0,
               totalVendasMes: 0,
-              recebimentosMes,
+              recebimentosMes: 0,
               agendamentosHoje: 0,
               totalAgendamentos: 0,
-              semToken: false,
             };
           }
         })
@@ -815,7 +811,7 @@ export const appRouter = router({
 
       // Enviar para Belle
       const unidade = await db.getUnidadeById(input.unidadeId);
-      if (unidade?.belleToken) {
+      if (belleIntegracaoAtiva(unidade)) {
         try {
           const { unidadeId, ...leadData } = input;
           const result = await belleApi.gravarLead(unidade.belleToken, {
@@ -926,7 +922,7 @@ export const appRouter = router({
       let contextoCliente = "";
       const unidade = await db.getUnidadeById(input.unidadeId);
 
-      if (input.clienteCpf && unidade?.belleToken) {
+      if (input.clienteCpf && belleIntegracaoAtiva(unidade)) {
         try {
           const cliente = await belleApi.buscarCliente(unidade.belleToken, unidade.codEstab!, {
             cpf: input.clienteCpf,

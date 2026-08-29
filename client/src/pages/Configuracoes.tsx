@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Settings, Save, Loader2, CheckCircle, AlertCircle, MessageCircle, Megaphone, Landmark, CreditCard, Sparkles, RotateCcw, Send } from "lucide-react";
 import { AtendentesSection } from "@/components/AtendentesSection";
 import { TerapeutasSection } from "@/components/TerapeutasSection";
@@ -247,10 +248,12 @@ export default function Configuracoes() {
                     className="h-4 w-4 rounded-full"
                     style={{ backgroundColor: unidade.corTema || "#B8935A" }}
                   />
-                  {tokens[unidade.id] || unidade.belleToken ? (
-                    <Badge className="bg-green-100 text-green-700">Configurado</Badge>
-                  ) : (
+                  {!(tokens[unidade.id] || unidade.belleToken) ? (
                     <Badge variant="secondary">Sem token</Badge>
+                  ) : unidade.belleAtivo === false ? (
+                    <Badge variant="secondary">Desativado</Badge>
+                  ) : (
+                    <Badge className="bg-green-100 text-green-700">Configurado</Badge>
                   )}
                 </div>
               </div>
@@ -258,6 +261,20 @@ export default function Configuracoes() {
             <CardContent className="space-y-3">
               {(filtroSecao === "todas" || filtroSecao === "belle") && (
                 <>
+                  <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
+                    <div>
+                      <Label className="text-sm">Integração com o Belle ativa</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Desligue enquanto a unidade não tiver acesso liberado pelo Belle Software —
+                        evita ficar chamando a API só pra falhar. O token fica guardado, sem precisar reinserir depois.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={unidade.belleAtivo !== false}
+                      onCheckedChange={(checked) => updateUnidade.mutate({ id: unidade.id, belleAtivo: checked })}
+                      disabled={updateUnidade.isPending}
+                    />
+                  </div>
                   <div>
                     <Label>Token de Integração Belle</Label>
                     <Input

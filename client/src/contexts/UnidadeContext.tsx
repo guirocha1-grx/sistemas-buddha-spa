@@ -8,6 +8,7 @@ interface UnidadeInfo {
   codEstab: number;
   corTema: string | null;
   belleToken?: string | null;
+  belleAtivo?: boolean;
   zapiInstanceId?: string | null;
   zapiToken?: string | null;
   zapiClientToken?: string | null;

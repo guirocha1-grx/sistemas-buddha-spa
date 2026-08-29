@@ -2,7 +2,7 @@ import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { DollarSign, Calendar, Users, TrendingUp, Loader2, Sparkles, AlertCircle } from "lucide-react";
+import { DollarSign, Calendar, Users, TrendingUp, Loader2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 export default function Dashboard() {
@@ -205,11 +205,6 @@ export default function Dashboard() {
                     style={{ backgroundColor: unidade.corTema || "#B8935A" }}
                   />
                   <span className="font-medium">{unidade.nome}</span>
-                  {unidade.semToken && (
-                    <span className="text-xs text-amber-600 flex items-center gap-1 ml-auto">
-                      <AlertCircle className="h-3 w-3" /> Sem token
-                    </span>
-                  )}
                 </div>
                 <div className="space-y-1.5">
                   <div className="flex justify-between text-sm">
@@ -239,24 +234,6 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Aviso de integração */}
-      {consolidado?.some((u: any) => u.semToken) && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <Sparkles className="h-5 w-5 text-amber-600" />
-              <div>
-                <p className="text-sm font-medium text-amber-900">
-                  Configure o token do Belle Software
-                </p>
-                <p className="text-xs text-amber-700 mt-1">
-                  Algumas unidades não têm token configurado. Acesse Configurações para inserir o token de integração.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

@@ -2867,6 +2867,20 @@ export async function listComandaDiaria(unidadeId: number, dataInicio: string, d
   ));
 }
 
+// Conta lançamentos (um por venda) na Comanda Virtual do período — usado
+// pelo Dashboard (totalVendasMes) como fonte local, no lugar da API do
+// Belle (que nunca teve token configurado nesse projeto).
+export async function contarVendasComandaPeriodo(unidadeId: number, dataInicio: string, dataFim: string) {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db.select({ id: comandaItens.id }).from(comandaItens).where(and(
+    eq(comandaItens.unidadeId, unidadeId),
+    gte(comandaItens.data, dataInicio),
+    lte(comandaItens.data, dataFim),
+  ));
+  return rows.length;
+}
+
 export interface ResumoContasBancariasDia {
   data: string;
   dinheiro: number;
