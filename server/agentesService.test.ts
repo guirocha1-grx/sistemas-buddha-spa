@@ -302,6 +302,13 @@ describe("orquestrador de agentes", () => {
   });
 
   it("usa o fluxo geral de Day Spa para pergunta de catálogo, sem voucher ou agendamento", async () => {
+    // Fixa o relógio — a saudação da primeira mensagem ("Bom dia"/"Boa
+    // tarde"/"Boa noite") depende da hora real, e o teste afirma um texto
+    // literal com a saudação embutida. Sem isso, o teste é instável
+    // conforme o horário em que roda (achado ao rodar a suíte às 08:57
+    // BRT: "Bom dia!" em vez do "Boa tarde!" esperado).
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T16:00:00.000Z"));
     agentesDb.obterContextoConversa.mockResolvedValue(contexto("Boa tarde! Quais Day Spa vocês têm?"));
     agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [fabriciaAssistida]);
     agentesDb.listarScriptsParaAgentes.mockResolvedValue([{
@@ -323,6 +330,7 @@ describe("orquestrador de agentes", () => {
       sugestao: "Boa tarde!\n\nClaro. Vou enviar as opções gerais de Day Spa para você conhecer.",
       acaoPendente: "script_fluxo:210002",
     }));
+    vi.useRealTimers();
   });
 
   it("encaminha o pedido inicial de voucher ao fluxo oficial antes de gerar texto livre", async () => {
