@@ -584,17 +584,15 @@ export const appRouter = router({
 
   // ===== Agenda =====
   agenda: router({
+    // Antes chamava a API ao vivo do Belle (belleApi.listarAgendamentos) —
+    // nunca teve token configurado nesse projeto (tudo migrou pra
+    // importação de planilha). Lê belle_atendimentos direto, mesma fonte
+    // já usada por "Próximos atendimentos" e pelo painel do Inbox.
     list: protectedProcedure.input(z.object({
       unidadeId: z.number(),
-      data_inicio: z.string().optional(),
-      data_fim: z.string().optional(),
+      dias: z.number().int().positive().max(60).optional(),
     })).query(async ({ input }) => {
-      const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade?.belleToken) throw new Error("Token Belle não configurado");
-      return belleApi.listarAgendamentos(unidade.belleToken, unidade.codEstab!, {
-        data_inicio: input.data_inicio,
-        data_fim: input.data_fim,
-      });
+      return db.listarAgendaProximosDias(input.unidadeId, input.dias);
     }),
   }),
   proximosAtendimentos: router({

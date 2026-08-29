@@ -852,6 +852,38 @@ export async function listarProximosAtendimentosHoje(unidadeId: number) {
   return deduplicarProximosAtendimentos(registros, STATUS_AGENDADO_POR_IA);
 }
 
+/**
+ * Agenda de vários dias (hoje + próximos) — diferente de
+ * listarProximosAtendimentosHoje (só hoje, com organização de
+ * terapeuta/sala/chamado), essa é uma visão simples só de leitura pra
+ * planejamento, sem nenhuma ação operacional em cima. Lê belle_atendimentos
+ * direto (planilha importada + "Agendado (IA)"), sem depender da API ao
+ * vivo do Belle — que nunca chegou a ter token configurado nesse projeto.
+ */
+export async function listarAgendaProximosDias(unidadeId: number, dias = 14) {
+  const db = await getDb();
+  if (!db) return [];
+  const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const limiteBrt = new Date(Date.now() - 3 * 60 * 60 * 1000 + dias * 86_400_000).toISOString().slice(0, 10);
+  const registros = await db.select({
+    id: belleAtendimentos.id,
+    clienteNome: belleAtendimentos.clienteNome,
+    dataAtendimento: belleAtendimentos.dataAtendimento,
+    horario: belleAtendimentos.horario,
+    servicoNome: belleAtendimentos.servicoNome,
+    profissionalNome: belleAtendimentos.profissionalNome,
+    status: belleAtendimentos.status,
+  }).from(belleAtendimentos)
+    .where(and(
+      eq(belleAtendimentos.unidadeId, unidadeId),
+      gte(belleAtendimentos.dataAtendimento, hojeBrt),
+      lte(belleAtendimentos.dataAtendimento, limiteBrt),
+      inArray(belleAtendimentos.status, STATUS_ATENDIMENTO_AGENDADO),
+    ))
+    .orderBy(asc(belleAtendimentos.dataAtendimento), asc(belleAtendimentos.horario), asc(belleAtendimentos.clienteNome));
+  return deduplicarProximosAtendimentos(registros, STATUS_AGENDADO_POR_IA);
+}
+
 export async function salvarOrganizacaoProximoAtendimento(params: {
   unidadeId: number; atendimentoBelleId: number; terapeutaNome?: string | null; sala?: string | null; preferencial?: boolean;
 }): Promise<void> {

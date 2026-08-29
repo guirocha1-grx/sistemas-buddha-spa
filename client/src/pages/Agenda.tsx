@@ -6,18 +6,23 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Calendar } from "lucide-react";
 
+// AAAA-MM-DD (formato de belle_atendimentos.dataAtendimento) → DD/MM.
+function fmtDataCurta(iso: string): string {
+  const [, mes, dia] = iso.split("-");
+  return `${dia}/${mes}`;
+}
+
 export default function Agenda() {
   const { unidadeSelecionada } = useUnidade();
-  const today = new Date();
-  const fmtDate = (d: Date) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+  const hojeIso = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   const { data: agendamentos, isLoading } = trpc.agenda.list.useQuery(
-    { unidadeId: unidadeSelecionada?.id ?? 0 },
+    { unidadeId: unidadeSelecionada?.id ?? 0, dias: 14 },
     { enabled: !!unidadeSelecionada }
   );
 
-  const agendamentosHoje = agendamentos?.filter((a: any) => a.data === fmtDate(today)) || [];
-  const proximosAgendamentos = agendamentos?.filter((a: any) => a.data !== fmtDate(today)).slice(0, 20) || [];
+  const agendamentosHoje = agendamentos?.filter((a) => a.dataAtendimento === hojeIso) || [];
+  const proximosAgendamentos = agendamentos?.filter((a) => a.dataAtendimento !== hojeIso).slice(0, 20) || [];
 
   return (
     <div className="space-y-6">
@@ -27,7 +32,7 @@ export default function Agenda() {
             Agenda
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Agendamentos sincronizados com o Belle Software
+            Agendamentos dos próximos 14 dias
           </p>
         </div>
         <UnidadeSelector />
@@ -42,7 +47,7 @@ export default function Agenda() {
           {/* Today */}
           <div>
             <h2 className="text-lg font-semibold mb-3" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-              Hoje — {fmtDate(today)}
+              Hoje — {fmtDataCurta(hojeIso)}
             </h2>
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
               {agendamentosHoje.length === 0 ? (
@@ -53,18 +58,18 @@ export default function Agenda() {
                   </CardContent>
                 </Card>
               ) : (
-                agendamentosHoje.map((ag: any) => (
-                  <Card key={ag.codigo} className="border-border/50 shadow-sm">
+                agendamentosHoje.map((ag) => (
+                  <Card key={ag.id} className="border-border/50 shadow-sm">
                     <CardContent className="pt-4 pb-4">
                       <div className="flex items-start justify-between">
                         <div>
-                          <div className="font-medium text-sm">{ag.nomeCliente || ag.cliente}</div>
-                          <div className="text-xs text-muted-foreground mt-1">{ag.servico}</div>
-                          {ag.profissional && (
-                            <div className="text-xs text-muted-foreground">Profissional: {ag.profissional}</div>
+                          <div className="font-medium text-sm">{ag.clienteNome}</div>
+                          <div className="text-xs text-muted-foreground mt-1">{ag.servicoNome}</div>
+                          {ag.profissionalNome && (
+                            <div className="text-xs text-muted-foreground">Profissional: {ag.profissionalNome}</div>
                           )}
                         </div>
-                        <Badge variant="outline">{ag.hora}</Badge>
+                        <Badge variant="outline">{ag.horario}</Badge>
                       </div>
                     </CardContent>
                   </Card>
@@ -80,14 +85,14 @@ export default function Agenda() {
                 Próximos Agendamentos
               </h2>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                {proximosAgendamentos.map((ag: any) => (
-                  <Card key={ag.codigo} className="border-border/50 shadow-sm">
+                {proximosAgendamentos.map((ag) => (
+                  <Card key={ag.id} className="border-border/50 shadow-sm">
                     <CardContent className="pt-4 pb-4">
                       <div className="flex items-start justify-between">
                         <div>
-                          <div className="font-medium text-sm">{ag.nomeCliente || ag.cliente}</div>
-                          <div className="text-xs text-muted-foreground mt-1">{ag.servico}</div>
-                          <div className="text-xs text-muted-foreground">{ag.data} às {ag.hora}</div>
+                          <div className="font-medium text-sm">{ag.clienteNome}</div>
+                          <div className="text-xs text-muted-foreground mt-1">{ag.servicoNome}</div>
+                          <div className="text-xs text-muted-foreground">{fmtDataCurta(ag.dataAtendimento)} às {ag.horario}</div>
                         </div>
                       </div>
                     </CardContent>
