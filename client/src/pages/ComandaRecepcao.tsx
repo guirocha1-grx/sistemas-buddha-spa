@@ -120,6 +120,7 @@ export default function ComandaRecepcao() {
 
   const [faseAtiva, setFaseAtiva] = useState<Fase>("fase1");
   const [confirmarTrocaFase, setConfirmarTrocaFase] = useState(false);
+  const [modalBelleAberto, setModalBelleAberto] = useState(false);
 
   // Padrão mensal (2026-08-29) — antes era semanal; mês dá visão mais
   // ampla pra achar rápido em qual dia está a divergência.
@@ -300,6 +301,7 @@ export default function ComandaRecepcao() {
       toast.success(`Relatório do Belle importado: ${data.processados} lançamento(s).`);
       utils.comandaRecepcao.resumoBelle.invalidate();
       utils.comandaRecepcao.detalheBelle.invalidate();
+      setModalBelleAberto(false);
     },
     onError: (err) => toast.error(`Erro ao importar relatório do Belle: ${err.message}`),
   });
@@ -790,30 +792,15 @@ export default function ComandaRecepcao() {
                         auditavel
                         buscarItens={(data, formas) => itensDoDia(itensLadoBPorCelula, data, formas)}
                         acao={
-                          <div className="flex items-center gap-1">
-                            <input
-                              ref={importarBelleRef}
-                              type="file"
-                              accept=".xlsx"
-                              className="hidden"
-                              onChange={handleImportarBelle}
-                            />
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-6 px-2 text-xs font-normal"
-                              disabled={importarBelleMutation.isPending}
-                              onClick={() => importarBelleRef.current?.click()}
-                              title="Importar relatório 'Registros Financeiros' do Belle (.xlsx)"
-                            >
-                              {importarBelleMutation.isPending ? (
-                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                              ) : (
-                                <Upload className="h-3 w-3 mr-1" />
-                              )}
-                              Importar relatório do Belle
-                            </Button>
-                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0"
+                            onClick={() => setModalBelleAberto(true)}
+                            title="Importar relatório 'Registros Financeiros' do Belle (.xlsx)"
+                          >
+                            <Upload className="h-3 w-3" />
+                          </Button>
                         }
                       />
                     )}
@@ -852,6 +839,31 @@ export default function ComandaRecepcao() {
             <Button variant="outline" onClick={() => setConfirmarTrocaFase(false)}>Cancelar</Button>
             <Button onClick={() => { setFaseAtiva("fase2"); setConfirmarTrocaFase(false); }}>Confirmar</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={modalBelleAberto} onOpenChange={setModalBelleAberto}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Importar relatório do Belle</DialogTitle>
+            <DialogDescription>
+              No Belle: <strong>Controle de Contas a Receber</strong> → <strong>Outras opções</strong> → <strong>Gerar Excel</strong>.
+              Depois é só subir o arquivo aqui.
+            </DialogDescription>
+          </DialogHeader>
+          <input
+            ref={importarBelleRef}
+            type="file"
+            accept=".xlsx"
+            disabled={importarBelleMutation.isPending}
+            onChange={handleImportarBelle}
+            className="text-sm file:mr-3 file:rounded-md file:border file:border-border file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium file:cursor-pointer disabled:opacity-50"
+          />
+          {importarBelleMutation.isPending && (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" /> Importando...
+            </p>
+          )}
         </DialogContent>
       </Dialog>
     </div>
