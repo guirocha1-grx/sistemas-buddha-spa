@@ -29,10 +29,22 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script
-      defer
-      src="%VITE_ANALYTICS_ENDPOINT%/umami"
-      data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
+    <script>
+      // Vite só substitui %VITE_*% se a env var existir no build; sem ela o
+      // placeholder literal ia pro <script src>, gerando GET pra uma URL
+      // com "%" no meio (400/ERR_ABORTED). Só injeta o script se as duas
+      // variáveis tiverem sido de fato substituídas.
+      (function () {
+        var endpoint = "%VITE_ANALYTICS_ENDPOINT%";
+        var websiteId = "%VITE_ANALYTICS_WEBSITE_ID%";
+        if (!endpoint || !websiteId || endpoint.indexOf("%") !== -1 || websiteId.indexOf("%") !== -1) return;
+        var script = document.createElement("script");
+        script.defer = true;
+        script.src = endpoint + "/umami";
+        script.setAttribute("data-website-id", websiteId);
+        document.body.appendChild(script);
+      })();
+    </script>
   </body>
 
 </html>
