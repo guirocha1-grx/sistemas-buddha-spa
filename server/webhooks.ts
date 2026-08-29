@@ -581,6 +581,7 @@ function registerZapiWebhook(app: Express) {
         // (fromMe é a própria recepção, não um participante do grupo).
         ...(payload.isGroup && !payload.fromMe ? {
           participanteTelefone: payload.participantPhone,
+          participanteLid: payload.participantLid,
           participanteNome: payload.senderName,
         } : {}),
         tipo,
@@ -601,6 +602,11 @@ function registerZapiWebhook(app: Express) {
         if (ehGrupoGeral) {
           db.registrarEventoTempoAtendimento({
             unidadeId,
+            conversaId,
+            mensagemId,
+            zapiMessageId: payload.messageId,
+            participanteTelefone: payload.participantPhone,
+            participanteLid: payload.participantLid,
             participanteNome: payload.senderName,
             conteudo,
             ocorridoEm: new Date(),

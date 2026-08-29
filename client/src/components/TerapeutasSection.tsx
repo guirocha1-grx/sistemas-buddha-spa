@@ -7,8 +7,8 @@ import { Label } from "@/components/ui/label";
 import { HeartHandshake, Plus, Loader2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
-type TerapeutaForm = { nomeCompleto: string; nomeAbreviado: string; celular: string; cpf: string };
-const FORM_VAZIO: TerapeutaForm = { nomeCompleto: "", nomeAbreviado: "", celular: "", cpf: "" };
+type TerapeutaForm = { nomeCompleto: string; nomeAbreviado: string; celular: string; whatsappParticipanteId: string; cpf: string };
+const FORM_VAZIO: TerapeutaForm = { nomeCompleto: "", nomeAbreviado: "", celular: "", whatsappParticipanteId: "", cpf: "" };
 
 /**
  * CRUD de terapeutas (nome completo, nome abreviado, celular, CPF
@@ -48,22 +48,25 @@ export function TerapeutasSection({ unidadeId }: { unidadeId: number }) {
       nomeCompleto: novo.nomeCompleto.trim(),
       nomeAbreviado: novo.nomeAbreviado.trim(),
       celular: novo.celular.trim() || undefined,
+      whatsappParticipanteId: novo.whatsappParticipanteId.trim() || undefined,
       cpf: novo.cpf.trim() || undefined,
     });
   }
 
-  function iniciarEdicao(t: { id: number; nomeCompleto: string; nomeAbreviado: string; celular: string | null; cpf: string | null }) {
+  function iniciarEdicao(t: { id: number; nomeCompleto: string; nomeAbreviado: string; celular: string | null; whatsappParticipanteId: string | null; cpf: string | null }) {
     setEditandoId(t.id);
-    setFormEdicao({ nomeCompleto: t.nomeCompleto, nomeAbreviado: t.nomeAbreviado, celular: t.celular ?? "", cpf: t.cpf ?? "" });
+    setFormEdicao({ nomeCompleto: t.nomeCompleto, nomeAbreviado: t.nomeAbreviado, celular: t.celular ?? "", whatsappParticipanteId: t.whatsappParticipanteId ?? "", cpf: t.cpf ?? "" });
   }
 
   function handleSalvarEdicao(id: number) {
     if (!formEdicao.nomeCompleto.trim() || !formEdicao.nomeAbreviado.trim()) return;
     atualizarMutation.mutate({
       id,
+      unidadeId,
       nomeCompleto: formEdicao.nomeCompleto.trim(),
       nomeAbreviado: formEdicao.nomeAbreviado.trim(),
       celular: formEdicao.celular.trim() || null,
+      whatsappParticipanteId: formEdicao.whatsappParticipanteId.trim() || null,
       cpf: formEdicao.cpf.trim() || null,
     });
   }
@@ -74,7 +77,7 @@ export function TerapeutasSection({ unidadeId }: { unidadeId: number }) {
         <HeartHandshake className="h-3.5 w-3.5" /> Terapeutas
       </Label>
       <p className="text-xs text-muted-foreground">
-        Cadastro dos profissionais desta unidade — nome completo, nome abreviado (usado em relatórios), celular e CPF (opcional).
+        Cadastro dos profissionais desta unidade — nome completo, nome abreviado, celular, ID do participante WhatsApp e CPF (opcional). O ID permite identificar mensagens mesmo quando o nome não aparece.
       </p>
 
       {isLoading ? (
@@ -89,6 +92,7 @@ export function TerapeutasSection({ unidadeId }: { unidadeId: number }) {
                     <Input placeholder="Nome completo" value={formEdicao.nomeCompleto} onChange={(e) => setFormEdicao((f) => ({ ...f, nomeCompleto: e.target.value }))} className="h-8" />
                     <Input placeholder="Nome abreviado" value={formEdicao.nomeAbreviado} onChange={(e) => setFormEdicao((f) => ({ ...f, nomeAbreviado: e.target.value }))} className="h-8" />
                     <Input placeholder="Celular" value={formEdicao.celular} onChange={(e) => setFormEdicao((f) => ({ ...f, celular: e.target.value }))} className="h-8" />
+                    <Input placeholder="ID WhatsApp (LID, opcional)" value={formEdicao.whatsappParticipanteId} onChange={(e) => setFormEdicao((f) => ({ ...f, whatsappParticipanteId: e.target.value }))} className="h-8" />
                     <Input placeholder="CPF (opcional)" value={formEdicao.cpf} onChange={(e) => setFormEdicao((f) => ({ ...f, cpf: e.target.value }))} className="h-8" />
                   </div>
                   <div className="flex gap-2">
@@ -105,7 +109,7 @@ export function TerapeutasSection({ unidadeId }: { unidadeId: number }) {
                       {t.nomeCompleto} <span className="text-muted-foreground font-normal">({t.nomeAbreviado})</span>
                     </p>
                     <p className="text-xs text-muted-foreground truncate">
-                      {t.celular || "sem celular"}{t.cpf ? ` · CPF ${t.cpf}` : ""}
+                      {t.celular || "sem celular"}{t.whatsappParticipanteId ? ` · ID ${t.whatsappParticipanteId}` : ""}{t.cpf ? ` · CPF ${t.cpf}` : ""}
                     </p>
                   </div>
                   {!t.ativo && <Badge variant="secondary">Inativo</Badge>}
@@ -116,7 +120,7 @@ export function TerapeutasSection({ unidadeId }: { unidadeId: number }) {
                     size="sm"
                     variant="ghost"
                     className="h-8 px-2 text-xs"
-                    onClick={() => atualizarMutation.mutate({ id: t.id, ativo: !t.ativo })}
+                    onClick={() => atualizarMutation.mutate({ id: t.id, unidadeId, ativo: !t.ativo })}
                     disabled={atualizarMutation.isPending}
                   >
                     {t.ativo ? "Desativar" : "Ativar"}
@@ -135,6 +139,7 @@ export function TerapeutasSection({ unidadeId }: { unidadeId: number }) {
         <Input placeholder="Nome completo" value={novo.nomeCompleto} onChange={(e) => setNovo((f) => ({ ...f, nomeCompleto: e.target.value }))} />
         <Input placeholder="Nome abreviado" value={novo.nomeAbreviado} onChange={(e) => setNovo((f) => ({ ...f, nomeAbreviado: e.target.value }))} />
         <Input placeholder="Celular" value={novo.celular} onChange={(e) => setNovo((f) => ({ ...f, celular: e.target.value }))} />
+        <Input placeholder="ID WhatsApp (LID, opcional)" value={novo.whatsappParticipanteId} onChange={(e) => setNovo((f) => ({ ...f, whatsappParticipanteId: e.target.value }))} />
         <Input placeholder="CPF (opcional)" value={novo.cpf} onChange={(e) => setNovo((f) => ({ ...f, cpf: e.target.value }))} />
       </div>
       <Button

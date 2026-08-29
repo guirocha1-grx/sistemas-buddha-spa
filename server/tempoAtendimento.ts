@@ -119,6 +119,7 @@ export function pontuarIdentificadorAtendimento(conteudo: string | null | undefi
 
 export interface CandidatoPareamentoAtendimento extends IdentificadoresAtendimento {
   atendimentoBelleId: number;
+  terapeutaId?: number | null;
   terapeutaNome: string | null | undefined;
 }
 
@@ -126,6 +127,7 @@ export function escolherAtendimentoPorEvento(
   participanteNome: string | null | undefined,
   conteudo: string | null | undefined,
   candidatos: CandidatoPareamentoAtendimento[],
+  permitirFallbackSequencial = false,
 ): CandidatoPareamentoAtendimento | null {
   const doTerapeuta = candidatos.filter((candidato) => nomesCorrespondem(participanteNome, candidato.terapeutaNome));
   if (doTerapeuta.length === 0) return null;
@@ -137,7 +139,9 @@ export function escolherAtendimentoPorEvento(
   })).sort((a, b) => b.pontos - a.pontos);
   const melhor = ranqueados[0];
   const segundo = ranqueados[1];
-  if (!melhor || melhor.pontos === 0 || melhor.pontos === segundo?.pontos) return null;
+  if (!melhor) return null;
+  if (melhor.pontos === 0) return permitirFallbackSequencial ? melhor.linha : null;
+  if (melhor.pontos === segundo?.pontos) return null;
   return melhor.linha;
 }
 

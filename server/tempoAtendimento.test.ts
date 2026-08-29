@@ -68,6 +68,7 @@ describe("tempo de atendimento", () => {
     ];
     expect(escolherAtendimentoPorEvento("Ana Souza", "Iniciei João Pedro, na Sala 2 para Drenagem Linfática", candidatos)?.atendimentoBelleId).toBe(102);
     expect(escolherAtendimentoPorEvento("Ana Souza", "Iniciei o próximo atendimento", candidatos)).toBeNull();
+    expect(escolherAtendimentoPorEvento("Ana Souza", "Iniciei o próximo atendimento", candidatos, true)?.atendimentoBelleId).toBe(101);
   });
 
   it("classifica desvios sem transformar ausência de referência em atraso", () => {

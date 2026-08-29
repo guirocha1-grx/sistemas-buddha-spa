@@ -405,7 +405,7 @@ export const zapiApi = {
     token: string,
     clientToken: string,
     groupPhone: string,
-  ): Promise<{ phone: string; isAdmin: boolean; isSuperAdmin: boolean; name?: string; short?: string }[] | null> {
+  ): Promise<{ phone: string; isAdmin: boolean; isSuperAdmin: boolean; name?: string; short?: string; participanteId?: string }[] | null> {
     const response = await fetch(buildUrl(instanceId, token, `/group-metadata/${groupPhone}`), {
       method: "GET",
       headers: { "Client-Token": clientToken },
@@ -421,13 +421,17 @@ export const zapiApi = {
       console.warn(`[Z-API getGroupMetadata] ${groupPhone} → resposta sem participants: ${JSON.stringify(data).slice(0, 300)}`);
       return null;
     }
-    return participantes.map((p: any) => ({
-      phone: String(p.phone ?? ""),
-      isAdmin: !!p.isAdmin,
-      isSuperAdmin: !!p.isSuperAdmin,
-      name: typeof p.name === "string" ? p.name : undefined,
-      short: typeof p.short === "string" ? p.short : undefined,
-    })).filter((p) => p.phone);
+    return participantes.map((p: any) => {
+      const participanteId = typeof p.participantLid === "string" ? p.participantLid : typeof p.lid === "string" ? p.lid : typeof p.id === "string" ? p.id : undefined;
+      return {
+        phone: String(p.phone ?? participanteId ?? ""),
+        isAdmin: !!p.isAdmin,
+        isSuperAdmin: !!p.isSuperAdmin,
+        name: typeof p.name === "string" ? p.name : undefined,
+        short: typeof p.short === "string" ? p.short : undefined,
+        participanteId,
+      };
+    }).filter((p) => p.phone);
   },
 
   async getQrCodeImage(

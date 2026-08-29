@@ -765,13 +765,14 @@ export default function Mensagens() {
     setMentionInicio(arroba);
   }
 
-  function selecionarMencao(membro: { telefone: string; nome: string | null }) {
-    if (mentionInicio === null) return;
+  function selecionarMencao(membro: { telefone: string; telefoneMencao: string | null; nome: string | null }) {
+    if (mentionInicio === null || !membro.telefoneMencao) return;
+    const telefoneMencao = membro.telefoneMencao;
     const cursor = textareaRef.current?.selectionStart ?? texto.length;
     const rotulo = membro.nome || membro.telefone;
     const novoTexto = `${texto.slice(0, mentionInicio)}@${rotulo} ${texto.slice(cursor)}`;
     setTexto(novoTexto);
-    setMentionados((prev) => new Set(prev).add(membro.telefone));
+    setMentionados((prev) => new Set(prev).add(telefoneMencao));
     setMentionInicio(null);
     // Foco de volta no textarea, cursor logo depois do espaço inserido —
     // sem isso, o clique no item do autocomplete tira o foco da caixa.
@@ -784,7 +785,7 @@ export default function Mensagens() {
 
   const mentionQuery = mentionInicio !== null ? texto.slice(mentionInicio + 1, textareaRef.current?.selectionStart ?? texto.length).toLowerCase() : "";
   const mentionSugestoes = mentionInicio !== null
-    ? (membrosGrupo ?? []).filter((m) => (m.nome ?? m.telefone).toLowerCase().includes(mentionQuery)).slice(0, 8)
+    ? (membrosGrupo ?? []).filter((m) => Boolean(m.telefoneMencao) && (m.nome ?? m.telefone).toLowerCase().includes(mentionQuery)).slice(0, 8)
     : [];
 
   // Anexo fica "em espera" pra dar chance de escrever legenda (imagem)
@@ -1604,7 +1605,10 @@ export default function Mensagens() {
                       <div className="max-h-40 overflow-y-auto space-y-1 rounded-lg border p-1.5">
                         {membrosGrupo.map((m) => (
                           <div key={m.telefone} className="flex items-center justify-between gap-2 text-xs px-1 py-0.5">
-                            <span className="truncate">{m.nome || formatPhone(m.telefone)}</span>
+                            <span className="truncate" title={m.participanteId ?? m.telefone}>{m.nome || formatPhone(m.telefone)}</span>
+                            <span className={`text-[9px] shrink-0 ${m.identidadeCadastrada ? "text-emerald-700" : "text-muted-foreground"}`}>
+                              {m.tipo === "terapeuta" ? "terapeuta" : m.tipo === "cliente" ? "cliente" : "não cadastrado"}
+                            </span>
                             {m.isAdmin && <span className="text-[9px] text-muted-foreground shrink-0">admin</span>}
                           </div>
                         ))}

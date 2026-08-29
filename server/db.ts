@@ -5,17 +5,17 @@ import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotCo
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import type { LinhaAtendimentoBelleImportada } from "./atendimentosBelleXlsxParser";
 import type { RelatorioPlanosBelleImportado, VinculoPlanoBelleImportado } from "./planosBelleXlsParser";
-import { normalizarTelefone, variantesTelefone, telefoneCanonico } from "@shared/telefone";
+import { normalizarTelefone, variantesTelefone, telefoneCanonico, telefonesCorrespondem } from "@shared/telefone";
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
 import { storageGetSignedUrl, storageExists } from "./storage";
-import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, terapeutasLiberacoes, type InsertChamadoParametro } from "../drizzle/schema";
+import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, atendimentoTempoEventos, terapeutasLiberacoes, type InsertChamadoParametro } from "../drizzle/schema";
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda } from "./terapeutasRelatorios";
-import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
+import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, nomesCorrespondem, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -872,25 +872,36 @@ export async function salvarOrganizacaoProximoAtendimento(params: {
   }
 }
 
-export async function registrarChamadoAtendimento(unidadeId: number, atendimentoBelleId: number, ocorridoEm = new Date()): Promise<void> {
+export async function registrarChamadoAtendimento(unidadeId: number, atendimentoBelleId: number, terapeutaNome?: string | null, ocorridoEm = new Date()): Promise<void> {
   const database = await getDb();
   if (!database) return;
-  const existente = await database.select({ id: atendimentosOperacional.id, chamadoEm: atendimentosOperacional.chamadoEm })
+  const nome = terapeutaNome?.trim() || null;
+  const terapeutasDaUnidade = nome ? await database.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado }).from(terapeutas).where(eq(terapeutas.unidadeId, unidadeId)) : [];
+  const nomeNormalizado = nome?.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
+  const terapeutaCadastrado = nomeNormalizado ? terapeutasDaUnidade.filter((item) => [item.nomeAbreviado, item.nomeCompleto]
+    .some((valor) => valor.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR") === nomeNormalizado)) : [];
+  const terapeutaId = terapeutaCadastrado.length === 1 ? terapeutaCadastrado[0].id : null;
+  const existente = await database.select({ id: atendimentosOperacional.id, chamadoEm: atendimentosOperacional.chamadoEm, terapeutaNome: atendimentosOperacional.terapeutaNome, terapeutaId: atendimentosOperacional.terapeutaId })
     .from(atendimentosOperacional)
     .where(and(eq(atendimentosOperacional.unidadeId, unidadeId), eq(atendimentosOperacional.atendimentoBelleId, atendimentoBelleId)))
     .limit(1);
   if (existente[0]) {
-    if (!existente[0].chamadoEm) {
-      await database.update(atendimentosOperacional).set({ chamadoEm: ocorridoEm }).where(eq(atendimentosOperacional.id, existente[0].id));
+    const atualizacao: { chamadoEm?: Date; terapeutaNome?: string; terapeutaId?: number } = {};
+    if (!existente[0].chamadoEm) atualizacao.chamadoEm = ocorridoEm;
+    if (!existente[0].terapeutaNome && nome) atualizacao.terapeutaNome = nome;
+    if (!existente[0].terapeutaId && terapeutaId) atualizacao.terapeutaId = terapeutaId;
+    if (Object.keys(atualizacao).length > 0) {
+      await database.update(atendimentosOperacional).set(atualizacao).where(eq(atendimentosOperacional.id, existente[0].id));
     }
     return;
   }
-  await database.insert(atendimentosOperacional).values({ unidadeId, atendimentoBelleId, preferencial: false, chamadoEm: ocorridoEm });
+  await database.insert(atendimentosOperacional).values({ unidadeId, atendimentoBelleId, terapeutaId, terapeutaNome: nome, preferencial: false, chamadoEm: ocorridoEm });
 }
 
 export async function registrarMarcoTempoAtendimento(params: {
   unidadeId: number;
   atendimentoBelleId: number;
+  terapeutaId?: number | null;
   evento: EventoTempoAtendimento;
   ocorridoEm?: Date;
 }): Promise<void> {
@@ -898,6 +909,7 @@ export async function registrarMarcoTempoAtendimento(params: {
   if (!database) return;
   const existente = await database.select({
     id: atendimentosOperacional.id,
+    terapeutaId: atendimentosOperacional.terapeutaId,
     inicioEm: atendimentosOperacional.inicioEm,
     fimEm: atendimentosOperacional.fimEm,
   }).from(atendimentosOperacional)
@@ -908,31 +920,57 @@ export async function registrarMarcoTempoAtendimento(params: {
   const jaRegistrado = params.evento === "inicio" ? existente[0]?.inicioEm : existente[0]?.fimEm;
   if (jaRegistrado) return;
   if (existente[0]) {
-    await database.update(atendimentosOperacional).set(params.evento === "inicio" ? { inicioEm: ocorridoEm } : { fimEm: ocorridoEm })
-      .where(eq(atendimentosOperacional.id, existente[0].id));
+    const atualizacao = params.evento === "inicio" ? { inicioEm: ocorridoEm } : { fimEm: ocorridoEm };
+    if (!existente[0].terapeutaId && params.terapeutaId) {
+      await database.update(atendimentosOperacional).set({ ...atualizacao, terapeutaId: params.terapeutaId }).where(eq(atendimentosOperacional.id, existente[0].id));
+    } else {
+      await database.update(atendimentosOperacional).set(atualizacao).where(eq(atendimentosOperacional.id, existente[0].id));
+    }
     return;
   }
   await database.insert(atendimentosOperacional).values({
     unidadeId: params.unidadeId,
     atendimentoBelleId: params.atendimentoBelleId,
+    terapeutaId: params.terapeutaId ?? null,
     preferencial: false,
     ...(campo === "inicioEm" ? { inicioEm: ocorridoEm } : { fimEm: ocorridoEm }),
   });
 }
 
-export async function registrarEventoTempoAtendimento(params: {
-  unidadeId: number;
-  participanteNome: string | null | undefined;
-  conteudo: string | null | undefined;
-  ocorridoEm?: Date;
-}): Promise<{ evento: EventoTempoAtendimento; atendimentoBelleId: number } | null> {
-  const evento = identificarEventoTempoAtendimento(params.conteudo);
-  if (!evento || !params.participanteNome?.trim()) return null;
+type ResultadoAssociacaoTempo = {
+  evento: EventoTempoAtendimento;
+  status: "associado" | "pendente" | "ambigua";
+  atendimentoBelleId: number | null;
+};
+
+async function associarEventoTempoAtendimento(eventoId: number): Promise<ResultadoAssociacaoTempo | null> {
   const database = await getDb();
   if (!database) return null;
+  const eventos = await database.select().from(atendimentoTempoEventos).where(eq(atendimentoTempoEventos.id, eventoId)).limit(1);
+  const evento = eventos[0];
+  if (!evento) return null;
+  if (evento.status === "associado" && evento.atendimentoBelleId) {
+    return { evento: evento.evento, status: "associado", atendimentoBelleId: evento.atendimentoBelleId };
+  }
 
+  const identidade = await resolverIdentidadeParticipante({
+    unidadeId: evento.unidadeId,
+    telefone: evento.participanteTelefone,
+    participanteId: evento.participanteLid,
+    nomeWhatsapp: evento.participanteNome,
+  });
+  if (identidade.tipo !== "terapeuta") {
+    const motivo = identidade.tipo === "cliente" ? "Participante identificado como cliente" : "Terapeuta ainda não identificado no cadastro";
+    await database.update(atendimentoTempoEventos).set({ status: "pendente", motivo, processadoEm: new Date() }).where(eq(atendimentoTempoEventos.id, evento.id));
+    return { evento: evento.evento, status: "pendente", atendimentoBelleId: null };
+  }
+
+  const referenciaEvento = evento.ocorridoEm;
+  const limiteInferior = new Date(referenciaEvento.getTime() - 24 * 60 * 60 * 1000);
+  const limiteSuperior = new Date(referenciaEvento.getTime() + 5 * 60 * 1000);
   const candidatos = await database.select({
     atendimentoBelleId: belleAtendimentos.id,
+    terapeutaId: atendimentosOperacional.terapeutaId,
     terapeutaNomeOrganizado: atendimentosOperacional.terapeutaNome,
     profissionalNome: belleAtendimentos.profissionalNome,
     clienteNome: belleAtendimentos.clienteNome,
@@ -947,33 +985,108 @@ export async function registrarEventoTempoAtendimento(params: {
       eq(belleAtendimentos.id, atendimentosOperacional.atendimentoBelleId),
     ))
     .where(and(
-      eq(atendimentosOperacional.unidadeId, params.unidadeId),
+      eq(atendimentosOperacional.unidadeId, evento.unidadeId),
+      gte(atendimentosOperacional.chamadoEm, limiteInferior),
+      lte(atendimentosOperacional.chamadoEm, limiteSuperior),
       isNotNull(atendimentosOperacional.chamadoEm),
-      evento === "inicio" ? isNull(atendimentosOperacional.inicioEm) : isNotNull(atendimentosOperacional.inicioEm),
-      evento === "fim" ? isNull(atendimentosOperacional.fimEm) : undefined,
+      evento.evento === "inicio" ? isNull(atendimentosOperacional.inicioEm) : isNotNull(atendimentosOperacional.inicioEm),
+      evento.evento === "fim" ? isNull(atendimentosOperacional.fimEm) : undefined,
     ))
-    .orderBy(evento === "inicio" ? asc(atendimentosOperacional.chamadoEm) : asc(atendimentosOperacional.inicioEm))
+    .orderBy(evento.evento === "inicio" ? asc(atendimentosOperacional.chamadoEm) : asc(atendimentosOperacional.inicioEm))
     .limit(100);
-
+  const candidatosDoTerapeuta = candidatos.filter((linha) => (
+    (linha.terapeutaId && identidade.terapeutaId && linha.terapeutaId === identidade.terapeutaId)
+    || (!linha.terapeutaId && nomesCorrespondem(identidade.nome, linha.terapeutaNomeOrganizado || linha.profissionalNome))
+  ));
   const candidato = escolherAtendimentoPorEvento(
-    params.participanteNome,
-    params.conteudo,
-    candidatos.map((linha) => ({
+    identidade.nome || evento.participanteNome,
+    evento.conteudo,
+    candidatosDoTerapeuta.map((linha) => ({
       atendimentoBelleId: linha.atendimentoBelleId,
+      terapeutaId: linha.terapeutaId,
       terapeutaNome: linha.terapeutaNomeOrganizado || linha.profissionalNome,
       clienteNome: linha.clienteNome,
       servicoNome: linha.servicoNome,
       sala: linha.sala,
     })),
+    true,
   );
-  if (!candidato) return null;
+  if (!candidato) {
+    const motivo = candidatosDoTerapeuta.length > 1 ? "Mais de um atendimento possível sem identificador único" : "Nenhum atendimento chamado pendente encontrado";
+    const status = candidatosDoTerapeuta.length > 1 ? "ambigua" : "pendente";
+    await database.update(atendimentoTempoEventos).set({ status, motivo, processadoEm: new Date() }).where(eq(atendimentoTempoEventos.id, evento.id));
+    return { evento: evento.evento, status, atendimentoBelleId: null };
+  }
+
   await registrarMarcoTempoAtendimento({
-    unidadeId: params.unidadeId,
+    unidadeId: evento.unidadeId,
     atendimentoBelleId: candidato.atendimentoBelleId,
-    evento,
-    ocorridoEm: params.ocorridoEm,
+    terapeutaId: identidade.terapeutaId,
+    evento: evento.evento,
+    ocorridoEm: evento.ocorridoEm,
   });
-  return { evento, atendimentoBelleId: candidato.atendimentoBelleId };
+  await database.update(atendimentoTempoEventos).set({
+    status: "associado",
+    atendimentoBelleId: candidato.atendimentoBelleId,
+    motivo: null,
+    processadoEm: new Date(),
+  }).where(eq(atendimentoTempoEventos.id, evento.id));
+  return { evento: evento.evento, status: "associado", atendimentoBelleId: candidato.atendimentoBelleId };
+}
+
+export async function registrarEventoTempoAtendimento(params: {
+  unidadeId: number;
+  conversaId?: number | null;
+  mensagemId?: number | null;
+  zapiMessageId?: string | null;
+  participanteTelefone?: string | null;
+  participanteLid?: string | null;
+  participanteNome?: string | null;
+  conteudo: string | null | undefined;
+  ocorridoEm?: Date;
+}): Promise<ResultadoAssociacaoTempo | null> {
+  const evento = identificarEventoTempoAtendimento(params.conteudo);
+  if (!evento) return null;
+  const database = await getDb();
+  if (!database) return null;
+  const identificadorExistente = params.zapiMessageId
+    ? eq(atendimentoTempoEventos.zapiMessageId, params.zapiMessageId)
+    : params.mensagemId
+      ? eq(atendimentoTempoEventos.mensagemId, params.mensagemId)
+      : null;
+  if (identificadorExistente) {
+    const existente = await database.select({ id: atendimentoTempoEventos.id }).from(atendimentoTempoEventos)
+      .where(identificadorExistente).limit(1);
+    if (existente[0]) return associarEventoTempoAtendimento(existente[0].id);
+  }
+  const inserido = await database.insert(atendimentoTempoEventos).values({
+    unidadeId: params.unidadeId,
+    conversaId: params.conversaId ?? null,
+    mensagemId: params.mensagemId ?? null,
+    zapiMessageId: params.zapiMessageId ?? null,
+    evento,
+    participanteTelefone: params.participanteTelefone ?? null,
+    participanteLid: params.participanteLid ?? null,
+    participanteNome: params.participanteNome?.trim() || null,
+    conteudo: params.conteudo ?? null,
+    ocorridoEm: params.ocorridoEm ?? new Date(),
+  }).$returningId();
+  const eventoId = inserido[0]?.id;
+  return eventoId ? associarEventoTempoAtendimento(eventoId) : null;
+}
+
+export async function reprocessarEventosTempoAtendimento(unidadeId: number, limite = 200) {
+  const database = await getDb();
+  if (!database) return { processados: 0, associados: 0 };
+  const eventos = await database.select({ id: atendimentoTempoEventos.id }).from(atendimentoTempoEventos)
+    .where(and(eq(atendimentoTempoEventos.unidadeId, unidadeId), inArray(atendimentoTempoEventos.status, ["pendente", "ambigua"])))
+    .orderBy(asc(atendimentoTempoEventos.createdAt)).limit(limite);
+  let associados = 0;
+  for (const evento of eventos) {
+    const resultado = await associarEventoTempoAtendimento(evento.id);
+    if (resultado?.status === "associado") associados++;
+  }
+  return { processados: eventos.length, associados };
 }
 
 export async function listarRelatorioTempoAtendimento(unidadeId: number, dataInicio: string, dataFim: string) {
@@ -1342,6 +1455,96 @@ export function filtrarCandidatosPorUnidade(candidatos: ClienteCandidatoComUnida
  * duplicar (2+ matches, ou 1 match com nome diferente do que a
  * recepção está tentando cadastrar).
  */
+export type IdentidadeParticipanteGrupo = {
+  tipo: "terapeuta" | "cliente" | "desconhecido";
+  nome: string | null;
+  terapeutaId: number | null;
+  clienteId: number | null;
+  telefone: string | null;
+  participanteId: string | null;
+};
+
+/** Resolve participante de grupo pela identidade cadastrada, sem aceitar empate. */
+export async function resolverIdentidadeParticipante(params: {
+  unidadeId: number;
+  telefone?: string | null;
+  participanteId?: string | null;
+  nomeWhatsapp?: string | null;
+}): Promise<IdentidadeParticipanteGrupo> {
+  const participanteId = params.participanteId?.trim() || (params.telefone?.trim().includes("@lid") ? params.telefone.trim() : null);
+  const telefoneInformado = params.telefone?.trim() && !params.telefone.trim().includes("@lid") ? params.telefone.trim() : null;
+  const telefone = telefoneInformado || (participanteId?.includes("@lid") ? await buscarTelefonePorLid(params.unidadeId, participanteId) : undefined) || null;
+  const database = await getDb();
+  const desconhecido = (): IdentidadeParticipanteGrupo => ({
+    tipo: "desconhecido",
+    nome: params.nomeWhatsapp?.trim() || null,
+    terapeutaId: null,
+    clienteId: null,
+    telefone,
+    participanteId,
+  });
+  if (!database) return desconhecido();
+
+  const terapeutasDaUnidade = await database.select({
+    id: terapeutas.id,
+    nomeCompleto: terapeutas.nomeCompleto,
+    nomeAbreviado: terapeutas.nomeAbreviado,
+    celular: terapeutas.celular,
+    whatsappParticipanteId: terapeutas.whatsappParticipanteId,
+  }).from(terapeutas).where(eq(terapeutas.unidadeId, params.unidadeId));
+  const terapeutasPorId = participanteId
+    ? terapeutasDaUnidade.filter((item) => item.whatsappParticipanteId?.trim() === participanteId)
+    : [];
+  const terapeutasPorTelefone = telefone
+    ? terapeutasDaUnidade.filter((item) => telefonesCorrespondem(item.celular, telefone))
+    : [];
+  const terapeutasEncontrados = terapeutasPorId.length > 0 ? terapeutasPorId : terapeutasPorTelefone;
+  if (terapeutasEncontrados.length === 1) {
+    const terapeuta = terapeutasEncontrados[0];
+    return {
+      tipo: "terapeuta",
+      nome: terapeuta.nomeAbreviado || terapeuta.nomeCompleto,
+      terapeutaId: terapeuta.id,
+      clienteId: null,
+      telefone,
+      participanteId,
+    };
+  }
+  if (terapeutasEncontrados.length > 1) return desconhecido();
+
+  if (terapeutasEncontrados.length === 0 && params.nomeWhatsapp?.trim()) {
+    const nome = params.nomeWhatsapp.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
+    const porNome = terapeutasDaUnidade.filter((item) => [item.nomeAbreviado, item.nomeCompleto]
+      .some((valor) => valor.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR") === nome));
+    if (porNome.length === 1) {
+      const terapeuta = porNome[0];
+      return {
+        tipo: "terapeuta",
+        nome: terapeuta.nomeAbreviado || terapeuta.nomeCompleto,
+        terapeutaId: terapeuta.id,
+        clienteId: null,
+        telefone,
+        participanteId,
+      };
+    }
+  }
+
+  if (telefone) {
+    const clientesEncontrados = await buscarClientesPorTelefone(telefone, params.unidadeId);
+    if (clientesEncontrados.length === 1) {
+      return {
+        tipo: "cliente",
+        nome: clientesEncontrados[0].nome,
+        terapeutaId: null,
+        clienteId: clientesEncontrados[0].id,
+        telefone,
+        participanteId,
+      };
+    }
+  }
+  return desconhecido();
+}
+
 export async function buscarClientesPorTelefone(telefoneWhatsapp: string, unidadeId?: number): Promise<ClienteCandidato[]> {
   const db = await getDb();
   if (!db) return [];
@@ -1942,6 +2145,40 @@ export async function criarClienteRapidoDeConversa(
  * (enviadaPorAtendenteId) — enviadaPorUserId continua sendo a conta
  * Google/Manus compartilhada, não é isso que a UI mostra no balão.
  */
+export type MembroGrupoResolvido = {
+  telefone: string;
+  telefoneMencao: string | null;
+  participanteId: string | null;
+  nome: string | null;
+  tipo: "terapeuta" | "cliente" | "desconhecido";
+  identidadeCadastrada: boolean;
+  isAdmin: boolean;
+};
+
+export async function resolverMembrosGrupo(
+  unidadeId: number,
+  participantes: Array<{ phone: string; isAdmin: boolean; isSuperAdmin: boolean; name?: string; short?: string; participanteId?: string }>,
+  nomesConhecidos: Map<string, string>,
+): Promise<MembroGrupoResolvido[]> {
+  return Promise.all(participantes.map(async (participante) => {
+    const identidade = await resolverIdentidadeParticipante({
+      unidadeId,
+      telefone: participante.phone,
+      participanteId: participante.participanteId,
+      nomeWhatsapp: participante.name || participante.short || nomesConhecidos.get(participante.phone) || null,
+    });
+    return {
+      telefone: participante.phone,
+      telefoneMencao: identidade.telefone,
+      participanteId: identidade.participanteId || participante.participanteId || null,
+      nome: identidade.nome || participante.name || participante.short || nomesConhecidos.get(participante.phone) || null,
+      tipo: identidade.tipo,
+      identidadeCadastrada: identidade.tipo !== "desconhecido",
+      isAdmin: participante.isAdmin || participante.isSuperAdmin,
+    };
+  }));
+}
+
 export async function listInboxMensagens(conversaId: number, limit: number = 50) {
   const db = await getDb();
   if (!db) return [];
@@ -1957,6 +2194,7 @@ export async function listInboxMensagens(conversaId: number, limit: number = 50)
     enviadaPorAtendenteId: inboxMensagens.enviadaPorAtendenteId,
     enviadaPorAtendenteNome: atendentes.nome,
     participanteTelefone: inboxMensagens.participanteTelefone,
+    participanteLid: inboxMensagens.participanteLid,
     participanteNome: inboxMensagens.participanteNome,
     lida: inboxMensagens.lida,
     statusEntrega: inboxMensagens.statusEntrega,
@@ -1994,6 +2232,7 @@ export async function listInboxMensagensPaginada(params: { conversaId: number; l
     enviadaPorAtendenteId: inboxMensagens.enviadaPorAtendenteId,
     enviadaPorAtendenteNome: atendentes.nome,
     participanteTelefone: inboxMensagens.participanteTelefone,
+    participanteLid: inboxMensagens.participanteLid,
     participanteNome: inboxMensagens.participanteNome,
     lida: inboxMensagens.lida,
     statusEntrega: inboxMensagens.statusEntrega,
@@ -4015,6 +4254,7 @@ export async function criarTerapeuta(params: {
   nomeCompleto: string;
   nomeAbreviado: string;
   celular?: string | null;
+  whatsappParticipanteId?: string | null;
   cpf?: string | null;
 }) {
   const db = await getDb();
@@ -4023,16 +4263,17 @@ export async function criarTerapeuta(params: {
   return result[0]?.id;
 }
 
-export async function atualizarTerapeuta(id: number, dados: {
+export async function atualizarTerapeuta(unidadeId: number, id: number, dados: {
   nomeCompleto?: string;
   nomeAbreviado?: string;
   celular?: string | null;
+  whatsappParticipanteId?: string | null;
   cpf?: string | null;
   ativo?: boolean;
 }) {
   const db = await getDb();
   if (!db) return;
-  await db.update(terapeutas).set(dados).where(eq(terapeutas.id, id));
+  await db.update(terapeutas).set(dados).where(and(eq(terapeutas.id, id), eq(terapeutas.unidadeId, unidadeId)));
 }
 
 export async function listarFidelizacaoTerapeutas(unidadeId: number, dataInicio: string, dataFim: string) {

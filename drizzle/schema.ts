@@ -409,6 +409,7 @@ export const terapeutas = mysqlTable("terapeutas", {
   nomeCompleto: varchar("nomeCompleto", { length: 200 }).notNull(),
   nomeAbreviado: varchar("nomeAbreviado", { length: 100 }).notNull(),
   celular: varchar("celular", { length: 20 }),
+  whatsappParticipanteId: varchar("whatsappParticipanteId", { length: 100 }),
   cpf: varchar("cpf", { length: 14 }),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -560,6 +561,7 @@ export const atendimentosOperacional = mysqlTable("atendimentos_operacional", {
   id: int("id").autoincrement().primaryKey(),
   unidadeId: int("unidadeId").notNull(),
   atendimentoBelleId: int("atendimentoBelleId").notNull(),
+  terapeutaId: int("terapeutaId"),
   terapeutaNome: varchar("terapeutaNome", { length: 100 }),
   sala: varchar("sala", { length: 200 }),
   preferencial: boolean("preferencial").notNull().default(false),
@@ -866,6 +868,7 @@ export const inboxMensagens = mysqlTable("inbox_mensagens", {
   // conversa. Contraparte de enviadaPorAtendenteId (que é "quem da
   // nossa equipe mandou").
   participanteTelefone: varchar("participanteTelefone", { length: 30 }),
+  participanteLid: varchar("participanteLid", { length: 100 }),
   participanteNome: varchar("participanteNome", { length: 200 }),
   // Tick de entrega estilo WhatsApp (1 cinza / 2 cinza / 2 azul), só
   // relevante pra direcao="enviada" — vem do MessageStatusCallback da
@@ -879,6 +882,34 @@ export const inboxMensagens = mysqlTable("inbox_mensagens", {
 
 export type InboxMensagem = typeof inboxMensagens.$inferSelect;
 export type InsertInboxMensagem = typeof inboxMensagens.$inferInsert;
+
+/** Eventos candidatos de início/fim persistidos antes do pareamento. */
+export const atendimentoTempoEventos = mysqlTable("atendimento_tempo_eventos", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  conversaId: int("conversaId"),
+  mensagemId: int("mensagemId"),
+  zapiMessageId: varchar("zapiMessageId", { length: 100 }),
+  evento: mysqlEnum("evento", ["inicio", "fim"]).notNull(),
+  participanteTelefone: varchar("participanteTelefone", { length: 30 }),
+  participanteLid: varchar("participanteLid", { length: 100 }),
+  participanteNome: varchar("participanteNome", { length: 200 }),
+  conteudo: text("conteudo"),
+  ocorridoEm: timestamp("ocorridoEm").notNull(),
+  atendimentoBelleId: int("atendimentoBelleId"),
+  status: mysqlEnum("status", ["pendente", "associado", "ambigua"]).default("pendente").notNull(),
+  motivo: varchar("motivo", { length: 250 }),
+  processadoEm: timestamp("processadoEm"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  zapiMessageIdx: uniqueIndex("atendimento_tempo_eventos_zapi_message_idx").on(table.zapiMessageId),
+  mensagemIdx: uniqueIndex("atendimento_tempo_eventos_mensagem_idx").on(table.mensagemId),
+  pendentesIdx: index("atendimento_tempo_eventos_pendentes_idx").on(table.unidadeId, table.status, table.createdAt),
+  atendimentoIdx: index("atendimento_tempo_eventos_atendimento_idx").on(table.unidadeId, table.atendimentoBelleId),
+}));
+
+export type AtendimentoTempoEvento = typeof atendimentoTempoEventos.$inferSelect;
+export type InsertAtendimentoTempoEvento = typeof atendimentoTempoEventos.$inferInsert;
 
 /**
  * Contas bancárias/de caixa nomeáveis por unidade. A conta do Banco

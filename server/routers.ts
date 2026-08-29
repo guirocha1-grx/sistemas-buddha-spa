@@ -1271,11 +1271,7 @@ Diretrizes:
           db.listNomesConhecidosPorTelefone(input.conversaId),
         ]);
         if (!participantes) return [];
-        return participantes.map((p) => ({
-          telefone: p.phone,
-          nome: p.name || p.short || nomesConhecidos.get(p.phone) || null,
-          isAdmin: p.isAdmin || p.isSuperAdmin,
-        }));
+        return db.resolverMembrosGrupo(unidade.id, participantes, nomesConhecidos);
       }),
     }),
 
@@ -4189,7 +4185,7 @@ Diretrizes:
       const resultado = await zapiApi.sendText(unidade.zapiInstanceId, unidade.zapiToken, unidade.zapiClientToken, conversa.telefone, texto);
       if (input.modalidade === "chamado" && input.atendimentoBelleId) {
         try {
-          await db.registrarChamadoAtendimento(input.unidadeId, input.atendimentoBelleId, new Date());
+          await db.registrarChamadoAtendimento(input.unidadeId, input.atendimentoBelleId, input.terapeutaNome, new Date());
         } catch (error) {
           console.error("[Chamados] Falha ao registrar hora do chamado:", error);
         }
@@ -4215,6 +4211,7 @@ Diretrizes:
       nomeCompleto: z.string().min(1),
       nomeAbreviado: z.string().min(1),
       celular: z.string().optional(),
+      whatsappParticipanteId: z.string().trim().max(100).optional(),
       cpf: z.string().optional(),
     })).mutation(async ({ input }) => {
       const id = await db.criarTerapeuta({
@@ -4222,20 +4219,25 @@ Diretrizes:
         nomeCompleto: input.nomeCompleto,
         nomeAbreviado: input.nomeAbreviado,
         celular: input.celular || null,
+        whatsappParticipanteId: input.whatsappParticipanteId || null,
         cpf: input.cpf || null,
       });
+      await db.reprocessarEventosTempoAtendimento(input.unidadeId);
       return { success: true, id };
     }),
 
     atualizar: adminProcedure.input(z.object({
       id: z.number(),
+      unidadeId: z.number().int().positive(),
       nomeCompleto: z.string().min(1).optional(),
       nomeAbreviado: z.string().min(1).optional(),
       celular: z.string().nullable().optional(),
+      whatsappParticipanteId: z.string().trim().max(100).nullable().optional(),
       cpf: z.string().nullable().optional(),
       ativo: z.boolean().optional(),
-    })).mutation(async ({ input: { id, ...dados } }) => {
-      await db.atualizarTerapeuta(id, dados);
+    })).mutation(async ({ input: { id, unidadeId, ...dados } }) => {
+      await db.atualizarTerapeuta(unidadeId, id, dados);
+      await db.reprocessarEventosTempoAtendimento(unidadeId);
       return { success: true };
     }),
   }),

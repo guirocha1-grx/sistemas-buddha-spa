@@ -556,3 +556,7 @@
 - [x] Definir e documentar frequência de consolidação sem substituir o registro em tempo real
 
 - [x] Corrigir o pareamento de início e fim por identificadores do atendimento, suportando vários chamados consecutivos do mesmo terapeuta
+
+- [x] Adicionar identidade WhatsApp editável ao cadastro de terapeutas, com telefone e ID do participante
+- [x] Persistir todos os eventos candidatos de início/fim antes do pareamento e permitir reconciliação sem perda
+- [x] Corrigir o pareamento do tempo por terapeuta identificado, atendimento e evento específico
