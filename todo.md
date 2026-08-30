@@ -557,6 +557,8 @@
 - [x] Validar os dados, vínculo e nível dos cadastros de terapeutas inseridos no SSU
 - [x] Verificar e criar, se ausente, a tabela belle_registros_financeiros no TiDB compartilhado
 - [x] Validar a chave única e o índice por unidade e data dos registros financeiros Belle
+- [x] Renomear dataLancamento para dataVencimento sem perder registros financeiros existentes
+- [x] Validar schema, parser de importação e migração financeira após a renomeação
 - [x] Adicionar hora do chamado, início e fim na linha operacional de cada atendimento
 - [x] Registrar o chamado no envio e capturar início/fim do Grupo Geral com pareamento idempotente
 - [x] Criar a subseção Tempos de atendimento com espera, duração e desvios do tempo Belle
