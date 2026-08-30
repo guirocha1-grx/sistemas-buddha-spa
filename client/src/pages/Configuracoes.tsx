@@ -16,6 +16,7 @@ import { CobrancaLinkModelosSection } from "@/components/CobrancaLinkModelosSect
 import { AgentesPromptSection } from "@/components/AgentesPromptSection";
 import { AgentesRecursosSection } from "@/components/AgentesRecursosSection";
 import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY } from "@shared/inboxAi";
+import { toast } from "sonner";
 
 interface InterForm {
   interClientId?: string;
@@ -120,6 +121,10 @@ export default function Configuracoes() {
         setTimeout(() => setSicrediSaved(null), 3000);
       }
     },
+    // Sem isso, uma falha (ex.: sem permissão de admin) ficava
+    // silenciosa — o switch/campo simplesmente não mudava, sem
+    // nenhuma pista do porquê.
+    onError: (error) => toast.error(`Não foi possível salvar: ${error.message}`),
   });
 
   const utils = trpc.useUtils();

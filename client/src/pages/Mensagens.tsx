@@ -406,18 +406,20 @@ export default function Mensagens() {
     { unidadeId: unidadeSelecionada?.id ?? 0 },
     { enabled: !!unidadeSelecionada?.id && editandoProximoAtendimento },
   );
-  // precoSemana é sempre preenchido (Seg-Sáb cobre praticamente o
-  // catálogo inteiro); precoDomingo só existe pras terapias realmente
-  // oferecidas aos domingos/feriados — os 2 filtros são independentes
-  // (união), não uma escolha exclusiva.
+  // No Belle, domingo/feriado normalmente é um serviço À PARTE no
+  // catálogo (nome próprio, geralmente "<nome da semana> Dom" — nem
+  // sempre no padrão, ver exceções tipo "Relaxante Mencare Dom"), não
+  // um preço diferente do mesmo serviço. Os 2 filtros são independentes
+  // (união, não escolha exclusiva) — o Set dedupe cuida de quando o
+  // nome derivado bate com um nome "Dom" que já existe de verdade.
   const [filtroServicoSegSab, setFiltroServicoSegSab] = useState(true);
   const [filtroServicoDomFer, setFiltroServicoDomFer] = useState(false);
   const nomesServicosProximoAtendimento = useMemo(() => {
     const nomes = new Set<string>();
     for (const item of tabelaPrecosQuery.data ?? []) {
-      const valeSegSab = filtroServicoSegSab && item.precoSemana != null;
-      const valeDomFer = filtroServicoDomFer && item.precoDomingo != null;
-      if (valeSegSab || valeDomFer) nomes.add(item.servico);
+      const ehDom = /\bdom\.?$/i.test(item.servico.trim());
+      if (filtroServicoSegSab && !ehDom) nomes.add(item.servico);
+      if (filtroServicoDomFer) nomes.add(ehDom ? item.servico : `${item.servico} Dom`);
     }
     return Array.from(nomes);
   }, [tabelaPrecosQuery.data, filtroServicoSegSab, filtroServicoDomFer]);

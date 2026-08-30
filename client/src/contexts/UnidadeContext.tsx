@@ -59,6 +59,7 @@ export function UnidadeProvider({ children }: { children: ReactNode }) {
     codEstab: u.codEstab,
     corTema: u.corTema,
     belleToken: u.belleToken,
+    belleAtivo: u.belleAtivo,
     zapiInstanceId: u.zapiInstanceId,
     zapiToken: u.zapiToken,
     zapiClientToken: u.zapiClientToken,
