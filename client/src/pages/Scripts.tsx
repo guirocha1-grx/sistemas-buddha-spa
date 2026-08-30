@@ -335,7 +335,7 @@ export default function Scripts() {
       </Card>
 
       <Dialog open={modalAberto} onOpenChange={setModalAberto}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[92dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editandoId ? "Editar script" : "Novo script"}</DialogTitle>
             <DialogDescription>
