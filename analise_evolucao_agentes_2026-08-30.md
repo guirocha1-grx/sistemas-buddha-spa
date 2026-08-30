@@ -4,7 +4,7 @@
 **Autor:** Claude (Sonnet 5), a pedido do Guilherme
 **Escopo:** continuação do histórico documentado pelo Manus AI (Pareto 20/08, Efetividade 22/08, Evolução + Estado 28/08).
 
-> **Limitação metodológica, declarada de propósito:** este documento **não tem acesso ao banco de produção** (TiDB). Os três relatórios anteriores do Manus cruzaram `agentes_execucoes`, `agentes_sugestoes` e `inbox_mensagens` para produzir números de aprovação/rejeição reais. Esta atualização é **baseada em código e histórico de commits**, não em dados de uso — serve para responder "o que mudou desde o último checkpoint", não "os agentes melhoraram na prática". Pra isso, é preciso rodar uma nova coleta (Manus de novo, ou me dar acesso ao banco).
+> **Atualização de método:** a primeira versão deste documento (30/08, manhã) não tinha acesso ao banco de produção e era baseada só em código/commits. Depois disso ganhei consulta somente leitura ao TiDB (`POST /api/claude-consulta`, ver [server/claudeQueryRoute.ts](server/claudeQueryRoute.ts)) e recalculei os números reais direto de `agentes_execucoes`/`agentes_sugestoes`, na mesma metodologia dos relatórios do Manus. A seção 2.1 abaixo tem os dados reais; o resto do documento (código/commits) permanece como estava.
 
 ## 1. Trajetória até aqui (consolidando os 3 relatórios do Manus)
 
@@ -25,6 +25,34 @@ Só existe **um commit** tocando lógica de agente depois desse checkpoint: [`6b
 
 Nenhuma outra alteração em `agentesService.ts`, `agentesDb.ts` ou nos prompts desde então.
 
+## 2.1 Resultado medido, 28/08 16:25 → 30/08 22:27 (dados reais do TiDB)
+
+**Volume:** 382 execuções de agente, das quais 325 concluídas com sugestão e 57 ignoradas (sem destino/sem intervenção necessária) — **zero falhas técnicas** (`status = 'erro'`) no período inteiro.
+
+Isso é o achado mais importante desta atualização: o relatório do Manus de 28/08 media **58 das 59 falhas recentes** como respostas vazias da Áurea por orçamento de raciocínio esgotado. Desde o fix (`90fbd57`, aplicado às 07:25 do dia 28/08, antes mesmo do corte de dados do relatório) até agora — mais de 2 dias e 382 execuções depois — **essa falha não voltou a ocorrer nenhuma vez**. O P0 do relatório do Manus está confirmado como resolvido, não só "corrigido no código".
+
+**Qualidade das sugestões (325 concluídas):**
+
+| Resultado | Quantidade | % |
+|---|---:|---:|
+| Obsoleta (substituída por nova mensagem) | 149 | 45,8% |
+| Aprovada, mas editada antes de enviar | 147 | 45,2% |
+| Pendente no momento da consulta | 14 | 4,3% |
+| Aprovada como está (sem editar) | 10 | 3,1% |
+| Rejeitada | 5 | 1,5% |
+
+Entre as **162 sugestões com decisão humana final** (aprovada + reprovada, excluindo obsoleta/pendente):
+
+| Indicador | 28/08 (relatório Manus) | 28/08 16:25 → 30/08 22:27 (agora) | Leitura |
+|---|---:|---:|---|
+| Aprovação entre decisões humanas | 87,4% | **96,9%** | Mantém o patamar do pico de 22/08 (96,8%); não regrediu |
+| Reprovação entre decisões humanas | 12,6% | **3,1%** | Consistente com a melhora medida em 22/08 |
+| Aprovadas que ainda precisam de edição | 93,4% | **93,6%** | **Praticamente idêntico** — o gargalo mais persistente da série continua sem ceder |
+
+**Por especialista** (só decisões humanas, mesmo período): a concentração mudou de composição. Em 20/08 Carol+Bianca eram 87,3% das divergências; agora **Carol sozinha é 121 das 162 decisões (74,7%)** — 109 editadas, 8 aceitas como está, 4 rejeitadas. Bianca caiu para 4 casos (todos editados, zero rejeição). As 4 rejeições de Carol têm motivo `"contexto"` registrado (sem comentário livre), todas concentradas na tarde/noite de hoje (30/08) — não dá pra saber mais sem o texto da rejeição.
+
+**Conclusão da verificação:** o fix de acolhimento/horário de 28/08 não piorou nada (aprovação e erro técnico melhoraram ou seguraram o patamar), mas também **não resolveu o gargalo estrutural** — a maioria das sugestões aprovadas continua precisando de edição, e agora quase toda a carga de correção está concentrada em Carol (agendamento). Isso aponta especificamente pra agendamento como o próximo alvo, não pra qualidade geral do sistema.
+
 ## 3. Desde 29/08: silêncio total nos agentes
 
 Os últimos dois dias de commits (29 e 30/08 — vínculo/nível de terapeuta, conciliação PDV com Belle, cobrança por link com parcelas, refatoração da Agenda, integração Belle liga/desliga por unidade) **não tocaram em nenhum arquivo de agente**. O foco do desenvolvimento migrou inteiramente para: terapeutas, financeiro/conciliação e cobrança. Isso não é bom nem ruim por si só, mas é um dado relevante pra "evolução dos agentes": **não houve evolução de agente nos últimos 2 dias**, só na semana anterior.
@@ -41,7 +69,7 @@ Cruzando com `plano_gradual_qualidade_agentes.md`:
 
 ## 5. Recomendação
 
-O commit de 28/08 à tarde resolveu dois problemas pontuais e reais, mas nenhum dos três pilares estruturais do plano do Manus (exemplos canônicos, suíte de avaliação, confiança calibrada) avançou. Antes de continuar corrigindo sintomas um a um:
+O commit de 28/08 à tarde resolveu de fato os dois problemas que atacava (confirmado pelos dados da seção 2.1: zero falha técnica em 382 execuções, aprovação no mesmo patamar do pico anterior). Mas nenhum dos três pilares estruturais do plano do Manus (exemplos canônicos, suíte de avaliação, confiança calibrada) avançou, e a taxa de "aprovada mas editada" continua em 93,6% — praticamente a mesma de 28/08. Com os dados confirmando que o gargalo não é mais estabilidade técnica, e sim redação/contexto concentrado quase todo em Carol (agendamento):
 
-1. **Rodar uma nova coleta de dados** (Manus de novo ou acesso direto ao banco) cobrindo 28/08 17:21 até hoje, pra medir se o acolhimento e o filtro de horário realmente reduziram edição/rejeição — sem isso, o fix de 28/08 é uma hipótese não verificada, por melhor que pareça no código.
-2. Se a taxa de "aprovada mas editada" (93,4% no último corte) não estiver caindo, o Lote 2 (suíte de regressão) deixa de ser opcional — é o único jeito de saber se um novo ajuste de prompt piora um caso que já funcionava.
+1. **Lote 2 do plano do Manus (suíte de regressão) deixa de ser opcional.** Com 74,7% das divergências atuais só em Carol, vale montar essa suíte com foco em agendamento primeiro — coleta progressiva de horário, confirmação de disponibilidade, preferência de terapeuta — em vez de tentar cobrir os 6 especialistas de uma vez.
+2. Cavar as 4 rejeições de Carol de hoje (30/08, motivo "contexto") direto na tela do Inbox pra entender o padrão concreto — o banco não guarda o texto da sugestão rejeitada nem comentário livre, só o motivo categórico.
