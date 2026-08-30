@@ -3053,7 +3053,7 @@ export async function upsertRegistrosFinanceirosBelle(
   const valores: InsertBelleRegistroFinanceiro[] = registros.map((linha) => ({
     unidadeId,
     codigo: linha.codigo,
-    dataLancamento: linha.dataLancamento,
+    dataVencimento: linha.dataVencimento,
     clienteNome: linha.clienteNome,
     valor: linha.valor.toString(),
     formaPagamento: linha.formaPagamento,
@@ -3063,7 +3063,7 @@ export async function upsertRegistrosFinanceirosBelle(
 
   await db.insert(belleRegistrosFinanceiros).values(valores).onDuplicateKeyUpdate({
     set: {
-      dataLancamento: sql`VALUES(dataLancamento)`,
+      dataVencimento: sql`VALUES(dataVencimento)`,
       clienteNome: sql`VALUES(clienteNome)`,
       valor: sql`VALUES(valor)`,
       formaPagamento: sql`VALUES(formaPagamento)`,
@@ -3087,7 +3087,7 @@ export interface ItemRegistroFinanceiroBelle {
  * Item a item do relatório financeiro do Belle no período — alimenta o
  * hover de auditoria da linha "Belle" na Conciliação PDV Fase 2, mesmo
  * padrão de detalheContasBancariasPorDia pro lado de Contas bancárias.
- * dataLancamento (não a data do atendimento) é a data de agrupamento —
+ * dataVencimento (não a data do atendimento) é a data de agrupamento —
  * pagamento não tem relação fixa com quando o serviço é prestado
  * (adiantado, pendente, plano/voucher sem atendimento).
  */
@@ -3101,8 +3101,8 @@ export async function detalheBelleRegistrosPorDia(
 
   const registros = await db.select().from(belleRegistrosFinanceiros).where(and(
     eq(belleRegistrosFinanceiros.unidadeId, unidadeId),
-    gte(belleRegistrosFinanceiros.dataLancamento, dataInicio),
-    lte(belleRegistrosFinanceiros.dataLancamento, dataFim),
+    gte(belleRegistrosFinanceiros.dataVencimento, dataInicio),
+    lte(belleRegistrosFinanceiros.dataVencimento, dataFim),
   ));
 
   const itens: ItemRegistroFinanceiroBelle[] = [];
@@ -3110,7 +3110,7 @@ export async function detalheBelleRegistrosPorDia(
     const forma = baldeFormaPagamentoBelle(r.formaPagamento);
     if (!forma) continue;
     itens.push({
-      data: r.dataLancamento,
+      data: r.dataVencimento,
       forma,
       horario: "",
       descricao: `${r.clienteNome ?? "Cliente não identificado"}${r.observacao ? ` — ${r.observacao}` : ""}`,

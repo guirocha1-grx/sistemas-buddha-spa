@@ -2,7 +2,7 @@ import * as XLSX from "xlsx";
 
 export interface LinhaRegistroFinanceiroBelleImportada {
   codigo: number;
-  dataLancamento: string;
+  dataVencimento: string;
   clienteNome: string | null;
   valor: number;
   formaPagamento: string;
@@ -43,7 +43,14 @@ function parseAtendimentoId(observacao: string | null): number | null {
 
 const COLUNAS = {
   codigo: ["cod."],
-  dataLancamento: ["lcto."],
+  // "Vcto." (vencimento) é o dia que o dinheiro de fato entrou — "Lcto."
+  // (lançamento) é só quando foi digitado no Belle, que diverge do
+  // vencimento sempre que a venda precisa ser reaberta pra correção dias
+  // depois (2026-08-29, esclarecido pelo usuário após conferir contra o
+  // "vencimentos" do Belle: R$7.278,70 nos vencimentos de 01/08 vs
+  // R$6.842,00 se agrupado por Lcto — a diferença é dinheiro cujo
+  // lançamento foi corrigido/reaberto em outro dia).
+  dataVencimento: ["vcto."],
   clienteNome: ["cliente"],
   valor: ["valor"],
   formaPagamento: ["forma pagto."],
@@ -74,7 +81,7 @@ export function parseRegistrosFinanceirosBelleXlsx(buffer: Buffer): LinhaRegistr
     const posicao = cabecalhos.findIndex((cabecalho) => COLUNAS[campo].includes(cabecalho as never));
     if (posicao >= 0) indice[campo] = posicao;
   }
-  for (const campo of ["codigo", "dataLancamento", "valor", "formaPagamento"] as Campo[]) {
+  for (const campo of ["codigo", "dataVencimento", "valor", "formaPagamento"] as Campo[]) {
     if (indice[campo] === undefined) throw new Error(`Coluna obrigatória ausente: ${campo}.`);
   }
 
@@ -84,14 +91,14 @@ export function parseRegistrosFinanceirosBelleXlsx(buffer: Buffer): LinhaRegistr
     const row = rows[posicao];
     if (!row?.length) continue;
     const codigo = parseNumero(ler(row, "codigo"));
-    const dataLancamento = parseDataBr(ler(row, "dataLancamento"));
+    const dataVencimento = parseDataBr(ler(row, "dataVencimento"));
     const valor = parseNumero(ler(row, "valor"));
     const formaPagamento = limparTexto(ler(row, "formaPagamento"));
-    if (!codigo || !dataLancamento || valor === null || !formaPagamento) continue;
+    if (!codigo || !dataVencimento || valor === null || !formaPagamento) continue;
     const observacao = limparTexto(ler(row, "observacao"));
     linhas.push({
       codigo,
-      dataLancamento,
+      dataVencimento,
       clienteNome: limparTexto(ler(row, "clienteNome")),
       valor,
       formaPagamento,

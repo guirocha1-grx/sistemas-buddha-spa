@@ -629,18 +629,21 @@ export type InsertBelleAtendimento = typeof belleAtendimentos.$inferInsert;
 /**
  * Relatório "Registros Financeiros" do Belle (import manual, .xlsx) —
  * um lançamento por transação (Cód. único), usado só pra conciliação
- * financeira Comanda x Belle (Conciliação PDV, Fase 2). dataLancamento
- * é a data de fechamento financeiro no Belle ("Lcto."), não a data do
- * atendimento — agendamento não garante pagamento no dia (venda com
- * pagamento pendente, pagamento antecipado, plano/voucher sem
- * atendimento vinculado), então a conciliação é só por dia+forma de
- * pagamento, nunca por atendimento individual.
+ * financeira Comanda x Belle (Conciliação PDV, Fase 2). dataVencimento
+ * vem da coluna "Vcto." — o dia que o dinheiro de fato entrou, não a
+ * data do atendimento nem "Lcto." (data de lançamento/digitação, que
+ * diverge do vencimento sempre que a venda precisa ser reaberta pra
+ * correção dias depois — confirmado pelo usuário 2026-08-29 comparando
+ * contra o "vencimentos" do Belle). Agendamento não garante pagamento
+ * no dia (pendente, antecipado, plano/voucher sem atendimento
+ * vinculado), então a conciliação é só por dia+forma de pagamento,
+ * nunca por atendimento individual.
  */
 export const belleRegistrosFinanceiros = mysqlTable("belle_registros_financeiros", {
   id: int("id").autoincrement().primaryKey(),
   unidadeId: int("unidadeId").notNull(),
   codigo: bigint("codigo", { mode: "number" }).notNull(),
-  dataLancamento: varchar("dataLancamento", { length: 10 }).notNull(),
+  dataVencimento: varchar("dataVencimento", { length: 10 }).notNull(),
   clienteNome: varchar("clienteNome", { length: 200 }),
   valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
   formaPagamento: varchar("formaPagamento", { length: 40 }).notNull(),
@@ -652,7 +655,7 @@ export const belleRegistrosFinanceiros = mysqlTable("belle_registros_financeiros
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({
   unidadeCodigoUnico: uniqueIndex("belle_registros_financeiros_unidade_codigo_idx").on(table.unidadeId, table.codigo),
-  unidadeDataIdx: index("belle_registros_financeiros_unidade_data_idx").on(table.unidadeId, table.dataLancamento),
+  unidadeDataIdx: index("belle_registros_financeiros_unidade_data_idx").on(table.unidadeId, table.dataVencimento),
 }));
 
 export type BelleRegistroFinanceiro = typeof belleRegistrosFinanceiros.$inferSelect;
