@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { trpc } from "@/lib/trpc";
@@ -54,6 +55,11 @@ export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendime
   // troca a lista de sugestões pra outra unidade e o chamado sai pelo
   // grupo cruzado em vez do Grupo Geral normal (ver server/routers.ts).
   const [terapeutaOutraUnidade, setTerapeutaOutraUnidade] = useState(false);
+  // Grupo de destino — controle independente de qual terapeuta está
+  // sendo chamada (aos domingos, TODO chamado do RBS roda no grupo de
+  // plantão, não só o de terapeuta visitante). Padrão sugerido pelo
+  // server conforme o dia da semana; a recepção pode trocar à vontade.
+  const [grupoChamado, setGrupoChamado] = useState<string>("geral");
   const outraUnidadeId = unidadeId === 2 ? 1 : 2;
   const opcoesOutraUnidadeQuery = trpc.chamados.opcoes.useQuery(
     { unidadeId: outraUnidadeId },
@@ -74,6 +80,7 @@ export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendime
     }
     if (formularioInicializadoRef.current || opcoesQuery.isLoading || !opcoesQuery.data) return;
     setForm(criarFormulario(atendimento, conversa, opcoesQuery.data?.preferencia?.terapeutaNome, aguardando[0]?.nome, taa[0]?.nome));
+    setGrupoChamado(opcoesQuery.data.grupoChamadoPadrao);
     formularioInicializadoRef.current = true;
   // A abertura é o momento certo para carregar o atendimento atual; a mudança
   // posterior de opções não deve apagar o que a recepção já estiver editando.
@@ -103,6 +110,17 @@ export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendime
         <div className="grid grid-cols-2 gap-2 rounded-xl bg-muted/50 p-1">
           <Button type="button" variant={form.modalidade === "chamado" ? "default" : "ghost"} className="h-9" onClick={() => mudar("modalidade", "chamado")}><BellRing className="mr-2 h-4 w-4" />Chamado agora</Button>
           <Button type="button" variant={form.modalidade === "pre_chamado" ? "default" : "ghost"} className="h-9" onClick={() => mudar("modalidade", "pre_chamado")}><Clock3 className="mr-2 h-4 w-4" />Pré-chamado</Button>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Grupo de destino</Label>
+          <Select value={grupoChamado} onValueChange={setGrupoChamado}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(opcoesQuery.data?.gruposChamado ?? []).map((grupo) => (
+                <SelectItem key={grupo.chave} value={grupo.chave}>{grupo.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5"><Label>Cliente</Label><Input value={form.clienteNome} onChange={(event) => mudar("clienteNome", event.target.value)} placeholder="Nome do cliente" /></div>
@@ -137,10 +155,10 @@ export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendime
           <CampoLista label="TAA" value={form.taa} onChange={(valor) => mudar("taa", valor)} valores={taa.map((item) => item.nome)} placeholder="Selecione a situação" id="chamado-taa" />
         </div>
         <button type="button" disabled={!atendimento?.id} onClick={() => setEnviarParaComanda((atual) => !atual)} className={`flex w-full items-center justify-between rounded-lg border p-3 text-left text-sm disabled:cursor-not-allowed disabled:opacity-55 ${enviarParaComanda ? "border-primary/30 bg-primary/[0.04]" : "bg-muted/30"}`}><span className="flex items-center gap-2 font-medium"><CheckSquare className={`h-4 w-4 ${enviarParaComanda ? "text-primary" : "text-muted-foreground"}`} />Enviar para a Comanda</span><span className="text-xs text-muted-foreground">{atendimento?.id ? (enviarParaComanda ? "Marcado" : "Não enviar") : "Sem atendimento vinculado"}</span></button>
-        <div className="rounded-lg border border-primary/15 bg-primary/[0.035] p-3"><div className="mb-2 flex items-center gap-2"><Badge variant="outline" className="border-primary/25 text-primary">Prévia de envio</Badge>{form.preferencial ? <Badge className="border-emerald-600 bg-emerald-600 text-white">● Preferência</Badge> : null}<span className="text-xs text-muted-foreground">{terapeutaOutraUnidade ? "Grupo cruzado (outra unidade)" : "Grupo Geral RBS"}</span></div><p className="whitespace-pre-wrap text-sm leading-5">{mensagemPrevia(form)}</p></div>
+        <div className="rounded-lg border border-primary/15 bg-primary/[0.035] p-3"><div className="mb-2 flex items-center gap-2"><Badge variant="outline" className="border-primary/25 text-primary">Prévia de envio</Badge>{form.preferencial ? <Badge className="border-emerald-600 bg-emerald-600 text-white">● Preferência</Badge> : null}<span className="text-xs text-muted-foreground">{opcoesQuery.data?.gruposChamado.find((g) => g.chave === grupoChamado)?.label ?? "—"}</span></div><p className="whitespace-pre-wrap text-sm leading-5">{mensagemPrevia(form)}</p></div>
       </div>}
       <Separator />
-      <DialogFooter className="gap-2 sm:gap-0"><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={enviarMutation.isPending}><X className="mr-2 h-4 w-4" />Abandonar chamado</Button><Button type="button" disabled={!podeEnviar || enviarMutation.isPending} onClick={() => enviarMutation.mutate({ unidadeId: unidadeId!, ...form, enviarParaComanda: enviarParaComanda && !!atendimento?.id, atendimentoBelleId: atendimento?.id ?? null, horarioPrevisto: form.horarioPrevisto || null, terapiaBemEstar: form.terapiaBemEstar || null, terapiaEstetica: form.terapiaEstetica || null, terapeutaOutraUnidade })}>{enviarMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Enviar no grupo</Button></DialogFooter>
+      <DialogFooter className="gap-2 sm:gap-0"><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={enviarMutation.isPending}><X className="mr-2 h-4 w-4" />Abandonar chamado</Button><Button type="button" disabled={!podeEnviar || enviarMutation.isPending} onClick={() => enviarMutation.mutate({ unidadeId: unidadeId!, ...form, enviarParaComanda: enviarParaComanda && !!atendimento?.id, atendimentoBelleId: atendimento?.id ?? null, horarioPrevisto: form.horarioPrevisto || null, terapiaBemEstar: form.terapiaBemEstar || null, terapiaEstetica: form.terapiaEstetica || null, grupoChamado: grupoChamado as "geral" | "domingo_plantao" })}>{enviarMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Enviar no grupo</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }
