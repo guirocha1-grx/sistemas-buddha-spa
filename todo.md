@@ -591,3 +591,5 @@
 - [x] Validar o valor padrão de parcelas sem modificar as cobranças existentes
 - [x] Verificar e inserir, se ausente, o cadastro Pendente de sorteio nas unidades SSU e RBS
 - [x] Validar o cadastro Pendente de sorteio e seu isolamento por unidade
+- [x] Criar tela admin "Banco de Dados" com runner de migrações rastreadas (lista drizzle/*.sql, aplica ou marca como já aplicada) e consulta SQL somente leitura, pra parar de depender de rodar migração manual sem histórico
+- [ ] Validar em produção: abrir /banco-de-dados, conferir se a lista reflete o que já está aplicado no TiDB, e testar aplicar uma migração pendente real

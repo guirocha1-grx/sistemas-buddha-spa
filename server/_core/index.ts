@@ -6,6 +6,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { registerWhatsappWebhookRoutes } from "../webhooks";
 import { registerAtendimentosUploadRoute } from "../atendimentosUploadRoute";
+import { registerClaudeQueryRoute } from "../claudeQueryRoute";
 import { registerScheduledJobs } from "./scheduler";
 import { deveRegistrarTarefasAgendadas } from "./scheduler";
 import { appRouter } from "../routers";
@@ -22,6 +23,7 @@ async function startServer() {
   registerOAuthRoutes(app);
   registerWhatsappWebhookRoutes(app);
   registerAtendimentosUploadRoute(app);
+  registerClaudeQueryRoute(app);
   if (deveRegistrarTarefasAgendadas()) {
     registerScheduledJobs();
   } else {

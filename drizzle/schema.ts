@@ -1824,4 +1824,24 @@ export const agentesSugestoes = mysqlTable("agentes_sugestoes", {
   conversaIdx: index("agentes_sugestoes_conversa_idx").on(table.conversaId),
 }));
 export type AgenteSugestao = typeof agentesSugestoes.$inferSelect;
+
+/**
+ * Rastreia quais arquivos de `drizzle/*.sql` já foram aplicados no banco
+ * compartilhado — histórico ficava só na memória de quem aplicou (ver
+ * migrações "IF NOT EXISTS" adicionadas depois de mais de uma quebra por
+ * coluna faltando em produção, 2026-08-29/30). A própria tabela é criada
+ * sob demanda pelo runner (server/migracoesRunner.ts), não depende de
+ * alguém rodar essa migração manualmente primeiro.
+ */
+export const migracoesAplicadas = mysqlTable("_migracoes_aplicadas", {
+  id: int("id").autoincrement().primaryKey(),
+  nomeArquivo: varchar("nomeArquivo", { length: 255 }).notNull(),
+  aplicadaEm: timestamp("aplicadaEm").defaultNow().notNull(),
+  aplicadaPorUserId: int("aplicadaPorUserId"),
+  aplicadaPorNome: varchar("aplicadaPorNome", { length: 200 }),
+  apenasRegistrada: boolean("apenasRegistrada").default(false).notNull(),
+}, (table) => ({
+  nomeArquivoIdx: uniqueIndex("migracoes_aplicadas_nome_idx").on(table.nomeArquivo),
+}));
+export type MigracaoAplicada = typeof migracoesAplicadas.$inferSelect;
 export type InsertAgenteSugestao = typeof agentesSugestoes.$inferInsert;

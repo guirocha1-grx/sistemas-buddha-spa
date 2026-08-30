@@ -28,6 +28,7 @@ import { parseComandaVirtualXlsx } from "./comandaVirtualXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarTodosPagamentos, consultarPagamentoPorId, criarPreferenciaPagamento, cancelarPreferenciaPagamento, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, classificarOrigemPagamentoMp } from "./mercadoPagoApi";
 import { combinarLinksConfirmacao, dataSaoPaulo, listarLinksConfirmadosLocalmente, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
+import { listarMigracoes, aplicarMigracao, marcarMigracaoAplicada, executarConsultaSql } from "./migracoesRunner";
 import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual, chaveComandaVirtualPorUnidade } from "./googleSheets";
 import { transcribeAudio } from "./_core/voiceTranscription";
@@ -4604,6 +4605,28 @@ Diretrizes:
 
     atendentes: adminProcedure.query(async () => {
       return db.listAtendentesParaFiltro();
+    }),
+  }),
+
+  // ===== Banco de Dados (runner de migrações + pesquisa somente leitura) =====
+  bancoDeDados: router({
+    migracoesListar: adminProcedure.query(async () => {
+      return listarMigracoes();
+    }),
+
+    migracoesAplicar: adminProcedure.input(z.object({ nomeArquivo: z.string() })).mutation(async ({ input, ctx }) => {
+      return aplicarMigracao(input.nomeArquivo, { id: ctx.user.id, name: ctx.user.name });
+    }),
+
+    migracoesMarcarAplicada: adminProcedure.input(z.object({ nomeArquivo: z.string() })).mutation(async ({ input, ctx }) => {
+      await marcarMigracaoAplicada(input.nomeArquivo, { id: ctx.user.id, name: ctx.user.name });
+      return { success: true };
+    }),
+
+    // Mutation (não query) de propósito: só mutation passa pelo auditMiddleware,
+    // e toda consulta livre aqui precisa ficar no log de auditoria.
+    consultaSql: adminProcedure.input(z.object({ sql: z.string().min(1) })).mutation(async ({ input }) => {
+      return executarConsultaSql(input.sql);
     }),
   }),
 });
