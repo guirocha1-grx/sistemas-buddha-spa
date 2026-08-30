@@ -1041,6 +1041,24 @@ Diretrizes:
         return { conversaId };
       }),
 
+      /** Igual a abrirPorCliente, mas a partir de um telefone (Próximos Atendimentos nem sempre tem clienteId vinculado). */
+      abrirPorTelefone: protectedProcedure.input(z.object({
+        telefone: z.string().trim().min(8),
+        unidadeId: z.number(),
+        clienteId: z.number().optional(),
+        clienteNome: z.string().trim().min(1),
+      })).mutation(async ({ input, ctx }) => {
+        const conversaId = await db.abrirInboxPorTelefone({
+          telefone: input.telefone,
+          unidadeId: input.unidadeId,
+          clienteId: input.clienteId ?? null,
+          nomeContato: input.clienteNome,
+        });
+        if (!conversaId) throw new Error("Não foi possível abrir o Inbox");
+        if (ctx.atendente?.id) await db.atribuirConsultorResponsavelInbox(conversaId, ctx.atendente.id);
+        return { conversaId };
+      }),
+
       /** Cancelar/editar o "próximo atendimento" mostrado no painel do cliente. */
       cancelarProximoAtendimento: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
         await db.cancelarAtendimentoBelle(input.id);

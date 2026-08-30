@@ -1896,23 +1896,9 @@ export async function atualizarChamadoParametro(id: number, dados: Partial<Pick<
  * A busca normaliza DDI e formatação para evitar duplicatas quando o
  * cadastro usa telefone formatado e o WhatsApp usa apenas dígitos.
  */
-export async function abrirInboxPorCliente(params: { clienteId: number; unidadeId: number }, databaseOverride?: any) {
-  const database = databaseOverride ?? await getDb();
-  if (!database) return undefined;
-
-  const clienteRows = await database.select({
-    id: clientes.id,
-    nome: clientes.nome,
-    celular: clientes.celular,
-    celular2: clientes.celular2,
-    telefone: clientes.telefone,
-  }).from(clientes).where(eq(clientes.id, params.clienteId)).limit(1);
-  const cliente = clienteRows[0];
-  if (!cliente) throw new Error("Cliente não encontrado");
-
-  const telefoneOrigem = cliente.celular ?? cliente.celular2 ?? cliente.telefone;
-  const telefone = normalizarTelefone(telefoneOrigem);
-  if (telefone.length < 8) throw new Error("Este cliente não possui telefone ou celular válido");
+async function abrirOuCriarInboxPorTelefone(database: any, params: { telefoneOrigem: string | null | undefined; unidadeId: number; clienteId: number | null; nomeContato: string }) {
+  const telefone = normalizarTelefone(params.telefoneOrigem);
+  if (telefone.length < 8) throw new Error("Telefone inválido ou ausente para abrir o Inbox");
 
   // Mesmas variantes usadas em buscarClientesPorTelefone — sem isso,
   // cadastro em formato antigo (10 dígitos, sem o "9") não batia com o
@@ -1930,10 +1916,12 @@ export async function abrirInboxPorCliente(params: { clienteId: number; unidadeI
     .limit(1);
 
   if (existente[0]) {
-    await database.update(inboxConversas).set({
-      clienteId: cliente.id,
-      nomeContato: cliente.nome,
-    }).where(eq(inboxConversas.id, existente[0].id));
+    if (params.clienteId) {
+      await database.update(inboxConversas).set({
+        clienteId: params.clienteId,
+        nomeContato: params.nomeContato,
+      }).where(eq(inboxConversas.id, existente[0].id));
+    }
     return existente[0].id;
   }
 
@@ -1944,14 +1932,53 @@ export async function abrirInboxPorCliente(params: { clienteId: number; unidadeI
     telefoneNormalizado: telefoneCanonico(telefone),
     chatLid: null,
     isLidPendente: "false",
-    nomeContato: cliente.nome,
-    clienteId: cliente.id,
+    nomeContato: params.nomeContato,
+    clienteId: params.clienteId,
     ultimaMensagemEm: new Date(),
     ultimaMensagemTexto: "",
     naoLidas: 0,
   };
   const result = await database.insert(inboxConversas).values(insertValues).$returningId();
   return result[0]?.id;
+}
+
+export async function abrirInboxPorCliente(params: { clienteId: number; unidadeId: number }, databaseOverride?: any) {
+  const database = databaseOverride ?? await getDb();
+  if (!database) return undefined;
+
+  const clienteRows = await database.select({
+    id: clientes.id,
+    nome: clientes.nome,
+    celular: clientes.celular,
+    celular2: clientes.celular2,
+    telefone: clientes.telefone,
+  }).from(clientes).where(eq(clientes.id, params.clienteId)).limit(1);
+  const cliente = clienteRows[0];
+  if (!cliente) throw new Error("Cliente não encontrado");
+
+  const telefoneOrigem = cliente.celular ?? cliente.celular2 ?? cliente.telefone;
+  return abrirOuCriarInboxPorTelefone(database, {
+    telefoneOrigem,
+    unidadeId: params.unidadeId,
+    clienteId: cliente.id,
+    nomeContato: cliente.nome,
+  });
+}
+
+/**
+ * Mesma lógica de abrirInboxPorCliente, mas a partir de um telefone já em
+ * mãos (ex.: belle_atendimentos.telefone em Próximos Atendimentos) —
+ * usado quando ainda não há (ou não é necessário) um clienteId vinculado.
+ */
+export async function abrirInboxPorTelefone(params: { telefone: string | null | undefined; unidadeId: number; clienteId?: number | null; nomeContato: string }) {
+  const database = await getDb();
+  if (!database) return undefined;
+  return abrirOuCriarInboxPorTelefone(database, {
+    telefoneOrigem: params.telefone,
+    unidadeId: params.unidadeId,
+    clienteId: params.clienteId ?? null,
+    nomeContato: params.nomeContato,
+  });
 }
 
 /**
