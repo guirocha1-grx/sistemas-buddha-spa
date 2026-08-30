@@ -2,7 +2,8 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { montarCorpoPreferenciaPagamento } from "./mercadoPagoApi";
 import { extrairDataIdWebhookMercadoPago, validarAssinaturaWebhookMercadoPago } from "./mercadoPagoWebhook";
-import { normalizarExtracaoCobrancaLink } from "./cobrancaLink";
+import { normalizarExtracaoCobrancaLink, montarMensagemExcecaoParcelamento } from "./cobrancaLink";
+import { parcelamentoForaDoPadrao } from "@shared/cobrancaParcelamento";
 
 describe("preferência individual de cobrança Mercado Pago", () => {
   it("mantém referência e notificação por cobrança, sem expiração", () => {
@@ -20,6 +21,57 @@ describe("preferência individual de cobrança Mercado Pago", () => {
     });
     expect(corpo).not.toHaveProperty("expires");
     expect(corpo).not.toHaveProperty("expiration_date_to");
+  });
+
+  it("limita o parcelamento no checkout quando parcelas > 1", () => {
+    const comParcelas = montarCorpoPreferenciaPagamento({
+      titulo: "Day Spa",
+      valor: 300,
+      externalReference: "buddha-link-2-def",
+      notificationUrl: "https://spa.grxcorp.com.br/api/webhooks/mercadopago",
+      parcelas: 3,
+    });
+    expect(comParcelas).toMatchObject({ payment_methods: { installments: 3 } });
+
+    const semParcelas = montarCorpoPreferenciaPagamento({
+      titulo: "Day Spa",
+      valor: 300,
+      externalReference: "buddha-link-2-ghi",
+      notificationUrl: "https://spa.grxcorp.com.br/api/webhooks/mercadopago",
+      parcelas: 1,
+    });
+    expect(semParcelas).not.toHaveProperty("payment_methods");
+  });
+});
+
+describe("regras de parcelamento da Cobrança por Link", () => {
+  it("está dentro do padrão com parcela mínima de R$100 e até 3x", () => {
+    expect(parcelamentoForaDoPadrao(300, 3)).toBe(false);
+    expect(parcelamentoForaDoPadrao(100, 1)).toBe(false);
+  });
+
+  it("é exceção quando ultrapassa 3x, mesmo com parcela acima de R$100", () => {
+    expect(parcelamentoForaDoPadrao(1000, 4)).toBe(true);
+  });
+
+  it("é exceção quando a parcela fica abaixo de R$100, mesmo dentro de 3x", () => {
+    expect(parcelamentoForaDoPadrao(250, 3)).toBe(true); // R$83,33/parcela
+  });
+
+  it("monta a mensagem de exceção com valor por parcela calculado", () => {
+    const texto = montarMensagemExcecaoParcelamento({
+      clienteNome: "Ana Paula",
+      valor: 250,
+      parcelas: 3,
+      motivo: "Negociação especial",
+      autorizador: "Gerente Fulana",
+      enviadoPor: "Recepção RBS",
+    });
+    expect(texto).toContain("Cliente: Ana Paula");
+    expect(texto).toContain("Parcelas: 3x");
+    expect(texto).toContain("83,33");
+    expect(texto).toContain("Motivo: Negociação especial");
+    expect(texto).toContain("Autorizador: Gerente Fulana");
   });
 });
 

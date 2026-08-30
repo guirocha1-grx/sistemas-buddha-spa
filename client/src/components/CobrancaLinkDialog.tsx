@@ -9,6 +9,7 @@ import { trpc } from "@/lib/trpc";
 import { AlertTriangle, Ban, CheckCircle2, CreditCard, FileText, Loader2, MessageSquareText, Send } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { parcelamentoForaDoPadrao } from "@shared/cobrancaParcelamento";
 
 type FormaPagamento = "Não especificada" | "Pix" | "Cartão" | "Pix ou cartão";
 
@@ -57,6 +58,9 @@ export function CobrancaLinkDialog({ open, onOpenChange, conversaId, unidadeId, 
   const [textoEditado, setTextoEditado] = useState(false);
   const [confirmarEnvio, setConfirmarEnvio] = useState(false);
   const [confirmarCancelamento, setConfirmarCancelamento] = useState(false);
+  const [mostrarJustificativa, setMostrarJustificativa] = useState(false);
+  const [motivoExcecao, setMotivoExcecao] = useState("");
+  const [autorizadorExcecao, setAutorizadorExcecao] = useState("");
   const inicializado = useRef(false);
   const valor = useMemo(() => lerValor(valorTexto), [valorTexto]);
 
@@ -112,6 +116,9 @@ export function CobrancaLinkDialog({ open, onOpenChange, conversaId, unidadeId, 
       inicializado.current = false;
       setConfirmarEnvio(false);
       setConfirmarCancelamento(false);
+      setMostrarJustificativa(false);
+      setMotivoExcecao("");
+      setAutorizadorExcecao("");
       return;
     }
     if (inicializado.current) return;
@@ -145,7 +152,12 @@ export function CobrancaLinkDialog({ open, onOpenChange, conversaId, unidadeId, 
   const integracaoPronta = Boolean(configuracao.data?.mercadoPagoConfigurado && configuracao.data?.webhookConfigurado);
   const podeProsseguir = existeAberta ? Boolean(conversaId && textoWhatsapp.trim().length >= 2 && integracaoPronta) : pronta && integracaoPronta;
 
-  function confirmar() {
+  const valorEfetivo = existeAberta ? Number(cobrancaAberta.data?.valor ?? 0) : (valor ?? 0);
+  const parcelasEfetivas = existeAberta ? (cobrancaAberta.data?.parcelas ?? 1) : parcelas;
+  const foraDoPadrao = valorEfetivo > 0 && parcelamentoForaDoPadrao(valorEfetivo, parcelasEfetivas);
+  const justificativaPronta = motivoExcecao.trim().length >= 3 && autorizadorExcecao.trim().length >= 2;
+
+  function enviar() {
     if (!conversaId || !valor) return;
     criarEEnviar.mutate({
       conversaId,
@@ -154,11 +166,23 @@ export function CobrancaLinkDialog({ open, onOpenChange, conversaId, unidadeId, 
       valor: existeAberta ? Number(cobrancaAberta.data!.valor) : valor,
       formaPagamentoInformada: formaPagamento,
       parcelas: existeAberta ? cobrancaAberta.data!.parcelas : parcelas,
+      excecaoParcelamento: foraDoPadrao ? { motivo: motivoExcecao.trim(), autorizador: autorizadorExcecao.trim() } : undefined,
       textoWhatsapp: textoWhatsapp.trim(),
       reutilizarCobrancaAberta: existeAberta,
       confirmarCriacaoEEnvio: true,
     });
     setConfirmarEnvio(false);
+  }
+
+  // Fora do padrão (parcela abaixo de R$100 ou acima de 3x) pede a
+  // justificativa antes da confirmação — não trava o envio, só exige
+  // motivo + autorizador antes de seguir pra revisão final.
+  function iniciarEnvio() {
+    if (foraDoPadrao && !justificativaPronta) {
+      setMostrarJustificativa(true);
+      return;
+    }
+    setConfirmarEnvio(true);
   }
 
   return <Dialog open={open} onOpenChange={onOpenChange}>
@@ -191,7 +215,7 @@ export function CobrancaLinkDialog({ open, onOpenChange, conversaId, unidadeId, 
             <div className="space-y-1.5"><Label htmlFor="cobranca-valor">Valor negociado</Label><Input id="cobranca-valor" inputMode="decimal" value={valorTexto} onChange={(e) => setValorTexto(e.target.value)} placeholder="Ex.: 419,00" /></div>
             <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="cobranca-descricao">Descrição</Label><Textarea id="cobranca-descricao" rows={2} value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Opcional: detalhe que aparecerá na cobrança" /></div>
             <div className="space-y-1.5"><Label htmlFor="cobranca-forma">Forma mencionada na conversa</Label><select id="cobranca-forma" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value as FormaPagamento)}>{FORMAS_PAGAMENTO.map((forma) => <option key={forma} value={forma}>{forma}</option>)}</select></div>
-            <div className="space-y-1.5"><Label htmlFor="cobranca-parcelas">Parcelas no checkout</Label><select id="cobranca-parcelas" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" value={parcelas} onChange={(e) => setParcelas(Number(e.target.value))}>{Array.from({ length: 12 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n === 1 ? "À vista" : `Até ${n}x`}</option>)}</select></div>
+            <div className="space-y-1.5"><Label htmlFor="cobranca-parcelas">Parcelas no checkout</Label><select id="cobranca-parcelas" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" value={parcelas} onChange={(e) => setParcelas(Number(e.target.value))}>{Array.from({ length: 12 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n === 1 ? "À vista" : `Até ${n}x`}</option>)}</select>{foraDoPadrao && <p className="flex items-center gap-1 text-[11px] text-amber-700"><AlertTriangle className="h-3 w-3" />Fora do padrão (mín. R$100/parcela, máx. 3x) — vai pedir justificativa</p>}</div>
           </div>}
 
           <div className="space-y-1.5"><Label htmlFor="cobranca-texto">Mensagem para WhatsApp</Label><Textarea id="cobranca-texto" rows={4} value={textoWhatsapp} onChange={(e) => { setTextoWhatsapp(e.target.value); setTextoEditado(true); }} /><p className="text-xs text-muted-foreground">A URL segura do pagamento é incluída automaticamente no envio.</p></div>
@@ -199,10 +223,30 @@ export function CobrancaLinkDialog({ open, onOpenChange, conversaId, unidadeId, 
         </div>
       )}
 
-      <DialogFooter className="gap-2 sm:gap-0"><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={criarEEnviar.isPending}>Cancelar</Button><Button type="button" disabled={!podeProsseguir || criarEEnviar.isPending} onClick={() => setConfirmarEnvio(true)}>{criarEEnviar.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}{existeAberta ? "Reenviar Link existente" : "Criar e enviar Link"}</Button></DialogFooter>
+      <DialogFooter className="gap-2 sm:gap-0"><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={criarEEnviar.isPending}>Cancelar</Button><Button type="button" disabled={!podeProsseguir || criarEEnviar.isPending} onClick={iniciarEnvio}>{criarEEnviar.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}{existeAberta ? "Reenviar Link existente" : "Criar e enviar Link"}</Button></DialogFooter>
+
+      <Dialog open={mostrarJustificativa} onOpenChange={setMostrarJustificativa}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-xl">Exceção de parcelamento</DialogTitle>
+            <DialogDescription>
+              {parcelasEfetivas > 3 ? `Esse Link permite até ${parcelasEfetivas}x — acima do máximo padrão (3x).` : `Cada parcela ficaria abaixo de R$100 (${formatarBrl(valorEfetivo / parcelasEfetivas)}).`}
+              {" "}Informe motivo e quem autorizou para seguir — um aviso será enviado ao grupo da recepção após o envio do Link.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5"><Label htmlFor="excecao-motivo">Motivo</Label><Textarea id="excecao-motivo" rows={2} value={motivoExcecao} onChange={(e) => setMotivoExcecao(e.target.value)} placeholder="Ex.: Cliente antigo, negociação especial da gerência" /></div>
+            <div className="space-y-1.5"><Label htmlFor="excecao-autorizador">Autorizador</Label><Input id="excecao-autorizador" value={autorizadorExcecao} onChange={(e) => setAutorizadorExcecao(e.target.value)} placeholder="Nome de quem autorizou" /></div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setMostrarJustificativa(false)}>Voltar</Button>
+            <Button type="button" disabled={!justificativaPronta} onClick={() => { setMostrarJustificativa(false); setConfirmarEnvio(true); }}>Continuar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmarEnvio} onOpenChange={setConfirmarEnvio}>
-        <DialogContent className="max-w-md"><DialogHeader><DialogTitle className="font-serif text-xl">Confirmar envio da cobrança</DialogTitle><DialogDescription>{existeAberta ? "Você irá reenviar o Link já aberto para este cliente." : "Você irá criar um novo Link individual no Mercado Pago e enviá-lo ao cliente."}</DialogDescription></DialogHeader><div className="rounded-lg bg-muted/50 p-3 text-sm"><p><strong>{existeAberta ? cobrancaAberta.data?.titulo : titulo}</strong></p><p className="mt-1 text-muted-foreground">{formatarBrl(existeAberta ? Number(cobrancaAberta.data?.valor) : valor)}</p></div><DialogFooter><Button type="button" variant="outline" onClick={() => setConfirmarEnvio(false)}>Voltar para revisão</Button><Button type="button" onClick={confirmar} disabled={criarEEnviar.isPending}>{criarEEnviar.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Confirmar e enviar</Button></DialogFooter></DialogContent>
+        <DialogContent className="max-w-md"><DialogHeader><DialogTitle className="font-serif text-xl">Confirmar envio da cobrança</DialogTitle><DialogDescription>{existeAberta ? "Você irá reenviar o Link já aberto para este cliente." : "Você irá criar um novo Link individual no Mercado Pago e enviá-lo ao cliente."}</DialogDescription></DialogHeader><div className="rounded-lg bg-muted/50 p-3 text-sm"><p><strong>{existeAberta ? cobrancaAberta.data?.titulo : titulo}</strong></p><p className="mt-1 text-muted-foreground">{formatarBrl(existeAberta ? Number(cobrancaAberta.data?.valor) : valor)}</p>{foraDoPadrao && <p className="mt-2 flex items-center gap-1.5 text-amber-700"><AlertTriangle className="h-3.5 w-3.5" />Exceção de parcelamento registrada — aviso será enviado à recepção.</p>}</div><DialogFooter><Button type="button" variant="outline" onClick={() => setConfirmarEnvio(false)}>Voltar para revisão</Button><Button type="button" onClick={enviar} disabled={criarEEnviar.isPending}>{criarEEnviar.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Confirmar e enviar</Button></DialogFooter></DialogContent>
       </Dialog>
 
       <Dialog open={confirmarCancelamento} onOpenChange={setConfirmarCancelamento}>

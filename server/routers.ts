@@ -37,7 +37,8 @@ import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY, montarPedidoSuges
 import { iniciarExecucaoFluxo } from "./fluxos";
 import { agentesRouter, tabelaPrecosRouter } from "./routers/agentes";
 import * as agentesDb from "./agentesDb";
-import { normalizarExtracaoCobrancaLink, normalizarValorCobranca } from "./cobrancaLink";
+import { normalizarExtracaoCobrancaLink, normalizarValorCobranca, CONVERSA_GRUPO_RECEPCAO_EXCECAO_PARCELAMENTO_ID, montarMensagemExcecaoParcelamento } from "./cobrancaLink";
+import { parcelamentoForaDoPadrao } from "@shared/cobrancaParcelamento";
 import { normalizarSugestaoProximoAtendimento } from "./proximoAtendimentoIa";
 
 const FORMAS_PAGAMENTO_COBRANCA = ["Não especificada", "Pix", "Cartão", "Pix ou cartão"] as const;
@@ -1679,10 +1680,20 @@ Diretrizes:
       valor: z.number().positive().max(999999.99),
       formaPagamentoInformada: z.enum(FORMAS_PAGAMENTO_COBRANCA).optional(),
       parcelas: z.number().int().min(1).max(12).default(1),
+      // Obrigatória só quando parcelamentoForaDoPadrao(valor, parcelas) —
+      // não trava o envio, só exige essa justificativa quando foge da
+      // regra normal (parcela mínima R$100, máximo 3x).
+      excecaoParcelamento: z.object({
+        motivo: z.string().trim().min(3).max(500),
+        autorizador: z.string().trim().min(2).max(200),
+      }).optional(),
       textoWhatsapp: z.string().trim().min(2).max(3500),
       reutilizarCobrancaAberta: z.boolean().default(false),
       confirmarCriacaoEEnvio: z.literal(true),
     })).mutation(async ({ input, ctx }) => {
+      if (parcelamentoForaDoPadrao(input.valor, input.parcelas) && !input.excecaoParcelamento) {
+        throw new Error("Esse parcelamento foge da regra padrão (mínimo R$100 por parcela, máximo 3x) — informe motivo e autorizador para prosseguir.");
+      }
       const conversa = await db.getInboxConversaById(input.conversaId);
       if (!conversa?.unidadeId || conversa.isGrupo === "true") throw new Error("A cobrança só pode ser enviada em uma conversa individual vinculada a uma unidade");
       if (!(await usuarioPodeOperarNaUnidade(ctx.user, conversa.unidadeId))) throw new Error("Sem acesso à unidade desta conversa");
@@ -1767,6 +1778,29 @@ Diretrizes:
       });
       await db.upsertInboxConversa({ unidadeId: conversa.unidadeId, canal: conversa.canal, telefone: conversa.telefone, nomeContato: conversa.nomeContato ?? undefined, ultimaMensagemTexto: textoFinal });
       await db.atualizarCobrancaLink(cobranca.id, { status: "enviada", enviadaEm: new Date() });
+
+      // Aviso pro grupo da recepção — nunca trava o envio do Link em si,
+      // que já aconteceu acima; uma falha aqui só fica no log.
+      if (input.excecaoParcelamento) {
+        try {
+          const grupoRecepcao = await db.getInboxConversaById(CONVERSA_GRUPO_RECEPCAO_EXCECAO_PARCELAMENTO_ID);
+          const unidadeGrupo = grupoRecepcao?.unidadeId ? await db.getUnidadeById(grupoRecepcao.unidadeId) : null;
+          if (grupoRecepcao?.isGrupo === "true" && grupoRecepcao.canal === "zapi" && unidadeGrupo?.zapiInstanceId && unidadeGrupo.zapiToken && unidadeGrupo.zapiClientToken) {
+            const textoExcecao = montarMensagemExcecaoParcelamento({
+              clienteNome: conversa.nomeContato?.trim() || "Cliente sem nome",
+              valor: input.valor,
+              parcelas: input.parcelas,
+              motivo: input.excecaoParcelamento.motivo,
+              autorizador: input.excecaoParcelamento.autorizador,
+              enviadoPor: nomeRemetente?.trim() || ctx.user.name || "Equipe",
+            });
+            await zapiApi.sendText(unidadeGrupo.zapiInstanceId, unidadeGrupo.zapiToken, unidadeGrupo.zapiClientToken, grupoRecepcao.telefone, textoExcecao);
+          }
+        } catch (error) {
+          console.error("[Cobrança Link] Falha ao avisar exceção de parcelamento no grupo da recepção:", error);
+        }
+      }
+
       return { cobrancaId: cobranca.id, initPoint: cobranca.initPoint, reutilizada: Boolean(aberta) };
     }),
 

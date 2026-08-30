@@ -32,3 +32,30 @@ export function normalizarExtracaoCobrancaLink(conteudo: string | null | undefin
   if (!resultado.success) throw new Error("A IA retornou uma sugestão em formato inválido");
   return { ...resultado.data, valor: resultado.data.valor === null ? null : normalizarValorCobranca(resultado.data.valor) };
 }
+
+// Grupo "Grupo recepção Ribeirão Shopping" (inbox_conversas), sempre o
+// mesmo destino pra aviso de exceção de parcelamento, independente da
+// unidade da cobrança — a recepção acompanha esse controle centralizado
+// aqui (2026-08-30).
+export const CONVERSA_GRUPO_RECEPCAO_EXCECAO_PARCELAMENTO_ID = 900001;
+
+export function montarMensagemExcecaoParcelamento(dados: {
+  clienteNome: string;
+  valor: number;
+  parcelas: number;
+  motivo: string;
+  autorizador: string;
+  enviadoPor: string;
+}): string {
+  const valorParcela = dados.valor / dados.parcelas;
+  const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return [
+    "⚠️ *Exceção de parcelamento*",
+    `Cliente: ${dados.clienteNome}`,
+    `Valor: ${fmt(dados.valor)}`,
+    `Parcelas: ${dados.parcelas}x (${fmt(valorParcela)}/parcela)`,
+    `Motivo: ${dados.motivo}`,
+    `Autorizador: ${dados.autorizador}`,
+    `Enviado por: ${dados.enviadoPor}`,
+  ].join("\n");
+}
