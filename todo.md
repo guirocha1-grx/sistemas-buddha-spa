@@ -589,3 +589,5 @@
 - [ ] Excluir a base anterior somente após aprovação final e período de estabilidade confirmado
 - [x] Verificar e adicionar, se ausente, o campo parcelas nas cobranças por Link e nos modelos
 - [x] Validar o valor padrão de parcelas sem modificar as cobranças existentes
+- [x] Verificar e inserir, se ausente, o cadastro Pendente de sorteio nas unidades SSU e RBS
+- [x] Validar o cadastro Pendente de sorteio e seu isolamento por unidade
