@@ -17,7 +17,8 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CheckCircle2, Code2, Loader2, PlayCircle } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { CheckCircle2, Code2, Loader2, MoreVertical, PlayCircle } from "lucide-react";
 import { toast } from "sonner";
 
 function formatarData(valor: Date | string | null) {
@@ -90,20 +91,29 @@ function SecaoMigracoes() {
                         <Badge variant="outline">Pendente</Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button size="sm" variant="ghost" onClick={() => setVerSql({ nomeArquivo: m.nomeArquivo, conteudo: m.conteudo })}>
-                        <Code2 className="h-3.5 w-3.5 mr-1" /> Ver SQL
-                      </Button>
-                      {!m.aplicada && (
-                        <>
-                          <Button size="sm" variant="outline" onClick={() => setConfirmarMarcar(m.nomeArquivo)}>
-                            Marcar como aplicada
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="icon" variant="ghost" className="h-8 w-8">
+                            <MoreVertical className="h-4 w-4" />
                           </Button>
-                          <Button size="sm" onClick={() => setConfirmarAplicar(m.nomeArquivo)}>
-                            <PlayCircle className="h-3.5 w-3.5 mr-1" /> Aplicar agora
-                          </Button>
-                        </>
-                      )}
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setVerSql({ nomeArquivo: m.nomeArquivo, conteudo: m.conteudo })}>
+                            <Code2 className="h-3.5 w-3.5 mr-2" /> Ver SQL
+                          </DropdownMenuItem>
+                          {!m.aplicada && (
+                            <>
+                              <DropdownMenuItem onClick={() => setConfirmarMarcar(m.nomeArquivo)}>
+                                <CheckCircle2 className="h-3.5 w-3.5 mr-2" /> Marcar como aplicada
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setConfirmarAplicar(m.nomeArquivo)}>
+                                <PlayCircle className="h-3.5 w-3.5 mr-2" /> Aplicar agora
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -237,7 +247,7 @@ function SecaoConsultaSql() {
 
 export default function BancoDeDados() {
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-5xl">
+    <div className="p-4 md:p-6 space-y-6 max-w-6xl">
       <div>
         <h1 className="text-2xl font-semibold">Banco de Dados</h1>
         <p className="text-sm text-muted-foreground">Runner de migrações e consulta SQL somente leitura, direto no banco de produção.</p>
