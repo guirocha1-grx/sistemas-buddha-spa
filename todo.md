@@ -581,3 +581,11 @@
 - [ ] Investigar por que o Inbox do Shopping Santa Úrsula exibe lista vazia de conversas
 - [ ] Corrigir o carregamento de conversas sem misturar unidades ou ampliar permissões
 - [ ] Validar o Inbox em SSU e RBS após a correção
+- [ ] Verificar permissões administrativas para criar uma cópia independente do banco TiDB
+- [ ] Criar e validar a cópia TiDB somente após confirmação de nome, escopo e estratégia de acesso segregado
+- [ ] Inventariar e exportar integralmente o banco atual antes de qualquer troca de conexão
+- [ ] Importar o banco no novo TiDB e comparar estrutura, volumes e dados críticos
+- [ ] Atualizar DATABASE_URL somente no Railway e validar o CRM com plano de reversão disponível
+- [ ] Excluir a base anterior somente após aprovação final e período de estabilidade confirmado
+- [x] Verificar e adicionar, se ausente, o campo parcelas nas cobranças por Link e nos modelos
+- [x] Validar o valor padrão de parcelas sem modificar as cobranças existentes

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classificarOrigemPagamentoMp, coletarPagamentosEstaveis, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, type MpPaymentsSearchResponse } from "./mercadoPagoApi";
+import { classificarOrigemPagamentoMp, coletarPagamentosEstaveis, ehCompraEquipamentoPoint, montarCorpoPreferenciaPagamento, resumirOrigemPagamentoMp, type MpPaymentsSearchResponse } from "./mercadoPagoApi";
 
 describe("ehCompraEquipamentoPoint", () => {
   it("separa uma compra subsidiada de Point Smart das vendas", () => {
@@ -129,5 +129,29 @@ describe("classificarOrigemPagamentoMp", () => {
       point_of_interaction: { type: "CHECKOUT", business_info: { unit: "online_payments", sub_unit: "checkout_pro" } },
     })).toBe("online");
     expect(classificarOrigemPagamentoMp({ id: 23, date_approved: null, status: "approved", external_reference: "não-classifica-link" })).toBe("indefinido");
+  });
+});
+
+describe("montarCorpoPreferenciaPagamento", () => {
+  it("envia o máximo de parcelas definido para o checkout", () => {
+    expect(montarCorpoPreferenciaPagamento({
+      titulo: "Voucher Buddha Spa",
+      valor: 419,
+      externalReference: "cobranca-123",
+      notificationUrl: "https://spa.grxcorp.com.br/api/webhooks/mercadopago",
+      parcelas: 3,
+    })).toMatchObject({
+      payment_methods: { installments: 3 },
+    });
+  });
+
+  it("mantém a preferência sem restrição adicional quando a cobrança é à vista", () => {
+    expect(montarCorpoPreferenciaPagamento({
+      titulo: "Voucher Buddha Spa",
+      valor: 419,
+      externalReference: "cobranca-123",
+      notificationUrl: "https://spa.grxcorp.com.br/api/webhooks/mercadopago",
+      parcelas: 1,
+    })).not.toHaveProperty("payment_methods");
   });
 });
