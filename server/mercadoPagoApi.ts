@@ -125,7 +125,7 @@ export interface MpPaymentsSearchResponse {
   results: MpPagamento[];
 }
 
-async function mpRequest<T>(path: string, accessToken: string, options: { method?: "GET" | "POST"; body?: unknown } = {}): Promise<T> {
+async function mpRequest<T>(path: string, accessToken: string, options: { method?: "GET" | "POST" | "PUT"; body?: unknown } = {}): Promise<T> {
   const res = await fetch(`${MP_BASE_URL}${path}`, {
     method: options.method ?? "GET",
     headers: {
@@ -147,6 +147,9 @@ export interface MpPreferenciaPagamentoInput {
   valor: number;
   externalReference: string;
   notificationUrl: string;
+  // Máximo de parcelas oferecido no checkout — omitido (ou 1) deixa o
+  // padrão do Mercado Pago (à vista/parcelamento livre da adquirente).
+  parcelas?: number;
 }
 
 export interface MpPreferenciaPagamento {
@@ -168,6 +171,7 @@ export function montarCorpoPreferenciaPagamento(input: MpPreferenciaPagamentoInp
     external_reference: input.externalReference,
     notification_url: input.notificationUrl,
     statement_descriptor: "BUDDHA SPA",
+    ...(input.parcelas && input.parcelas > 1 ? { payment_methods: { installments: input.parcelas } } : {}),
   };
 }
 
@@ -184,6 +188,26 @@ export async function criarPreferenciaPagamento(accessToken: string, input: MpPr
   return mpRequest<MpPreferenciaPagamento>("/checkout/preferences", accessToken, {
     method: "POST",
     body: montarCorpoPreferenciaPagamento({ ...input, notificationUrl: url.toString() }),
+  });
+}
+
+/**
+ * O Mercado Pago não tem um endpoint de "cancelar" preferência — a forma
+ * suportada é expirá-la com uma data de expiração já no passado, o que
+ * faz o Link parar de abrir o checkout imediatamente. Best-effort: quem
+ * chama deve marcar a cobrança como cancelada no nosso banco de qualquer
+ * jeito, mesmo que essa chamada falhe (ex.: preferência já paga/expirada
+ * no lado do Mercado Pago).
+ */
+export async function cancelarPreferenciaPagamento(accessToken: string, preferenceId: string): Promise<void> {
+  const agora = new Date();
+  await mpRequest(`/checkout/preferences/${encodeURIComponent(preferenceId)}`, accessToken, {
+    method: "PUT",
+    body: {
+      expires: true,
+      expiration_date_from: new Date(agora.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+      expiration_date_to: new Date(agora.getTime() - 60 * 1000).toISOString(),
+    },
   });
 }
 

@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { AlertTriangle, CheckCircle2, CreditCard, FileText, Loader2, MessageSquareText, Send } from "lucide-react";
+import { AlertTriangle, Ban, CheckCircle2, CreditCard, FileText, Loader2, MessageSquareText, Send } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -52,9 +52,11 @@ export function CobrancaLinkDialog({ open, onOpenChange, conversaId, unidadeId, 
   const [descricao, setDescricao] = useState("");
   const [valorTexto, setValorTexto] = useState("");
   const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>("Não especificada");
+  const [parcelas, setParcelas] = useState(1);
   const [textoWhatsapp, setTextoWhatsapp] = useState("");
   const [textoEditado, setTextoEditado] = useState(false);
   const [confirmarEnvio, setConfirmarEnvio] = useState(false);
+  const [confirmarCancelamento, setConfirmarCancelamento] = useState(false);
   const inicializado = useRef(false);
   const valor = useMemo(() => lerValor(valorTexto), [valorTexto]);
 
@@ -96,11 +98,20 @@ export function CobrancaLinkDialog({ open, onOpenChange, conversaId, unidadeId, 
     },
     onError: (erro) => toast.error(`Não foi possível enviar a cobrança: ${erro.message}`),
   });
+  const cancelarLink = trpc.cobrancasLink.cancelar.useMutation({
+    onSuccess: () => {
+      toast.success("Link cancelado. Já dá pra criar uma nova cobrança para este cliente.");
+      if (conversaId) utils.cobrancasLink.aberta.invalidate({ conversaId });
+      setConfirmarCancelamento(false);
+    },
+    onError: (erro) => toast.error(`Não foi possível cancelar o Link: ${erro.message}`),
+  });
 
   useEffect(() => {
     if (!open) {
       inicializado.current = false;
       setConfirmarEnvio(false);
+      setConfirmarCancelamento(false);
       return;
     }
     if (inicializado.current) return;
@@ -109,6 +120,7 @@ export function CobrancaLinkDialog({ open, onOpenChange, conversaId, unidadeId, 
     setDescricao("");
     setValorTexto("");
     setFormaPagamento("Não especificada");
+    setParcelas(1);
     setTextoWhatsapp(montarTextoPadrao(clienteNome, "", null));
     setTextoEditado(false);
     inicializado.current = true;
@@ -118,11 +130,12 @@ export function CobrancaLinkDialog({ open, onOpenChange, conversaId, unidadeId, 
     if (!textoEditado && open && !cobrancaAberta.data) setTextoWhatsapp(montarTextoPadrao(clienteNome, titulo, valor));
   }, [clienteNome, cobrancaAberta.data, open, textoEditado, titulo, valor]);
 
-  function selecionarModelo(modelo: { titulo: string; descricao: string | null; valor: string; formaPagamentoInformada: string | null }) {
+  function selecionarModelo(modelo: { titulo: string; descricao: string | null; valor: string; formaPagamentoInformada: string | null; parcelas: number }) {
     setTitulo(modelo.titulo);
     setDescricao(modelo.descricao ?? "");
     setValorTexto(valorParaInput(modelo.valor));
     if (FORMAS_PAGAMENTO.includes(modelo.formaPagamentoInformada as FormaPagamento)) setFormaPagamento(modelo.formaPagamentoInformada as FormaPagamento);
+    setParcelas(modelo.parcelas);
     setTextoEditado(false);
     setAba("manual");
   }
@@ -140,6 +153,7 @@ export function CobrancaLinkDialog({ open, onOpenChange, conversaId, unidadeId, 
       descricao: existeAberta ? undefined : (descricao.trim() || undefined),
       valor: existeAberta ? Number(cobrancaAberta.data!.valor) : valor,
       formaPagamentoInformada: formaPagamento,
+      parcelas: existeAberta ? cobrancaAberta.data!.parcelas : parcelas,
       textoWhatsapp: textoWhatsapp.trim(),
       reutilizarCobrancaAberta: existeAberta,
       confirmarCriacaoEEnvio: true,
@@ -160,7 +174,8 @@ export function CobrancaLinkDialog({ open, onOpenChange, conversaId, unidadeId, 
 
           {existeAberta ? <div className="space-y-3 rounded-xl border border-primary/25 bg-primary/[0.035] p-4">
             <div className="flex items-start justify-between gap-3"><div><p className="font-medium">Já existe um Link aberto para este cliente</p><p className="mt-0.5 text-xs text-muted-foreground">Para evitar duas cobranças para a mesma negociação, o sistema vai reutilizar o Link já criado.</p></div><Badge variant="outline" className="border-primary/30 text-primary">{cobrancaAberta.data?.status}</Badge></div>
-            <div className="grid gap-2 text-sm sm:grid-cols-2"><p><span className="text-muted-foreground">Referência:</span> {cobrancaAberta.data?.titulo}</p><p><span className="text-muted-foreground">Valor:</span> {formatarBrl(Number(cobrancaAberta.data?.valor))}</p></div>
+            <div className="grid gap-2 text-sm sm:grid-cols-2"><p><span className="text-muted-foreground">Referência:</span> {cobrancaAberta.data?.titulo}</p><p><span className="text-muted-foreground">Valor:</span> {formatarBrl(Number(cobrancaAberta.data?.valor))}</p><p><span className="text-muted-foreground">Parcelas:</span> {(cobrancaAberta.data?.parcelas ?? 1) > 1 ? `até ${cobrancaAberta.data?.parcelas}x` : "à vista"}</p></div>
+            <Button type="button" variant="outline" size="sm" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => setConfirmarCancelamento(true)} disabled={cancelarLink.isPending}>{cancelarLink.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Ban className="mr-1.5 h-3.5 w-3.5" />}Cancelar Link</Button>
           </div> : <Tabs value={aba} onValueChange={setAba}>
             <TabsList className="grid h-auto w-full grid-cols-3">
               <TabsTrigger value="manual" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" />Manual</TabsTrigger>
@@ -176,6 +191,7 @@ export function CobrancaLinkDialog({ open, onOpenChange, conversaId, unidadeId, 
             <div className="space-y-1.5"><Label htmlFor="cobranca-valor">Valor negociado</Label><Input id="cobranca-valor" inputMode="decimal" value={valorTexto} onChange={(e) => setValorTexto(e.target.value)} placeholder="Ex.: 419,00" /></div>
             <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="cobranca-descricao">Descrição</Label><Textarea id="cobranca-descricao" rows={2} value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Opcional: detalhe que aparecerá na cobrança" /></div>
             <div className="space-y-1.5"><Label htmlFor="cobranca-forma">Forma mencionada na conversa</Label><select id="cobranca-forma" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value as FormaPagamento)}>{FORMAS_PAGAMENTO.map((forma) => <option key={forma} value={forma}>{forma}</option>)}</select></div>
+            <div className="space-y-1.5"><Label htmlFor="cobranca-parcelas">Parcelas no checkout</Label><select id="cobranca-parcelas" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50" value={parcelas} onChange={(e) => setParcelas(Number(e.target.value))}>{Array.from({ length: 12 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n === 1 ? "À vista" : `Até ${n}x`}</option>)}</select></div>
           </div>}
 
           <div className="space-y-1.5"><Label htmlFor="cobranca-texto">Mensagem para WhatsApp</Label><Textarea id="cobranca-texto" rows={4} value={textoWhatsapp} onChange={(e) => { setTextoWhatsapp(e.target.value); setTextoEditado(true); }} /><p className="text-xs text-muted-foreground">A URL segura do pagamento é incluída automaticamente no envio.</p></div>
@@ -187,6 +203,10 @@ export function CobrancaLinkDialog({ open, onOpenChange, conversaId, unidadeId, 
 
       <Dialog open={confirmarEnvio} onOpenChange={setConfirmarEnvio}>
         <DialogContent className="max-w-md"><DialogHeader><DialogTitle className="font-serif text-xl">Confirmar envio da cobrança</DialogTitle><DialogDescription>{existeAberta ? "Você irá reenviar o Link já aberto para este cliente." : "Você irá criar um novo Link individual no Mercado Pago e enviá-lo ao cliente."}</DialogDescription></DialogHeader><div className="rounded-lg bg-muted/50 p-3 text-sm"><p><strong>{existeAberta ? cobrancaAberta.data?.titulo : titulo}</strong></p><p className="mt-1 text-muted-foreground">{formatarBrl(existeAberta ? Number(cobrancaAberta.data?.valor) : valor)}</p></div><DialogFooter><Button type="button" variant="outline" onClick={() => setConfirmarEnvio(false)}>Voltar para revisão</Button><Button type="button" onClick={confirmar} disabled={criarEEnviar.isPending}>{criarEEnviar.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Confirmar e enviar</Button></DialogFooter></DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmarCancelamento} onOpenChange={setConfirmarCancelamento}>
+        <DialogContent className="max-w-md"><DialogHeader><DialogTitle className="font-serif text-xl">Cancelar Link de pagamento</DialogTitle><DialogDescription>O Link atual deixa de funcionar e você poderá criar uma nova cobrança para este cliente. Essa ação não pode ser desfeita.</DialogDescription></DialogHeader><div className="rounded-lg bg-muted/50 p-3 text-sm"><p><strong>{cobrancaAberta.data?.titulo}</strong></p><p className="mt-1 text-muted-foreground">{formatarBrl(Number(cobrancaAberta.data?.valor))}</p></div><DialogFooter><Button type="button" variant="outline" onClick={() => setConfirmarCancelamento(false)}>Voltar</Button><Button type="button" variant="destructive" onClick={() => cobrancaAberta.data && cancelarLink.mutate({ cobrancaId: cobrancaAberta.data.id })} disabled={cancelarLink.isPending}>{cancelarLink.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ban className="mr-2 h-4 w-4" />}Cancelar Link</Button></DialogFooter></DialogContent>
       </Dialog>
     </DialogContent>
   </Dialog>;

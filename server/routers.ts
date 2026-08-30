@@ -26,7 +26,7 @@ import { parseRegistrosFinanceirosBelleXlsx } from "./registrosFinanceirosBelleX
 import { parsePlanosBelleXls, parseVinculosPlanosBelleXlsx } from "./planosBelleXlsParser";
 import { parseComandaVirtualXlsx } from "./comandaVirtualXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
-import { consultarTodosPagamentos, consultarPagamentoPorId, criarPreferenciaPagamento, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, classificarOrigemPagamentoMp } from "./mercadoPagoApi";
+import { consultarTodosPagamentos, consultarPagamentoPorId, criarPreferenciaPagamento, cancelarPreferenciaPagamento, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, classificarOrigemPagamentoMp } from "./mercadoPagoApi";
 import { combinarLinksConfirmacao, dataSaoPaulo, listarLinksConfirmadosLocalmente, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
 import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual, chaveComandaVirtualPorUnidade } from "./googleSheets";
@@ -1565,6 +1565,7 @@ Diretrizes:
         id: cobranca.id,
         titulo: cobranca.titulo,
         valor: cobranca.valor,
+        parcelas: cobranca.parcelas,
         status: cobranca.status,
         enviadaEm: cobranca.enviadaEm,
         initPoint: cobranca.initPoint,
@@ -1582,6 +1583,7 @@ Diretrizes:
         descricao: z.string().trim().max(2000).optional(),
         valor: z.number().positive().max(999999.99),
         formaPagamentoInformada: z.enum(FORMAS_PAGAMENTO_COBRANCA).optional(),
+        parcelas: z.number().int().min(1).max(12).default(1),
         ordem: z.number().int().min(0).max(999).optional(),
       })).mutation(async ({ input, ctx }) => {
         if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
@@ -1591,6 +1593,7 @@ Diretrizes:
           descricao: input.descricao || null,
           valor: normalizarValorCobranca(input.valor).toFixed(2),
           formaPagamentoInformada: input.formaPagamentoInformada ?? null,
+          parcelas: input.parcelas,
           ordem: input.ordem ?? 0,
         });
         return { id };
@@ -1602,6 +1605,7 @@ Diretrizes:
         descricao: z.string().trim().max(2000).optional(),
         valor: z.number().positive().max(999999.99),
         formaPagamentoInformada: z.enum(FORMAS_PAGAMENTO_COBRANCA).optional(),
+        parcelas: z.number().int().min(1).max(12).default(1),
         ativo: z.boolean(),
         ordem: z.number().int().min(0).max(999),
       })).mutation(async ({ input, ctx }) => {
@@ -1611,6 +1615,7 @@ Diretrizes:
           descricao: input.descricao || null,
           valor: normalizarValorCobranca(input.valor).toFixed(2),
           formaPagamentoInformada: input.formaPagamentoInformada ?? null,
+          parcelas: input.parcelas,
           ativo: input.ativo,
           ordem: input.ordem,
         });
@@ -1673,6 +1678,7 @@ Diretrizes:
       descricao: z.string().trim().max(2000).optional(),
       valor: z.number().positive().max(999999.99),
       formaPagamentoInformada: z.enum(FORMAS_PAGAMENTO_COBRANCA).optional(),
+      parcelas: z.number().int().min(1).max(12).default(1),
       textoWhatsapp: z.string().trim().min(2).max(3500),
       reutilizarCobrancaAberta: z.boolean().default(false),
       confirmarCriacaoEEnvio: z.literal(true),
@@ -1711,6 +1717,7 @@ Diretrizes:
           descricao: input.descricao || null,
           valor: normalizarValorCobranca(input.valor).toFixed(2),
           formaPagamentoInformada: input.formaPagamentoInformada ?? null,
+          parcelas: input.parcelas,
           externalReference,
           chaveAberta: db.chaveCobrancaAberta(input.conversaId),
         });
@@ -1725,6 +1732,7 @@ Diretrizes:
             valor: Number(cobrancaCriada.valor),
             externalReference: cobrancaCriada.externalReference,
             notificationUrl: urlNotificacao.toString(),
+            parcelas: cobrancaCriada.parcelas,
           });
           const initPoint = preferencia.init_point;
           if (!preferencia.id || !initPoint) throw new Error("O Mercado Pago não retornou uma URL de pagamento válida");
@@ -1760,6 +1768,34 @@ Diretrizes:
       await db.upsertInboxConversa({ unidadeId: conversa.unidadeId, canal: conversa.canal, telefone: conversa.telefone, nomeContato: conversa.nomeContato ?? undefined, ultimaMensagemTexto: textoFinal });
       await db.atualizarCobrancaLink(cobranca.id, { status: "enviada", enviadaEm: new Date() });
       return { cobrancaId: cobranca.id, initPoint: cobranca.initPoint, reutilizada: Boolean(aberta) };
+    }),
+
+    /**
+     * O Mercado Pago não tem "cancelar" preferência de verdade — a chamada
+     * expira o Link no lado deles (best-effort, não bloqueia o cancelamento
+     * local se falhar: a preferência pode já estar paga/expirada). O que
+     * de fato libera a recepção pra criar uma cobrança nova pro mesmo
+     * cliente é marcar status="cancelada" e limpar chaveAberta aqui.
+     */
+    cancelar: protectedProcedure.input(z.object({ cobrancaId: z.number() })).mutation(async ({ input, ctx }) => {
+      const cobranca = await db.getCobrancaLinkPorId(input.cobrancaId);
+      if (!cobranca) throw new Error("Cobrança não encontrada");
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, cobranca.unidadeId))) throw new Error("Sem acesso à unidade desta cobrança");
+      if (!db.STATUS_COBRANCA_ABERTA.includes(cobranca.status as any)) {
+        throw new Error(`Esta cobrança já está com status "${cobranca.status}" e não pode ser cancelada.`);
+      }
+      if (cobranca.preferenceId) {
+        const unidade = await db.getUnidadeById(cobranca.unidadeId);
+        if (unidade?.mpAccessToken) {
+          try {
+            await cancelarPreferenciaPagamento(unidade.mpAccessToken, cobranca.preferenceId);
+          } catch (error) {
+            console.error("[Cobrança Link] Falha ao expirar preferência no Mercado Pago (cancelando localmente mesmo assim):", error);
+          }
+        }
+      }
+      await db.atualizarCobrancaLink(cobranca.id, { status: "cancelada", chaveAberta: null });
+      return { success: true };
     }),
 
     alertas: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input, ctx }) => {

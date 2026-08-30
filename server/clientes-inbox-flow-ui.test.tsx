@@ -213,6 +213,7 @@ const state = vi.hoisted(() => {
       },
       extrairDaConversa: { useMutation: () => mutation() },
       criarEEnviar: { useMutation: () => mutation() },
+      cancelar: { useMutation: () => mutation() },
     },
     fluxos: {
       iniciarVisivel: { useMutation: () => mutation() },

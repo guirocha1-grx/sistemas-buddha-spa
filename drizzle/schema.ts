@@ -170,6 +170,9 @@ export const cobrancasLink = mysqlTable("cobrancas_link", {
   descricao: text("descricao"),
   valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
   formaPagamentoInformada: varchar("formaPagamentoInformada", { length: 80 }),
+  // Máximo de parcelas oferecido no checkout deste Link — ver
+  // montarCorpoPreferenciaPagamento (server/mercadoPagoApi.ts).
+  parcelas: int("parcelas").default(1).notNull(),
   status: mysqlEnum("status", ["rascunho", "criada", "enviada", "pendente", "aprovada", "rejeitada", "cancelada", "expirada", "erro"]).default("rascunho").notNull(),
   preferenceId: varchar("preferenceId", { length: 160 }),
   initPoint: text("initPoint"),
@@ -230,6 +233,7 @@ export const cobrancasLinkModelos = mysqlTable("cobrancas_link_modelos", {
   descricao: text("descricao"),
   valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
   formaPagamentoInformada: varchar("formaPagamentoInformada", { length: 80 }),
+  parcelas: int("parcelas").default(1).notNull(),
   ativo: boolean("ativo").default(true).notNull(),
   ordem: int("ordem").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
