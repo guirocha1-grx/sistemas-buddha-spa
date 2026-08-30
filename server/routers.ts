@@ -32,7 +32,7 @@ import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual, chaveComandaVirtualPorUnidade } from "./googleSheets";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTelegramParaRecepcao } from "./telegramApi";
-import { CONVERSA_GRUPO_GERAL_RBS_ID, destinoGrupoGeralRbsValido, montarMensagemChamadoTerapeuta } from "./chamadoTerapeuta";
+import { CONVERSA_GRUPO_GERAL_RBS_ID, CONVERSA_GRUPO_CRUZADO_ID, destinoGrupoGeralRbsValido, montarMensagemChamadoTerapeuta } from "./chamadoTerapeuta";
 import { DEFAULT_INBOX_AI_MESSAGE_PROMPT, INBOX_AI_PROMPT_KEY, montarPedidoSugestaoMensagem } from "@shared/inboxAi";
 import { iniciarExecucaoFluxo } from "./fluxos";
 import { agentesRouter, tabelaPrecosRouter } from "./routers/agentes";
@@ -4219,10 +4219,26 @@ Diretrizes:
       preferencial: z.boolean(),
       enviarParaComanda: z.boolean().default(false),
       atendimentoBelleId: z.number().int().nullable().optional(),
+      // Terapeuta de outra unidade (ex.: SSU trabalhando no RBS num
+      // domingo em que só o RBS abre) — ela não está no Grupo Geral da
+      // unidade logada, então o chamado sai pelo grupo cruzado em vez
+      // do grupo normal. Nunca aceita um conversaId vindo do cliente —
+      // só esse booleano, pra não abrir brecha de mandar mensagem pra
+      // qualquer conversa arbitrária.
+      terapeutaOutraUnidade: z.boolean().default(false),
     })).mutation(async ({ input, ctx }) => {
-      const conversa = await db.getInboxConversaById(CONVERSA_GRUPO_GERAL_RBS_ID);
-      if (!conversa || !destinoGrupoGeralRbsValido(conversa.id, input.unidadeId) || conversa.isGrupo !== "true" || conversa.canal !== "zapi") {
-        throw new Error("O Grupo Geral RBS (960001) não está disponível para esta unidade");
+      let conversa;
+      if (input.terapeutaOutraUnidade) {
+        if (!CONVERSA_GRUPO_CRUZADO_ID) throw new Error("Grupo cruzado (terapeuta de outra unidade) ainda não foi configurado.");
+        conversa = await db.getInboxConversaById(CONVERSA_GRUPO_CRUZADO_ID);
+        if (!conversa || conversa.isGrupo !== "true" || conversa.canal !== "zapi") {
+          throw new Error("O grupo cruzado configurado não está disponível.");
+        }
+      } else {
+        conversa = await db.getInboxConversaById(CONVERSA_GRUPO_GERAL_RBS_ID);
+        if (!conversa || !destinoGrupoGeralRbsValido(conversa.id, input.unidadeId) || conversa.isGrupo !== "true" || conversa.canal !== "zapi") {
+          throw new Error("O Grupo Geral RBS (960001) não está disponível para esta unidade");
+        }
       }
       if (!(await db.mensageriaEstaAtiva())) throw new Error("Envio de mensagens pausado — kill switch de mensageria ativado por um administrador");
       const unidade = await db.getUnidadeById(conversa.unidadeId!);
