@@ -18,7 +18,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { CampoBuscaLista } from "@/components/CampoBuscaLista";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
@@ -405,6 +406,21 @@ export default function Mensagens() {
     { unidadeId: unidadeSelecionada?.id ?? 0 },
     { enabled: !!unidadeSelecionada?.id && editandoProximoAtendimento },
   );
+  // precoSemana é sempre preenchido (Seg-Sáb cobre praticamente o
+  // catálogo inteiro); precoDomingo só existe pras terapias realmente
+  // oferecidas aos domingos/feriados — os 2 filtros são independentes
+  // (união), não uma escolha exclusiva.
+  const [filtroServicoSegSab, setFiltroServicoSegSab] = useState(true);
+  const [filtroServicoDomFer, setFiltroServicoDomFer] = useState(false);
+  const nomesServicosProximoAtendimento = useMemo(() => {
+    const nomes = new Set<string>();
+    for (const item of tabelaPrecosQuery.data ?? []) {
+      const valeSegSab = filtroServicoSegSab && item.precoSemana != null;
+      const valeDomFer = filtroServicoDomFer && item.precoDomingo != null;
+      if (valeSegSab || valeDomFer) nomes.add(item.servico);
+    }
+    return Array.from(nomes);
+  }, [tabelaPrecosQuery.data, filtroServicoSegSab, filtroServicoDomFer]);
   const cancelarProximoAtendimentoMutation = trpc.inbox.conversas.cancelarProximoAtendimento.useMutation({
     onSuccess: () => {
       toast.success("Agendamento cancelado");
@@ -1777,16 +1793,25 @@ export default function Mensagens() {
                             <Input type="time" className="mt-1 h-8 text-xs" value={formProximoAtendimento.horario}
                               onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, horario: e.target.value }))} />
                           </div>
-                          <div>
-                            <Label className="text-xs">Serviço</Label>
-                            <Select value={formProximoAtendimento.servico || undefined} onValueChange={(v) => setFormProximoAtendimento((f) => ({ ...f, servico: v }))}>
-                              <SelectTrigger className="mt-1 h-8 text-xs"><SelectValue placeholder="Selecione a terapia" /></SelectTrigger>
-                              <SelectContent>
-                                {(tabelaPrecosQuery.data ?? []).map((item) => (
-                                  <SelectItem key={item.id} value={item.servico}>{item.servico}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-3">
+                              <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                                <Checkbox checked={filtroServicoSegSab} onCheckedChange={(v) => setFiltroServicoSegSab(!!v)} className="h-3.5 w-3.5" />
+                                Seg-Sáb
+                              </label>
+                              <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                                <Checkbox checked={filtroServicoDomFer} onCheckedChange={(v) => setFiltroServicoDomFer(!!v)} className="h-3.5 w-3.5" />
+                                Dom-Fer
+                              </label>
+                            </div>
+                            <CampoBuscaLista
+                              label="Serviço"
+                              value={formProximoAtendimento.servico}
+                              onChange={(v) => setFormProximoAtendimento((f) => ({ ...f, servico: v }))}
+                              valores={nomesServicosProximoAtendimento}
+                              placeholder="Selecione ou digite"
+                              id="proximo-atendimento-servico-incluir"
+                            />
                           </div>
                           <Button size="sm" className="w-full h-7 text-xs" disabled={criarProximoAtendimentoMutation.isPending}
                             onClick={() => {
@@ -1858,16 +1883,25 @@ export default function Mensagens() {
                               <Input type="time" className="mt-1 h-8 text-xs" value={formProximoAtendimento.horario}
                                 onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, horario: e.target.value }))} />
                             </div>
-                            <div>
-                              <Label className="text-xs">Serviço</Label>
-                              <Select value={formProximoAtendimento.servico || undefined} onValueChange={(v) => setFormProximoAtendimento((f) => ({ ...f, servico: v }))}>
-                                <SelectTrigger className="mt-1 h-8 text-xs"><SelectValue placeholder="Selecione a terapia" /></SelectTrigger>
-                                <SelectContent>
-                                  {(tabelaPrecosQuery.data ?? []).map((item) => (
-                                    <SelectItem key={item.id} value={item.servico}>{item.servico}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-3">
+                                <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                                  <Checkbox checked={filtroServicoSegSab} onCheckedChange={(v) => setFiltroServicoSegSab(!!v)} className="h-3.5 w-3.5" />
+                                  Seg-Sáb
+                                </label>
+                                <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                                  <Checkbox checked={filtroServicoDomFer} onCheckedChange={(v) => setFiltroServicoDomFer(!!v)} className="h-3.5 w-3.5" />
+                                  Dom-Fer
+                                </label>
+                              </div>
+                              <CampoBuscaLista
+                                label="Serviço"
+                                value={formProximoAtendimento.servico}
+                                onChange={(v) => setFormProximoAtendimento((f) => ({ ...f, servico: v }))}
+                                valores={nomesServicosProximoAtendimento}
+                                placeholder="Selecione ou digite"
+                                id="proximo-atendimento-servico-editar"
+                              />
                             </div>
                             <Button size="sm" className="w-full h-7 text-xs" disabled={editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending}
                               onClick={() => {
