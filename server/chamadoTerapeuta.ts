@@ -4,10 +4,10 @@ export const UNIDADE_GRUPO_GERAL_RBS_ID = 2;
 // Grupo alternativo pra chamar uma terapeuta que não é da unidade
 // logada (ex.: terapeuta do SSU trabalhando no RBS num domingo em que
 // só o RBS abre) — ela não está no Grupo Geral da unidade logada, então
-// o chamado precisa ir pra um grupo à parte. ID temporário até o
-// usuário confirmar a conversa real (ver pedido 2026-08-29); troque
-// pelo ID de inbox_conversas assim que ele existir.
-export const CONVERSA_GRUPO_CRUZADO_ID: number | null = null;
+// o chamado precisa ir pra um grupo à parte. "Domingo - plantão RBS",
+// confirmado pelo usuário 2026-08-29 (ver memória de grupos WhatsApp
+// conhecidos pra mais IDs).
+export const CONVERSA_GRUPO_CRUZADO_ID: number | null = 3180018;
 
 export type DadosChamadoTerapeuta = {
   modalidade: "chamado" | "pre_chamado";
