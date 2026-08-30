@@ -47,7 +47,11 @@ export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendime
 }) {
   const clienteId = conversa?.clienteId ?? null;
   const opcoesQuery = trpc.chamados.opcoes.useQuery({ unidadeId: unidadeId ?? 0, clienteId: clienteId ?? undefined }, { enabled: open && !!unidadeId });
-  const servicosQuery = trpc.servicos.list.useQuery({ unidadeId: unidadeId ?? 0 }, { enabled: open && !!unidadeId });
+  // Tabela de Preços (cadastro próprio, não a API do Belle — nunca teve
+  // token configurado nesse projeto) já separa por categoria, então
+  // cada campo sugere só as terapias dela.
+  const servicosBemEstarQuery = trpc.tabelaPrecos.list.useQuery({ unidadeId: unidadeId ?? 0, categoria: "Bem-Estar" }, { enabled: open && !!unidadeId });
+  const servicosEsteticaQuery = trpc.tabelaPrecos.list.useQuery({ unidadeId: unidadeId ?? 0, categoria: "Estética" }, { enabled: open && !!unidadeId });
   const [form, setForm] = useState<FormChamado>(() => criarFormulario(atendimento, conversa));
   const [enviarParaComanda, setEnviarParaComanda] = useState(true);
   // Terapeuta que trabalha numa unidade diferente da logada nesse dia
@@ -70,7 +74,8 @@ export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendime
   const aguardando = parametros.filter((item) => item.tipo === "aguardando");
   const salas = parametros.filter((item) => item.tipo === "sala");
   const taa = parametros.filter((item) => item.tipo === "taa");
-  const nomesServicos = useMemo(() => (servicosQuery.data ?? []).map((item: any) => item.nome ?? item.descricao ?? item.name).filter((item: unknown): item is string => typeof item === "string" && !!item.trim()), [servicosQuery.data]);
+  const nomesBemEstar = useMemo(() => (servicosBemEstarQuery.data ?? []).map((item) => item.servico), [servicosBemEstarQuery.data]);
+  const nomesEstetica = useMemo(() => (servicosEsteticaQuery.data ?? []).map((item) => item.servico), [servicosEsteticaQuery.data]);
 
   useEffect(() => {
     if (!open) {
@@ -149,8 +154,8 @@ export function ChamadoTerapeutaDialog({ open, onOpenChange, unidadeId, atendime
             placeholder="Selecione ou digite"
             id="chamado-terapeuta"
           /></div><div className="shrink-0 space-y-1.5"><Label>Pref.</Label><div className="flex gap-1 rounded-lg bg-muted p-1"><Button type="button" size="sm" className={`h-8 px-2 ${form.preferencial ? "bg-emerald-600 text-white hover:bg-emerald-700" : ""}`} variant={form.preferencial ? "default" : "ghost"} onClick={() => mudar("preferencial", true)}>Sim</Button><Button type="button" size="sm" className="h-8 px-2" variant={!form.preferencial ? "default" : "ghost"} onClick={() => mudar("preferencial", false)}>Não</Button></div></div></div>
-          <CampoLista label="Terapia Bem-Estar" value={form.terapiaBemEstar} onChange={(valor) => mudar("terapiaBemEstar", valor)} valores={nomesServicos} placeholder="Selecione ou digite" id="chamado-bem-estar" />
-          <CampoLista label="Terapia Estética" value={form.terapiaEstetica} onChange={(valor) => mudar("terapiaEstetica", valor)} valores={nomesServicos} placeholder="Opcional" id="chamado-estetica" />
+          <CampoLista label="Terapia Bem-Estar" value={form.terapiaBemEstar} onChange={(valor) => mudar("terapiaBemEstar", valor)} valores={nomesBemEstar} placeholder="Selecione ou digite" id="chamado-bem-estar" />
+          <CampoLista label="Terapia Estética" value={form.terapiaEstetica} onChange={(valor) => mudar("terapiaEstetica", valor)} valores={nomesEstetica} placeholder="Opcional" id="chamado-estetica" />
           <CampoLista label="Sala" value={form.sala} onChange={(valor) => mudar("sala", valor)} valores={salas.map((item) => item.nome)} placeholder="Selecione ou digite" id="chamado-sala" />
           <CampoLista label="TAA" value={form.taa} onChange={(valor) => mudar("taa", valor)} valores={taa.map((item) => item.nome)} placeholder="Selecione a situação" id="chamado-taa" />
         </div>

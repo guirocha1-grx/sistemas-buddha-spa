@@ -187,6 +187,7 @@ const state = vi.hoisted(() => {
       registrarUso: { useMutation: () => mutation() },
     },
     tabelaPrecos: {
+      list: { useQuery: () => ({ data: [], isLoading: false }) },
       campanhaMes: { useQuery: () => ({ data: { conteudo: "" }, isLoading: false }) },
     },
     mensageria: {
@@ -411,6 +412,7 @@ describe("fluxo completo Clientes → Inbox", () => {
       profissionalNome: null,
       status: "Confirmado",
     };
+    cleanup();
     render(<Mensagens />);
 
     const botaoIa = await screen.findByRole("button", { name: "Atualizar de acordo com conversa (IA)" });

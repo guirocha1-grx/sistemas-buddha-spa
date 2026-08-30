@@ -18,6 +18,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
@@ -397,6 +398,13 @@ export default function Mensagens() {
   const [editandoProximoAtendimento, setEditandoProximoAtendimento] = useState(false);
   const [modoFormProximoAtendimento, setModoFormProximoAtendimento] = useState<"editar" | "incluir">("editar");
   const [formProximoAtendimento, setFormProximoAtendimento] = useState({ data: "", horario: "", servico: "" });
+  // Serviço do próximo atendimento vem da Tabela de Preços — evita
+  // digitar um nome de terapia que já existe cadastrado. Só busca
+  // quando o popover realmente abre.
+  const tabelaPrecosQuery = trpc.tabelaPrecos.list.useQuery(
+    { unidadeId: unidadeSelecionada?.id ?? 0 },
+    { enabled: !!unidadeSelecionada?.id && editandoProximoAtendimento },
+  );
   const cancelarProximoAtendimentoMutation = trpc.inbox.conversas.cancelarProximoAtendimento.useMutation({
     onSuccess: () => {
       toast.success("Agendamento cancelado");
@@ -1737,6 +1745,67 @@ export default function Mensagens() {
                   </div>
                 )}
 
+                {conversaSelecionada?.resumoRelacionamento && !conversaSelecionada.resumoRelacionamento.proximoAtendimento && (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/20 p-2.5">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-500">Próximo atendimento: Não há agendamentos</p>
+                      <Popover open={editandoProximoAtendimento} onOpenChange={setEditandoProximoAtendimento}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-5 w-5 text-muted-foreground hover:text-foreground"
+                            title="Incluir próximo atendimento"
+                            aria-label="Incluir próximo atendimento"
+                            onClick={() => {
+                              const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                              setModoFormProximoAtendimento("incluir");
+                              setFormProximoAtendimento({ data: hojeBrt, horario: "", servico: "" });
+                            }}
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 space-y-2" align="end">
+                          <div>
+                            <Label className="text-xs">Data</Label>
+                            <Input type="date" className="mt-1 h-8 text-xs" value={formProximoAtendimento.data}
+                              onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, data: e.target.value }))} />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Horário</Label>
+                            <Input type="time" className="mt-1 h-8 text-xs" value={formProximoAtendimento.horario}
+                              onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, horario: e.target.value }))} />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Serviço</Label>
+                            <Select value={formProximoAtendimento.servico || undefined} onValueChange={(v) => setFormProximoAtendimento((f) => ({ ...f, servico: v }))}>
+                              <SelectTrigger className="mt-1 h-8 text-xs"><SelectValue placeholder="Selecione a terapia" /></SelectTrigger>
+                              <SelectContent>
+                                {(tabelaPrecosQuery.data ?? []).map((item) => (
+                                  <SelectItem key={item.id} value={item.servico}>{item.servico}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <Button size="sm" className="w-full h-7 text-xs" disabled={criarProximoAtendimentoMutation.isPending}
+                            onClick={() => {
+                              if (!conversaSelecionadaId || !formProximoAtendimento.data) return;
+                              criarProximoAtendimentoMutation.mutate({
+                                conversaId: conversaSelecionadaId,
+                                dataAtendimento: formProximoAtendimento.data,
+                                horario: formProximoAtendimento.horario || null,
+                                servicoNome: formProximoAtendimento.servico || null,
+                              });
+                            }}>
+                            {criarProximoAtendimentoMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Incluir
+                          </Button>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+                )}
+
                 {conversaSelecionada?.resumoRelacionamento?.proximoAtendimento && (
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/20 p-2.5 space-y-1">
                     <div className="flex items-center justify-between gap-1.5">
@@ -1791,8 +1860,14 @@ export default function Mensagens() {
                             </div>
                             <div>
                               <Label className="text-xs">Serviço</Label>
-                              <Input className="mt-1 h-8 text-xs" value={formProximoAtendimento.servico}
-                                onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, servico: e.target.value }))} />
+                              <Select value={formProximoAtendimento.servico || undefined} onValueChange={(v) => setFormProximoAtendimento((f) => ({ ...f, servico: v }))}>
+                                <SelectTrigger className="mt-1 h-8 text-xs"><SelectValue placeholder="Selecione a terapia" /></SelectTrigger>
+                                <SelectContent>
+                                  {(tabelaPrecosQuery.data ?? []).map((item) => (
+                                    <SelectItem key={item.id} value={item.servico}>{item.servico}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
                             <Button size="sm" className="w-full h-7 text-xs" disabled={editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending}
                               onClick={() => {
