@@ -643,10 +643,15 @@ export const appRouter = router({
 
   // ===== Serviços =====
   servicos: router({
+    // Antes consultava o catálogo do Belle (belleApi.listarServicos). A
+    // integração Belle foi desligada nas duas unidades (2026-08), então
+    // reaproveita a Tabela de Preços — já mantida manualmente — como
+    // catálogo de terapias liberáveis. `codigo` aqui é o id da linha na
+    // tabela de preços, não mais o código Belle (ver terapeutasLiberacoes
+    // abaixo pro impacto disso nas liberações já salvas).
     list: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
-      const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!belleIntegracaoAtiva(unidade)) throw new Error("Token Belle não configurado ou integração desativada");
-      return belleApi.listarServicos(unidade.belleToken, unidade.codEstab!);
+      const precos = await agentesDb.listarTabelaPrecos({ unidadeId: input.unidadeId, apenasAtivos: true });
+      return precos.map((preco) => ({ codigo: preco.id, nome: preco.servico }));
     }),
   }),
 

@@ -364,7 +364,7 @@ export default function Terapeutas() {
   const percentualNaoFidelizacao = totalAtendimentos ? (totalNaoFidelizados / totalAtendimentos) * 100 : null;
 
   const liberacoes = useMemo(
-    () => new Set((liberacoesQuery.data?.liberacoes ?? []).map((item) => `${item.terapeutaId}:${item.servicoCodigo}`)),
+    () => new Set((liberacoesQuery.data?.liberacoes ?? []).map((item) => `${item.terapeutaId}:${item.servicoNome.trim()}`)),
     [liberacoesQuery.data?.liberacoes],
   );
   const servicos = useMemo(() => {
@@ -380,7 +380,7 @@ export default function Terapeutas() {
 
   function alternarLiberacao(terapeutaId: number, servicoCodigo: number, servicoNome: string, liberada: boolean) {
     if (!unidadeId) return;
-    const chave = `${terapeutaId}:${servicoCodigo}`;
+    const chave = `${terapeutaId}:${servicoNome.trim()}`;
     setLiberacaoPendente(chave);
     salvarLiberacaoMutation.mutate({ unidadeId, terapeutaId, servicoCodigo, servicoNome, liberada });
   }
@@ -555,7 +555,7 @@ export default function Terapeutas() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-base" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Liberações de terapia</CardTitle>
                 <CardDescription>
-                  Marque as terapias que cada terapeuta está liberado para realizar nesta unidade. O catálogo é consultado no Belle e as escolhas ficam salvas no CRM.
+                  Marque as terapias que cada terapeuta está liberado para realizar nesta unidade. O catálogo é o mesmo da Tabela de Preços e as escolhas ficam salvas no CRM.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -564,7 +564,7 @@ export default function Terapeutas() {
                   <Input value={buscaTerapia} onChange={(event) => setBuscaTerapia(event.target.value)} placeholder="Buscar terapia..." className="pl-9" />
                 </div>
                 {liberacoesQuery.isError && <EstadoErro mensagem={`Não foi possível carregar as liberações: ${liberacoesQuery.error.message}`} />}
-                {servicosQuery.isError && <EstadoErro mensagem={`Não foi possível carregar as terapias do Belle: ${servicosQuery.error.message}`} />}
+                {servicosQuery.isError && <EstadoErro mensagem={`Não foi possível carregar as terapias da Tabela de Preços: ${servicosQuery.error.message}`} />}
                 {(liberacoesQuery.isLoading || servicosQuery.isLoading) ? <EstadoCarregando texto="Carregando terapeutas e terapias..." /> : !liberacoesQuery.isError && !servicosQuery.isError && (
                   <div className="overflow-x-auto rounded-md border">
                     <Table>
@@ -584,7 +584,7 @@ export default function Terapeutas() {
                           <TableRow key={terapeuta.id}>
                             <TableCell className="sticky left-0 bg-card font-medium">{terapeuta.nomeAbreviado || terapeuta.nomeCompleto}</TableCell>
                             {servicos.map((servico) => {
-                              const chave = `${terapeuta.id}:${servico.codigo}`;
+                              const chave = `${terapeuta.id}:${servico.nome.trim()}`;
                               const checked = liberacoes.has(chave);
                               return (
                                 <TableCell key={servico.codigo} className="text-center">

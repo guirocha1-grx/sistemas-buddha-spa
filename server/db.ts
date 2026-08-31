@@ -4677,24 +4677,27 @@ export async function salvarLiberacaoTerapeuta(params: {
     .limit(1);
   if (!terapeuta[0]) throw new Error("Terapeuta não encontrado nesta unidade");
 
-  if (!params.liberada) {
-    await db.delete(terapeutasLiberacoes).where(and(
-      eq(terapeutasLiberacoes.unidadeId, params.unidadeId),
-      eq(terapeutasLiberacoes.terapeutaId, params.terapeutaId),
-      eq(terapeutasLiberacoes.servicoCodigo, params.servicoCodigo),
-    ));
-    return;
-  }
+  const servicoNome = params.servicoNome.trim();
+
+  // Casa pelo nome, não pelo código: o catálogo de terapias (trpc.servicos.list)
+  // passou a vir da Tabela de Preços, que usa `id` como código — diferente do
+  // código Belle com o qual liberações mais antigas foram salvas. Casar pelo
+  // nome faz liberações antigas continuarem valendo (e se "curarem" pro novo
+  // código na primeira vez que alguém mexer nelas) sem precisar migrar dados.
+  await db.delete(terapeutasLiberacoes).where(and(
+    eq(terapeutasLiberacoes.unidadeId, params.unidadeId),
+    eq(terapeutasLiberacoes.terapeutaId, params.terapeutaId),
+    eq(terapeutasLiberacoes.servicoNome, servicoNome),
+  ));
+
+  if (!params.liberada) return;
 
   await db.insert(terapeutasLiberacoes).values({
     unidadeId: params.unidadeId,
     terapeutaId: params.terapeutaId,
     servicoCodigo: params.servicoCodigo,
-    servicoNome: params.servicoNome.trim(),
-  }).onDuplicateKeyUpdate({ set: {
-    servicoNome: params.servicoNome.trim(),
-    updatedAt: new Date(),
-  } });
+    servicoNome,
+  });
 }
 
 /**
