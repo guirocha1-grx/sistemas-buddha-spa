@@ -252,11 +252,155 @@ export default function Agentes() {
               </CardContent>
             </Card>
           )}
+          {isAdmin && <SuiteRegressaoCard />}
           <Card className="bg-[#fbf7ee] border-[#ddc998]">
             <CardContent className="p-4 flex gap-3"><MessageCircle className="w-5 h-5 shrink-0 text-[#7b5420]" /><p className="text-sm leading-5 text-[#60481f]">Prompts, versões e modo de operação são administrados exclusivamente por usuários com perfil administrativo.</p></CardContent>
           </Card>
         </aside>
       </div>
     </div>
+  );
+}
+
+function badgeNota(nota: number | null) {
+  if (!nota) return null;
+  return "★".repeat(nota) + "☆".repeat(5 - nota);
+}
+
+/** Lote 2 do plano de qualidade dos agentes: casos reais de regressão, rodados sob demanda contra o prompt ativo. */
+function SuiteRegressaoCard() {
+  const utils = trpc.useUtils();
+  const [formAberto, setFormAberto] = useState(false);
+  const [nome, setNome] = useState("");
+  const [chaveAgente, setChaveAgente] = useState<(typeof ESPECIALISTAS)[number]["chave"]>("carol");
+  const [conversaId, setConversaId] = useState("");
+  const [ateDataHora, setAteDataHora] = useState("");
+  const [regrasProibidas, setRegrasProibidas] = useState("");
+  const [mensagemDeveSerVazia, setMensagemDeveSerVazia] = useState(false);
+  const [descricaoEsperada, setDescricaoEsperada] = useState("");
+
+  const lista = trpc.agentes.regressao.listar.useQuery();
+  const criar = trpc.agentes.regressao.criar.useMutation({
+    onSuccess: () => {
+      toast.success("Caso criado.");
+      utils.agentes.regressao.listar.invalidate();
+      setFormAberto(false);
+      setNome(""); setConversaId(""); setAteDataHora(""); setRegrasProibidas(""); setMensagemDeveSerVazia(false); setDescricaoEsperada("");
+    },
+    onError: (erro) => toast.error(erro.message),
+  });
+  const rodarCaso = trpc.agentes.regressao.rodarCaso.useMutation({
+    onSuccess: () => utils.agentes.regressao.listar.invalidate(),
+    onError: (erro) => toast.error(erro.message),
+  });
+  const rodarSuite = trpc.agentes.regressao.rodarSuite.useMutation({
+    onSuccess: (resultado) => {
+      toast.success(`${resultado.total} caso(s) rodado(s), ${resultado.comViolacao} com problema.`);
+      utils.agentes.regressao.listar.invalidate();
+    },
+    onError: (erro) => toast.error(erro.message),
+  });
+  const avaliar = trpc.agentes.regressao.avaliar.useMutation({
+    onSuccess: () => utils.agentes.regressao.listar.invalidate(),
+  });
+
+  return (
+    <Card className="border-[#d9c7a1]/70">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Suíte de regressão</CardTitle>
+        <CardDescription>Casos reais que já falharam, rodados sob demanda contra o prompt ativo — sem esperar acontecer de novo com cliente real.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Button size="sm" className="w-full" disabled={rodarSuite.isPending || !lista.data?.length} onClick={() => rodarSuite.mutate()}>
+          {rodarSuite.isPending ? "Rodando…" : `Rodar todos (${lista.data?.length ?? 0})`}
+        </Button>
+
+        <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+          {lista.data?.map(({ caso, ultimaExecucao }) => (
+            <div key={caso.id} className="rounded-lg border border-border/60 p-3 text-xs space-y-1.5">
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-medium leading-4">{caso.nome}</p>
+                <Button size="sm" variant="ghost" className="h-6 px-2 shrink-0" disabled={rodarCaso.isPending} onClick={() => rodarCaso.mutate({ casoId: caso.id })}>Rodar</Button>
+              </div>
+              <p className="text-muted-foreground">{ESPECIALISTAS.find((e) => e.chave === caso.chaveAgente)?.nome} · conversa {caso.conversaId}</p>
+              {ultimaExecucao && (
+                <div className="rounded-md bg-muted/50 p-2 space-y-1">
+                  {ultimaExecucao.erro ? (
+                    <p className="text-rose-700">Erro: {ultimaExecucao.erro}</p>
+                  ) : (
+                    <>
+                      <p className="whitespace-pre-wrap">{ultimaExecucao.mensagem?.trim() || "(vazio — saída silenciosa)"}</p>
+                      {!!ultimaExecucao.violacoes?.length && (
+                        <ul className="text-rose-700">
+                          {ultimaExecucao.violacoes.map((v, i) => <li key={i}>⚠️ {v}</li>)}
+                        </ul>
+                      )}
+                      {!ultimaExecucao.violacoes?.length && <p className="text-emerald-700">✓ Sem violação encontrada</p>}
+                    </>
+                  )}
+                  <div className="flex items-center gap-1 pt-1">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        title={`Nota ${n}/5`}
+                        onClick={() => avaliar.mutate({ execucaoId: ultimaExecucao.id, notaHumana: n })}
+                        className="text-sm leading-none"
+                      >
+                        {n <= (ultimaExecucao.notaHumana ?? 0) ? "★" : "☆"}
+                      </button>
+                    ))}
+                    {ultimaExecucao.notaHumana && <span className="text-muted-foreground text-[10px] ml-1">{badgeNota(ultimaExecucao.notaHumana)}</span>}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          {!lista.data?.length && <p className="text-sm text-muted-foreground">Nenhum caso cadastrado ainda.</p>}
+        </div>
+
+        <div className="pt-2 border-t border-border/60">
+          <Button size="sm" variant="outline" className="w-full" onClick={() => setFormAberto((v) => !v)}>
+            {formAberto ? "Cancelar" : "+ Novo caso"}
+          </Button>
+          {formAberto && (
+            <div className="mt-2 space-y-2">
+              <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome do caso" className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground" />
+              <div className="grid grid-cols-2 gap-2">
+                <Select value={chaveAgente} onValueChange={(v) => setChaveAgente(v as typeof chaveAgente)}>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>{ESPECIALISTAS.map((e) => <SelectItem key={e.chave} value={e.chave}>{e.nome}</SelectItem>)}</SelectContent>
+                </Select>
+                <input value={conversaId} onChange={(e) => setConversaId(e.target.value.replace(/\D/g, ""))} placeholder="ID da conversa" className="h-9 rounded-md border bg-background px-3 text-sm text-foreground" />
+              </div>
+              <label className="block text-xs text-muted-foreground">Congelar até
+                <input type="datetime-local" value={ateDataHora} onChange={(e) => setAteDataHora(e.target.value)} className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground" />
+              </label>
+              <input value={regrasProibidas} onChange={(e) => setRegrasProibidas(e.target.value)} placeholder="Frases proibidas, separadas por vírgula" className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground" />
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input type="checkbox" checked={mensagemDeveSerVazia} onChange={(e) => setMensagemDeveSerVazia(e.target.checked)} />
+                Resposta deveria ficar em silêncio (não intervenção)
+              </label>
+              <Textarea value={descricaoEsperada} onChange={(e) => setDescricaoEsperada(e.target.value)} placeholder="O que era esperado aqui (opcional, pra referência humana)" className="min-h-16 text-sm" />
+              <Button
+                size="sm"
+                className="w-full"
+                disabled={!nome || !conversaId || !ateDataHora || criar.isPending}
+                onClick={() => criar.mutate({
+                  nome,
+                  chaveAgente,
+                  conversaId: Number(conversaId),
+                  ateDataHora: new Date(ateDataHora),
+                  regrasProibidas: regrasProibidas.split(",").map((r) => r.trim()).filter(Boolean),
+                  mensagemDeveSerVazia,
+                  descricaoEsperada: descricaoEsperada.trim() || undefined,
+                })}
+              >
+                {criar.isPending ? "Criando…" : "Criar caso"}
+              </Button>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

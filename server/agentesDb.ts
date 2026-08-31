@@ -926,7 +926,14 @@ async function obterContextoBelleCliente(unidadeId: number | null, clienteId: nu
   };
 }
 
-export async function obterContextoConversa(conversaId: number) {
+/**
+ * `ateDataHora` congela a conversa num ponto do passado (só mensagens até
+ * ali) — usado pelo simulador de regressão (server/agentesRegressao.ts)
+ * pra reproduzir de forma estável um caso real já observado, sem que
+ * mensagens novas da mesma conversa mudem o resultado do teste a cada
+ * execução.
+ */
+export async function obterContextoConversa(conversaId: number, ateDataHora?: Date) {
   const db = await getDb();
   if (!db) return undefined;
   const conversa = await db.select({
@@ -942,6 +949,7 @@ export async function obterContextoConversa(conversaId: number) {
   if (conversa[0].conversa.automacaoAgentesContextoAPartirDe) {
     condicoesMensagens.push(gte(inboxMensagens.createdAt, conversa[0].conversa.automacaoAgentesContextoAPartirDe));
   }
+  if (ateDataHora) condicoesMensagens.push(lte(inboxMensagens.createdAt, ateDataHora));
   const mensagens = await db.select({ direcao: inboxMensagens.direcao, conteudo: inboxMensagens.conteudo, transcricao: inboxMensagens.transcricao, createdAt: inboxMensagens.createdAt })
     .from(inboxMensagens).where(and(...condicoesMensagens))
     .orderBy(desc(inboxMensagens.createdAt)).limit(12);

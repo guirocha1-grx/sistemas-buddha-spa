@@ -638,6 +638,26 @@ export async function simularRespostaEspecialista(params: { conversaId: number; 
   return { resposta, promptVersao: especialista.prompt.versao, unidadeId };
 }
 
+/**
+ * Mesma ideia de `simularRespostaEspecialista`, mas congelando a conversa
+ * até `ateDataHora` — usado pela suíte de regressão (server/agentesRegressao.ts,
+ * Lote 2 do plano de qualidade) pra reproduzir de forma estável um caso já
+ * observado, sem mensagens novas da mesma conversa mudarem o resultado a
+ * cada execução. Roda sem `estado` (não usa o estado atual, possivelmente
+ * mais avançado que o ponto congelado) — o teste vale só pelas mensagens
+ * até aquele ponto.
+ */
+export async function obterRespostaEspecialistaParaRegressao(params: { conversaId: number; chaveAgente: "bianca" | "fabricia" | "estela" | "carol" | "diana"; ateDataHora: Date }) {
+  const contexto = await agentesDb.obterContextoConversa(params.conversaId, params.ateDataHora);
+  if (!contexto) throw new Error("Conversa não encontrada");
+  const unidadeId = contexto.conversa.unidadeId ?? 0;
+  const especialistas = await agentesDb.listarAgentesAtivosComPrompt(unidadeId, "especialista");
+  const especialista = especialistas.find((item) => item.agente.chave === params.chaveAgente);
+  if (!especialista) throw new Error(`"${params.chaveAgente}" não está ativo nesta unidade`);
+  const resposta = await obterRespostaEspecialista({ especialista, contexto, estado: undefined });
+  return { resposta, promptVersao: especialista.prompt.versao };
+}
+
 /** Executa receptor e especialistas com no máximo três handoffs invisíveis. */
 export async function processarMensagemRecebida(params: { conversaId: number; mensagemEntradaId: number }) {
   const existente = await agentesDb.buscarExecucaoPorMensagem(params.mensagemEntradaId);

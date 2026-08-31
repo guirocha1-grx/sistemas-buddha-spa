@@ -1826,6 +1826,56 @@ export const agentesSugestoes = mysqlTable("agentes_sugestoes", {
 export type AgenteSugestao = typeof agentesSugestoes.$inferSelect;
 
 /**
+ * Lote 2 do plano de qualidade dos agentes (proposto pelo Manus, 28/08):
+ * casos reais de regressão, extraídos de erros já observados. Cada caso
+ * referencia uma conversa REAL e um corte de data/hora — o contexto é
+ * reconstruído a partir das mensagens de verdade até aquele ponto (ver
+ * agentesDb.obterContextoConversa com ateDataHora), sem depender de
+ * fabricar uma conversa sintética à mão.
+ */
+export const agentesCasosRegressao = mysqlTable("agentes_casos_regressao", {
+  id: int("id").autoincrement().primaryKey(),
+  nome: varchar("nome", { length: 200 }).notNull(),
+  chaveAgente: mysqlEnum("chaveAgente", ["bianca", "fabricia", "estela", "carol", "diana"]).notNull(),
+  conversaId: int("conversaId").notNull(),
+  ateDataHora: timestamp("ateDataHora").notNull(),
+  // Frases que a sugestão NUNCA pode conter (checagem por substring, case-insensitive).
+  regrasProibidas: json("regrasProibidas").$type<string[]>().notNull(),
+  // Quando true, a única resposta aceitável é a saída silenciosa (message vazio).
+  mensagemDeveSerVazia: boolean("mensagemDeveSerVazia").default(false).notNull(),
+  descricaoEsperada: text("descricaoEsperada"),
+  ativo: boolean("ativo").default(true).notNull(),
+  criadoPorUserId: int("criadoPorUserId"),
+  criadoPorNome: varchar("criadoPorNome", { length: 120 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  ativoIdx: index("agentes_casos_regressao_ativo_idx").on(table.ativo),
+}));
+export type AgenteCasoRegressao = typeof agentesCasosRegressao.$inferSelect;
+export type InsertAgenteCasoRegressao = typeof agentesCasosRegressao.$inferInsert;
+
+export const agentesRegressaoExecucoes = mysqlTable("agentes_regressao_execucoes", {
+  id: int("id").autoincrement().primaryKey(),
+  casoId: int("casoId").notNull(),
+  executadoEm: timestamp("executadoEm").defaultNow().notNull(),
+  promptVersao: int("promptVersao"),
+  mensagem: text("mensagem"),
+  status: varchar("status", { length: 32 }),
+  summary: text("summary"),
+  violacoes: json("violacoes").$type<string[]>(),
+  erro: text("erro"),
+  notaHumana: int("notaHumana"),
+  comentarioHumano: text("comentarioHumano"),
+  avaliadoPorUserId: int("avaliadoPorUserId"),
+  avaliadoPorNome: varchar("avaliadoPorNome", { length: 120 }),
+  avaliadoEm: timestamp("avaliadoEm"),
+}, (table) => ({
+  casoExecutadoIdx: index("agentes_regressao_execucoes_caso_idx").on(table.casoId, table.executadoEm),
+}));
+export type AgenteRegressaoExecucao = typeof agentesRegressaoExecucoes.$inferSelect;
+export type InsertAgenteRegressaoExecucao = typeof agentesRegressaoExecucoes.$inferInsert;
+
+/**
  * Rastreia quais arquivos de `drizzle/*.sql` já foram aplicados no banco
  * compartilhado — histórico ficava só na memória de quem aplicou (ver
  * migrações "IF NOT EXISTS" adicionadas depois de mais de uma quebra por

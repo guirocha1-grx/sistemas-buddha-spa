@@ -4,6 +4,7 @@ import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import * as agentesDb from "../agentesDb";
 import { aprovarEEnviarSugestao, liberarSugestaoParaEdicao, processarMensagemRecebida, reprovarSugestao, simularRespostaEspecialista } from "../agentesService";
 import { verificarQualidadeAgentes } from "../agentesQualidadeAlerta";
+import { avaliarExecucaoRegressao, criarCasoRegressao, listarCasosRegressaoComUltimaExecucao, rodarCasoRegressao, rodarSuiteRegressao } from "../agentesRegressao";
 
 const motivoAvaliacao = z.enum(["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"]);
 
@@ -130,5 +131,24 @@ export const agentesRouter = router({
   })).mutation(({ input }) => simularRespostaEspecialista(input)),
   qualidade: router({
     verificarAgora: adminProcedure.mutation(() => verificarQualidadeAgentes()),
+  }),
+  regressao: router({
+    listar: adminProcedure.query(() => listarCasosRegressaoComUltimaExecucao()),
+    criar: adminProcedure.input(z.object({
+      nome: z.string().trim().min(1).max(200),
+      chaveAgente: z.enum(["bianca", "fabricia", "estela", "carol", "diana"]),
+      conversaId: z.number(),
+      ateDataHora: z.date(),
+      regrasProibidas: z.array(z.string().trim().min(1)).max(20),
+      mensagemDeveSerVazia: z.boolean().default(false),
+      descricaoEsperada: z.string().trim().max(2000).optional(),
+    })).mutation(({ input, ctx }) => criarCasoRegressao({ ...input, usuario: { id: ctx.user.id, name: ctx.user.name } })),
+    rodarCaso: adminProcedure.input(z.object({ casoId: z.number() })).mutation(({ input }) => rodarCasoRegressao(input.casoId)),
+    rodarSuite: adminProcedure.mutation(() => rodarSuiteRegressao()),
+    avaliar: adminProcedure.input(z.object({
+      execucaoId: z.number(),
+      notaHumana: z.number().min(1).max(5).optional(),
+      comentarioHumano: z.string().trim().max(2000).optional(),
+    })).mutation(({ input, ctx }) => avaliarExecucaoRegressao({ ...input, usuario: { id: ctx.user.id, name: ctx.user.name } })),
   }),
 });
