@@ -421,7 +421,8 @@ describe("orquestrador de agentes", () => {
     const instrucao = instrucaoContextoRelacionamento("carol");
     expect(instrucao).toContain("A terapia será [última terapia]?");
     expect(instrucao).toContain("ID 30020");
-    expect(instrucao).toContain("Por favor, aguarde um momento ✨");
+    expect(instrucao).toContain("saída silenciosa de não intervenção");
+    expect(instrucao).not.toContain("aguarde um momento");
     expect(instrucaoContextoRelacionamento("bianca")).toBe("");
   });
 

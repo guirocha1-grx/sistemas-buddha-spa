@@ -726,13 +726,10 @@ export default function Mensagens() {
   }
 
   function confirmarRejeicaoSugestao() {
-    if (!sugestaoEmRevisao || !motivoRejeicao) {
-      toast.error("Selecione o motivo da rejeição.");
-      return;
-    }
+    if (!sugestaoEmRevisao) return;
     reprovarSugestaoAgenteMutation.mutate({
       sugestaoId: sugestaoEmRevisao.id,
-      motivo: motivoRejeicao,
+      motivo: motivoRejeicao || undefined,
       comentario: comentarioRejeicao.trim() || undefined,
       atendenteId: atendente?.id,
     });
@@ -2192,13 +2189,13 @@ export default function Mensagens() {
             <DialogTitle className="flex items-center gap-2 text-rose-700">
               <X className="h-4 w-4" /> Rejeitar sugestão do agente
             </DialogTitle>
-            <DialogDescription>O motivo é obrigatório e será registrado para a revisão periódica dos prompts.</DialogDescription>
+            <DialogDescription>O texto sugerido e o que você enviar depois já ficam registrados para comparação — o motivo abaixo é só um extra opcional.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label htmlFor="motivo-rejeicao-agente">Motivo</Label>
+              <Label htmlFor="motivo-rejeicao-agente">Motivo <span className="text-muted-foreground">(opcional)</span></Label>
               <select id="motivo-rejeicao-agente" value={motivoRejeicao} onChange={(event) => setMotivoRejeicao(event.target.value as MotivoAvaliacao | "")} className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground">
-                <option value="">Selecione o motivo</option>
+                <option value="">Sem motivo específico</option>
                 <option value="informacao">Informação incorreta ou incompleta</option>
                 <option value="tom">Tom de voz</option>
                 <option value="roteamento">Roteamento inadequado</option>
@@ -2215,7 +2212,7 @@ export default function Mensagens() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalRejeitarSugestao(false)} disabled={reprovarSugestaoAgenteMutation.isPending}>Cancelar</Button>
-            <Button variant="destructive" onClick={confirmarRejeicaoSugestao} disabled={!motivoRejeicao || reprovarSugestaoAgenteMutation.isPending}>
+            <Button variant="destructive" onClick={confirmarRejeicaoSugestao} disabled={reprovarSugestaoAgenteMutation.isPending}>
               {reprovarSugestaoAgenteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Confirmar rejeição
             </Button>
           </DialogFooter>
