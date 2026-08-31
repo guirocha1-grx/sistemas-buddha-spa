@@ -7,7 +7,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { Check, ChevronRight, Clock3, MessageCircle, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Check, ChevronRight, Clock3, FlaskConical, MessageCircle, ShieldAlert, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
+import { toast } from "sonner";
+
+const ESPECIALISTAS = [
+  { chave: "bianca", nome: "Bianca" },
+  { chave: "fabricia", nome: "Fabricia" },
+  { chave: "estela", nome: "Estela" },
+  { chave: "carol", nome: "Carol" },
+  { chave: "diana", nome: "Diana" },
+] as const;
 
 export default function Agentes() {
   const [, setLocation] = useLocation();
@@ -41,6 +51,13 @@ export default function Agentes() {
       utils.agentes.fila.list.invalidate();
       utils.agentes.metricas.invalidate();
     },
+  });
+  const [simAgente, setSimAgente] = useState<(typeof ESPECIALISTAS)[number]["chave"]>("carol");
+  const [simConversaId, setSimConversaId] = useState("");
+  const simular = trpc.agentes.simular.useMutation({ onError: (erro) => toast.error(erro.message) });
+  const verificarQualidade = trpc.agentes.qualidade.verificarAgora.useMutation({
+    onSuccess: (resultado) => toast.success(resultado.alertasEnviados ? "Encontrou algo — alerta enviado no Telegram." : "Nada fora do padrão agora."),
+    onError: (erro) => toast.error(erro.message),
   });
 
   const pendentes = fila.data ?? [];
@@ -180,6 +197,61 @@ export default function Agentes() {
               {isAdmin && !!serieQualidade.data?.length && <div className="pt-2 border-t border-border/60"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Evolução no período</p><div className="mt-2 max-h-44 space-y-2 overflow-y-auto pr-1">{serieQualidade.data.map((ponto) => <div key={`${ponto.agenteId}-${ponto.dia}`} className="text-xs rounded-md bg-muted/50 px-2.5 py-2"><div className="flex justify-between gap-2"><span className="truncate font-medium">{ponto.agenteNome}</span><span>{new Date(`${ponto.dia}T12:00:00`).toLocaleDateString("pt-BR")}</span></div><div className="mt-1 text-muted-foreground"><span className="text-emerald-700">{ponto.aprovadas} aprov.</span> · <span className="text-rose-700">{ponto.reprovadas} reprov.</span></div></div>)}</div></div>}
             </CardContent>
           </Card>
+          {isAdmin && (
+            <Card className="border-[#d9c7a1]/70">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}><FlaskConical className="w-4 h-4" /> Ferramentas de qualidade</CardTitle>
+                <CardDescription>Testa o prompt ativo contra uma conversa real, sem criar sugestão nem cartão no Inbox.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Select value={simAgente} onValueChange={(v) => setSimAgente(v as typeof simAgente)}>
+                      <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {ESPECIALISTAS.map((e) => <SelectItem key={e.chave} value={e.chave}>{e.nome}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <input
+                      value={simConversaId}
+                      onChange={(event) => setSimConversaId(event.target.value.replace(/\D/g, ""))}
+                      placeholder="ID da conversa"
+                      className="h-9 rounded-md border bg-background px-3 text-sm text-foreground"
+                    />
+                  </div>
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    disabled={!simConversaId || simular.isPending}
+                    onClick={() => simular.mutate({ conversaId: Number(simConversaId), chaveAgente: simAgente })}
+                  >
+                    {simular.isPending ? "Simulando…" : "Testar com prompt ativo"}
+                  </Button>
+                  {simular.data && (
+                    <div className="rounded-lg border border-border/60 bg-muted/40 p-3 text-xs space-y-1.5">
+                      <p><span className="font-semibold">Versão do prompt:</span> {simular.data.promptVersao}</p>
+                      <p><span className="font-semibold">status:</span> {simular.data.resposta?.status ?? "—"}</p>
+                      <p className="whitespace-pre-wrap"><span className="font-semibold">message:</span> {simular.data.resposta?.message || "(vazio — saída silenciosa)"}</p>
+                      <p className="whitespace-pre-wrap"><span className="font-semibold">summary:</span> {simular.data.resposta?.summary || "—"}</p>
+                    </div>
+                  )}
+                </div>
+                <div className="pt-3 border-t border-border/60">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    disabled={verificarQualidade.isPending}
+                    onClick={() => verificarQualidade.mutate()}
+                  >
+                    <ShieldAlert className="w-4 h-4 mr-1.5" />
+                    {verificarQualidade.isPending ? "Verificando…" : "Verificar qualidade agora"}
+                  </Button>
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">Roda sozinho a cada 4h; isso aqui é só pra testar sem esperar.</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
           <Card className="bg-[#fbf7ee] border-[#ddc998]">
             <CardContent className="p-4 flex gap-3"><MessageCircle className="w-5 h-5 shrink-0 text-[#7b5420]" /><p className="text-sm leading-5 text-[#60481f]">Prompts, versões e modo de operação são administrados exclusivamente por usuários com perfil administrativo.</p></CardContent>
           </Card>

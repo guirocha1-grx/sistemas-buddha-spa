@@ -616,6 +616,28 @@ async function obterRespostaEspecialista(params: {
   return { ...interpretado, message: textoComScript({ introducao: interpretado.message, conteudo: script.script ?? "" }) };
 }
 
+/**
+ * "Replay" de uma conversa real contra o prompt ATIVO agora, sem persistir
+ * nada — nem execução, nem sugestão, nem cartão no Inbox. Serve pra
+ * validar se um caso já conhecido como problemático (ex.: repetição de
+ * pergunta) continua acontecendo depois de mudar um prompt, antes de
+ * esperar isso acontecer de novo com um cliente de verdade. Diferente de
+ * `processarTeste` (mutation "agentes.processarTeste"), que roda o
+ * pipeline real e cria uma sugestão de verdade — não serve pra isso sem
+ * poluir o Inbox de uma conversa real.
+ */
+export async function simularRespostaEspecialista(params: { conversaId: number; chaveAgente: "bianca" | "fabricia" | "estela" | "carol" | "diana" }) {
+  const contexto = await agentesDb.obterContextoConversa(params.conversaId);
+  if (!contexto) throw new Error("Conversa não encontrada");
+  const unidadeId = contexto.conversa.unidadeId ?? 0;
+  const especialistas = await agentesDb.listarAgentesAtivosComPrompt(unidadeId, "especialista");
+  const especialista = especialistas.find((item) => item.agente.chave === params.chaveAgente);
+  if (!especialista) throw new Error(`"${params.chaveAgente}" não está ativo nesta unidade`);
+  const estado = await agentesDb.obterEstadoConversa(params.conversaId);
+  const resposta = await obterRespostaEspecialista({ especialista, contexto, estado });
+  return { resposta, promptVersao: especialista.prompt.versao, unidadeId };
+}
+
 /** Executa receptor e especialistas com no máximo três handoffs invisíveis. */
 export async function processarMensagemRecebida(params: { conversaId: number; mensagemEntradaId: number }) {
   const existente = await agentesDb.buscarExecucaoPorMensagem(params.mensagemEntradaId);

@@ -2,7 +2,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import * as agentesDb from "../agentesDb";
-import { aprovarEEnviarSugestao, liberarSugestaoParaEdicao, processarMensagemRecebida, reprovarSugestao } from "../agentesService";
+import { aprovarEEnviarSugestao, liberarSugestaoParaEdicao, processarMensagemRecebida, reprovarSugestao, simularRespostaEspecialista } from "../agentesService";
+import { verificarQualidadeAgentes } from "../agentesQualidadeAlerta";
 
 const motivoAvaliacao = z.enum(["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"]);
 
@@ -123,4 +124,11 @@ export const agentesRouter = router({
   }),
   processarTeste: adminProcedure.input(z.object({ conversaId: z.number(), mensagemEntradaId: z.number() }))
     .mutation(({ input }) => processarMensagemRecebida(input)),
+  simular: adminProcedure.input(z.object({
+    conversaId: z.number(),
+    chaveAgente: z.enum(["bianca", "fabricia", "estela", "carol", "diana"]),
+  })).mutation(({ input }) => simularRespostaEspecialista(input)),
+  qualidade: router({
+    verificarAgora: adminProcedure.mutation(() => verificarQualidadeAgentes()),
+  }),
 });

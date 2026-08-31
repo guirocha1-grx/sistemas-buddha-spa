@@ -7,6 +7,7 @@ import cron from "node-cron";
 import { retomarFluxosPendentes, dispararFluxosAgendados, alertarBuddhaMktSemRetorno } from "../fluxosScheduled";
 import { executarEtapaSincronizacaoDiaria, enviarRelatorioDiario, ETAPAS_AGENDADAS } from "../dailySyncReport";
 import { processarAgrupamentosProntos } from "../agentesAgrupamento";
+import { verificarQualidadeAgentes } from "../agentesQualidadeAlerta";
 
 /**
  * O TiDB é compartilhado entre Railway e desenvolvimento. Tarefas que
@@ -52,11 +53,15 @@ export function registerScheduledJobs() {
   schedule("agrupar-mensagens-agentes", "*/1 * * * * *", processarAgrupamentosProntos);
   schedule("disparar-fluxos-agendados", "0 0 6 * * *", dispararFluxosAgendados);
   schedule("alertar-buddha-mkt-sem-retorno", "0 * * * * *", alertarBuddhaMktSemRetorno);
+  // A cada 4h: pega sugestão repetida na mesma conversa ou taxa de reprovação
+  // subindo sem depender de alguém da recepção notar e avisar dias depois
+  // (ver análise de evolução dos agentes, 30/08).
+  schedule("alertar-qualidade-agentes", "0 0 */4 * * *", verificarQualidadeAgentes);
 
   for (const { chave, minuto } of ETAPAS_AGENDADAS) {
     schedule(`sync-diaria-${chave}`, `0 ${minuto} 10 * * *`, () => executarEtapaSincronizacaoDiaria(chave));
   }
   schedule("relatorio-sincronizacao-diaria", "0 20 10 * * *", enviarRelatorioDiario);
 
-  console.log(`[Scheduler] ${4 + ETAPAS_AGENDADAS.length + 1} tarefas agendadas em processo.`);
+  console.log(`[Scheduler] ${5 + ETAPAS_AGENDADAS.length + 1} tarefas agendadas em processo.`);
 }
