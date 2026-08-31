@@ -592,4 +592,12 @@
 - [x] Verificar e inserir, se ausente, o cadastro Pendente de sorteio nas unidades SSU e RBS
 - [x] Validar o cadastro Pendente de sorteio e seu isolamento por unidade
 - [x] Criar tela admin "Banco de Dados" com runner de migrações rastreadas (lista drizzle/*.sql, aplica ou marca como já aplicada) e consulta SQL somente leitura, pra parar de depender de rodar migração manual sem histórico
-- [ ] Validar em produção: abrir /banco-de-dados, conferir se a lista reflete o que já está aplicado no TiDB, e testar aplicar uma migração pendente real
+- [x] Validar em produção: abrir /banco-de-dados, conferir se a lista reflete o que já está aplicado no TiDB, e testar aplicar uma migração pendente real
+- [x] Endpoint POST /api/claude-consulta (token CLAUDE_QUERY_TOKEN) pra consulta somente leitura autônoma direto do banco de produção
+- [x] Achar e corrigir causa raiz do "aguarde um momento" repetindo (Carol sem automação real pra justificar) e prompt v6 da Carol ativado (regras de não repetir pergunta e presumir 1 pessoa reforçadas no início do prompt)
+- [x] Alerta automático de qualidade dos agentes a cada 4h (sugestão repetida na mesma conversa + taxa de reprovação subindo) via Telegram
+- [x] Simulador de prompt ativo contra conversa real sem persistir nada, em /agentes (card "Ferramentas de qualidade")
+- [ ] **Continuar amanhã:** validar se a v6 da Carol reduziu de fato a repetição de "Qual será a terapia?"/pergunta de quantidade de pessoas (rodar a mesma consulta usada em 30/08 comparando antes/depois)
+- [ ] Confirmar que o alerta automático de qualidade dispara de verdade (testar via botão "Verificar qualidade agora" em /agentes, já que o cron só avisa quando acha algo)
+- [ ] Testar o simulador nas conversas que motivaram o fix (3180005, 1080007, 3240001) pra comparar resposta antes/depois da v6
+- [ ] Lote 2 do plano do Manus (suíte de regressão com casos fixos + rubrica humana) ainda não existe — o simulador criado hoje testa 1 conversa por vez sob demanda, não é a suíte automática completa
