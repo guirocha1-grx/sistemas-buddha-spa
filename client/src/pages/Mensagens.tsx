@@ -85,8 +85,6 @@ function TickEntrega({ status }: { status?: "enviada" | "entregue" | "lida" }) {
 }
 
 const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
-const MOTIVOS_AVALIACAO = ["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"] as const;
-type MotivoAvaliacao = typeof MOTIVOS_AVALIACAO[number];
 type SugestaoEmRevisao = {
   id: number;
   conversaId: number;
@@ -212,7 +210,6 @@ export default function Mensagens() {
   const [sugestaoIa, setSugestaoIa] = useState("");
   const [sugestaoEmRevisao, setSugestaoEmRevisao] = useState<SugestaoEmRevisao | null>(null);
   const [modalRejeitarSugestao, setModalRejeitarSugestao] = useState(false);
-  const [motivoRejeicao, setMotivoRejeicao] = useState<MotivoAvaliacao | "">("");
   const [comentarioRejeicao, setComentarioRejeicao] = useState("");
   const [sugestaoDispensadaId, setSugestaoDispensadaId] = useState<number | null>(null);
   const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
@@ -720,7 +717,6 @@ export default function Mensagens() {
 
   function abrirRejeicaoSugestao() {
     if (!sugestaoEmRevisao) return;
-    setMotivoRejeicao("");
     setComentarioRejeicao("");
     setModalRejeitarSugestao(true);
   }
@@ -729,7 +725,6 @@ export default function Mensagens() {
     if (!sugestaoEmRevisao) return;
     reprovarSugestaoAgenteMutation.mutate({
       sugestaoId: sugestaoEmRevisao.id,
-      motivo: motivoRejeicao || undefined,
       comentario: comentarioRejeicao.trim() || undefined,
       atendenteId: atendente?.id,
     });
@@ -2189,22 +2184,9 @@ export default function Mensagens() {
             <DialogTitle className="flex items-center gap-2 text-rose-700">
               <X className="h-4 w-4" /> Rejeitar sugestão do agente
             </DialogTitle>
-            <DialogDescription>O texto sugerido e o que você enviar depois já ficam registrados para comparação — o motivo abaixo é só um extra opcional.</DialogDescription>
+            <DialogDescription>O texto sugerido e o que você enviar depois já ficam registrados para comparação.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div>
-              <Label htmlFor="motivo-rejeicao-agente">Motivo <span className="text-muted-foreground">(opcional)</span></Label>
-              <select id="motivo-rejeicao-agente" value={motivoRejeicao} onChange={(event) => setMotivoRejeicao(event.target.value as MotivoAvaliacao | "")} className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground">
-                <option value="">Sem motivo específico</option>
-                <option value="informacao">Informação incorreta ou incompleta</option>
-                <option value="tom">Tom de voz</option>
-                <option value="roteamento">Roteamento inadequado</option>
-                <option value="contexto">Falta de contexto</option>
-                <option value="comercial">Preço ou condição comercial</option>
-                <option value="operacional">Regra operacional</option>
-                <option value="outro">Outro</option>
-              </select>
-            </div>
             <div>
               <Label htmlFor="comentario-rejeicao-agente">Comentário para aprendizado <span className="text-muted-foreground">(opcional)</span></Label>
               <Textarea id="comentario-rejeicao-agente" className="mt-1 min-h-24" value={comentarioRejeicao} onChange={(event) => setComentarioRejeicao(event.target.value)} placeholder="Explique o que deveria ter sido diferente, se necessário." />
