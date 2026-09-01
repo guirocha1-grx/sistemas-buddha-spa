@@ -6,7 +6,7 @@ function criarRelatorio(linhas: unknown[][]): Buffer {
   const workbook = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet([
     ["Relatório de Registros Financeiros"],
-    ["Cód.", "Lcto.", "Vcto.", "Cliente", "Valor", "Forma Pagto.", "Observação"],
+    ["Cód.", "Lcto.", "Vcto.", "Cliente", "Valor", "Recebido", "Forma Pagto.", "Observação"],
     ...linhas,
   ]);
   XLSX.utils.book_append_sheet(workbook, sheet, "Worksheet");
@@ -16,7 +16,7 @@ function criarRelatorio(linhas: unknown[][]): Buffer {
 describe("parser do relatório financeiro Belle", () => {
   it("usa Vcto. como data de vencimento, sem confundir com Lcto.", () => {
     const linhas = parseRegistrosFinanceirosBelleXlsx(criarRelatorio([[
-      "9001", "29/08/2026", "01/08/2026", "Cliente de teste", "7278,70",
+      "9001", "29/08/2026", "01/08/2026", "Cliente de teste", "7278,70", "2426,23",
       "Pix - Conta Corrente", "Agendamento #71370969",
     ]]));
 
@@ -24,11 +24,20 @@ describe("parser do relatório financeiro Belle", () => {
       codigo: 9001,
       dataVencimento: "2026-08-01",
       clienteNome: "Cliente de teste",
-      valor: 7278.7,
+      valor: 2426.23,
       formaPagamento: "Pix - Conta Corrente",
       observacao: "Agendamento #71370969",
       atendimentoBelleId: 71370969,
     }]);
+  });
+
+  it("usa Recebido (o que de fato entrou), não Valor (o total contratado da venda)", () => {
+    const linhas = parseRegistrosFinanceirosBelleXlsx(criarRelatorio([[
+      "9002", "01/08/2026", "01/08/2026", "Cliente com plano parcelado", "2690,00", "448,33",
+      "Cartão de Crédito", "Venda de Plano #409463680",
+    ]]));
+
+    expect(linhas[0].valor).toBe(448.33);
   });
 
   it("rejeita relatórios sem a coluna obrigatória Vcto.", () => {

@@ -52,7 +52,12 @@ const COLUNAS = {
   // lançamento foi corrigido/reaberto em outro dia).
   dataVencimento: ["vcto."],
   clienteNome: ["cliente"],
-  valor: ["valor"],
+  // Lê de "Recebido", não de "Valor" — "Valor" é o valor contratado da
+  // venda (aparece cheio em cada parcela de Plano/Voucher), enquanto
+  // "Recebido" é o que de fato entrou naquela parcela. Confirmado com o
+  // usuário (2026-09-01) contra o relatório bruto: soma de "Recebido"
+  // por Vcto bate com o fechamento da Comanda, soma de "Valor" não.
+  valor: ["recebido"],
   formaPagamento: ["forma pagto."],
   observacao: ["observacao"],
 } as const;
