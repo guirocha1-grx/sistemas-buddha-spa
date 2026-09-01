@@ -3152,13 +3152,23 @@ function baldeFormaPagamentoBelle(formaPagamento: string): "dinheiro" | "debito"
 export async function upsertRegistrosFinanceirosBelle(
   unidadeId: number,
   linhas: LinhaRegistroFinanceiroBelleImportada[],
-): Promise<{ processados: number }> {
+): Promise<{ processados: number; novos: number; atualizados: number }> {
   const db = await getDb();
-  if (!db || linhas.length === 0) return { processados: 0 };
+  if (!db || linhas.length === 0) return { processados: 0, novos: 0, atualizados: 0 };
 
   const unicosPorCodigo = new Map<number, LinhaRegistroFinanceiroBelleImportada>();
   for (const linha of linhas) unicosPorCodigo.set(linha.codigo, linha);
   const registros = Array.from(unicosPorCodigo.values());
+
+  // Descobre antes do upsert quais códigos já existiam, pra poder
+  // reportar "X novo(s), Y atualizado(s)" na tela — importante pra dar
+  // visibilidade de quando um reimport está de fato corrigindo dados
+  // desatualizados (ex.: Vcto que mudou no Belle desde a última carga).
+  const existentes = await db.select({ codigo: belleRegistrosFinanceiros.codigo }).from(belleRegistrosFinanceiros).where(and(
+    eq(belleRegistrosFinanceiros.unidadeId, unidadeId),
+    inArray(belleRegistrosFinanceiros.codigo, registros.map((r) => r.codigo)),
+  ));
+  const codigosExistentes = new Set(existentes.map((e) => e.codigo));
 
   const valores: InsertBelleRegistroFinanceiro[] = registros.map((linha) => ({
     unidadeId,
@@ -3182,7 +3192,8 @@ export async function upsertRegistrosFinanceirosBelle(
     },
   });
 
-  return { processados: registros.length };
+  const atualizados = registros.filter((r) => codigosExistentes.has(r.codigo)).length;
+  return { processados: registros.length, novos: registros.length - atualizados, atualizados };
 }
 
 export interface ItemRegistroFinanceiroBelle {

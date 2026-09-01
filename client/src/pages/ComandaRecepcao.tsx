@@ -343,7 +343,10 @@ export default function ComandaRecepcao() {
     if (!unidadeId || !previewBelle) return;
     try {
       const resultado = await importarBelleMutation.mutateAsync({ unidadeId, xlsxBase64: previewBelle.xlsxBase64 });
-      toast.success(`Relatório do Belle importado: ${resultado.processados} lançamento(s).`);
+      toast.success(
+        `Relatório do Belle importado: ${resultado.processados} lançamento(s) — ` +
+        `${resultado.novos} novo(s), ${resultado.atualizados} substituído(s).`,
+      );
       utils.comandaRecepcao.resumoBelle.invalidate();
       utils.comandaRecepcao.detalheBelle.invalidate();
       setPreviewBelle(null);
