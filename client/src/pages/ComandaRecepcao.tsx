@@ -345,7 +345,8 @@ export default function ComandaRecepcao() {
       const resultado = await importarBelleMutation.mutateAsync({ unidadeId, xlsxBase64: previewBelle.xlsxBase64 });
       toast.success(
         `Relatório do Belle importado: ${resultado.processados} lançamento(s) — ` +
-        `${resultado.novos} novo(s), ${resultado.atualizados} substituído(s).`,
+        `${resultado.removidos} lançamento(s) antigo(s) do período (${fmtDataCompleta(resultado.periodoInicio)} a ` +
+        `${fmtDataCompleta(resultado.periodoFim)}) foram apagados antes de subir os novos.`,
       );
       utils.comandaRecepcao.resumoBelle.invalidate();
       utils.comandaRecepcao.detalheBelle.invalidate();
@@ -985,6 +986,11 @@ export default function ComandaRecepcao() {
                     </p>
                     <p><span className="text-muted-foreground">Unidade:</span> {unidadeSelecionada?.nome}</p>
                     <p><span className="text-muted-foreground">Lançamentos no arquivo:</span> {previewBelle.totalLinhas}</p>
+                    <p className="pt-1 text-xs text-amber-700">
+                      Isso apaga todo lançamento já existente da unidade acima entre{" "}
+                      {fmtDataCompleta(previewBelle.periodoInicio)} e {fmtDataCompleta(previewBelle.periodoFim)}, e
+                      sobe os {previewBelle.totalLinhas} do arquivo no lugar. Confira a unidade e o período antes de confirmar.
+                    </p>
                   </div>
                 </DialogDescription>
               </DialogHeader>

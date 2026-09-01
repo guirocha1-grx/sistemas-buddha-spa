@@ -3145,30 +3145,40 @@ function baldeFormaPagamentoBelle(formaPagamento: string): "dinheiro" | "debito"
 }
 
 /**
- * Import manual (.xlsx) do relatório "Registros Financeiros" do Belle
- * — dedupe por (unidadeId, codigo), mesmo padrão de upsert em lote
- * usado pra belle_atendimentos.
+ * Import manual (.xlsx) do relatório "Registros Financeiros" do Belle.
+ *
+ * "Zera o período e sobe de novo": apaga tudo que já existia pra essa
+ * unidade dentro do intervalo de Vcto do arquivo, antes de inserir —
+ * o arquivo é sempre a fonte da verdade daquele período, nunca um
+ * merge. Upsert por código sozinho (tentado antes) não resolve porque
+ * (a) o relatório do Belle às vezes vem parcial e reimportar não limpa
+ * o que ficou de fora, e (b) se um dia a base errada for importada pra
+ * unidade errada por engano, reimportar a base certa depois nunca
+ * substitui o lixo, só soma em cima (caso real, 2026-09-01: base do
+ * Ribeirão Shopping subiu pro Santa Úrsula por engano).
  */
 export async function upsertRegistrosFinanceirosBelle(
   unidadeId: number,
   linhas: LinhaRegistroFinanceiroBelleImportada[],
-): Promise<{ processados: number; novos: number; atualizados: number }> {
+): Promise<{ processados: number; removidos: number; periodoInicio: string; periodoFim: string }> {
   const db = await getDb();
-  if (!db || linhas.length === 0) return { processados: 0, novos: 0, atualizados: 0 };
+  if (!db || linhas.length === 0) return { processados: 0, removidos: 0, periodoInicio: "", periodoFim: "" };
 
   const unicosPorCodigo = new Map<number, LinhaRegistroFinanceiroBelleImportada>();
   for (const linha of linhas) unicosPorCodigo.set(linha.codigo, linha);
   const registros = Array.from(unicosPorCodigo.values());
 
-  // Descobre antes do upsert quais códigos já existiam, pra poder
-  // reportar "X novo(s), Y atualizado(s)" na tela — importante pra dar
-  // visibilidade de quando um reimport está de fato corrigindo dados
-  // desatualizados (ex.: Vcto que mudou no Belle desde a última carga).
-  const existentes = await db.select({ codigo: belleRegistrosFinanceiros.codigo }).from(belleRegistrosFinanceiros).where(and(
+  const datas = registros.map((r) => r.dataVencimento).sort();
+  const periodoInicio = datas[0];
+  const periodoFim = datas[datas.length - 1];
+
+  const condicaoPeriodo = and(
     eq(belleRegistrosFinanceiros.unidadeId, unidadeId),
-    inArray(belleRegistrosFinanceiros.codigo, registros.map((r) => r.codigo)),
-  ));
-  const codigosExistentes = new Set(existentes.map((e) => e.codigo));
+    gte(belleRegistrosFinanceiros.dataVencimento, periodoInicio),
+    lte(belleRegistrosFinanceiros.dataVencimento, periodoFim),
+  );
+  const existentesNoPeriodo = await db.select({ id: belleRegistrosFinanceiros.id }).from(belleRegistrosFinanceiros).where(condicaoPeriodo);
+  await db.delete(belleRegistrosFinanceiros).where(condicaoPeriodo);
 
   const valores: InsertBelleRegistroFinanceiro[] = registros.map((linha) => ({
     unidadeId,
@@ -3181,6 +3191,9 @@ export async function upsertRegistrosFinanceirosBelle(
     observacao: linha.observacao,
   }));
 
+  // onDuplicateKeyUpdate só como rede de segurança — o mesmo código
+  // reaparecer fora do período que acabou de ser apagado seria
+  // inesperado, mas não deve derrubar o import se acontecer.
   await db.insert(belleRegistrosFinanceiros).values(valores).onDuplicateKeyUpdate({
     set: {
       dataVencimento: sql`VALUES(dataVencimento)`,
@@ -3192,8 +3205,7 @@ export async function upsertRegistrosFinanceirosBelle(
     },
   });
 
-  const atualizados = registros.filter((r) => codigosExistentes.has(r.codigo)).length;
-  return { processados: registros.length, novos: registros.length - atualizados, atualizados };
+  return { processados: registros.length, removidos: existentesNoPeriodo.length, periodoInicio, periodoFim };
 }
 
 export interface ItemRegistroFinanceiroBelle {
