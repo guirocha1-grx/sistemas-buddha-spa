@@ -27,8 +27,9 @@ interface ItemDetalhe {
   valor: number;
 }
 
-type Fase = "fase1" | "fase2";
+type Fase = "fase1" | "fase2" | "fase3";
 const SUBSECAO_FASE2 = "financeiro:comanda-recepcao-belle";
+const SUBSECAO_FASE3 = "financeiro:comanda-recepcao-terapeutas";
 
 function fileParaBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -105,7 +106,7 @@ function total(v: ValoresForma): number {
   return v.dinheiro + v.cartaoDebito + v.cartaoCredito + v.pix;
 }
 
-const LADO_B_LABEL: Record<Fase, string> = { fase1: "Contas bancárias", fase2: "Belle" };
+const LADO_B_LABEL: Record<Fase, string> = { fase1: "Contas bancárias", fase2: "Belle", fase3: "Belle" };
 
 export default function ComandaRecepcao() {
   const { unidadeSelecionada } = useUnidade();
@@ -117,6 +118,7 @@ export default function ComandaRecepcao() {
 
   const permissoesQuery = trpc.permissoes.minhas.useQuery();
   const podeVerFase2 = !permissoesQuery.data?.restrito || (permissoesQuery.data?.subsecoes ?? []).includes(SUBSECAO_FASE2);
+  const podeVerFase3 = !permissoesQuery.data?.restrito || (permissoesQuery.data?.subsecoes ?? []).includes(SUBSECAO_FASE3);
 
   const [faseAtiva, setFaseAtiva] = useState<Fase>("fase1");
   const [confirmarTrocaFase, setConfirmarTrocaFase] = useState(false);
@@ -167,6 +169,11 @@ export default function ComandaRecepcao() {
   const detalheBelleQuery = trpc.comandaRecepcao.detalheBelle.useQuery(
     { unidadeId: unidadeId!, dataInicio, dataFim },
     { enabled: !!unidadeId && faseAtiva === "fase2" },
+  );
+
+  const divergenciasTerapeutasQuery = trpc.comandaRecepcao.divergenciasTerapeutas.useQuery(
+    { unidadeId: unidadeId!, dataInicio, dataFim },
+    { enabled: !!unidadeId && faseAtiva === "fase3" },
   );
 
   // Item a item da "Comanda virtual" — alimenta o hover de auditoria da
@@ -612,6 +619,7 @@ export default function ComandaRecepcao() {
             <TabsList>
               <TabsTrigger value="fase1">Fase 1: Comanda x Caixa</TabsTrigger>
               {podeVerFase2 && <TabsTrigger value="fase2">Fase 2: Comanda x Belle</TabsTrigger>}
+              {podeVerFase3 && <TabsTrigger value="fase3">Fase 3: Terapeutas</TabsTrigger>}
             </TabsList>
           </Tabs>
 
@@ -670,6 +678,8 @@ export default function ComandaRecepcao() {
             </Button>
           </div>
 
+          {faseAtiva !== "fase3" && (
+          <>
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
               {carregando ? (
@@ -824,6 +834,65 @@ export default function ComandaRecepcao() {
             Na linha "Diferença", passe o mouse pra ver a conciliação completa do dia (Comanda x {LADO_B_LABEL[faseAtiva]}
             {faseAtiva === "fase1" ? " + ações corretivas sugeridas) — o mesmo texto é gravado na linha 20 da planilha \"Consolidado comanda\" ao clicar em \"Sincronizar com Drive\", e some de lá sozinho quando a diferença é corrigida." : " + ações corretivas sugeridas)."}
           </p>
+          </>
+          )}
+
+          {faseAtiva === "fase3" && (
+            <Card className="overflow-hidden">
+              <div className="overflow-x-auto">
+                {divergenciasTerapeutasQuery.isLoading ? (
+                  <div className="flex items-center justify-center h-32 text-muted-foreground text-sm gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
+                  </div>
+                ) : !divergenciasTerapeutasQuery.data?.length ? (
+                  <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+                    Nenhuma divergência de terapeuta encontrada no período.
+                  </div>
+                ) : (
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/30">
+                        <th className="px-3 py-2 text-left text-xs font-medium whitespace-nowrap">Data</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium whitespace-nowrap">Cliente</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium whitespace-nowrap">Terapia</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium whitespace-nowrap">Terapeuta (Comanda)</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium whitespace-nowrap">Terapeuta (Belle)</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium whitespace-nowrap">Situação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {divergenciasTerapeutasQuery.data.map((item, i) => (
+                        <tr key={`${item.data}-${item.cliente}-${i}`} className="border-b last:border-0">
+                          <td className="px-3 py-2 whitespace-nowrap">{fmtDiaCurto(item.data)}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{item.cliente}</td>
+                          <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{item.terapia ?? "—"}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{item.terapeutaComanda}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {item.terapeutaBelle ?? <span className="text-muted-foreground">—</span>}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {item.situacao === "divergente" ? (
+                              <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">Terapeuta diverge</span>
+                            ) : (
+                              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Cliente não encontrado no Belle</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </Card>
+          )}
+          {faseAtiva === "fase3" && (
+            <p className="text-xs text-muted-foreground">
+              Cruza cada lançamento da Comanda (cliente + terapeuta) com os atendimentos do Belle no mesmo dia, casando pelo
+              nome do cliente. "Terapeuta diverge" é quando o cliente foi encontrado nos dois sistemas mas o profissional
+              registrado é diferente — provável seleção errada ao fechar no Belle. "Cliente não encontrado no Belle" pode ser
+              isso mesmo, ou só o nome não ter batido (abreviação, acento, sobrenome faltando) — confira antes de tratar como erro.
+            </p>
+          )}
         </>
       )}
 

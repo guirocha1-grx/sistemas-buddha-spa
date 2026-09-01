@@ -2909,6 +2909,83 @@ export async function contarVendasComandaPeriodo(unidadeId: number, dataInicio: 
   return rows.length;
 }
 
+export interface DivergenciaTerapeuta {
+  data: string;
+  cliente: string;
+  terapia: string | null;
+  terapeutaComanda: string;
+  terapeutaBelle: string | null;
+  situacao: "divergente" | "sem_correspondencia_belle";
+}
+
+/**
+ * Cruza Comanda x Belle por cliente+data pra achar atendimentos onde o
+ * terapeuta registrado em cada sistema não bate — sinal de que a
+ * recepção selecionou o profissional errado ao fechar no Belle, o que
+ * bagunça o cálculo de repartição por terapeuta. Casamento por nome
+ * (nomesCorrespondem, mesma lógica usada em tempoAtendimento.ts pra
+ * eventos de terapeuta) porque a Comanda não guarda o clienteId do
+ * Belle — só o nome que a recepção digitou à mão na planilha.
+ * "sem_correspondencia_belle" é reportado separado de "divergente":
+ * o primeiro pode ser só o nome não ter batido (erro de digitação),
+ * não necessariamente um problema de terapeuta.
+ */
+export async function listarDivergenciasTerapeutas(unidadeId: number, dataInicio: string, dataFim: string): Promise<DivergenciaTerapeuta[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [itensComanda, atendimentosBelle] = await Promise.all([
+    db.select({
+      data: comandaItens.data,
+      cliente: comandaItens.cliente,
+      terapiaProduto: comandaItens.terapiaProduto,
+      terapeuta: comandaItens.terapeuta,
+    }).from(comandaItens).where(and(
+      eq(comandaItens.unidadeId, unidadeId),
+      gte(comandaItens.data, dataInicio),
+      lte(comandaItens.data, dataFim),
+      isNotNull(comandaItens.terapeuta),
+    )),
+    db.select({
+      dataAtendimento: belleAtendimentos.dataAtendimento,
+      clienteNome: belleAtendimentos.clienteNome,
+      servicoNome: belleAtendimentos.servicoNome,
+      profissionalNome: belleAtendimentos.profissionalNome,
+    }).from(belleAtendimentos).where(and(
+      eq(belleAtendimentos.unidadeId, unidadeId),
+      gte(belleAtendimentos.dataAtendimento, dataInicio),
+      lte(belleAtendimentos.dataAtendimento, dataFim),
+    )),
+  ]);
+
+  const belleporData = new Map<string, typeof atendimentosBelle>();
+  for (const atendimento of atendimentosBelle) {
+    const lista = belleporData.get(atendimento.dataAtendimento) ?? [];
+    lista.push(atendimento);
+    belleporData.set(atendimento.dataAtendimento, lista);
+  }
+
+  const divergencias: DivergenciaTerapeuta[] = [];
+  for (const item of itensComanda) {
+    const cliente = item.cliente?.trim();
+    const terapeuta = item.terapeuta?.trim();
+    if (!cliente || !terapeuta) continue;
+
+    const candidatos = (belleporData.get(item.data) ?? []).filter((b) => nomesCorrespondem(b.clienteNome, cliente));
+    if (candidatos.length === 0) {
+      divergencias.push({ data: item.data, cliente, terapia: item.terapiaProduto, terapeutaComanda: terapeuta, terapeutaBelle: null, situacao: "sem_correspondencia_belle" });
+      continue;
+    }
+    // Cliente com mais de um atendimento no mesmo dia: desempata pela terapia, quando bate.
+    const atendimento = candidatos.find((b) => nomesCorrespondem(b.servicoNome, item.terapiaProduto)) ?? candidatos[0];
+    if (!nomesCorrespondem(atendimento.profissionalNome, terapeuta)) {
+      divergencias.push({ data: item.data, cliente, terapia: item.terapiaProduto, terapeutaComanda: terapeuta, terapeutaBelle: atendimento.profissionalNome, situacao: "divergente" });
+    }
+  }
+
+  return divergencias.sort((a, b) => a.data.localeCompare(b.data) || a.cliente.localeCompare(b.cliente));
+}
+
 export interface ResumoContasBancariasDia {
   data: string;
   dinheiro: number;

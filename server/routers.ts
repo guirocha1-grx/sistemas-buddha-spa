@@ -3763,6 +3763,15 @@ Diretrizes:
         };
       });
     }),
+
+    // ===== Conciliação PDV — Fase 3 (Terapeutas: Comanda x Belle) =====
+    divergenciasTerapeutas: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).query(async ({ input }) => {
+      return db.listarDivergenciasTerapeutas(input.unidadeId, input.dataInicio, input.dataFim);
+    }),
   }),
 
   // ===== Plano de contas do DRE =====
