@@ -3718,14 +3718,26 @@ Diretrizes:
     importarRegistrosFinanceirosBelleXlsx: adminProcedure.input(z.object({
       unidadeId: z.number(),
       xlsxBase64: z.string().min(1),
+      // Passo 1 (dryRun) só lê o arquivo e devolve o período pra
+      // confirmação na tela — evita importar no período/unidade errado
+      // por engano (fácil de confundir, mesmo arquivo serve pra
+      // qualquer unidade/período). Passo 2 repete a chamada sem dryRun
+      // pra persistir de fato.
+      dryRun: z.boolean().optional(),
     })).mutation(async ({ input }) => {
       const buffer = Buffer.from(input.xlsxBase64, "base64");
       const linhas = parseRegistrosFinanceirosBelleXlsx(buffer);
       if (linhas.length === 0) {
         throw new Error('Nenhum lançamento encontrado na planilha (verifique se tem as colunas "Cód.", "Valor" e "Forma Pagto.").');
       }
+      const datas = linhas.map((l) => l.dataVencimento).sort();
+      const periodoInicio = datas[0];
+      const periodoFim = datas[datas.length - 1];
+      if (input.dryRun) {
+        return { success: true, totalLinhas: linhas.length, periodoInicio, periodoFim };
+      }
       const resultado = await db.upsertRegistrosFinanceirosBelle(input.unidadeId, linhas);
-      return { success: true, totalLinhas: linhas.length, ...resultado };
+      return { success: true, totalLinhas: linhas.length, periodoInicio, periodoFim, ...resultado };
     }),
 
     detalheBelle: protectedProcedure.input(z.object({

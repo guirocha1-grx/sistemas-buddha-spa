@@ -70,6 +70,11 @@ function fmtDiaCurto(iso: string): string {
   return `${d}/${m}`;
 }
 
+function fmtDataCompleta(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
 const DIAS_SEMANA_ABREV = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 
 function fmtDiaSemana(iso: string): string {
@@ -303,26 +308,48 @@ export default function ComandaRecepcao() {
   }
 
   const importarBelleRef = useRef<HTMLInputElement>(null);
-  const importarBelleMutation = trpc.comandaRecepcao.importarRegistrosFinanceirosBelleXlsx.useMutation({
-    onSuccess: (data) => {
-      toast.success(`Relatório do Belle importado: ${data.processados} lançamento(s).`);
-      utils.comandaRecepcao.resumoBelle.invalidate();
-      utils.comandaRecepcao.detalheBelle.invalidate();
-      setModalBelleAberto(false);
-    },
-    onError: (err) => toast.error(`Erro ao importar relatório do Belle: ${err.message}`),
-  });
+  const importarBelleMutation = trpc.comandaRecepcao.importarRegistrosFinanceirosBelleXlsx.useMutation();
+  const [previewBelle, setPreviewBelle] = useState<{
+    xlsxBase64: string;
+    totalLinhas: number;
+    periodoInicio: string;
+    periodoFim: string;
+  } | null>(null);
 
+  // Passo 1: só lê e devolve o período do arquivo, pra confirmar antes
+  // de gravar — fácil de confundir período/unidade na hora de exportar
+  // do Belle.
   async function handleImportarBelle(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !unidadeId) return;
     try {
       const xlsxBase64 = await fileParaBase64(file);
-      importarBelleMutation.mutate({ unidadeId, xlsxBase64 });
+      const preview = await importarBelleMutation.mutateAsync({ unidadeId, xlsxBase64, dryRun: true });
+      setPreviewBelle({
+        xlsxBase64,
+        totalLinhas: preview.totalLinhas,
+        periodoInicio: preview.periodoInicio!,
+        periodoFim: preview.periodoFim!,
+      });
     } catch (err: any) {
       toast.error(err.message ?? "Falha ao ler o arquivo");
     } finally {
       e.target.value = "";
+    }
+  }
+
+  // Passo 2: grava de fato, só depois do usuário conferir o período na tela.
+  async function confirmarImportarBelle() {
+    if (!unidadeId || !previewBelle) return;
+    try {
+      const resultado = await importarBelleMutation.mutateAsync({ unidadeId, xlsxBase64: previewBelle.xlsxBase64 });
+      toast.success(`Relatório do Belle importado: ${resultado.processados} lançamento(s).`);
+      utils.comandaRecepcao.resumoBelle.invalidate();
+      utils.comandaRecepcao.detalheBelle.invalidate();
+      setPreviewBelle(null);
+      setModalBelleAberto(false);
+    } catch (err: any) {
+      toast.error(`Erro ao importar relatório do Belle: ${err.message}`);
     }
   }
 
@@ -911,27 +938,63 @@ export default function ComandaRecepcao() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={modalBelleAberto} onOpenChange={setModalBelleAberto}>
+      <Dialog
+        open={modalBelleAberto}
+        onOpenChange={(open) => {
+          setModalBelleAberto(open);
+          if (!open) setPreviewBelle(null);
+        }}
+      >
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Importar relatório do Belle</DialogTitle>
-            <DialogDescription>
-              No Belle: <strong>Controle de Contas a Receber</strong> → <strong>Outras opções</strong> → <strong>Gerar Excel</strong>.
-              Depois é só subir o arquivo aqui.
-            </DialogDescription>
-          </DialogHeader>
-          <input
-            ref={importarBelleRef}
-            type="file"
-            accept=".xlsx"
-            disabled={importarBelleMutation.isPending}
-            onChange={handleImportarBelle}
-            className="text-sm file:mr-3 file:rounded-md file:border file:border-border file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium file:cursor-pointer disabled:opacity-50"
-          />
-          {importarBelleMutation.isPending && (
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" /> Importando...
-            </p>
+          {!previewBelle ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Importar relatório do Belle</DialogTitle>
+                <DialogDescription>
+                  No Belle: <strong>Controle de Contas a Receber</strong> → <strong>Outras opções</strong> → <strong>Gerar Excel</strong>.
+                  Depois é só subir o arquivo aqui.
+                </DialogDescription>
+              </DialogHeader>
+              <input
+                ref={importarBelleRef}
+                type="file"
+                accept=".xlsx"
+                disabled={importarBelleMutation.isPending}
+                onChange={handleImportarBelle}
+                className="text-sm file:mr-3 file:rounded-md file:border file:border-border file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium file:cursor-pointer disabled:opacity-50"
+              />
+              {importarBelleMutation.isPending && (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Lendo arquivo...
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Confirmar importação</DialogTitle>
+                <DialogDescription asChild>
+                  <div className="space-y-1 pt-1 text-sm text-foreground">
+                    <p><span className="text-muted-foreground">Relatório:</span> Controle de Contas a Receber</p>
+                    <p>
+                      <span className="text-muted-foreground">Período:</span>{" "}
+                      {fmtDataCompleta(previewBelle.periodoInicio)} a {fmtDataCompleta(previewBelle.periodoFim)}
+                    </p>
+                    <p><span className="text-muted-foreground">Unidade:</span> {unidadeSelecionada?.nome}</p>
+                    <p><span className="text-muted-foreground">Lançamentos no arquivo:</span> {previewBelle.totalLinhas}</p>
+                  </div>
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setPreviewBelle(null)} disabled={importarBelleMutation.isPending}>
+                  Cancelar
+                </Button>
+                <Button onClick={confirmarImportarBelle} disabled={importarBelleMutation.isPending}>
+                  {importarBelleMutation.isPending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                  Confirmar
+                </Button>
+              </DialogFooter>
+            </>
           )}
         </DialogContent>
       </Dialog>
