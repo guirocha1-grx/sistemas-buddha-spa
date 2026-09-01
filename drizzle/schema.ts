@@ -190,6 +190,7 @@ export const cobrancasLink = mysqlTable("cobrancas_link", {
   ultimoWebhookAcao: varchar("ultimoWebhookAcao", { length: 100 }),
   webhookAssinaturaValida: boolean("webhookAssinaturaValida").default(false).notNull(),
   alertaCriadoEm: timestamp("alertaCriadoEm"),
+  alertaReconhecidoEm: timestamp("alertaReconhecidoEm"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({

@@ -7,10 +7,6 @@ import React, { useMemo, useState } from "react";
 
 type CobrancaAprovada = { id: number; clienteNome: string; titulo: string; valor: string; paymentApprovedAt: string | Date | null };
 
-function chaveDispensa(unidadeId: number, cobrancaId: number) {
-  return `cobrancas-link-aprovadas-dispensadas:${unidadeId}:${cobrancaId}`;
-}
-
 function formatarData(data: string | Date | null) {
   if (!data) return "agora";
   const valor = new Date(data);
@@ -25,20 +21,21 @@ function formatarValor(valor: string) {
 /** Atualiza somente com o navegador aberto; o webhook é quem grava a aprovação. */
 export default function CobrancaLinkAprovadaAlert() {
   const { unidadeSelecionada } = useUnidade();
+  const utils = trpc.useUtils();
   const [dispensadoNaTela, setDispensadoNaTela] = useState<number | null>(null);
   const query = trpc.cobrancasLink.alertas.useQuery({ unidadeId: unidadeSelecionada?.id ?? 0 }, {
     enabled: !!unidadeSelecionada,
     refetchInterval: 15_000,
     refetchOnWindowFocus: true,
   });
-  const cobranca = useMemo(() => ((query.data ?? []) as CobrancaAprovada[]).find((item) => {
-    if (!unidadeSelecionada || item.id === dispensadoNaTela) return false;
-    return sessionStorage.getItem(chaveDispensa(unidadeSelecionada.id, item.id)) !== "1";
-  }), [dispensadoNaTela, query.data, unidadeSelecionada]);
+  const reconhecer = trpc.cobrancasLink.reconhecerAlerta.useMutation({
+    onSuccess: () => { if (unidadeSelecionada) utils.cobrancasLink.alertas.invalidate({ unidadeId: unidadeSelecionada.id }); },
+  });
+  const cobranca = useMemo(() => ((query.data ?? []) as CobrancaAprovada[]).find((item) => item.id !== dispensadoNaTela), [dispensadoNaTela, query.data]);
   const dispensar = () => {
     if (!cobranca || !unidadeSelecionada) return;
-    sessionStorage.setItem(chaveDispensa(unidadeSelecionada.id, cobranca.id), "1");
     setDispensadoNaTela(cobranca.id);
+    reconhecer.mutate({ cobrancaId: cobranca.id, unidadeId: unidadeSelecionada.id });
   };
 
   return <AlertDialog open={!!cobranca} onOpenChange={(aberto) => !aberto && dispensar()}>

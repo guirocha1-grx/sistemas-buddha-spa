@@ -1860,6 +1860,12 @@ Diretrizes:
       if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
       return db.listCobrancasLinkAprovadasRecentes(input.unidadeId);
     }),
+
+    reconhecerAlerta: protectedProcedure.input(z.object({ cobrancaId: z.number(), unidadeId: z.number() })).mutation(async ({ input, ctx }) => {
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId))) throw new Error("Sem acesso a esta unidade");
+      await db.reconhecerAlertaCobrancaLink(input.cobrancaId, input.unidadeId);
+      return { success: true };
+    }),
   }),
 
   // Kill switch de mensageria: pausa envio de WhatsApp em todas as

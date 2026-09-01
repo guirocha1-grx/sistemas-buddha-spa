@@ -6381,7 +6381,7 @@ export async function registrarPagamentoCobrancaLink(dados: {
   }).where(eq(cobrancasLink.id, dados.cobrancaId));
 }
 
-/** Alertas são derivados das cobranças aprovadas; a dispensa é individual por sessão no navegador. */
+/** Alertas são derivados das cobranças aprovadas ainda não reconhecidas (alertaReconhecidoEm null). */
 export async function listCobrancasLinkAprovadasRecentes(unidadeId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -6394,8 +6394,21 @@ export async function listCobrancasLinkAprovadasRecentes(unidadeId: number) {
     valor: cobrancasLink.valor,
     paymentApprovedAt: cobrancasLink.paymentApprovedAt,
   }).from(cobrancasLink)
-    .where(and(eq(cobrancasLink.unidadeId, unidadeId), eq(cobrancasLink.status, "aprovada"), gte(cobrancasLink.paymentApprovedAt, desde)))
+    .where(and(
+      eq(cobrancasLink.unidadeId, unidadeId),
+      eq(cobrancasLink.status, "aprovada"),
+      gte(cobrancasLink.paymentApprovedAt, desde),
+      isNull(cobrancasLink.alertaReconhecidoEm),
+    ))
     .orderBy(desc(cobrancasLink.paymentApprovedAt));
+}
+
+/** Marca o alerta de pagamento aprovado como reconhecido (botão "Ciente"), persistindo no servidor. */
+export async function reconhecerAlertaCobrancaLink(cobrancaId: number, unidadeId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(cobrancasLink).set({ alertaReconhecidoEm: new Date() })
+    .where(and(eq(cobrancasLink.id, cobrancaId), eq(cobrancasLink.unidadeId, unidadeId)));
 }
 
 /** Cobranças confirmadas pelo Webhook são fonte imediata para a recepção, antes da próxima consulta manual no Mercado Pago. */
