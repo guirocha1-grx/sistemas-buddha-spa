@@ -704,6 +704,10 @@ export function classificarPlanosRelacionamento(
 const STATUS_AGENDADO_POR_IA = "Agendado (IA)";
 const STATUS_ATENDIMENTO_AGENDADO = ["Marcado", "Pré-Agendado", "Confirmado", STATUS_AGENDADO_POR_IA];
 
+// Terapeuta curinga usado em pré-chamado (ver 2026-08-30-seed-terapeuta-curinga.sql)
+// — não é uma pessoa real, então fica fora dos relatórios de terapeutas.
+const NOME_TERAPEUTA_CURINGA = "Pendente de sorteio";
+
 /**
  * Registra um agendamento visto na própria conversa (confirmação fixa do
  * Belle, ver shared/belleTemplates.ts extrairAgendamentoConfirmacaoBelle)
@@ -1151,18 +1155,20 @@ export async function listarRelatorioTempoAtendimento(unidadeId: number, dataIni
     ))
     .orderBy(desc(atendimentosOperacional.chamadoEm));
 
-  const linhas: LinhaTempoAtendimento[] = registros.map((registro) => ({
-    atendimentoId: registro.atendimentoId,
-    dataAtendimento: registro.dataAtendimento,
-    horario: registro.horario,
-    clienteNome: registro.clienteNome,
-    terapeutaNome: registro.terapeutaOrganizado || registro.profissionalNome || "Não identificado",
-    servicoNome: registro.servicoNome,
-    duracaoBelleMinutos: registro.duracaoBelleMinutos,
-    chamadoEm: registro.chamadoEm,
-    inicioEm: registro.inicioEm,
-    fimEm: registro.fimEm,
-  }));
+  const linhas: LinhaTempoAtendimento[] = registros
+    .map((registro) => ({
+      atendimentoId: registro.atendimentoId,
+      dataAtendimento: registro.dataAtendimento,
+      horario: registro.horario,
+      clienteNome: registro.clienteNome,
+      terapeutaNome: registro.terapeutaOrganizado || registro.profissionalNome || "Não identificado",
+      servicoNome: registro.servicoNome,
+      duracaoBelleMinutos: registro.duracaoBelleMinutos,
+      chamadoEm: registro.chamadoEm,
+      inicioEm: registro.inicioEm,
+      fimEm: registro.fimEm,
+    }))
+    .filter((linha) => linha.terapeutaNome !== NOME_TERAPEUTA_CURINGA);
   return calcularRelatorioTempoAtendimento(linhas, dataInicio, dataFim);
 }
 
@@ -4613,7 +4619,7 @@ export async function listarFidelizacaoTerapeutas(unidadeId: number, dataInicio:
   const [terapeutasAtivos, atendimentos] = await Promise.all([
     db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
       .from(terapeutas)
-      .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true)))
+      .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true), ne(terapeutas.nomeCompleto, NOME_TERAPEUTA_CURINGA)))
       .orderBy(asc(terapeutas.nomeAbreviado)),
     db.select({ profissionalNome: belleAtendimentos.profissionalNome, temPreferencia: belleAtendimentos.temPreferencia })
       .from(belleAtendimentos)
@@ -4669,7 +4675,7 @@ export async function listarPreferenciaisTerapeutas(unidadeId: number, dataInici
   const [terapeutasAtivos, atendimentos] = await Promise.all([
     db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
       .from(terapeutas)
-      .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true)))
+      .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true), ne(terapeutas.nomeCompleto, NOME_TERAPEUTA_CURINGA)))
       .orderBy(asc(terapeutas.nomeAbreviado)),
     db.select({
       clienteId: belleAtendimentos.clienteId,
@@ -4699,7 +4705,7 @@ export async function listarFechamentoAgendaTerapeutas(unidadeId: number, dataIn
   const [terapeutasAtivos, atendimentos] = await Promise.all([
     db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
       .from(terapeutas)
-      .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true)))
+      .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true), ne(terapeutas.nomeCompleto, NOME_TERAPEUTA_CURINGA)))
       .orderBy(asc(terapeutas.nomeAbreviado)),
     db.select({
       profissionalNome: belleAtendimentos.profissionalNome,
@@ -4724,7 +4730,7 @@ export async function listarTerapeutasComLiberacoes(unidadeId: number) {
   const [terapeutasAtivos, liberacoes] = await Promise.all([
     db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
       .from(terapeutas)
-      .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true)))
+      .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true), ne(terapeutas.nomeCompleto, NOME_TERAPEUTA_CURINGA)))
       .orderBy(asc(terapeutas.nomeAbreviado)),
     db.select({
       terapeutaId: terapeutasLiberacoes.terapeutaId,

@@ -754,7 +754,9 @@ export const appRouter = router({
       dataInicio: z.string().optional(),
       dataFim: z.string().optional(),
     }).optional()).query(async ({ input }) => {
-      const unidades = await db.getUnidades();
+      // Buddha Mkt é uma unidade sintética (canal de WhatsApp de marketing,
+      // sem Comanda/contas bancárias reais) — não entra em comparativo financeiro.
+      const unidades = (await db.getUnidades()).filter((u) => u.canal !== "buddha_mkt");
       const hoje = new Date();
       const hojeIso = fmtDateIso(hoje);
       const dataInicioIso = input?.dataInicio ?? fmtDateIso(new Date(hoje.getFullYear(), hoje.getMonth(), 1));

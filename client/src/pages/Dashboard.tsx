@@ -32,7 +32,10 @@ function calcularPeriodo(periodo: PeriodoRapido): { inicio: string; fim: string 
 const PERIODO_INICIAL = calcularPeriodo("mes_atual");
 
 export default function Dashboard() {
-  const { unidadeSelecionada, unidades } = useUnidade();
+  const { unidadeSelecionada, unidades: todasUnidades } = useUnidade();
+  // Buddha Mkt é uma unidade sintética (canal de WhatsApp de marketing, sem
+  // Comanda/contas bancárias reais) — não entra em comparativo financeiro.
+  const unidades = todasUnidades.filter((u) => u.slug !== "buddha-mkt");
 
   const [dataInicio, setDataInicio] = useState(PERIODO_INICIAL.inicio);
   const [dataFim, setDataFim] = useState(PERIODO_INICIAL.fim);
