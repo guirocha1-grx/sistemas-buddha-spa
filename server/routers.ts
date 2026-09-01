@@ -720,17 +720,21 @@ export const appRouter = router({
     // vivo do Belle, que nunca teve token configurado nesse projeto.
     dashboard: protectedProcedure.input(z.object({
       unidadeId: z.number(),
+      // Período exibido no Dashboard — padrão é o mês atual quando omitido.
+      dataInicio: z.string().optional(),
+      dataFim: z.string().optional(),
     })).query(async ({ input }) => {
       const hoje = new Date();
-      const dataInicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-      const dataInicioIso = fmtDateIso(dataInicio);
-      const dataFimIso = fmtDateIso(hoje);
+      const hojeIso = fmtDateIso(hoje);
+      const dataInicioIso = input.dataInicio ?? fmtDateIso(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
+      const dataFimIso = input.dataFim ?? hojeIso;
 
-      const [comandaDias, totalVendasMes, recebimentosMes, agendamentosMes] = await Promise.all([
+      const [comandaDias, totalVendasMes, recebimentosMes, agendamentosPeriodo, agendamentosHojeLista] = await Promise.all([
         db.listComandaDiaria(input.unidadeId, dataInicioIso, dataFimIso),
         db.contarVendasComandaPeriodo(input.unidadeId, dataInicioIso, dataFimIso),
         totalContasBancariasNoPeriodo(input.unidadeId, dataInicioIso, dataFimIso).catch(() => 0),
         db.listarAgendaPeriodo(input.unidadeId, dataInicioIso, dataFimIso),
+        db.listarAgendaPeriodo(input.unidadeId, hojeIso, hojeIso),
       ]);
 
       const faturamentoMes = comandaDias.reduce((acc, d) =>
@@ -740,27 +744,31 @@ export const appRouter = router({
         faturamentoMes,
         totalVendasMes,
         recebimentosMes,
-        agendamentosHoje: agendamentosMes.filter((a) => a.dataAtendimento === dataFimIso).length,
-        totalAgendamentos: agendamentosMes.length,
+        agendamentosHoje: agendamentosHojeLista.length,
+        totalAgendamentos: agendamentosPeriodo.length,
       };
     }),
 
     // Dashboard consolidado — ambas as unidades, mesma fonte local
-    dashboardConsolidado: protectedProcedure.query(async () => {
+    dashboardConsolidado: protectedProcedure.input(z.object({
+      dataInicio: z.string().optional(),
+      dataFim: z.string().optional(),
+    }).optional()).query(async ({ input }) => {
       const unidades = await db.getUnidades();
       const hoje = new Date();
-      const dataInicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-      const dataInicioIso = fmtDateIso(dataInicio);
-      const dataFimIso = fmtDateIso(hoje);
+      const hojeIso = fmtDateIso(hoje);
+      const dataInicioIso = input?.dataInicio ?? fmtDateIso(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
+      const dataFimIso = input?.dataFim ?? hojeIso;
 
       const resultados = await Promise.all(
         unidades.map(async (unidade) => {
           try {
-            const [comandaDias, totalVendasMes, recebimentosMes, agendamentosMes] = await Promise.all([
+            const [comandaDias, totalVendasMes, recebimentosMes, agendamentosPeriodo, agendamentosHojeLista] = await Promise.all([
               db.listComandaDiaria(unidade.id, dataInicioIso, dataFimIso),
               db.contarVendasComandaPeriodo(unidade.id, dataInicioIso, dataFimIso),
               totalContasBancariasNoPeriodo(unidade.id, dataInicioIso, dataFimIso).catch(() => 0),
               db.listarAgendaPeriodo(unidade.id, dataInicioIso, dataFimIso),
+              db.listarAgendaPeriodo(unidade.id, hojeIso, hojeIso),
             ]);
 
             const faturamentoMes = comandaDias.reduce((acc, d) =>
@@ -773,8 +781,8 @@ export const appRouter = router({
               faturamentoMes,
               totalVendasMes,
               recebimentosMes,
-              agendamentosHoje: agendamentosMes.filter((a) => a.dataAtendimento === dataFimIso).length,
-              totalAgendamentos: agendamentosMes.length,
+              agendamentosHoje: agendamentosHojeLista.length,
+              totalAgendamentos: agendamentosPeriodo.length,
             };
           } catch {
             return {
