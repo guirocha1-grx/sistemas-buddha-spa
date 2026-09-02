@@ -1131,11 +1131,14 @@ export type InsertComandaDiaria = typeof comandaDiaria.$inferInsert;
 /**
  * Item a item da "Comanda virtual" — planilha que a recepção preenche
  * em tempo real, uma aba por dia (nome "DDMMYYYY"), um lançamento por
- * linha (cliente, terapia, terapeuta, forma de pagamento). Alimenta só
- * o drill-down (hover) da linha "Comanda (Recepção)" na tela de Comanda
- * Recepção (2026-08-09) — o número agregado ali continua vindo de
- * comanda_diaria, sem mudança; esta tabela é uma camada de auditoria
- * por cima, não substitui nada.
+ * linha (cliente, terapia, terapeuta, forma de pagamento). Alimenta o
+ * drill-down (hover) da linha "Comanda (Recepção)" e, desde 2026-09-02,
+ * também tem prioridade sobre comanda_diaria no número agregado (ver
+ * listComandaDiaria em server/db.ts) — é a fonte mais viva, então evita
+ * ficar zerado só porque a aba mensal do "Consolidado comanda" ainda
+ * não foi preenchida pro mês corrente. comanda_diaria vira fallback,
+ * usado só em dias sem nenhum item aqui (histórico anterior a
+ * 2026-08-09 ou falha pontual de sync).
  *
  * Duas portas de entrada, mesma tabela: import de xlsx (carga
  * histórica, uma vez — server/comandaVirtualXlsxParser.ts) e

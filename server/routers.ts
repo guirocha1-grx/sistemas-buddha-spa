@@ -3453,8 +3453,8 @@ Diretrizes:
      * acima (a Consolidado comanda tem uma aba por mês; a Comanda
      * virtual tem uma aba POR DIA, então sincronizar o mês inteiro toda
      * vez seria caro à toa quando só a semana visível importa). Alimenta
-     * só o drill-down (hover) da linha "Comanda (Recepção)" — não muda
-     * o número agregado, que continua vindo de comanda_diaria.
+     * o drill-down (hover) da linha "Comanda (Recepção)" e também o
+     * número agregado quando o dia já tem item (ver listComandaDiaria).
      */
     sincronizarItens: syncProcedure.input(z.object({
       unidadeId: z.number(),

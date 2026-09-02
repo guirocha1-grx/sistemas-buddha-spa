@@ -2891,14 +2891,52 @@ export async function upsertComandaDiaria(
   return gravados;
 }
 
+/**
+ * "Comanda virtual" (comanda_itens, preenchida pela recepção em tempo
+ * real, uma aba por dia) tem prioridade sobre "Consolidado comanda"
+ * (comanda_diaria, planilha mensal) quando o dia já tem algum item —
+ * é a fonte mais viva e evita ficar zerado só porque a aba mensal do
+ * mês corrente ainda não foi preenchida. Dias sem nenhum item (histórico
+ * anterior a 2026-08-09, quando essa sincronização começou, ou falha
+ * pontual de sync) continuam vindo do Consolidado.
+ */
 export async function listComandaDiaria(unidadeId: number, dataInicio: string, dataFim: string) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(comandaDiaria).where(and(
-    eq(comandaDiaria.unidadeId, unidadeId),
-    gte(comandaDiaria.data, dataInicio),
-    lte(comandaDiaria.data, dataFim),
-  ));
+  const [diaria, itens] = await Promise.all([
+    db.select().from(comandaDiaria).where(and(
+      eq(comandaDiaria.unidadeId, unidadeId),
+      gte(comandaDiaria.data, dataInicio),
+      lte(comandaDiaria.data, dataFim),
+    )),
+    listComandaItensDetalhe(unidadeId, dataInicio, dataFim),
+  ]);
+
+  const porDiaItens = new Map<string, { dinheiro: number; cartaoDebito: number; cartaoCredito: number; pix: number }>();
+  for (const item of itens) {
+    const acc = porDiaItens.get(item.data) ?? { dinheiro: 0, cartaoDebito: 0, cartaoCredito: 0, pix: 0 };
+    if (item.forma === "dinheiro") acc.dinheiro += item.valor;
+    else if (item.forma === "pix") acc.pix += item.valor;
+    else if (item.forma === "debito") acc.cartaoDebito += item.valor;
+    else if (item.forma === "credito") acc.cartaoCredito += item.valor;
+    porDiaItens.set(item.data, acc);
+  }
+
+  const porDiaConsolidado = new Map(diaria.map((d) => [d.data, d]));
+  const datas = new Set<string>([...Array.from(porDiaConsolidado.keys()), ...Array.from(porDiaItens.keys())]);
+
+  return Array.from(datas).map((data) => {
+    const agregadoItens = porDiaItens.get(data);
+    if (agregadoItens) return { data, ...agregadoItens };
+    const consolidado = porDiaConsolidado.get(data)!;
+    return {
+      data,
+      dinheiro: Number(consolidado.dinheiro),
+      cartaoDebito: Number(consolidado.cartaoDebito),
+      cartaoCredito: Number(consolidado.cartaoCredito),
+      pix: Number(consolidado.pix),
+    };
+  });
 }
 
 // Conta lançamentos (um por venda) na Comanda Virtual do período — usado
