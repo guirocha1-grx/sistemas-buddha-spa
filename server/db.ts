@@ -1771,6 +1771,20 @@ export async function upsertInboxConversa(params: {
       .where(and(eq(inboxConversas.telefone, params.telefone), eq(inboxConversas.canal, params.canal)))
       .limit(1);
   }
+  // Terceira tentativa, pelo telefone NORMALIZADO — a Z-API às vezes
+  // manda o mesmo contato com grafias diferentes de telefone (com/sem
+  // "55" do país, por exemplo quando um @lid é resolvido numa mensagem
+  // posterior), e o match exato acima cria uma segunda conversa pra
+  // quem já tinha uma (caso real 2026-09-02: "16981372000" depois
+  // "5516981372000", mesmo cliente, telefoneNormalizado idêntico).
+  if (!existente[0]) {
+    const canonico = telefoneCanonico(params.telefone);
+    if (canonico) {
+      existente = await db.select().from(inboxConversas)
+        .where(and(eq(inboxConversas.telefoneNormalizado, canonico), eq(inboxConversas.canal, params.canal)))
+        .limit(1);
+    }
+  }
 
   const agora = new Date();
 
