@@ -782,6 +782,30 @@ export async function descartarSugestoesPendentesDaConversa(conversaId: number) 
   ));
 }
 
+/**
+ * Sugestão pendente que ninguém avaliou depois de `minutos` some
+ * sozinha da fila — tempo de vida (2026-09-02), pra não acumular card
+ * velho esperando revisão de um assunto que já esfriou. Roda via
+ * scheduler (server/_core/scheduler.ts), não por conversa — varre tudo
+ * de uma vez.
+ */
+export async function expirarSugestoesPendentesAntigas(minutos: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const limite = new Date(Date.now() - minutos * 60 * 1000);
+  const resultado = await db.update(agentesSugestoes).set({
+    avaliacao: "obsoleta",
+    tipoRevisao: "expirada",
+    comentarioAvaliacao: `Sugestão expirou sem avaliação em ${minutos} minutos.`,
+    avaliadaEm: new Date(),
+  }).where(and(
+    eq(agentesSugestoes.avaliacao, "pendente"),
+    isNull(agentesSugestoes.enviadaEm),
+    lte(agentesSugestoes.createdAt, limite),
+  ));
+  return Number((resultado as any)[0]?.affectedRows ?? (resultado as any).affectedRows ?? 0);
+}
+
 export async function buscarSugestao(id: number) {
   const db = await getDb();
   if (!db) return undefined;

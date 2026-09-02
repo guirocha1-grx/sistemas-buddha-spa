@@ -8,6 +8,7 @@ import { retomarFluxosPendentes, dispararFluxosAgendados, alertarBuddhaMktSemRet
 import { executarEtapaSincronizacaoDiaria, enviarRelatorioDiario, ETAPAS_AGENDADAS } from "../dailySyncReport";
 import { processarAgrupamentosProntos } from "../agentesAgrupamento";
 import { verificarQualidadeAgentes } from "../agentesQualidadeAlerta";
+import { expirarSugestoesPendentesAntigas } from "../agentesDb";
 
 /**
  * O TiDB é compartilhado entre Railway e desenvolvimento. Tarefas que
@@ -57,11 +58,15 @@ export function registerScheduledJobs() {
   // subindo sem depender de alguém da recepção notar e avisar dias depois
   // (ver análise de evolução dos agentes, 30/08).
   schedule("alertar-qualidade-agentes", "0 0 */4 * * *", verificarQualidadeAgentes);
+  // Tempo de vida da sugestão (2026-09-02): quem não avaliou em 30min
+  // some da fila sozinha, em vez de ficar grudada esperando revisão de
+  // um assunto que já esfriou.
+  schedule("expirar-sugestoes-pendentes", "0 */5 * * * *", () => expirarSugestoesPendentesAntigas(30));
 
   for (const { chave, minuto } of ETAPAS_AGENDADAS) {
     schedule(`sync-diaria-${chave}`, `0 ${minuto} 10 * * *`, () => executarEtapaSincronizacaoDiaria(chave));
   }
   schedule("relatorio-sincronizacao-diaria", "0 20 10 * * *", enviarRelatorioDiario);
 
-  console.log(`[Scheduler] ${5 + ETAPAS_AGENDADAS.length + 1} tarefas agendadas em processo.`);
+  console.log(`[Scheduler] ${6 + ETAPAS_AGENDADAS.length + 1} tarefas agendadas em processo.`);
 }

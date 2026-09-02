@@ -1815,7 +1815,7 @@ export const agentesSugestoes = mysqlTable("agentes_sugestoes", {
   // "obsoleta" não é uma rejeição humana: registra uma sugestão descartada
   // porque uma mensagem posterior do mesmo cliente substituiu o contexto.
   avaliacao: mysqlEnum("avaliacao", ["pendente", "aprovada", "reprovada", "obsoleta"]).default("pendente").notNull(),
-  tipoRevisao: mysqlEnum("tipoRevisao", ["aceita_como_esta", "editada", "rejeitada", "substituida_por_contexto"]),
+  tipoRevisao: mysqlEnum("tipoRevisao", ["aceita_como_esta", "editada", "rejeitada", "substituida_por_contexto", "expirada"]),
   textoFinal: text("textoFinal"),
   motivoAvaliacao: mysqlEnum("motivoAvaliacao", ["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"]),
   comentarioAvaliacao: text("comentarioAvaliacao"),
