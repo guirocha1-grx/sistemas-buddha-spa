@@ -231,6 +231,11 @@ export default function Mensagens() {
   const preservarPosicaoAoCarregarAntigasRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const conversaDonaDoTextoRef = useRef<number | null>(null);
+  // Qual conversa uma aprovação/rejeição de sugestão em voo pertence —
+  // sem isso, aceitar/rejeitar numa conversa e trocar pra outra ANTES da
+  // resposta do servidor voltar fazia o onSuccess limpar o texto que já
+  // estava sendo digitado na conversa nova (2026-09-02).
+  const conversaDaAcaoSugestaoRef = useRef<number | null>(null);
   const utils = trpc.useUtils();
 
   const { data: conversas, isLoading: carregandoConversas, refetch: refetchConversas } = trpc.inbox.conversas.list.useQuery(
@@ -326,13 +331,18 @@ export default function Mensagens() {
 
   const aprovarSugestaoAgenteMutation = trpc.agentes.fila.aprovarEEnviar.useMutation({
     onSuccess: () => {
+      const conversaDaAcao = conversaDaAcaoSugestaoRef.current;
       toast.success("Sugestão enviada ao cliente.");
-      setTexto("");
-      setSugestaoEmRevisao(null);
-      setSugestaoDispensadaId(sugestaoEmRevisao?.id ?? null);
-      utils.agentes.diagnostico.conversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
-      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
-      utils.inbox.mensagens.listPaginada.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+      // Só mexe na caixa de texto se ainda for a mesma conversa dessa
+      // aprovação — senão apagaria o que já foi digitado depois de trocar.
+      if (conversaDaAcao === conversaSelecionadaId) {
+        setTexto("");
+        setSugestaoEmRevisao(null);
+        setSugestaoDispensadaId(sugestaoEmRevisao?.id ?? null);
+      }
+      utils.agentes.diagnostico.conversa.invalidate({ conversaId: conversaDaAcao ?? 0 });
+      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaDaAcao ?? 0 });
+      utils.inbox.mensagens.listPaginada.invalidate({ conversaId: conversaDaAcao ?? 0 });
       utils.inbox.conversas.list.invalidate();
     },
     // Sem o refetch aqui, um card com estado desatualizado (avaliado em
@@ -342,25 +352,28 @@ export default function Mensagens() {
     // (2026-09-02, mesmo padrão já usado em liberarSugestaoParaEdicaoMutation).
     onError: (error) => {
       toast.error(error.message);
-      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaDaAcaoSugestaoRef.current ?? 0 });
     },
   });
 
   const reprovarSugestaoAgenteMutation = trpc.agentes.fila.reprovar.useMutation({
     onSuccess: () => {
+      const conversaDaAcao = conversaDaAcaoSugestaoRef.current;
       toast.success("Sugestão reprovada.");
       setModalRejeitarSugestao(false);
       setMotivoRejeicao("");
       setComentarioRejeicao("");
-      setTexto("");
-      setSugestaoEmRevisao(null);
-      setSugestaoDispensadaId(sugestaoEmRevisao?.id ?? null);
-      utils.agentes.diagnostico.conversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
-      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+      if (conversaDaAcao === conversaSelecionadaId) {
+        setTexto("");
+        setSugestaoEmRevisao(null);
+        setSugestaoDispensadaId(sugestaoEmRevisao?.id ?? null);
+      }
+      utils.agentes.diagnostico.conversa.invalidate({ conversaId: conversaDaAcao ?? 0 });
+      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaDaAcao ?? 0 });
     },
     onError: (error) => {
       toast.error(error.message);
-      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaDaAcaoSugestaoRef.current ?? 0 });
     },
   });
 
@@ -722,6 +735,7 @@ export default function Mensagens() {
 
   function enviarRascunhoRevisado() {
     if (!sugestaoEmRevisao || !texto.trim()) return;
+    conversaDaAcaoSugestaoRef.current = sugestaoEmRevisao.conversaId;
     aprovarSugestaoAgenteMutation.mutate({
       sugestaoId: sugestaoEmRevisao.id,
       textoFinal: texto.trim(),
@@ -746,6 +760,7 @@ export default function Mensagens() {
 
   function confirmarRejeicaoSugestao() {
     if (!sugestaoEmRevisao) return;
+    conversaDaAcaoSugestaoRef.current = sugestaoEmRevisao.conversaId;
     reprovarSugestaoAgenteMutation.mutate({
       sugestaoId: sugestaoEmRevisao.id,
       comentario: comentarioRejeicao.trim() || undefined,
@@ -755,10 +770,16 @@ export default function Mensagens() {
 
   function handleEnviar() {
     if (!texto.trim() || !conversaSelecionadaId) return;
+    // O botão de enviar já ficava desabilitado durante o envio, mas o
+    // atalho de Enter chama esta função direto, sem passar pelo `disabled`
+    // do botão — Enter duas vezes rápido (comum em quem usa muito chat)
+    // mandava a mesma mensagem duas vezes pro cliente (2026-09-02).
+    if (enviarMutation.isPending || aprovarSugestaoAgenteMutation.isPending) return;
     if (sugestaoEmRevisao) {
       // O envio pelo botão principal também é uma decisão: se mudou o texto,
       // registra como editada; se não mudou, aceita como está. Assim o rascunho
       // não fica preso depois que a recepção responde por conta própria.
+      conversaDaAcaoSugestaoRef.current = sugestaoEmRevisao.conversaId;
       aprovarSugestaoAgenteMutation.mutate({
         sugestaoId: sugestaoEmRevisao.id,
         textoFinal: texto.trim(),
@@ -858,7 +879,7 @@ export default function Mensagens() {
   }
 
   async function handleEnviarAnexo() {
-    if (!anexoPendente || !conversaSelecionadaId) return;
+    if (!anexoPendente || !conversaSelecionadaId || enviarMidiaMutation.isPending) return;
     let arquivoBase64: string;
     try {
       arquivoBase64 = await fileToBase64(anexoPendente.file);
@@ -1536,8 +1557,8 @@ export default function Mensagens() {
                       </PopoverContent>
                     </Popover>
                   </div>
-                  <Button size="icon" className="shrink-0" disabled={enviarMutation.isPending || !texto.trim()} onClick={handleEnviar} title="Enviar mensagem">
-                    {enviarMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  <Button size="icon" className="shrink-0" disabled={enviarMutation.isPending || aprovarSugestaoAgenteMutation.isPending || !texto.trim()} onClick={handleEnviar} title="Enviar mensagem">
+                    {(enviarMutation.isPending || aprovarSugestaoAgenteMutation.isPending) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   </Button>
                 </div>
                 <p className="text-[10px] text-muted-foreground">Enter para enviar · Shift+Enter para nova linha · / para scripts · ✨ para sugestão da IA</p>
