@@ -587,6 +587,37 @@ export async function acaoJaRegistrada(conversaId: number, chaveAcao: string) {
   return Boolean(linhas[0]);
 }
 
+const REGEX_DIACRITICOS = new RegExp("[\\u0300-\\u036f]", "g");
+
+function normalizarSugestao(texto: string): string {
+  return texto.normalize("NFD").replace(REGEX_DIACRITICOS, "").toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+/**
+ * A última sugestão desse agente nessa conversa é igual (mesmo texto)
+ * à que está prestes a ser criada, e não foi aceita como estava — ou
+ * seja, ela já foi editada/descartada uma vez e o agente ia repetir a
+ * mesma coisa de novo, sem incorporar nada novo (2026-09-02: padrão
+ * real observado — pergunta já resolvida ou fora de contexto voltando
+ * a cada mensagem nova do cliente, sem nunca vazar pro cliente porque
+ * a recepção sempre reescreve, mas poluindo a fila de sugestões).
+ */
+export async function sugestaoRepetiriaSemAceite(conversaId: number, agenteId: number, mensagem: string): Promise<boolean> {
+  const texto = normalizarSugestao(mensagem);
+  if (!texto) return false;
+  const db = await getDb();
+  if (!db) return false;
+  const [ultima] = await db.select({
+    sugestao: agentesSugestoes.sugestao,
+    tipoRevisao: agentesSugestoes.tipoRevisao,
+  }).from(agentesSugestoes)
+    .where(and(eq(agentesSugestoes.conversaId, conversaId), eq(agentesSugestoes.agenteId, agenteId)))
+    .orderBy(desc(agentesSugestoes.createdAt))
+    .limit(1);
+  if (!ultima || ultima.tipoRevisao === "aceita_como_esta") return false;
+  return normalizarSugestao(ultima.sugestao) === texto;
+}
+
 export async function registrarAcaoConversa(conversaId: number, chaveAcao: string, sugestaoId?: number | null) {
   const db = await getDb();
   if (!db) return;

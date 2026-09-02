@@ -814,8 +814,18 @@ export async function processarMensagemRecebida(params: { conversaId: number; me
     }
 
     for (let tentativa = 0; tentativa < 3; tentativa++) {
-      const resposta = await obterRespostaEspecialista({ especialista, contexto, estado: await agentesDb.obterEstadoConversa(params.conversaId) });
-      if (!resposta) throw new Error("O especialista não retornou o contrato JSON esperado");
+      const respostaBruta = await obterRespostaEspecialista({ especialista, contexto, estado: await agentesDb.obterEstadoConversa(params.conversaId) });
+      if (!respostaBruta) throw new Error("O especialista não retornou o contrato JSON esperado");
+      // A mesma pergunta voltando idêntica, sem nunca ter sido aceita como
+      // estava, é sinal de que ela não é mais o próximo passo certo (cliente
+      // mudou de assunto, ou a recepção já assumiu a negociação por fora) —
+      // suprime em vez de repetir de novo (2026-09-02).
+      const repetiriaSemAceite = AGENTES_COM_NAO_INTERVENCAO.includes(especialista.agente.chave as typeof AGENTES_COM_NAO_INTERVENCAO[number])
+        && respostaBruta.status !== "failure"
+        && await agentesDb.sugestaoRepetiriaSemAceite(params.conversaId, especialista.agente.id, respostaBruta.message);
+      const resposta = repetiriaSemAceite
+        ? { ...respostaBruta, message: "", status: "failure" as const, action: null, summary: `${respostaBruta.summary} (sugestão repetida sem aceite anteriormente; suprimida)` }
+        : respostaBruta;
       rastro.push({ agente: especialista.agente.chave, status: resposta.status, action: resposta.action });
 
       if (naoIntervencaoPermitida(especialista, resposta)) {

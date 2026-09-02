@@ -17,6 +17,7 @@ const agentesDb = vi.hoisted(() => ({
   avaliarSugestao: vi.fn(),
   marcarSugestaoEnviada: vi.fn(),
   acaoJaRegistrada: vi.fn(),
+  sugestaoRepetiriaSemAceite: vi.fn(),
   registrarErroEnvioSugestao: vi.fn(),
   registrarAcaoConversa: vi.fn(),
   obterNomeAtendente: vi.fn(),
@@ -132,6 +133,7 @@ describe("orquestrador de agentes", () => {
     agentesDb.listarTabelaPrecosParaAgente.mockResolvedValue([]);
     agentesDb.listarScriptsParaAgentes.mockResolvedValue([]);
     agentesDb.acaoJaRegistrada.mockResolvedValue(false);
+    agentesDb.sugestaoRepetiriaSemAceite.mockResolvedValue(false);
     agentesDb.criarSugestao.mockResolvedValue(91);
     agentesDb.descartarSugestoesPendentesDaConversa.mockResolvedValue(undefined);
     db.mensageriaEstaAtiva.mockResolvedValue(true);
@@ -402,6 +404,17 @@ describe("orquestrador de agentes", () => {
     expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
       sugestao: "Qual será a terapia?",
     }));
+  });
+
+  it("suprime a sugestão da Carol quando ela repetiria uma pergunta já editada/descartada antes", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Teria algum horário entre 16h15 e 16h45 no dia 28?"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);
+    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("Qual será a terapia?") } }] });
+    agentesDb.sugestaoRepetiriaSemAceite.mockResolvedValue(true);
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 487 })).resolves.toEqual({ status: "ignorada" });
+
+    expect(agentesDb.criarSugestao).not.toHaveBeenCalled();
   });
 
   it("oferece os slots de domingo na ordem aprovada", async () => {
