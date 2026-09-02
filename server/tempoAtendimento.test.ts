@@ -5,6 +5,7 @@ import {
   escolherAtendimentoPorEvento,
   identificarEventoTempoAtendimento,
   identificarTerapeuta,
+  nomesClienteCorrespondem,
 } from "./tempoAtendimento";
 
 const ROSTER_TESTE = [
@@ -33,6 +34,26 @@ describe("identificarTerapeuta", () => {
 
   it("não resolve nome de sala/recurso do Belle (banho de imersão sem terapeuta dedicado)", () => {
     expect(identificarTerapeuta("Banho II", ROSTER_TESTE)).toBeNull();
+  });
+});
+
+describe("nomesClienteCorrespondem", () => {
+  it("tolera prefixo de tratamento que o Belle às vezes usa", () => {
+    expect(nomesClienteCorrespondem("Pedro Luis Taveira", "Sr. Pedro Luis Taveira")).toBe(true);
+  });
+
+  it("tolera erro de digitação pequeno no primeiro nome", () => {
+    expect(nomesClienteCorrespondem("Daniele fernandes", "Daniela Fernandes")).toBe(true);
+    expect(nomesClienteCorrespondem("Giovanna Brito", "Giovana Brito")).toBe(true);
+    expect(nomesClienteCorrespondem("Prisacila Batalzar", "Priscila Baltazar lazzarini")).toBe(true);
+  });
+
+  it("não casa nomes curtos diferentes só porque a distância é pequena", () => {
+    expect(nomesClienteCorrespondem("Ana Silva", "Ada Silva")).toBe(false);
+  });
+
+  it("não casa clientes genuinamente diferentes", () => {
+    expect(nomesClienteCorrespondem("Marcos Rocha", "Rodrigo Costa")).toBe(false);
   });
 });
 

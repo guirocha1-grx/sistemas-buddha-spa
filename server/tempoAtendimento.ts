@@ -146,6 +146,32 @@ export function identificarTerapeuta(nomeRaw: string | null | undefined, roster:
   return null;
 }
 
+const PREFIXO_HONORIFICO = /^(sr|sra|dr|dra|srs)\.?\s+/;
+
+/**
+ * Igual a `nomesCorrespondem`, mas pra nome de CLIENTE casando Comanda
+ * (digitado à mão) x Belle: tolera o Belle prefixar com tratamento
+ * ("Sr. Pedro Luis Taveira") e um erro de digitação pequeno no primeiro
+ * nome (transposição, letra a mais/a menos — ex.: "Daniele" vs
+ * "Daniela", "Giovanna" vs "Giovana", "Prisacila" vs "Priscila", todos
+ * distância 1, achados reais 2026-09-02 na Fase 3 de Terapeutas).
+ * Restrito a nomes com 5+ letras pra não arriscar confundir nomes
+ * curtos de clientes diferentes — a comparação já é só dentro dos
+ * atendimentos do mesmo dia (lista pequena), então o risco de colisão
+ * é baixo mesmo assim, mas continua exigindo conferência manual.
+ */
+export function nomesClienteCorrespondem(nomeA: string | null | undefined, nomeB: string | null | undefined): boolean {
+  const a = normalizarTexto(nomeA).replace(PREFIXO_HONORIFICO, "");
+  const b = normalizarTexto(nomeB).replace(PREFIXO_HONORIFICO, "");
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const primeiroA = a.split(/\s+/)[0];
+  const primeiroB = b.split(/\s+/)[0];
+  if (primeiroA.length >= 2 && primeiroA === primeiroB) return true;
+  if (primeiroA.length >= 5 && primeiroB.length >= 5 && distanciaEdicao(primeiroA, primeiroB) <= 1) return true;
+  return false;
+}
+
 export interface IdentificadoresAtendimento {
   clienteNome: string | null | undefined;
   servicoNome: string | null | undefined;

@@ -16,7 +16,7 @@ import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacio
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda, calcularEvolucaoFidelizacao, type GranularidadeEvolucao } from "./terapeutasRelatorios";
-import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, nomesCorrespondem, identificarTerapeuta, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
+import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, nomesCorrespondem, identificarTerapeuta, nomesClienteCorrespondem, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -3024,7 +3024,7 @@ export async function listarDivergenciasTerapeutas(unidadeId: number, dataInicio
     const terapeutaComandaId = identificarTerapeuta(terapeuta, roster);
     if (terapeutaComandaId === null) continue;
 
-    const candidatos = (belleporData.get(item.data) ?? []).filter((b) => nomesCorrespondem(b.clienteNome, cliente));
+    const candidatos = (belleporData.get(item.data) ?? []).filter((b) => nomesClienteCorrespondem(b.clienteNome, cliente));
     if (candidatos.length === 0) {
       divergencias.push({ data: item.data, cliente, terapia: item.terapiaProduto, terapeutaComanda: terapeuta, terapeutaBelle: null, situacao: "sem_correspondencia_belle" });
       continue;
