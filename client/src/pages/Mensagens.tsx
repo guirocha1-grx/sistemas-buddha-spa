@@ -565,18 +565,30 @@ export default function Mensagens() {
     }
   }
 
+  // Aplica o deep-link (?conversaId=/?telefone=) só uma vez por URL —
+  // sem o ref, esse efeito reabria a conversa solicitada a cada refetch
+  // em segundo plano da lista (poll de novas mensagens), arrancando
+  // quem estava digitando numa OUTRA conversa de volta pra essa aqui,
+  // sem aviso (bug real relatado 2026-09-02: recepção quase mandou
+  // mensagem pro cliente errado porque a tela trocou sozinha no meio
+  // da digitação).
+  const solicitacaoAplicadaRef = useRef<string | null>(null);
   useEffect(() => {
+    const chave = `${conversaIdSolicitada ?? ""}|${telefoneSolicitado}`;
+    if (!conversaIdSolicitada && !telefoneSolicitado) return;
+    if (solicitacaoAplicadaRef.current === chave) return;
     if (conversaIdSolicitada) {
       setBusca("");
       selecionarConversa(conversaIdSolicitada);
+      solicitacaoAplicadaRef.current = chave;
       return;
     }
-    if (!telefoneSolicitado) return;
     setBusca(telefoneSolicitado);
     const conversa = (conversas ?? []).find((item) => telefonesCorrespondem(item.telefone, telefoneSolicitado));
     if (conversa) {
       selecionarConversa(conversa.id);
       setBusca("");
+      solicitacaoAplicadaRef.current = chave;
     }
   }, [conversas, conversaIdSolicitada, telefoneSolicitado]);
 
