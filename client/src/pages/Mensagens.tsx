@@ -335,7 +335,15 @@ export default function Mensagens() {
       utils.inbox.mensagens.listPaginada.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
       utils.inbox.conversas.list.invalidate();
     },
-    onError: (error) => toast.error(error.message),
+    // Sem o refetch aqui, um card com estado desatualizado (avaliado em
+    // outra aba/sessão, ou pela própria pessoa clicando duas vezes)
+    // ficava "grudado" na tela repetindo o mesmo erro "já foi avaliado"
+    // pra sempre — o refetch traz o estado real e some com o card
+    // (2026-09-02, mesmo padrão já usado em liberarSugestaoParaEdicaoMutation).
+    onError: (error) => {
+      toast.error(error.message);
+      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+    },
   });
 
   const reprovarSugestaoAgenteMutation = trpc.agentes.fila.reprovar.useMutation({
@@ -350,7 +358,10 @@ export default function Mensagens() {
       utils.agentes.diagnostico.conversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
       utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => {
+      toast.error(error.message);
+      utils.agentes.fila.pendenteConversa.invalidate({ conversaId: conversaSelecionadaId ?? 0 });
+    },
   });
 
   const liberarSugestaoParaEdicaoMutation = trpc.agentes.fila.liberarParaEdicao.useMutation({
