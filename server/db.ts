@@ -2294,7 +2294,7 @@ export async function listInboxMensagens(conversaId: number, limit: number = 50)
 /** Histórico do Inbox: abre leve com seis dias e busca páginas anteriores somente sob demanda. */
 export async function listInboxMensagensPaginada(params: { conversaId: number; limit?: number; antesDe?: Date | null }) {
   const db = await getDb();
-  const limit = Math.min(Math.max(params.limit ?? 120, 1), 200);
+  const limit = Math.min(Math.max(params.limit ?? 15, 1), 200);
   if (!db) return { mensagens: [], hasMore: false, cursorConsultado: params.antesDe?.toISOString() ?? null };
   const inicioRecente = new Date();
   inicioRecente.setDate(inicioRecente.getDate() - 6);

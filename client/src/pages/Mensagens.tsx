@@ -259,12 +259,20 @@ export default function Mensagens() {
   const [cursorMensagensAntigas, setCursorMensagensAntigas] = useState<string | null>(null);
   const [cursorAntigasAplicado, setCursorAntigasAplicado] = useState<string | null>(null);
   const [mensagensAntigas, setMensagensAntigas] = useState<any[]>([]);
+  // Carga inicial reduzida de 120 pra 15 (2026-09-02, performance — ver
+  // índice novo em inbox_mensagens). Isso é sempre "as N mais recentes",
+  // sem cursor — numa conversa muito ativa, com "carregar mais antigas"
+  // já usado, é teoricamente possível uma mensagem no meio sumir (sai
+  // dessa janela de N antes de ter sido puxada pro lado antigo). Risco
+  // baixo e pré-existente (só ficou mais provável com N menor); se virar
+  // reclamação real, o fix certo é trocar esse poll por um cursor
+  // "mensagens novas desde X" em vez de "top N".
   const { data: paginaMensagensRecentes, isLoading: carregandoMensagens } = trpc.inbox.mensagens.listPaginada.useQuery(
-    { conversaId: conversaSelecionadaId ?? 0, limit: 120 },
+    { conversaId: conversaSelecionadaId ?? 0, limit: 15 },
     { enabled: !!conversaSelecionadaId, refetchInterval: 8000 },
   );
   const { data: paginaMensagensAntigas, isFetching: carregandoMensagensAntigas } = trpc.inbox.mensagens.listPaginada.useQuery(
-    { conversaId: conversaSelecionadaId ?? 0, limit: 100, antesDe: cursorMensagensAntigas ?? undefined },
+    { conversaId: conversaSelecionadaId ?? 0, limit: 15, antesDe: cursorMensagensAntigas ?? undefined },
     { enabled: !!conversaSelecionadaId && !!cursorMensagensAntigas && cursorMensagensAntigas !== cursorAntigasAplicado },
   );
   const mensagensRecentes = paginaMensagensRecentes?.mensagens ?? [];

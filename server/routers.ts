@@ -1331,7 +1331,7 @@ Diretrizes:
       }),
       listPaginada: protectedProcedure.input(z.object({
         conversaId: z.number(),
-        limit: z.number().int().min(1).max(200).default(120),
+        limit: z.number().int().min(1).max(200).default(15),
         antesDe: z.string().datetime().optional(),
       })).query(async ({ input }) => {
         return db.listInboxMensagensPaginada({
