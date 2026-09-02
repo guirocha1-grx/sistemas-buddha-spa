@@ -3580,12 +3580,21 @@ Diretrizes:
 
       try {
         const conciliacaoPorDia = await db.calcularConciliacaoPorDia(input.unidadeId, input.dataInicio, input.dataFim);
+        const porData = new Map(conciliacaoPorDia.map((dia) => [dia.data, dia]));
 
+        // Escreve TODO dia do período, não só os que tiveram algum
+        // lançamento — um domingo sem nenhum movimento em nenhuma das 3
+        // fontes vira zero explícito na planilha, não uma célula em
+        // branco (que ficava indistinguível de "ainda não sincronizado").
+        // Confirmado pelo usuário em 2026-09-02 (dia sem movimento real
+        // ficando de fora, inconsistente com outros domingos parados).
         const porMes = new Map<string, { data: string; cartaoDebito: number; cartaoCredito: number; pix: number }[]>();
-        for (const dia of conciliacaoPorDia) {
-          const chave = dia.data.slice(0, 7); // "AAAA-MM"
+        for (const d = new Date(`${input.dataInicio}T00:00:00`); fmtDateIso(d) <= input.dataFim; d.setDate(d.getDate() + 1)) {
+          const dataIso = fmtDateIso(d);
+          const dia = porData.get(dataIso);
+          const chave = dataIso.slice(0, 7); // "AAAA-MM"
           const lista = porMes.get(chave) ?? [];
-          lista.push({ data: dia.data, cartaoDebito: dia.cartaoDebito, cartaoCredito: dia.cartaoCredito, pix: dia.pix });
+          lista.push({ data: dataIso, cartaoDebito: dia?.cartaoDebito ?? 0, cartaoCredito: dia?.cartaoCredito ?? 0, pix: dia?.pix ?? 0 });
           porMes.set(chave, lista);
         }
 
@@ -3636,11 +3645,15 @@ Diretrizes:
       try {
         const resumoPorDia = await db.resumoBelleRegistrosPorDia(input.unidadeId, input.dataInicio, input.dataFim);
 
+        // Mesmo raciocínio da Fase 1: escreve todo dia do período, com
+        // zero explícito nos dias sem registro do Belle.
         const porMes = new Map<string, { data: string; dinheiro: number; cartaoDebito: number; cartaoCredito: number; pix: number }[]>();
-        for (const [dataStr, valores] of Array.from(resumoPorDia)) {
-          const chave = dataStr.slice(0, 7); // "AAAA-MM"
+        for (const d = new Date(`${input.dataInicio}T00:00:00`); fmtDateIso(d) <= input.dataFim; d.setDate(d.getDate() + 1)) {
+          const dataIso = fmtDateIso(d);
+          const valores = resumoPorDia.get(dataIso);
+          const chave = dataIso.slice(0, 7); // "AAAA-MM"
           const lista = porMes.get(chave) ?? [];
-          lista.push({ data: dataStr, dinheiro: valores.dinheiro, cartaoDebito: valores.cartaoDebito, cartaoCredito: valores.cartaoCredito, pix: valores.pix });
+          lista.push({ data: dataIso, dinheiro: valores?.dinheiro ?? 0, cartaoDebito: valores?.cartaoDebito ?? 0, cartaoCredito: valores?.cartaoCredito ?? 0, pix: valores?.pix ?? 0 });
           porMes.set(chave, lista);
         }
 
@@ -3673,9 +3686,9 @@ Diretrizes:
     /**
      * Um disparo por dia (por unidade) — dispara manualmente pelo botão
      * "Enviar recepção" ao lado de "Sincronizar com Drive". Reaproveita
-     * o mesmo cálculo de conciliação que já vai pra linha 20 da
-     * planilha, só que manda pro grupo do Telegram em vez de escrever
-     * na planilha.
+     * o mesmo cálculo de conciliação usado pra tela e pro relatório
+     * automático do Telegram, só que manda pro grupo do Telegram sob
+     * demanda em vez de escrever na planilha.
      */
     enviarRelatorioRecepcao: protectedProcedure.input(z.object({
       unidadeId: z.number(),
