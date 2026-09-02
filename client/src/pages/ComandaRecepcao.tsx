@@ -420,6 +420,10 @@ export default function ComandaRecepcao() {
 
   const fase1TemDivergencia = diasFase1.some((dia) => Math.abs(total(dia.diferenca)) > 0.005);
   const diasComDiferenca = dias.filter((dia) => Math.abs(total(dia.diferenca)) > 0.005).length;
+  const diasComPendenteConfirmacao = diasFase2.filter((dia) => {
+    const p = dia.pendenteConfirmacao;
+    return p && (p.dinheiro || p.cartaoDebito || p.cartaoCredito || p.pix);
+  }).length;
 
   function tentarMudarFase(fase: Fase) {
     if (fase === "fase2" && fase1TemDivergencia) {
@@ -672,18 +676,32 @@ export default function ComandaRecepcao() {
                 {podeVerFase3 && <TabsTrigger value="fase3">Fase 3: Terapeutas</TabsTrigger>}
               </TabsList>
             </Tabs>
-            {faseAtiva !== "fase3" && !carregando && dias.length > 0 && (
-              diasComDiferenca > 0 ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 whitespace-nowrap">
-                  <AlertTriangle className="h-3 w-3" />
-                  {diasComDiferenca} {diasComDiferenca === 1 ? "dia" : "dias"} com conciliação pendente
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700 whitespace-nowrap">
-                  Conciliação finalizada para o período
-                </span>
-              )
-            )}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {faseAtiva !== "fase3" && !carregando && dias.length > 0 && (
+                diasComDiferenca > 0 ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 whitespace-nowrap">
+                    <AlertTriangle className="h-3 w-3" />
+                    {diasComDiferenca} {diasComDiferenca === 1 ? "dia" : "dias"} com conciliação pendente
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700 whitespace-nowrap">
+                    Conciliação finalizada para o período
+                  </span>
+                )
+              )}
+              {faseAtiva === "fase2" && !carregando && dias.length > 0 && (
+                diasComPendenteConfirmacao > 0 ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 whitespace-nowrap">
+                    <AlertTriangle className="h-3 w-3" />
+                    {diasComPendenteConfirmacao} {diasComPendenteConfirmacao === 1 ? "dia" : "dias"} pendente confirmação
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700 whitespace-nowrap">
+                    Confirmação OK para todos os dias
+                  </span>
+                )
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-1 flex-wrap">
