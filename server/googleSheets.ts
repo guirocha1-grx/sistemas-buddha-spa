@@ -415,6 +415,202 @@ export async function escreverContasBancariasSheet(
   return colunasEscritas;
 }
 
+// ===== Informe de vendas (planilha "mãe", substitui a escrita na antiga
+// "Consolidado comanda" a partir de 2026-09-02) =====
+
+// IDs das planilhas "Informe de vendas" (RBS/SSU) — confirmado pelo
+// usuário em 2026-09-02.
+export const SPREADSHEET_IDS_INFORME_VENDAS = {
+  rbs: "16UYudMzhWvyPXUOO1essJkSoQ9H-vBrj_HkNiS5jTHc",
+  ssu: "1_6KBtnAS0icqmOe75KMC-76TJINMMMIuvz_Ltnj7GtQ",
+};
+
+// Diferente de nomeAbaComanda: aqui não tem prefixo SSU/RBS, cada
+// unidade já tem sua própria planilha — só "Ago.26", "Set.26" etc.
+function nomeAbaInformeVendas(ano: number, mes: number): string {
+  return `${MESES_ABREV[mes - 1]}.${String(ano).slice(-2)}`;
+}
+
+// Linhas fixas na planilha "Informe de vendas" — confirmado pelo usuário
+// em 2026-09-02 com print da estrutura real. Linha 46 e 52 ("Total de
+// pagamentos") são fórmulas da própria planilha, nunca escritas por
+// aqui. Linha 48 (Dinheiro em "Contas bancárias") também não é escrita:
+// mesma lógica de antes, a fonte já é o Caixa Físico, seria circular.
+const LINHA_BELLE_DINHEIRO = 42;
+const LINHA_BELLE_DEBITO = 43;
+const LINHA_BELLE_CREDITO = 44;
+const LINHA_BELLE_PIX = 45;
+const LINHA_CONTAS_DEBITO = 49;
+const LINHA_CONTAS_CREDITO = 50;
+const LINHA_CONTAS_PIX = 51;
+
+const RANGE_INFORME_VENDAS = "A1:AH55";
+
+/**
+ * Garante que a aba do mês pedido existe na planilha "Informe de
+ * vendas", clonando a aba do mês anterior quando ainda não existe
+ * (mesmo formato de nome, ex. "Set.26"). Ajusta D1 pro primeiro dia do
+ * mês novo (as demais datas do cabeçalho são fórmula em cima de D1,
+ * conforme a estrutura já existente na planilha) e limpa as faixas de
+ * valores que essa sincronização escreve (D42:AH45 e D49:AH51) — o
+ * resto (fórmulas de total, seções não tocadas por este sistema)
+ * continua como veio da cópia. Idempotente: se a aba já existe, só
+ * retorna o nome, sem tocar em nada.
+ */
+async function garantirAbaInformeVendas(
+  sheets: ReturnType<typeof google.sheets>,
+  spreadsheetId: string,
+  ano: number,
+  mes: number,
+): Promise<string> {
+  const abaAlvo = nomeAbaInformeVendas(ano, mes);
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const abas = meta.data.sheets || [];
+  if (abas.some((s) => s.properties?.title === abaAlvo)) return abaAlvo;
+
+  const anoAnterior = mes === 1 ? ano - 1 : ano;
+  const mesAnterior = mes === 1 ? 12 : mes - 1;
+  const nomeAbaAnterior = nomeAbaInformeVendas(anoAnterior, mesAnterior);
+  const abaAnterior = abas.find((s) => s.properties?.title === nomeAbaAnterior);
+  const sheetIdAnterior = abaAnterior?.properties?.sheetId;
+  if (sheetIdAnterior === undefined || sheetIdAnterior === null) {
+    throw new Error(`Aba "${abaAlvo}" não existe e a aba do mês anterior ("${nomeAbaAnterior}") também não foi encontrada — não dá pra clonar automaticamente.`);
+  }
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        duplicateSheet: {
+          sourceSheetId: sheetIdAnterior,
+          insertSheetIndex: 0, // abas mais recentes ficam à esquerda, mesma ordem já usada na planilha
+          newSheetName: abaAlvo,
+        },
+      }],
+    },
+  });
+
+  const primeiroDia = `01/${String(mes).padStart(2, "0")}/${ano}`;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `'${abaAlvo}'!D1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[primeiroDia]] },
+  });
+
+  await sheets.spreadsheets.values.batchClear({
+    spreadsheetId,
+    requestBody: {
+      ranges: [`'${abaAlvo}'!D${LINHA_BELLE_DINHEIRO}:AH${LINHA_BELLE_PIX}`, `'${abaAlvo}'!D${LINHA_CONTAS_DEBITO}:AH${LINHA_CONTAS_PIX}`],
+    },
+  });
+
+  return abaAlvo;
+}
+
+async function colunaPorDataInformeVendas(
+  sheets: ReturnType<typeof google.sheets>,
+  spreadsheetId: string,
+  aba: string,
+): Promise<Map<string, number>> {
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `'${aba}'!${RANGE_INFORME_VENDAS}` });
+  const rows = res.data.values || [];
+  const linhaHeader = rows.findIndex((r) => r.some((c) => /^\d{2}\/\d{2}\/\d{4}$/.test((c || "").toString().trim())));
+  if (linhaHeader < 0) throw new Error(`Não achei o cabeçalho de datas na aba "${aba}"`);
+  const header = rows[linhaHeader];
+
+  const colPorData = new Map<string, number>();
+  for (let col = 0; col < header.length; col++) {
+    const dataRaw = (header[col] || "").toString().trim();
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dataRaw)) continue;
+    const data = parseData(dataRaw);
+    if (data) colPorData.set(data, col);
+  }
+  return colPorData;
+}
+
+export interface LinhaContasParaInforme {
+  data: string; // AAAA-MM-DD
+  cartaoDebito: number;
+  cartaoCredito: number;
+  pix: number;
+}
+
+/** Fase 1 — escreve Débito/Crédito/Pix de "Contas bancárias" (linhas 49-51). */
+export async function escreverContasBancariasInforme(
+  spreadsheetId: string,
+  ano: number,
+  mes: number,
+  linhas: LinhaContasParaInforme[],
+): Promise<number> {
+  const auth = getAuth();
+  if (!auth) throw new Error("Credenciais do Google Sheets não configuradas");
+  const sheets = google.sheets({ version: "v4", auth });
+
+  const aba = await garantirAbaInformeVendas(sheets, spreadsheetId, ano, mes);
+  const colPorData = await colunaPorDataInformeVendas(sheets, spreadsheetId, aba);
+
+  const data: { range: string; values: (string | number)[][] }[] = [];
+  let colunasEscritas = 0;
+  for (const linha of linhas) {
+    const col = colPorData.get(linha.data);
+    if (col === undefined) continue;
+    const colunaLetra = colunaParaLetra(col);
+    data.push(
+      { range: `'${aba}'!${colunaLetra}${LINHA_CONTAS_DEBITO}`, values: [[linha.cartaoDebito]] },
+      { range: `'${aba}'!${colunaLetra}${LINHA_CONTAS_CREDITO}`, values: [[linha.cartaoCredito]] },
+      { range: `'${aba}'!${colunaLetra}${LINHA_CONTAS_PIX}`, values: [[linha.pix]] },
+    );
+    colunasEscritas++;
+  }
+  if (data.length === 0) return 0;
+
+  await sheets.spreadsheets.values.batchUpdate({ spreadsheetId, requestBody: { valueInputOption: "USER_ENTERED", data } });
+  return colunasEscritas;
+}
+
+export interface LinhaBelleParaInforme {
+  data: string; // AAAA-MM-DD
+  dinheiro: number;
+  cartaoDebito: number;
+  cartaoCredito: number;
+  pix: number;
+}
+
+/** Fase 2 — escreve Dinheiro/Débito/Crédito/Pix de "Belle (Contas a receber)" (linhas 42-45). */
+export async function escreverBelleInforme(
+  spreadsheetId: string,
+  ano: number,
+  mes: number,
+  linhas: LinhaBelleParaInforme[],
+): Promise<number> {
+  const auth = getAuth();
+  if (!auth) throw new Error("Credenciais do Google Sheets não configuradas");
+  const sheets = google.sheets({ version: "v4", auth });
+
+  const aba = await garantirAbaInformeVendas(sheets, spreadsheetId, ano, mes);
+  const colPorData = await colunaPorDataInformeVendas(sheets, spreadsheetId, aba);
+
+  const data: { range: string; values: (string | number)[][] }[] = [];
+  let colunasEscritas = 0;
+  for (const linha of linhas) {
+    const col = colPorData.get(linha.data);
+    if (col === undefined) continue;
+    const colunaLetra = colunaParaLetra(col);
+    data.push(
+      { range: `'${aba}'!${colunaLetra}${LINHA_BELLE_DINHEIRO}`, values: [[linha.dinheiro]] },
+      { range: `'${aba}'!${colunaLetra}${LINHA_BELLE_DEBITO}`, values: [[linha.cartaoDebito]] },
+      { range: `'${aba}'!${colunaLetra}${LINHA_BELLE_CREDITO}`, values: [[linha.cartaoCredito]] },
+      { range: `'${aba}'!${colunaLetra}${LINHA_BELLE_PIX}`, values: [[linha.pix]] },
+    );
+    colunasEscritas++;
+  }
+  if (data.length === 0) return 0;
+
+  await sheets.spreadsheets.values.batchUpdate({ spreadsheetId, requestBody: { valueInputOption: "USER_ENTERED", data } });
+  return colunasEscritas;
+}
+
 // ===== Comanda virtual (controle diário item a item da recepção) =====
 
 // IDs das planilhas "Comanda virtual" (RBS/SSU) — item a item, uma aba

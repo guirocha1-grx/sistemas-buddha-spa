@@ -277,9 +277,9 @@ export default function ComandaRecepcao() {
     utils.comandaRecepcao.resumo.invalidate();
     utils.comandaRecepcao.itensDetalhe.invalidate();
 
-    // Roda sempre, mesmo se algo acima falhou parcialmente — a
-    // conciliação (linha 20 da planilha) não pode ficar travada numa
-    // versão antiga só porque um dia isolado do item-a-item deu erro.
+    // Roda sempre, mesmo se algo acima falhou parcialmente — o Informe de
+    // vendas não pode ficar travado numa versão antiga só porque um dia
+    // isolado do item-a-item deu erro.
     try {
       await sincronizarContasBancariasMutation.mutateAsync({ unidadeId, dataInicio, dataFim });
     } catch {
@@ -375,6 +375,20 @@ export default function ComandaRecepcao() {
     }
   }
 
+  const sincronizarBelleMutation = trpc.comandaRecepcao.sincronizarBelleParaDrive.useMutation({
+    onError: (err) => toast.error(`Erro ao enviar pro Drive: ${err.message}`),
+  });
+
+  async function handleSincronizarBelle() {
+    if (!unidadeId) return;
+    try {
+      const r = await sincronizarBelleMutation.mutateAsync({ unidadeId, dataInicio, dataFim });
+      toast.success(`Enviado pro Drive: ${r.totalDias} dia(s).`);
+    } catch {
+      // erro já reportado via onError da mutation
+    }
+  }
+
   const statusEnvioRecepcaoQuery = trpc.comandaRecepcao.statusEnvioRecepcao.useQuery(
     { unidadeId: unidadeId ?? 0 },
     { enabled: !!unidadeId && !isRbs },
@@ -434,9 +448,10 @@ export default function ComandaRecepcao() {
   }
 
   // Texto de conciliação por dia (server/shared/conciliacao.ts) — mesma
-  // lógica usada pelo server pra escrever a linha 20 da planilha, aqui
-  // calculada ao vivo com os itens já carregados (nenhuma chamada extra)
-  // pra alimentar o hover das células vermelhas em "Diferença".
+  // lógica usada pelo server pro relatório do Telegram, aqui calculada
+  // ao vivo com os itens já carregados (nenhuma chamada extra) pra
+  // alimentar o hover das células vermelhas em "Diferença". Não vai mais
+  // pra planilha nenhuma (só sistema/Telegram) desde 2026-09-02.
   const conciliacaoPorDiaFase1 = useMemo(() => {
     const mapa = new Map<string, string | null>();
     for (const dia of diasFase1) {
@@ -847,7 +862,7 @@ export default function ComandaRecepcao() {
                               className="h-6 px-2 text-xs font-normal"
                               disabled={sincronizarContasBancariasMutation.isPending}
                               onClick={handleSincronizarContasBancarias}
-                              title="Enviar Débito, Crédito e Pix pra planilha Drive (linhas 10-12) + conciliação dos dias com diferença (linha 20)"
+                              title="Enviar Débito, Crédito e Pix pro Informe de vendas (linhas 49-51)"
                             >
                               {sincronizarContasBancariasMutation.isPending ? (
                                 <Loader2 className="h-3 w-3 mr-1 animate-spin" />
@@ -883,15 +898,32 @@ export default function ComandaRecepcao() {
                         auditavel
                         buscarItens={(data, formas) => itensDoDia(itensLadoBPorCelula, data, formas)}
                         acao={
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 w-6 p-0"
-                            onClick={() => setModalBelleAberto(true)}
-                            title="Importar relatório 'Registros Financeiros' do Belle (.xlsx)"
-                          >
-                            <Upload className="h-3 w-3" />
-                          </Button>
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-xs font-normal"
+                              disabled={sincronizarBelleMutation.isPending}
+                              onClick={handleSincronizarBelle}
+                              title="Enviar Dinheiro, Débito, Crédito e Pix do Belle pro Informe de vendas (linhas 42-45)"
+                            >
+                              {sincronizarBelleMutation.isPending ? (
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              ) : (
+                                <UploadCloud className="h-3 w-3 mr-1" />
+                              )}
+                              Sincronizar com Drive
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0"
+                              onClick={() => setModalBelleAberto(true)}
+                              title="Importar relatório 'Registros Financeiros' do Belle (.xlsx)"
+                            >
+                              <Upload className="h-3 w-3" />
+                            </Button>
+                          </div>
                         }
                       />
                     )}
@@ -913,7 +945,8 @@ export default function ComandaRecepcao() {
             soma — em "Comanda (Recepção)", vem da Comanda virtual (item a item); em "{LADO_B_LABEL[faseAtiva]}",
             vem {faseAtiva === "fase1" ? "do que já está sincronizado nas contas (exceto Dinheiro)" : "do relatório financeiro importado do Belle"}.
             Na linha "Diferença", passe o mouse pra ver a conciliação completa do dia (Comanda x {LADO_B_LABEL[faseAtiva]}
-            {faseAtiva === "fase1" ? " + ações corretivas sugeridas) — o mesmo texto é gravado na linha 20 da planilha \"Consolidado comanda\" ao clicar em \"Sincronizar com Drive\", e some de lá sozinho quando a diferença é corrigida." : " + ações corretivas sugeridas)."}
+            {" + ações corretivas sugeridas). \"Sincronizar com Drive\" envia os valores (não o texto da diferença, que fica só aqui e no Telegram) pro Informe de vendas — "}
+            {faseAtiva === "fase1" ? "Contas bancárias, linhas 49-51." : "Belle, linhas 42-45."}
             {faseAtiva === "fase2" && (
               <> O ícone <AlertTriangle className="inline h-3 w-3 mb-0.5 text-amber-600" /> ao lado do valor indica que o dia
               inclui parcela do Belle ainda sem confirmação de recebimento (aparece mesmo quando a diferença zera).</>

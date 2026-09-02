@@ -30,7 +30,7 @@ import { consultarTodosPagamentos, consultarPagamentoPorId, criarPreferenciaPaga
 import { combinarLinksConfirmacao, dataSaoPaulo, listarLinksConfirmadosLocalmente, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
 import { listarMigracoes, aplicarMigracao, marcarMigracaoAplicada, executarConsultaSql } from "./migracoesRunner";
 import { PDFParse } from "pdf-parse";
-import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, escreverContasBancariasSheet, type LinhaContasBancariasParaSheet, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual, chaveComandaVirtualPorUnidade } from "./googleSheets";
+import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual, chaveComandaVirtualPorUnidade, SPREADSHEET_IDS_INFORME_VENDAS, escreverContasBancariasInforme, escreverBelleInforme } from "./googleSheets";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTelegramParaRecepcao } from "./telegramApi";
 import { UNIDADE_GRUPO_GERAL_RBS_ID, GRUPOS_CHAMADO_RBS, type ChaveGrupoChamado, grupoChamadoPadrao, conversaIdDoGrupoChamado, montarMensagemChamadoTerapeuta } from "./chamadoTerapeuta";
@@ -3555,12 +3555,16 @@ Diretrizes:
     }),
 
     /**
-     * Caminho inverso do `sincronizar` acima: escreve de volta na
-     * planilha "Consolidado comanda" o que este sistema calcula como
-     * "Contas bancárias" (débito/crédito/pix, já deduplicado) — linhas
-     * 10/11/12, ver escreverContasBancariasSheet. Agrupa por mês porque
-     * cada mês é uma aba diferente na planilha; o período pode cair em
-     * mais de uma aba se a semana visível cruzar virada de mês.
+     * Escreve na planilha "Informe de vendas" (mãe) o que este sistema
+     * calcula como "Contas bancárias" (débito/crédito/pix, já
+     * deduplicado) — linhas 49-51 (ver escreverContasBancariasInforme).
+     * Até 2026-09-02 escrevia nas linhas 10-12 da planilha "Consolidado
+     * comanda" (transição); trocado a pedido do usuário. O texto de
+     * conciliação (antes linha 20 dessa planilha) não tem mais destino
+     * em planilha — fica só no sistema/Telegram. Agrupa por mês porque
+     * cada mês é uma aba diferente; o período pode cair em mais de uma
+     * aba se a semana visível cruzar virada de mês — a aba do mês é
+     * criada sozinha (clonando o mês anterior) se ainda não existir.
      */
     sincronizarContasBancariasParaDrive: syncProcedure.input(z.object({
       unidadeId: z.number(),
@@ -3572,31 +3576,23 @@ Diretrizes:
 
       const isRbs = unidade.slug.includes("ribeirao") || unidade.slug.includes("rbs");
       const slug = isRbs ? "rbs" as const : "ssu" as const;
-      const spreadsheetId = SPREADSHEET_IDS_COMANDA[slug];
+      const spreadsheetId = SPREADSHEET_IDS_INFORME_VENDAS[slug];
 
       try {
         const conciliacaoPorDia = await db.calcularConciliacaoPorDia(input.unidadeId, input.dataInicio, input.dataFim);
 
-        const porMes = new Map<string, LinhaContasBancariasParaSheet[]>();
+        const porMes = new Map<string, { data: string; cartaoDebito: number; cartaoCredito: number; pix: number }[]>();
         for (const dia of conciliacaoPorDia) {
           const chave = dia.data.slice(0, 7); // "AAAA-MM"
           const lista = porMes.get(chave) ?? [];
-          lista.push({
-            data: dia.data,
-            cartaoDebito: dia.cartaoDebito,
-            cartaoCredito: dia.cartaoCredito,
-            pix: dia.pix,
-            // null = conciliado (diferença zero) — escreve string vazia
-            // para limpar a mensagem antiga da linha 20 da planilha
-            textoConciliacao: dia.texto ?? "",
-          });
+          lista.push({ data: dia.data, cartaoDebito: dia.cartaoDebito, cartaoCredito: dia.cartaoCredito, pix: dia.pix });
           porMes.set(chave, lista);
         }
 
         let totalDias = 0;
         for (const [chave, linhas] of Array.from(porMes)) {
           const [ano, mes] = chave.split("-").map(Number);
-          totalDias += await escreverContasBancariasSheet(spreadsheetId, slug, ano, mes, linhas);
+          totalDias += await escreverContasBancariasInforme(spreadsheetId, ano, mes, linhas);
         }
 
         await db.createSyncLog({
@@ -3611,6 +3607,61 @@ Diretrizes:
         await db.createSyncLog({
           unidadeId: input.unidadeId,
           tipo: "comanda_contas_bancarias",
+          status: "erro",
+          registrosProcessados: 0,
+          detalhes: error.message,
+        });
+        throw error;
+      }
+    }),
+
+    /**
+     * Fase 2 — mesmo botão "Sincronizar com Drive" da Fase 1, mas
+     * escrevendo os totais do Belle (Dinheiro/Débito/Crédito/Pix) nas
+     * linhas 42-45 da mesma planilha "Informe de vendas" (ver
+     * escreverBelleInforme). Adicionado em 2026-09-02.
+     */
+    sincronizarBelleParaDrive: syncProcedure.input(z.object({
+      unidadeId: z.number(),
+      dataInicio: z.string(),
+      dataFim: z.string(),
+    })).mutation(async ({ input }) => {
+      const unidade = await db.getUnidadeById(input.unidadeId);
+      if (!unidade) throw new Error("Unidade não encontrada");
+
+      const isRbs = unidade.slug.includes("ribeirao") || unidade.slug.includes("rbs");
+      const slug = isRbs ? "rbs" as const : "ssu" as const;
+      const spreadsheetId = SPREADSHEET_IDS_INFORME_VENDAS[slug];
+
+      try {
+        const resumoPorDia = await db.resumoBelleRegistrosPorDia(input.unidadeId, input.dataInicio, input.dataFim);
+
+        const porMes = new Map<string, { data: string; dinheiro: number; cartaoDebito: number; cartaoCredito: number; pix: number }[]>();
+        for (const [dataStr, valores] of Array.from(resumoPorDia)) {
+          const chave = dataStr.slice(0, 7); // "AAAA-MM"
+          const lista = porMes.get(chave) ?? [];
+          lista.push({ data: dataStr, dinheiro: valores.dinheiro, cartaoDebito: valores.cartaoDebito, cartaoCredito: valores.cartaoCredito, pix: valores.pix });
+          porMes.set(chave, lista);
+        }
+
+        let totalDias = 0;
+        for (const [chave, linhas] of Array.from(porMes)) {
+          const [ano, mes] = chave.split("-").map(Number);
+          totalDias += await escreverBelleInforme(spreadsheetId, ano, mes, linhas);
+        }
+
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "comanda_belle_drive",
+          status: "sucesso",
+          registrosProcessados: totalDias,
+          detalhes: `Período ${input.dataInicio} a ${input.dataFim}. Dias escritos: ${totalDias}.`,
+        });
+        return { success: true, totalDias };
+      } catch (error: any) {
+        await db.createSyncLog({
+          unidadeId: input.unidadeId,
+          tipo: "comanda_belle_drive",
           status: "erro",
           registrosProcessados: 0,
           detalhes: error.message,
