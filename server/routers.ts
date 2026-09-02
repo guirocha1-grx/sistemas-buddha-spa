@@ -3557,7 +3557,7 @@ Diretrizes:
     /**
      * Escreve na planilha "Informe de vendas" (mãe) o que este sistema
      * calcula como "Contas bancárias" (débito/crédito/pix, já
-     * deduplicado) — linhas 49-51 (ver escreverContasBancariasInforme).
+     * deduplicado) — linhas 43-45 (ver escreverContasBancariasInforme).
      * Até 2026-09-02 escrevia nas linhas 10-12 da planilha "Consolidado
      * comanda" (transição); trocado a pedido do usuário. O texto de
      * conciliação (antes linha 20 dessa planilha) não tem mais destino
@@ -3627,7 +3627,7 @@ Diretrizes:
     /**
      * Fase 2 — mesmo botão "Sincronizar com Drive" da Fase 1, mas
      * escrevendo os totais do Belle (Dinheiro/Débito/Crédito/Pix) nas
-     * linhas 42-45 da mesma planilha "Informe de vendas" (ver
+     * linhas 48-51 da mesma planilha "Informe de vendas" (ver
      * escreverBelleInforme). Adicionado em 2026-09-02.
      */
     sincronizarBelleParaDrive: syncProcedure.input(z.object({

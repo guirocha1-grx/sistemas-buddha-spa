@@ -862,7 +862,7 @@ export default function ComandaRecepcao() {
                               className="h-6 px-2 text-xs font-normal"
                               disabled={sincronizarContasBancariasMutation.isPending}
                               onClick={handleSincronizarContasBancarias}
-                              title="Enviar Débito, Crédito e Pix pro Informe de vendas (linhas 49-51)"
+                              title="Enviar Débito, Crédito e Pix pro Informe de vendas (linhas 43-45)"
                             >
                               {sincronizarContasBancariasMutation.isPending ? (
                                 <Loader2 className="h-3 w-3 mr-1 animate-spin" />
@@ -905,7 +905,7 @@ export default function ComandaRecepcao() {
                               className="h-6 px-2 text-xs font-normal"
                               disabled={sincronizarBelleMutation.isPending}
                               onClick={handleSincronizarBelle}
-                              title="Enviar Dinheiro, Débito, Crédito e Pix do Belle pro Informe de vendas (linhas 42-45)"
+                              title="Enviar Dinheiro, Débito, Crédito e Pix do Belle pro Informe de vendas (linhas 48-51)"
                             >
                               {sincronizarBelleMutation.isPending ? (
                                 <Loader2 className="h-3 w-3 mr-1 animate-spin" />
@@ -946,7 +946,7 @@ export default function ComandaRecepcao() {
             vem {faseAtiva === "fase1" ? "do que já está sincronizado nas contas (exceto Dinheiro)" : "do relatório financeiro importado do Belle"}.
             Na linha "Diferença", passe o mouse pra ver a conciliação completa do dia (Comanda x {LADO_B_LABEL[faseAtiva]}
             {" + ações corretivas sugeridas). \"Sincronizar com Drive\" envia os valores (não o texto da diferença, que fica só aqui e no Telegram) pro Informe de vendas — "}
-            {faseAtiva === "fase1" ? "Contas bancárias, linhas 49-51." : "Belle, linhas 42-45."}
+            {faseAtiva === "fase1" ? "Contas bancárias, linhas 43-45." : "Belle, linhas 48-51."}
             {faseAtiva === "fase2" && (
               <> O ícone <AlertTriangle className="inline h-3 w-3 mb-0.5 text-amber-600" /> ao lado do valor indica que o dia
               inclui parcela do Belle ainda sem confirmação de recebimento (aparece mesmo quando a diferença zera).</>

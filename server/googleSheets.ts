@@ -432,17 +432,19 @@ function nomeAbaInformeVendas(ano: number, mes: number): string {
 }
 
 // Linhas fixas na planilha "Informe de vendas" — confirmado pelo usuário
-// em 2026-09-02 com print da estrutura real. Linha 46 e 52 ("Total de
-// pagamentos") são fórmulas da própria planilha, nunca escritas por
-// aqui. Linha 48 (Dinheiro em "Contas bancárias") também não é escrita:
-// mesma lógica de antes, a fonte já é o Caixa Físico, seria circular.
-const LINHA_BELLE_DINHEIRO = 42;
-const LINHA_BELLE_DEBITO = 43;
-const LINHA_BELLE_CREDITO = 44;
-const LINHA_BELLE_PIX = 45;
-const LINHA_CONTAS_DEBITO = 49;
-const LINHA_CONTAS_CREDITO = 50;
-const LINHA_CONTAS_PIX = 51;
+// em 2026-09-02 com print da estrutura real, e invertidas (Contas antes
+// de Belle) a pedido do usuário no mesmo dia, pra organização da
+// gerência. Linha 46 e 52 ("Total de pagamentos") são fórmulas da
+// própria planilha, nunca escritas por aqui. Linha 42 (Dinheiro em
+// "Contas bancárias") também não é escrita: mesma lógica de antes, a
+// fonte já é o Caixa Físico, seria circular.
+const LINHA_CONTAS_DEBITO = 43;
+const LINHA_CONTAS_CREDITO = 44;
+const LINHA_CONTAS_PIX = 45;
+const LINHA_BELLE_DINHEIRO = 48;
+const LINHA_BELLE_DEBITO = 49;
+const LINHA_BELLE_CREDITO = 50;
+const LINHA_BELLE_PIX = 51;
 
 const RANGE_INFORME_VENDAS = "A1:AH55";
 
@@ -536,7 +538,7 @@ export interface LinhaContasParaInforme {
   pix: number;
 }
 
-/** Fase 1 — escreve Débito/Crédito/Pix de "Contas bancárias" (linhas 49-51). */
+/** Fase 1 — escreve Débito/Crédito/Pix de "Contas bancárias" (linhas 43-45). */
 export async function escreverContasBancariasInforme(
   spreadsheetId: string,
   ano: number,
@@ -577,7 +579,7 @@ export interface LinhaBelleParaInforme {
   pix: number;
 }
 
-/** Fase 2 — escreve Dinheiro/Débito/Crédito/Pix de "Belle (Contas a receber)" (linhas 42-45). */
+/** Fase 2 — escreve Dinheiro/Débito/Crédito/Pix de "Belle (Contas a receber)" (linhas 48-51). */
 export async function escreverBelleInforme(
   spreadsheetId: string,
   ano: number,
