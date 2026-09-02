@@ -3205,6 +3205,7 @@ export async function upsertRegistrosFinanceirosBelle(
     dataVencimento: linha.dataVencimento,
     clienteNome: linha.clienteNome,
     valor: linha.valor.toString(),
+    pendenteConfirmacao: linha.pendenteConfirmacao,
     formaPagamento: linha.formaPagamento,
     atendimentoBelleId: linha.atendimentoBelleId,
     observacao: linha.observacao,
@@ -3218,6 +3219,7 @@ export async function upsertRegistrosFinanceirosBelle(
       dataVencimento: sql`VALUES(dataVencimento)`,
       clienteNome: sql`VALUES(clienteNome)`,
       valor: sql`VALUES(valor)`,
+      pendenteConfirmacao: sql`VALUES(pendenteConfirmacao)`,
       formaPagamento: sql`VALUES(formaPagamento)`,
       atendimentoBelleId: sql`VALUES(atendimentoBelleId)`,
       observacao: sql`VALUES(observacao)`,
@@ -3233,6 +3235,7 @@ export interface ItemRegistroFinanceiroBelle {
   horario: string;
   descricao: string;
   valor: number;
+  pendenteConfirmacao: boolean;
 }
 
 /**
@@ -3267,6 +3270,7 @@ export async function detalheBelleRegistrosPorDia(
       horario: "",
       descricao: `${r.clienteNome ?? "Cliente não identificado"}${r.observacao ? ` — ${r.observacao}` : ""}`,
       valor: Number(r.valor),
+      pendenteConfirmacao: r.pendenteConfirmacao,
     });
   }
   return itens;
@@ -3293,6 +3297,42 @@ export async function resumoBelleRegistrosPorDia(
     else if (item.forma === "debito") l.cartaoDebito += item.valor;
     else if (item.forma === "credito") l.cartaoCredito += item.valor;
     else l.pix += item.valor;
+  }
+  return porDia;
+}
+
+export interface PendenciasContasBancariasDia {
+  data: string;
+  dinheiro: boolean;
+  cartaoDebito: boolean;
+  cartaoCredito: boolean;
+  pix: boolean;
+}
+
+/**
+ * Quais dia+forma têm alguma parcela do Belle ainda pendente de
+ * confirmação (Recebido zerado, somada pelo Valor contratado) —
+ * alimenta o aviso na tela mesmo quando a diferença do dia zera, pra
+ * não passar a impressão de que já está tudo confirmado.
+ */
+export async function pendenciasBelleRegistrosPorDia(
+  unidadeId: number,
+  dataInicio: string,
+  dataFim: string,
+): Promise<Map<string, PendenciasContasBancariasDia>> {
+  const itens = await detalheBelleRegistrosPorDia(unidadeId, dataInicio, dataFim);
+  const porDia = new Map<string, PendenciasContasBancariasDia>();
+  for (const item of itens) {
+    if (!item.pendenteConfirmacao) continue;
+    let l = porDia.get(item.data);
+    if (!l) {
+      l = { data: item.data, dinheiro: false, cartaoDebito: false, cartaoCredito: false, pix: false };
+      porDia.set(item.data, l);
+    }
+    if (item.forma === "dinheiro") l.dinheiro = true;
+    else if (item.forma === "debito") l.cartaoDebito = true;
+    else if (item.forma === "credito") l.cartaoCredito = true;
+    else l.pix = true;
   }
   return porDia;
 }

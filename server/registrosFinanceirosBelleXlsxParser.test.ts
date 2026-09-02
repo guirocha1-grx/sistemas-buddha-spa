@@ -25,19 +25,31 @@ describe("parser do relatório financeiro Belle", () => {
       dataVencimento: "2026-08-01",
       clienteNome: "Cliente de teste",
       valor: 2426.23,
+      pendenteConfirmacao: false,
       formaPagamento: "Pix - Conta Corrente",
       observacao: "Agendamento #71370969",
       atendimentoBelleId: 71370969,
     }]);
   });
 
-  it("usa Recebido (o que de fato entrou), não Valor (o total contratado da venda)", () => {
+  it("usa Recebido (o que de fato entrou) quando confirmado, não o Valor contratado da venda", () => {
     const linhas = parseRegistrosFinanceirosBelleXlsx(criarRelatorio([[
       "9002", "01/08/2026", "01/08/2026", "Cliente com plano parcelado", "2690,00", "448,33",
       "Cartão de Crédito", "Venda de Plano #409463680",
     ]]));
 
     expect(linhas[0].valor).toBe(448.33);
+    expect(linhas[0].pendenteConfirmacao).toBe(false);
+  });
+
+  it("cai pro Valor contratado quando Recebido vem zerado, e marca como pendente de confirmação", () => {
+    const linhas = parseRegistrosFinanceirosBelleXlsx(criarRelatorio([[
+      "9003", "19/08/2026", "19/08/2026", "Cliente com cartão não liquidado", "160,00", "0",
+      "Cartão de Débito", "Agendamento #73254563",
+    ]]));
+
+    expect(linhas[0].valor).toBe(160);
+    expect(linhas[0].pendenteConfirmacao).toBe(true);
   });
 
   it("rejeita relatórios sem a coluna obrigatória Vcto.", () => {

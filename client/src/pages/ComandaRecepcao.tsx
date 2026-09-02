@@ -14,7 +14,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, RefreshCw, UploadCloud, ChevronLeft, ChevronRight, Upload, Send } from "lucide-react";
+import { Loader2, RefreshCw, UploadCloud, ChevronLeft, ChevronRight, Upload, Send, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { gerarTextoConciliacao } from "@shared/conciliacao";
 
@@ -99,12 +99,16 @@ const FORMAS = [
 const TODAS_FORMAS_SERVER: FormaServer[] = ["dinheiro", "debito", "credito", "pix"];
 
 type ValoresForma = { dinheiro: number; cartaoDebito: number; cartaoCredito: number; pix: number };
+type ValoresFormaBooleana = { dinheiro: boolean; cartaoDebito: boolean; cartaoCredito: boolean; pix: boolean };
 
 type DiaConciliacao = {
   data: string;
   comanda: ValoresForma;
   ladoB: ValoresForma;
   diferenca: ValoresForma;
+  // Só preenchido na Fase 2 — dia+forma com alguma parcela do Belle
+  // ainda pendente de confirmação (Recebido zerado no relatório).
+  pendenteConfirmacao?: ValoresFormaBooleana;
 };
 
 function total(v: ValoresForma): number {
@@ -408,6 +412,7 @@ export default function ComandaRecepcao() {
     comanda: d.comanda,
     ladoB: d.belle,
     diferenca: d.diferenca,
+    pendenteConfirmacao: d.pendenteConfirmacao,
   })), [resumoBelleQuery.data]);
 
   const dias = faseAtiva === "fase1" ? diasFase1 : diasFase2;
@@ -513,6 +518,7 @@ export default function ComandaRecepcao() {
     auditavel,
     negrito,
     textoConciliacao,
+    pendente,
   }: {
     valor: number;
     diferente?: boolean;
@@ -520,6 +526,7 @@ export default function ComandaRecepcao() {
     auditavel?: boolean;
     negrito?: boolean;
     textoConciliacao?: string | null;
+    pendente?: boolean;
   }) {
     const comHover = auditavel || !!textoConciliacao;
     const conteudo = (
@@ -527,8 +534,14 @@ export default function ComandaRecepcao() {
         {fmtCurrencyCom(valor)}
       </span>
     );
+    const icone = pendente ? (
+      <AlertTriangle
+        className="inline h-3 w-3 ml-1 mb-0.5 text-amber-600"
+        title="Pendente confirmação — inclui parcela do Belle que ainda não confirmou o recebimento"
+      />
+    ) : null;
     const classe = `px-3 py-1.5 text-xs text-right whitespace-nowrap ${negrito ? "font-semibold" : ""} ${diferente ? "bg-red-100 text-red-700 font-medium" : ""}`;
-    if (!comHover) return <td className={classe}>{conteudo}</td>;
+    if (!comHover) return <td className={classe}>{conteudo}{icone}</td>;
     return (
       <td className={classe}>
         <HoverCard openDelay={150}>
@@ -541,6 +554,7 @@ export default function ComandaRecepcao() {
             )}
           </HoverCardContent>
         </HoverCard>
+        {icone}
       </td>
     );
   }
@@ -596,6 +610,7 @@ export default function ComandaRecepcao() {
                   auditavel={podeAuditar}
                   itens={podeAuditar ? buscarItens?.(dia.data, [forma.formaServer]) ?? [] : undefined}
                   textoConciliacao={diferente ? buscarTextoConciliacao?.(dia.data) : undefined}
+                  pendente={destacarDiferenca ? dia.pendenteConfirmacao?.[forma.chave] : undefined}
                 />
               );
             })}
@@ -611,6 +626,7 @@ export default function ComandaRecepcao() {
           {dias.map((dia) => {
             const valor = total(dia[campo]);
             const diferente = destacarDiferenca && Math.abs(total(dia.diferenca)) > 0.005;
+            const p = dia.pendenteConfirmacao;
             return (
               <CelulaValor
                 key={dia.data}
@@ -620,6 +636,7 @@ export default function ComandaRecepcao() {
                 auditavel={auditavel}
                 itens={auditavel ? buscarItens?.(dia.data, ["dinheiro", "debito", "credito", "pix"]) ?? [] : undefined}
                 textoConciliacao={diferente ? buscarTextoConciliacao?.(dia.data) : undefined}
+                pendente={destacarDiferenca && p ? p.dinheiro || p.cartaoDebito || p.cartaoCredito || p.pix : undefined}
               />
             );
           })}
@@ -864,6 +881,10 @@ export default function ComandaRecepcao() {
             vem {faseAtiva === "fase1" ? "do que já está sincronizado nas contas (exceto Dinheiro)" : "do relatório financeiro importado do Belle"}.
             Na linha "Diferença", passe o mouse pra ver a conciliação completa do dia (Comanda x {LADO_B_LABEL[faseAtiva]}
             {faseAtiva === "fase1" ? " + ações corretivas sugeridas) — o mesmo texto é gravado na linha 20 da planilha \"Consolidado comanda\" ao clicar em \"Sincronizar com Drive\", e some de lá sozinho quando a diferença é corrigida." : " + ações corretivas sugeridas)."}
+            {faseAtiva === "fase2" && (
+              <> O ícone <AlertTriangle className="inline h-3 w-3 mb-0.5 text-amber-600" /> ao lado do valor indica que o dia
+              inclui parcela do Belle ainda sem confirmação de recebimento (aparece mesmo quando a diferença zera).</>
+            )}
           </p>
           </>
           )}

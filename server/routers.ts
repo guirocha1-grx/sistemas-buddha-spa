@@ -3755,9 +3755,10 @@ Diretrizes:
       dataInicio: z.string(),
       dataFim: z.string(),
     })).query(async ({ input }) => {
-      const [comanda, belle] = await Promise.all([
+      const [comanda, belle, pendencias] = await Promise.all([
         db.listComandaDiaria(input.unidadeId, input.dataInicio, input.dataFim),
         db.resumoBelleRegistrosPorDia(input.unidadeId, input.dataInicio, input.dataFim),
+        db.pendenciasBelleRegistrosPorDia(input.unidadeId, input.dataInicio, input.dataFim),
       ]);
 
       const porData = new Map(comanda.map((c) => [c.data, c]));
@@ -3778,6 +3779,7 @@ Diretrizes:
           cartaoCredito: b?.cartaoCredito ?? 0,
           pix: b?.pix ?? 0,
         };
+        const p = pendencias.get(data);
         return {
           data,
           comanda: comandaDia,
@@ -3787,6 +3789,12 @@ Diretrizes:
             cartaoDebito: comandaDia.cartaoDebito - belleDia.cartaoDebito,
             cartaoCredito: comandaDia.cartaoCredito - belleDia.cartaoCredito,
             pix: comandaDia.pix - belleDia.pix,
+          },
+          pendenteConfirmacao: {
+            dinheiro: p?.dinheiro ?? false,
+            cartaoDebito: p?.cartaoDebito ?? false,
+            cartaoCredito: p?.cartaoCredito ?? false,
+            pix: p?.pix ?? false,
           },
         };
       });

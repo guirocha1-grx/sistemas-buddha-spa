@@ -651,6 +651,12 @@ export const belleRegistrosFinanceiros = mysqlTable("belle_registros_financeiros
   dataVencimento: varchar("dataVencimento", { length: 10 }).notNull(),
   clienteNome: varchar("clienteNome", { length: 200 }),
   valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
+  // true quando "Recebido" veio zerado no relatório do Belle pra essa
+  // parcela — o valor somado é o "Valor" contratado (tem Vcto real),
+  // mas o Belle ainda não confirmou o recebimento no momento da
+  // exportação (comum em cartão ainda não liquidado). Só pra avisar na
+  // tela (2026-09-01), não muda a soma do dia.
+  pendenteConfirmacao: boolean("pendenteConfirmacao").default(false).notNull(),
   formaPagamento: varchar("formaPagamento", { length: 40 }).notNull(),
   // Extraído de "Agendamento #NNNNN" na Observação quando existe — não
   // usado na conciliação por dia (ver comentário acima), guardado só

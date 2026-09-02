@@ -5,6 +5,9 @@ export interface LinhaRegistroFinanceiroBelleImportada {
   dataVencimento: string;
   clienteNome: string | null;
   valor: number;
+  // true quando "Recebido" veio zerado — valor é o "Valor" contratado
+  // (fallback, a parcela tem Vcto real), não o confirmado.
+  pendenteConfirmacao: boolean;
   formaPagamento: string;
   observacao: string | null;
   // Extraído de observações no formato "Agendamento #NNNNN" — mesmo
@@ -52,12 +55,14 @@ const COLUNAS = {
   // lançamento foi corrigido/reaberto em outro dia).
   dataVencimento: ["vcto."],
   clienteNome: ["cliente"],
-  // Lê de "Recebido", não de "Valor" — "Valor" é o valor contratado da
-  // venda (aparece cheio em cada parcela de Plano/Voucher), enquanto
-  // "Recebido" é o que de fato entrou naquela parcela. Confirmado com o
-  // usuário (2026-09-01) contra o relatório bruto: soma de "Recebido"
-  // por Vcto bate com o fechamento da Comanda, soma de "Valor" não.
-  valor: ["recebido"],
+  valor: ["valor"],
+  // "Recebido" é o que de fato já entrou daquela parcela — usado como
+  // valor da linha quando > 0 (confirmado com o usuário, 2026-09-01:
+  // soma de "Recebido" por Vcto bate com o fechamento da Comanda).
+  // Quando vem zerado (cartão ainda não liquidado, por exemplo), cai
+  // pro "Valor" contratado como fallback, já que a parcela tem um Vcto
+  // real — só marca como pendente de confirmação, não exclui a linha.
+  recebido: ["recebido"],
   formaPagamento: ["forma pagto."],
   observacao: ["observacao"],
 } as const;
@@ -97,15 +102,18 @@ export function parseRegistrosFinanceirosBelleXlsx(buffer: Buffer): LinhaRegistr
     if (!row?.length) continue;
     const codigo = parseNumero(ler(row, "codigo"));
     const dataVencimento = parseDataBr(ler(row, "dataVencimento"));
-    const valor = parseNumero(ler(row, "valor"));
+    const valorContratado = parseNumero(ler(row, "valor"));
     const formaPagamento = limparTexto(ler(row, "formaPagamento"));
-    if (!codigo || !dataVencimento || valor === null || !formaPagamento) continue;
+    if (!codigo || !dataVencimento || valorContratado === null || !formaPagamento) continue;
+    const recebido = parseNumero(ler(row, "recebido"));
+    const pendenteConfirmacao = !(recebido !== null && recebido > 0);
     const observacao = limparTexto(ler(row, "observacao"));
     linhas.push({
       codigo,
       dataVencimento,
       clienteNome: limparTexto(ler(row, "clienteNome")),
-      valor,
+      valor: pendenteConfirmacao ? valorContratado : (recebido as number),
+      pendenteConfirmacao,
       formaPagamento,
       observacao,
       atendimentoBelleId: parseAtendimentoId(observacao),
