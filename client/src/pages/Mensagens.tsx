@@ -1620,7 +1620,11 @@ export default function Mensagens() {
                   ) : (
                     <p className="text-xs text-muted-foreground">{formatPhone(conversaSelecionada?.telefone)}</p>
                   )}
-                  {conversaSelecionada?.isLidPendente === "true" && (
+                  {/* Também aparece com LID já resolvido — a resolução some com o
+                      aviso "número não confirmado", mas não junta sozinha com uma
+                      conversa que essa mesma pessoa já tinha pelo telefone real
+                      (achado real 2026-09-02: Marcelo Sestari duplicado). */}
+                  {!!conversaSelecionada?.chatLid && (
                     <Button
                       variant="outline"
                       size="sm"
