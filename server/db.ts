@@ -16,7 +16,7 @@ import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacio
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda, calcularEvolucaoFidelizacao, type GranularidadeEvolucao } from "./terapeutasRelatorios";
-import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, nomesCorrespondem, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
+import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, nomesCorrespondem, identificarTerapeuta, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -2940,7 +2940,7 @@ export async function listarDivergenciasTerapeutas(unidadeId: number, dataInicio
   const db = await getDb();
   if (!db) return [];
 
-  const [itensComanda, atendimentosBelle] = await Promise.all([
+  const [itensComanda, atendimentosBelle, roster] = await Promise.all([
     db.select({
       data: comandaItens.data,
       cliente: comandaItens.cliente,
@@ -2962,6 +2962,8 @@ export async function listarDivergenciasTerapeutas(unidadeId: number, dataInicio
       gte(belleAtendimentos.dataAtendimento, dataInicio),
       lte(belleAtendimentos.dataAtendimento, dataFim),
     )),
+    db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
+      .from(terapeutas).where(eq(terapeutas.unidadeId, unidadeId)),
   ]);
 
   const belleporData = new Map<string, typeof atendimentosBelle>();
@@ -2977,14 +2979,31 @@ export async function listarDivergenciasTerapeutas(unidadeId: number, dataInicio
     const terapeuta = item.terapeuta?.trim();
     if (!cliente || !terapeuta) continue;
 
+    // Resolve contra o cadastro (não texto livre vs texto livre) —
+    // pega apelido com erro de digitação e prefixo de cargo do Belle.
+    // Some (null) quando o texto não é uma pessoa: linha de Produto/
+    // Voucher na Comanda não tem terapeuta de verdade pra comparar.
+    const terapeutaComandaId = identificarTerapeuta(terapeuta, roster);
+    if (terapeutaComandaId === null) continue;
+
     const candidatos = (belleporData.get(item.data) ?? []).filter((b) => nomesCorrespondem(b.clienteNome, cliente));
     if (candidatos.length === 0) {
       divergencias.push({ data: item.data, cliente, terapia: item.terapiaProduto, terapeutaComanda: terapeuta, terapeutaBelle: null, situacao: "sem_correspondencia_belle" });
       continue;
     }
-    // Cliente com mais de um atendimento no mesmo dia: desempata pela terapia, quando bate.
-    const atendimento = candidatos.find((b) => nomesCorrespondem(b.servicoNome, item.terapiaProduto)) ?? candidatos[0];
-    if (!nomesCorrespondem(atendimento.profissionalNome, terapeuta)) {
+    // Cliente com mais de um atendimento no mesmo dia: desempata pela
+    // terapia quando bate; senão prefere um candidato com terapeuta
+    // humano reconhecido (ex.: ignora a sala "Banho II" de um banho de
+    // imersão sem terapeuta dedicado, que o Belle lista como se fosse
+    // o profissional do atendimento).
+    const atendimento = candidatos.find((b) => nomesCorrespondem(b.servicoNome, item.terapiaProduto))
+      ?? candidatos.find((b) => identificarTerapeuta(b.profissionalNome, roster) !== null)
+      ?? candidatos[0];
+    const terapeutaBelleId = identificarTerapeuta(atendimento.profissionalNome, roster);
+    // Belle não registrou um terapeuta humano pra esse atendimento
+    // (só a sala/recurso) — não dá pra comparar, não é divergência.
+    if (terapeutaBelleId === null) continue;
+    if (terapeutaBelleId !== terapeutaComandaId) {
       divergencias.push({ data: item.data, cliente, terapia: item.terapiaProduto, terapeutaComanda: terapeuta, terapeutaBelle: atendimento.profissionalNome, situacao: "divergente" });
     }
   }

@@ -91,6 +91,61 @@ export function nomesCorrespondem(nomeA: string | null | undefined, nomeB: strin
   return primeiroA.length >= 2 && primeiroA === primeiroB;
 }
 
+function distanciaEdicao(a: string, b: string): number {
+  const linha = [...Array(b.length + 1).keys()];
+  for (let i = 1; i <= a.length; i++) {
+    let anterior = linha[0];
+    linha[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const temp = linha[j];
+      linha[j] = a[i - 1] === b[j - 1] ? anterior : 1 + Math.min(anterior, linha[j], linha[j - 1]);
+      anterior = temp;
+    }
+  }
+  return linha[b.length];
+}
+
+export interface TerapeutaRoster {
+  id: number;
+  nomeCompleto: string;
+  nomeAbreviado: string;
+}
+
+/**
+ * Resolve um nome livre (digitado na Comanda, ou vindo do Belle) pro
+ * terapeuta cadastrado correspondente — em vez de comparar texto livre
+ * direto entre Comanda e Belle, os dois lados batem contra o cadastro
+ * oficial. Cobre casos reais que `nomesCorrespondem` sozinho não pega:
+ * apelido com erro de digitação ("Crislaine" pro cadastro "Crislane"),
+ * e o Belle às vezes prefixar com o cargo ("Terapeuta Gabriel"). Some
+ * de propósito (retorna null) quando o texto não é uma pessoa — ex.
+ * "Produto (não esquecer NFP)" na Comanda, ou "Banho II" no Belle
+ * (nome da sala/recurso pra atendimento sem terapeuta dedicado, tipo
+ * banho de imersão) — esses casos não são divergência, são "não dá
+ * pra comparar".
+ */
+export function identificarTerapeuta(nomeRaw: string | null | undefined, roster: TerapeutaRoster[]): number | null {
+  const texto = normalizarTexto(nomeRaw).replace(/^terapeuta\s+/, "");
+  if (!texto) return null;
+
+  for (const t of roster) {
+    if (nomesCorrespondem(texto, t.nomeAbreviado) || nomesCorrespondem(texto, t.nomeCompleto)) return t.id;
+  }
+
+  // Fallback só entra se for uma variação pequena e sem ambiguidade
+  // (senão prefere não resolver a arriscar casar terapeuta errado).
+  const primeiroToken = texto.split(/\s+/)[0];
+  if (primeiroToken.length < 3) return null;
+  const candidatos = roster
+    .map((t) => ({ t, distancia: distanciaEdicao(primeiroToken, normalizarTexto(t.nomeAbreviado)) }))
+    .filter((c) => c.distancia <= 2)
+    .sort((a, b) => a.distancia - b.distancia);
+  if (candidatos.length === 1 || (candidatos.length > 1 && candidatos[0].distancia < candidatos[1].distancia)) {
+    return candidatos[0].t.id;
+  }
+  return null;
+}
+
 export interface IdentificadoresAtendimento {
   clienteNome: string | null | undefined;
   servicoNome: string | null | undefined;

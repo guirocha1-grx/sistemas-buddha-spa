@@ -4,7 +4,37 @@ import {
   classificarDesvioDuracao,
   escolherAtendimentoPorEvento,
   identificarEventoTempoAtendimento,
+  identificarTerapeuta,
 } from "./tempoAtendimento";
+
+const ROSTER_TESTE = [
+  { id: 1, nomeCompleto: "Crislane Valeska Cardoso de Sá", nomeAbreviado: "Crislane" },
+  { id: 2, nomeCompleto: "Gabriel Henrique Ribeiro Cotrim", nomeAbreviado: "Gabriel" },
+  { id: 3, nomeCompleto: "Camila Vieira", nomeAbreviado: "Camila" },
+];
+
+describe("identificarTerapeuta", () => {
+  it("resolve apelido com erro de digitação (Crislaine -> Crislane)", () => {
+    expect(identificarTerapeuta("Crislaine", ROSTER_TESTE)).toBe(1);
+  });
+
+  it("resolve nome prefixado com o cargo, como o Belle às vezes manda", () => {
+    expect(identificarTerapeuta("Terapeuta Gabriel", ROSTER_TESTE)).toBe(2);
+  });
+
+  it("resolve o nome completo oficial", () => {
+    expect(identificarTerapeuta("Crislane Valeska Cardoso de Sá", ROSTER_TESTE)).toBe(1);
+  });
+
+  it("não resolve texto que não é nome de pessoa (linha de Produto/Voucher na Comanda)", () => {
+    expect(identificarTerapeuta("Produto (não esquecer NFP)", ROSTER_TESTE)).toBeNull();
+    expect(identificarTerapeuta("Voucher (exceto utilização hoje)", ROSTER_TESTE)).toBeNull();
+  });
+
+  it("não resolve nome de sala/recurso do Belle (banho de imersão sem terapeuta dedicado)", () => {
+    expect(identificarTerapeuta("Banho II", ROSTER_TESTE)).toBeNull();
+  });
+});
 
 function hora(texto: string): Date {
   return new Date(`2026-08-28T${texto}-03:00`);
