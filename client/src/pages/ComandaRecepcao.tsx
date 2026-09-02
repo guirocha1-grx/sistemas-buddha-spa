@@ -419,6 +419,7 @@ export default function ComandaRecepcao() {
   const carregando = faseAtiva === "fase1" ? resumoQuery.isLoading : resumoBelleQuery.isLoading;
 
   const fase1TemDivergencia = diasFase1.some((dia) => Math.abs(total(dia.diferenca)) > 0.005);
+  const diasComDiferenca = dias.filter((dia) => Math.abs(total(dia.diferenca)) > 0.005).length;
 
   function tentarMudarFase(fase: Fase) {
     if (fase === "fase2" && fase1TemDivergencia) {
@@ -663,13 +664,27 @@ export default function ComandaRecepcao() {
         </div>
       ) : (
         <>
-          <Tabs value={faseAtiva} onValueChange={(v) => tentarMudarFase(v as Fase)}>
-            <TabsList>
-              <TabsTrigger value="fase1">Fase 1: Comanda x Caixa</TabsTrigger>
-              {podeVerFase2 && <TabsTrigger value="fase2">Fase 2: Comanda x Belle</TabsTrigger>}
-              {podeVerFase3 && <TabsTrigger value="fase3">Fase 3: Terapeutas</TabsTrigger>}
-            </TabsList>
-          </Tabs>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <Tabs value={faseAtiva} onValueChange={(v) => tentarMudarFase(v as Fase)}>
+              <TabsList>
+                <TabsTrigger value="fase1">Fase 1: Comanda x Caixa</TabsTrigger>
+                {podeVerFase2 && <TabsTrigger value="fase2">Fase 2: Comanda x Belle</TabsTrigger>}
+                {podeVerFase3 && <TabsTrigger value="fase3">Fase 3: Terapeutas</TabsTrigger>}
+              </TabsList>
+            </Tabs>
+            {faseAtiva !== "fase3" && !carregando && dias.length > 0 && (
+              diasComDiferenca > 0 ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 whitespace-nowrap">
+                  <AlertTriangle className="h-3 w-3" />
+                  {diasComDiferenca} {diasComDiferenca === 1 ? "dia" : "dias"} com conciliação pendente
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700 whitespace-nowrap">
+                  Conciliação finalizada para o período
+                </span>
+              )
+            )}
+          </div>
 
           <div className="flex items-center gap-1 flex-wrap">
             <div className="flex items-center gap-1 rounded-lg border border-border p-1 mr-1">
