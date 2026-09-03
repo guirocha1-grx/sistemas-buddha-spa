@@ -114,7 +114,7 @@ describe("orquestrador de agentes", () => {
       chaveAgente: "diana",
       mensagem: "Olá! Temos opções físicas e virtuais.",
       agora,
-    })).toBe("Boa tarde, tudo bem e você?\n\nTemos opções físicas e virtuais.");
+    })).toBe("Boa tarde, tudo bem e você? Que bom ter você aqui :)\n\nTemos opções físicas e virtuais.");
     expect(aplicarSaudacaoInicialEspecialista({
       contexto: primeiraMensagem,
       chaveAgente: "aurea",

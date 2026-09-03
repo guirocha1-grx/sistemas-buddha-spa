@@ -120,7 +120,12 @@ function saudacaoPorHorario(agora: Date) {
   return "Boa noite";
 }
 
-/** A Áurea não fala com o cliente; só especialistas acolhem a primeira mensagem recebida. */
+/**
+ * A Áurea não fala com o cliente; só especialistas acolhem a primeira
+ * mensagem recebida. "Que bom ter você aqui :)" a pedido da recepção
+ * (2026-09-03) — mais cordial que só "Bom dia!" seco antes de entrar
+ * na resposta.
+ */
 export function saudacaoInicialEspecialista(contexto: ContextoConversa, chaveAgente: string, agora: Date = new Date()) {
   if (chaveAgente === "aurea") return null;
   const ultimaMensagem = ultimaMensagemCliente(contexto);
@@ -128,7 +133,7 @@ export function saudacaoInicialEspecialista(contexto: ContextoConversa, chaveAge
   const equipeJaRespondeu = contexto.mensagens.some((mensagem) => mensagem.direcao === "enviada");
   if (!texto || equipeJaRespondeu || !contemSaudacao(texto)) return null;
   const perguntouComoEstamos = /\b(tudo bem|como (?:vai|est[aá]|est[aã]o))\b/i.test(texto);
-  return `${saudacaoPorHorario(agora)}${perguntouComoEstamos ? ", tudo bem e você?" : "!"}`;
+  return `${saudacaoPorHorario(agora)}${perguntouComoEstamos ? ", tudo bem e você?" : "!"} Que bom ter você aqui :)`;
 }
 
 function removerSaudacaoDoInicio(mensagem: string) {
