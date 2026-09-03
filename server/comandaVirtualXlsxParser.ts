@@ -62,8 +62,12 @@ const COLUNAS_ESPERADAS = {
   aberturaResponsavel: ["abertura comanda (responsavel)"],
   visitasAnteriores: ["visitas anteriores na unidade (12 meses)"],
   canalCaptacao: ["canal de captacao"],
-  terapiaProduto: ["terapia/produto"],
-  terapeuta: ["terapeuta"],
+  // "descricao detalhada"/"tipo" são os nomes usados na 2ª seção da aba
+  // ("Venda de Plano, Produtos e Voucher's") — mesmo papel descritivo de
+  // terapia/produto e terapeuta na 1ª seção ("Serviços"), só com nomes
+  // de coluna diferentes porque é uma venda, não um atendimento.
+  terapiaProduto: ["terapia/produto", "descricao detalhada"],
+  terapeuta: ["terapeuta", "tipo"],
   subtotal: ["subtotal"],
   desconto: ["descontos"],
   motivoDesconto: ["motivo desconto"],
@@ -91,66 +95,88 @@ export function nomeAbaParaData(nomeAba: string): string | null {
   return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
+// A aba tem 2 seções empilhadas na mesma planilha — "Serviços"
+// (atendimentos) e "Venda de Plano, Produtos e Voucher's" — cada uma
+// com seu próprio cabeçalho "ID/Cliente" e sua própria numeração de ID
+// reiniciando em 1. Tratar a aba como uma sequência única (1 cabeçalho
+// só) fazia "PPV id=1" colidir com "Serviços id=1" — mesma chave
+// data+idLinha, um sobrescrevendo o outro no upsert. Achado real
+// (2026-09-03): um atendimento pago em débito (Roberto, Serviços id=1)
+// sumiu da Comanda porque uma venda de voucher (PPV id=1) tomou seu
+// lugar. SECAO_OFFSET separa os espaços de numeração por seção
+// (grande o bastante pra nunca colidir com o maior ID real de uma
+// seção, e estável entre sincronizações — mesma linha sempre cai no
+// mesmo idLinha final).
+const SECAO_OFFSET = 100_000;
+
 /**
  * Extrai os lançamentos de uma aba já lida (array de linhas cruas) —
  * usado tanto pela carga via .xlsx (uma aba por vez, várias abas por
  * arquivo) quanto pela sincronização via Google Sheets (uma aba por
- * chamada). Localiza o cabeçalho por conteúdo (não é a linha 0 — a
- * planilha real tem título/meta do dia antes do cabeçalho de verdade).
+ * chamada). Localiza cada cabeçalho por conteúdo (não é a linha 0 — a
+ * planilha real tem título/meta do dia antes do cabeçalho de verdade,
+ * e pode ter mais de um cabeçalho — ver SECAO_OFFSET acima).
  */
 export function parseLinhasComandaItem(rows: unknown[][], data: string): LinhaComandaItemImportada[] {
-  const linhaHeaderIdx = rows.findIndex((r) => {
-    const normalizados = r.map(normalizarCabecalho);
-    return normalizados.includes("id") && normalizados.includes("cliente");
-  });
-  if (linhaHeaderIdx < 0) return [];
-
-  const header = rows[linhaHeaderIdx].map(normalizarCabecalho);
-  const colIndex: Partial<Record<Campo, number>> = {};
-  for (const campo of Object.keys(COLUNAS_ESPERADAS) as Campo[]) {
-    const alternativas: readonly string[] = COLUNAS_ESPERADAS[campo];
-    const idx = header.findIndex((h) => alternativas.includes(h));
-    if (idx >= 0) colIndex[campo] = idx;
+  const indicesCabecalho: number[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const normalizados = rows[i].map(normalizarCabecalho);
+    if (normalizados.includes("id") && normalizados.includes("cliente")) indicesCabecalho.push(i);
   }
-  if (colIndex.idLinha === undefined || colIndex.cliente === undefined) return [];
+  if (indicesCabecalho.length === 0) return [];
 
   const linhas: LinhaComandaItemImportada[] = [];
-  for (let i = linhaHeaderIdx + 1; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row || row.length === 0) continue;
+  for (let secao = 0; secao < indicesCabecalho.length; secao++) {
+    const linhaHeaderIdx = indicesCabecalho[secao];
+    const fimSecao = secao + 1 < indicesCabecalho.length ? indicesCabecalho[secao + 1] : rows.length;
+    const offsetSecao = secao * SECAO_OFFSET;
 
-    const idRaw = (row[colIndex.idLinha] ?? "").toString().trim();
-    if (!idRaw) continue;
-    const idLinha = Number(idRaw);
-    if (!Number.isFinite(idLinha)) continue;
+    const header = rows[linhaHeaderIdx].map(normalizarCabecalho);
+    const colIndex: Partial<Record<Campo, number>> = {};
+    for (const campo of Object.keys(COLUNAS_ESPERADAS) as Campo[]) {
+      const alternativas: readonly string[] = COLUNAS_ESPERADAS[campo];
+      const idx = header.findIndex((h) => alternativas.includes(h));
+      if (idx >= 0) colIndex[campo] = idx;
+    }
+    if (colIndex.idLinha === undefined || colIndex.cliente === undefined) continue;
 
-    const cliente = limparTexto(row[colIndex.cliente]);
-    if (!cliente) continue; // linha de template (sem cliente = sem venda de verdade)
+    for (let i = linhaHeaderIdx + 1; i < fimSecao; i++) {
+      const row = rows[i];
+      if (!row || row.length === 0) continue;
 
-    const pega = (campo: Campo) => (colIndex[campo] !== undefined ? row[colIndex[campo] as number] : undefined);
+      const idRaw = (row[colIndex.idLinha] ?? "").toString().trim();
+      if (!idRaw) continue;
+      const idLinhaOriginal = Number(idRaw);
+      if (!Number.isFinite(idLinhaOriginal)) continue;
 
-    linhas.push({
-      data,
-      idLinha,
-      cliente,
-      aberturaResponsavel: limparTexto(pega("aberturaResponsavel")),
-      visitasAnteriores: limparTexto(pega("visitasAnteriores")),
-      canalCaptacao: limparTexto(pega("canalCaptacao")),
-      terapiaProduto: limparTexto(pega("terapiaProduto")),
-      terapeuta: limparTexto(pega("terapeuta")),
-      subtotal: parseNumero(pega("subtotal")),
-      desconto: parseNumero(pega("desconto")),
-      motivoDesconto: limparTexto(pega("motivoDesconto")),
-      total: parseNumero(pega("total")),
-      dinheiro: parseNumero(pega("dinheiro")),
-      pix: parseNumero(pega("pix")),
-      cartaoDebito: parseNumero(pega("cartaoDebito")),
-      cartaoCredito: parseNumero(pega("cartaoCredito")),
-      totalPagtos: parseNumero(pega("totalPagtos")),
-      observacao: limparTexto(pega("observacao")),
-      fechamentoResponsavel: limparTexto(pega("fechamentoResponsavel")),
-      campoGerente: limparTexto(pega("campoGerente")),
-    });
+      const cliente = limparTexto(row[colIndex.cliente]);
+      if (!cliente) continue; // linha de template (sem cliente = sem venda de verdade)
+
+      const pega = (campo: Campo) => (colIndex[campo] !== undefined ? row[colIndex[campo] as number] : undefined);
+
+      linhas.push({
+        data,
+        idLinha: offsetSecao + idLinhaOriginal,
+        cliente,
+        aberturaResponsavel: limparTexto(pega("aberturaResponsavel")),
+        visitasAnteriores: limparTexto(pega("visitasAnteriores")),
+        canalCaptacao: limparTexto(pega("canalCaptacao")),
+        terapiaProduto: limparTexto(pega("terapiaProduto")),
+        terapeuta: limparTexto(pega("terapeuta")),
+        subtotal: parseNumero(pega("subtotal")),
+        desconto: parseNumero(pega("desconto")),
+        motivoDesconto: limparTexto(pega("motivoDesconto")),
+        total: parseNumero(pega("total")),
+        dinheiro: parseNumero(pega("dinheiro")),
+        pix: parseNumero(pega("pix")),
+        cartaoDebito: parseNumero(pega("cartaoDebito")),
+        cartaoCredito: parseNumero(pega("cartaoCredito")),
+        totalPagtos: parseNumero(pega("totalPagtos")),
+        observacao: limparTexto(pega("observacao")),
+        fechamentoResponsavel: limparTexto(pega("fechamentoResponsavel")),
+        campoGerente: limparTexto(pega("campoGerente")),
+      });
+    }
   }
   return linhas;
 }
