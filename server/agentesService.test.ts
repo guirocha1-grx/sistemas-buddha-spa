@@ -194,7 +194,7 @@ describe("orquestrador de agentes", () => {
     expect(invokeLLM).not.toHaveBeenCalled();
     expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
       agenteId: 1,
-      sugestao: "Olá, seja bem-vindo(a) ao Buddha Spa. Como posso ajudar você hoje?",
+      sugestao: "Que bom ter você aqui. Você busca um momento de pausa para você ou deseja surpreender alguém com um presente especial?",
       statusAgente: "in_process",
     }));
     expect(agentesDb.salvarEstadoConversa).toHaveBeenCalledWith(expect.objectContaining({

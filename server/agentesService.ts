@@ -92,8 +92,13 @@ export function limitarMensagemCliente(mensagem: string, limite: number = LIMITE
   return `${texto.slice(0, corte).trim().replace(/[,:;\-]$/, "")}…`;
 }
 
+// "oi+"/"ola+" cobre variações comuns de digitação no WhatsApp ("oii",
+// "oiii", "olaa") — reclamação real da recepção (2026-09-03): o robô
+// às vezes respondia direto sem cumprimentar. "opa"/"eae"/"e ai"/"salve"
+// são aberturas cordiais igual de comuns que "oi"/"olá" e não entravam
+// antes.
 function contemSaudacao(texto: string) {
-  return /(?:^|\s)(?:oi|ol[aá]|bom dia|boa tarde|boa noite)(?:[!,.?\s]|$)/i.test(texto);
+  return /(?:^|\s)(?:oi+|ol[aá]+|opa|eae|e\s*a[ií]|salve|bom dia|boa tarde|boa noite)(?:[!,.?\s]|$)/i.test(texto);
 }
 
 function horaEmSaoPaulo(agora: Date) {
@@ -728,7 +733,7 @@ export async function processarMensagemRecebida(params: { conversaId: number; me
 
     if (aberturaSemIntencao(textoEntrada) && !estado?.agenteAtualId && !estado?.proximaRota) {
       const respostaAcolhimento: RespostaEspecialista = {
-        message: "Olá, seja bem-vindo(a) ao Buddha Spa. Como posso ajudar você hoje?",
+        message: "Que bom ter você aqui. Você busca um momento de pausa para você ou deseja surpreender alguém com um presente especial?",
         status: "in_process",
         summary: "Abertura acolhida pela Áurea; aguardando o cliente informar a necessidade.",
         variables: {},

@@ -86,11 +86,17 @@ export function rotasDeterministicas(texto: string): Array<ChaveAgente | "humano
   ));
 }
 
-/** Detecta uma primeira mensagem cordial, curta e ainda sem demanda comercial. */
+/**
+ * Detecta uma primeira mensagem cordial, curta e ainda sem demanda
+ * comercial. "oi+"/"ola+" cobre varia\u00e7\u00f5es de digita\u00e7\u00e3o ("oii", "olaa")
+ * e "opa"/"eae"/"e ai"/"salve" s\u00e3o aberturas t\u00e3o comuns no WhatsApp
+ * quanto "oi"/"ol\u00e1" \u2014 reclama\u00e7\u00e3o real da recep\u00e7\u00e3o (2026-09-03): o rob\u00f4
+ * \u00e0s vezes respondia direto sem cumprimentar.
+ */
 export function aberturaSemIntencao(texto: string): boolean {
   const normalizado = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
   if (!normalizado || normalizado.length > 80 || rotasDeterministicas(texto).length > 0) return false;
-  return /\b(oi|ola|bom dia|boa tarde|boa noite)\b/.test(normalizado);
+  return /\b(oi+|ola+|opa|eae|e ai|salve|bom dia|boa tarde|boa noite)\b/.test(normalizado);
 }
 
 /** Compatibilidade para chamadas que precisam apenas do primeiro destino. */
