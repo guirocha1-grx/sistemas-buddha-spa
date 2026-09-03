@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { eq, asc, desc, and, or, gte, lte, isNull, isNotNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
+import { eq, asc, desc, and, or, gt, gte, lte, isNull, isNotNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, belleRegistrosFinanceiros, bellePlanosClientes, bellePlanosServicos, lidMapping, atendentes, atendenteSessoes, terapeutas, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertBelleRegistroFinanceiro, type InsertBellePlanoCliente, type InsertBellePlanoServico, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
@@ -2292,6 +2292,49 @@ export async function listInboxMensagens(conversaId: number, limit: number = 50)
 }
 
 /** Histórico do Inbox: abre leve com seis dias e busca páginas anteriores somente sob demanda. */
+const COLUNAS_INBOX_MENSAGEM = {
+  id: inboxMensagens.id,
+  conversaId: inboxMensagens.conversaId,
+  direcao: inboxMensagens.direcao,
+  tipo: inboxMensagens.tipo,
+  conteudo: inboxMensagens.conteudo,
+  metadados: inboxMensagens.metadados,
+  transcricao: inboxMensagens.transcricao,
+  enviadaPorUserId: inboxMensagens.enviadaPorUserId,
+  enviadaPorAtendenteId: inboxMensagens.enviadaPorAtendenteId,
+  enviadaPorAtendenteNome: atendentes.nome,
+  participanteTelefone: inboxMensagens.participanteTelefone,
+  participanteLid: inboxMensagens.participanteLid,
+  participanteNome: inboxMensagens.participanteNome,
+  lida: inboxMensagens.lida,
+  statusEntrega: inboxMensagens.statusEntrega,
+  reacaoEmoji: inboxMensagens.reacaoEmoji,
+  zapiMessageId: inboxMensagens.zapiMessageId,
+  createdAt: inboxMensagens.createdAt,
+};
+
+/**
+ * "O que chegou desde X" — complementa listInboxMensagensPaginada (que
+ * é sempre "as N mais recentes", sem cursor pra frente). Sem isso, o
+ * poll da tela reconsultava "top N" a cada 8s; numa conversa ativa, uma
+ * mensagem podia sair dessa janela de N antes do "carregar mais
+ * antigas" ter puxado ela pro lado antigo, sumindo da tela (2026-09-02
+ * — inaceitável: mensagem nunca pode sumir). Busca aditiva (createdAt
+ * > desde, ordem crescente) nunca solta uma mensagem já mostrada.
+ */
+export async function listInboxMensagensDesde(params: { conversaId: number; desde: Date }) {
+  const db = await getDb();
+  if (!db) return { mensagens: [] };
+  const LIMITE_DEFENSIVO = 200;
+  const linhas = await db.select(COLUNAS_INBOX_MENSAGEM)
+    .from(inboxMensagens)
+    .leftJoin(atendentes, eq(inboxMensagens.enviadaPorAtendenteId, atendentes.id))
+    .where(and(eq(inboxMensagens.conversaId, params.conversaId), gt(inboxMensagens.createdAt, params.desde)))
+    .orderBy(asc(inboxMensagens.createdAt))
+    .limit(LIMITE_DEFENSIVO);
+  return { mensagens: linhas };
+}
+
 export async function listInboxMensagensPaginada(params: { conversaId: number; limit?: number; antesDe?: Date | null }) {
   const db = await getDb();
   const limit = Math.min(Math.max(params.limit ?? 15, 1), 200);
@@ -2301,26 +2344,7 @@ export async function listInboxMensagensPaginada(params: { conversaId: number; l
   const condicoes = [eq(inboxMensagens.conversaId, params.conversaId)];
   if (params.antesDe) condicoes.push(lt(inboxMensagens.createdAt, params.antesDe));
   else condicoes.push(gte(inboxMensagens.createdAt, inicioRecente));
-  const linhas = await db.select({
-    id: inboxMensagens.id,
-    conversaId: inboxMensagens.conversaId,
-    direcao: inboxMensagens.direcao,
-    tipo: inboxMensagens.tipo,
-    conteudo: inboxMensagens.conteudo,
-    metadados: inboxMensagens.metadados,
-    transcricao: inboxMensagens.transcricao,
-    enviadaPorUserId: inboxMensagens.enviadaPorUserId,
-    enviadaPorAtendenteId: inboxMensagens.enviadaPorAtendenteId,
-    enviadaPorAtendenteNome: atendentes.nome,
-    participanteTelefone: inboxMensagens.participanteTelefone,
-    participanteLid: inboxMensagens.participanteLid,
-    participanteNome: inboxMensagens.participanteNome,
-    lida: inboxMensagens.lida,
-    statusEntrega: inboxMensagens.statusEntrega,
-    reacaoEmoji: inboxMensagens.reacaoEmoji,
-    zapiMessageId: inboxMensagens.zapiMessageId,
-    createdAt: inboxMensagens.createdAt,
-  })
+  const linhas = await db.select(COLUNAS_INBOX_MENSAGEM)
     .from(inboxMensagens)
     .leftJoin(atendentes, eq(inboxMensagens.enviadaPorAtendenteId, atendentes.id))
     .where(and(...condicoes))

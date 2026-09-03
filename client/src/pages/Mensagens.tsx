@@ -260,25 +260,31 @@ export default function Mensagens() {
   const [cursorAntigasAplicado, setCursorAntigasAplicado] = useState<string | null>(null);
   const [mensagensAntigas, setMensagensAntigas] = useState<any[]>([]);
   // Carga inicial reduzida de 120 pra 15 (2026-09-02, performance — ver
-  // índice novo em inbox_mensagens). Isso é sempre "as N mais recentes",
-  // sem cursor — numa conversa muito ativa, com "carregar mais antigas"
-  // já usado, é teoricamente possível uma mensagem no meio sumir (sai
-  // dessa janela de N antes de ter sido puxada pro lado antigo). Risco
-  // baixo e pré-existente (só ficou mais provável com N menor); se virar
-  // reclamação real, o fix certo é trocar esse poll por um cursor
-  // "mensagens novas desde X" em vez de "top N".
+  // índice novo em inbox_mensagens). Só busca "as N mais recentes" uma vez
+  // por conversa (semeia a tela) — o acompanhamento contínuo é o poll de
+  // "mensagens novas desde X" abaixo, que só ADICIONA, nunca redefine a
+  // janela visível. Isso existe justamente pra mensagem nunca sumir da
+  // tela (2026-09-02): reconsultar "top N" a cada 8s soltava uma mensagem
+  // do meio numa conversa ativa antes do "carregar mais antigas" ter
+  // puxado ela pro lado antigo.
   const { data: paginaMensagensRecentes, isLoading: carregandoMensagens } = trpc.inbox.mensagens.listPaginada.useQuery(
     { conversaId: conversaSelecionadaId ?? 0, limit: 15 },
-    { enabled: !!conversaSelecionadaId, refetchInterval: 8000 },
+    { enabled: !!conversaSelecionadaId },
   );
   const { data: paginaMensagensAntigas, isFetching: carregandoMensagensAntigas } = trpc.inbox.mensagens.listPaginada.useQuery(
     { conversaId: conversaSelecionadaId ?? 0, limit: 15, antesDe: cursorMensagensAntigas ?? undefined },
     { enabled: !!conversaSelecionadaId && !!cursorMensagensAntigas && cursorMensagensAntigas !== cursorAntigasAplicado },
   );
+  const [cursorMensagensNovas, setCursorMensagensNovas] = useState<string | null>(null);
+  const [mensagensNovas, setMensagensNovas] = useState<any[]>([]);
+  const { data: paginaMensagensNovas } = trpc.inbox.mensagens.mensagensDesde.useQuery(
+    { conversaId: conversaSelecionadaId ?? 0, desde: cursorMensagensNovas ?? "" },
+    { enabled: !!conversaSelecionadaId && !!cursorMensagensNovas, refetchInterval: 8000 },
+  );
   const mensagensRecentes = paginaMensagensRecentes?.mensagens ?? [];
-  const mensagens = useMemo(() => [...mensagensAntigas, ...mensagensRecentes]
+  const mensagens = useMemo(() => [...mensagensAntigas, ...mensagensRecentes, ...mensagensNovas]
     .filter((mensagem, indice, lista) => lista.findIndex((item) => item.id === mensagem.id) === indice)
-    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()), [mensagensAntigas, mensagensRecentes]);
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()), [mensagensAntigas, mensagensRecentes, mensagensNovas]);
   const haMensagensAntigas = cursorAntigasAplicado
     ? Boolean(paginaMensagensAntigas?.hasMore)
     : Boolean(paginaMensagensRecentes?.hasMore);
@@ -638,8 +644,38 @@ export default function Mensagens() {
     setCursorMensagensAntigas(null);
     setCursorAntigasAplicado(null);
     setMensagensAntigas([]);
+    setCursorMensagensNovas(null);
+    setMensagensNovas([]);
     conversaRoladaRef.current = null;
   }, [conversaSelecionadaId]);
+
+  // Acumula o que o poll de "novas desde X" trouxe — nunca substitui,
+  // só soma (mesmo padrão de mensagensAntigas, na direção oposta).
+  useEffect(() => {
+    if (!paginaMensagensNovas?.mensagens.length) return;
+    setMensagensNovas((atuais) => [...atuais, ...paginaMensagensNovas.mensagens]
+      .filter((mensagem, indice, lista) => lista.findIndex((item) => item.id === mensagem.id) === indice));
+  }, [paginaMensagensNovas]);
+
+  // Avança o cursor do poll pra sempre a mensagem mais nova já visível,
+  // não importa se ela chegou pela semeadura inicial, pelo próprio poll,
+  // ou por um refetch manual (ex.: depois de eu mesma enviar algo) — assim
+  // o poll nunca perde o rastro nem duplica trabalho.
+  useEffect(() => {
+    const maisRecente = mensagens.at(-1)?.createdAt;
+    if (maisRecente) {
+      const iso = new Date(maisRecente).toISOString();
+      if (!cursorMensagensNovas || iso > cursorMensagensNovas) setCursorMensagensNovas(iso);
+      return;
+    }
+    // Conversa sem nenhuma mensagem carregada ainda — assim que a
+    // semeadura inicial responder (mesmo vazia), começa a escutar a
+    // partir de agora. Sem isso, a primeira mensagem de uma conversa
+    // nova nunca aparecia sozinha na tela (cursor nunca nascia).
+    if (!cursorMensagensNovas && paginaMensagensRecentes !== undefined) {
+      setCursorMensagensNovas(new Date().toISOString());
+    }
+  }, [mensagens, cursorMensagensNovas, paginaMensagensRecentes]);
 
   useEffect(() => {
     if (!paginaMensagensAntigas || !cursorMensagensAntigas || paginaMensagensAntigas.cursorConsultado !== cursorMensagensAntigas) return;

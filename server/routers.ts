@@ -1341,6 +1341,17 @@ Diretrizes:
         });
       }),
 
+      // Poll incremental ("o que chegou desde a mensagem mais nova que já
+      // tenho") — substitui reconsultar "as N mais recentes" a cada 8s,
+      // que podia soltar uma mensagem da tela numa conversa ativa
+      // (2026-09-02).
+      mensagensDesde: protectedProcedure.input(z.object({
+        conversaId: z.number(),
+        desde: z.string().datetime(),
+      })).query(async ({ input }) => {
+        return db.listInboxMensagensDesde({ conversaId: input.conversaId, desde: new Date(input.desde) });
+      }),
+
       sugerir: protectedProcedure.input(z.object({
         conversaId: z.number(),
         rascunho: z.string().trim().min(1).max(4000),
