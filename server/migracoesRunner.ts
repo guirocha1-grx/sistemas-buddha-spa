@@ -10,12 +10,33 @@ const ARQUIVO_TABELA_CONTROLE = "2026-08-30-migracoes-aplicadas.sql";
 type BancoConectado = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type Usuario = { id: number; name: string | null };
 
+// Ordena por "tier" antes do nome — arquivo datado (YYYY-MM-DD-...) é o
+// padrão atual, mais recente primeiro; numerado legado (0000_..., do
+// tempo do drizzle-kit generate) vem depois, também mais recente
+// primeiro; qualquer outro nome solto (ex.: seed-tabela-precos-*.sql)
+// vai pro fim — puramente alfabético não funcionava porque "seed-..."
+// vem depois de "2026-..." e acabava aparecendo como "mais recente"
+// (2026-09-03, achado ao tentar simplesmente ordenar por nome).
+function tierArquivoMigracao(nome: string): number {
+  if (/^\d{4}-\d{2}-\d{2}-/.test(nome)) return 0;
+  if (/^\d{4}_/.test(nome)) return 1;
+  return 2;
+}
+
 /** Só arquivos .sql soltos em drizzle/ — as subpastas meta/ e migrations/ são do drizzle-kit, não migração manual. */
 function listarArquivosSql(): string[] {
   return fs.readdirSync(DIRETORIO_DRIZZLE, { withFileTypes: true })
     .filter((entrada) => entrada.isFile() && entrada.name.endsWith(".sql"))
     .map((entrada) => entrada.name)
     .sort();
+}
+
+/** Mesma lista de listarArquivosSql, mas do mais novo pro mais antigo — pra exibição. */
+function listarArquivosSqlMaisRecentePrimeiro(): string[] {
+  return listarArquivosSql().sort((a, b) => {
+    const diferencaTier = tierArquivoMigracao(a) - tierArquivoMigracao(b);
+    return diferencaTier !== 0 ? diferencaTier : b.localeCompare(a);
+  });
 }
 
 function caminhoSeguro(nomeArquivo: string, arquivosValidos: string[]): string {
@@ -71,12 +92,12 @@ export type MigracaoListada = {
   apenasRegistrada: boolean;
 };
 
-/** Mais recente primeiro — os nomes de arquivo (0000_..., 2026-08-30-...) já ordenam cronologicamente como string. */
+/** Mais recente primeiro (ver listarArquivosSqlMaisRecentePrimeiro). */
 export async function listarMigracoes(): Promise<MigracaoListada[]> {
   const db = await getDb();
   if (!db) return [];
   await garantirTabelaDeControle(db);
-  const arquivos = listarArquivosSql();
+  const arquivos = listarArquivosSqlMaisRecentePrimeiro();
   const aplicadas = await db.select().from(migracoesAplicadas);
   const porNome = new Map(aplicadas.map((registro) => [registro.nomeArquivo, registro]));
   return arquivos.map((nomeArquivo) => {
@@ -89,7 +110,7 @@ export async function listarMigracoes(): Promise<MigracaoListada[]> {
       aplicadaPorNome: registro?.aplicadaPorNome ?? null,
       apenasRegistrada: registro?.apenasRegistrada ?? false,
     };
-  }).reverse();
+  });
 }
 
 /** Executa de fato os comandos do arquivo, lido direto do disco (nunca do que o cliente mandar) e registra o resultado. */

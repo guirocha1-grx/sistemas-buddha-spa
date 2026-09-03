@@ -5,7 +5,7 @@
 // registradas antes no Heartbeat (6 campos com segundos, UTC).
 import cron from "node-cron";
 import { retomarFluxosPendentes, dispararFluxosAgendados, alertarBuddhaMktSemRetorno } from "../fluxosScheduled";
-import { executarEtapaSincronizacaoDiaria, enviarRelatorioDiario, ETAPAS_AGENDADAS } from "../dailySyncReport";
+import { executarEtapaSincronizacaoDiaria, enviarRelatorioDiario, ETAPAS_AGENDADAS, ETAPAS_REEXECUCAO_MEIODIA } from "../dailySyncReport";
 import { processarAgrupamentosProntos } from "../agentesAgrupamento";
 import { verificarQualidadeAgentes } from "../agentesQualidadeAlerta";
 import { expirarSugestoesPendentesAntigas } from "../agentesDb";
@@ -67,6 +67,11 @@ export function registerScheduledJobs() {
     schedule(`sync-diaria-${chave}`, `0 ${minuto} 10 * * *`, () => executarEtapaSincronizacaoDiaria(chave));
   }
   schedule("relatorio-sincronizacao-diaria", "0 20 10 * * *", enviarRelatorioDiario);
+  // 15h UTC = 12h BRT — reexecução de Caixa Físico/Mercado Pago (ver
+  // comentário em ETAPAS_REEXECUCAO_MEIODIA).
+  for (const { chave, minuto } of ETAPAS_REEXECUCAO_MEIODIA) {
+    schedule(`sync-meiodia-${chave}`, `0 ${minuto} 15 * * *`, () => executarEtapaSincronizacaoDiaria(chave));
+  }
 
-  console.log(`[Scheduler] ${6 + ETAPAS_AGENDADAS.length + 1} tarefas agendadas em processo.`);
+  console.log(`[Scheduler] ${6 + ETAPAS_AGENDADAS.length + ETAPAS_REEXECUCAO_MEIODIA.length + 1} tarefas agendadas em processo.`);
 }

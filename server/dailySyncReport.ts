@@ -168,6 +168,20 @@ export const ETAPAS_AGENDADAS: Array<{ chave: ChaveEtapa; minuto: number }> = [
   { chave: "rbs-comanda-itens", minuto: 12 }, { chave: "rbs-contas-drive", minuto: 13 },
 ];
 
+/**
+ * Reexecução ao meio-dia (12h BRT) de só 3 etapas por unidade — Caixa
+ * Físico e Mercado Pago (conta + adquirente). Achado real (2026-09-03,
+ * Conciliação PDV de Santa Úrsula): a sincronização das 7h roda cedo
+ * demais em relação à fonte (planilha de Caixa Físico, liquidação MP),
+ * que às vezes só fica pronta depois — o mês inteiro só era
+ * reconciliado de fato quando alguém lembrava de clicar em
+ * "Sincronizar" manualmente horas depois. Reusa a mesma
+ * executarEtapaSincronizacaoDiaria (idempotente, mês inteiro de novo),
+ * só numa hora mais tarde.
+ */
+export const ETAPAS_REEXECUCAO_MEIODIA = ETAPAS_AGENDADAS.filter(({ chave }) =>
+  chave.endsWith("-caixa") || chave.endsWith("-mercadopago-conta") || chave.endsWith("-mercadopago-adquirente"));
+
 export function listarHeartbeatsSincronizacaoDiaria(): AgendamentoDiario[] {
   const etapas = ETAPAS_AGENDADAS.map(({ chave, minuto }) => ({
     name: `cron-sync-diaria-${chave}`,

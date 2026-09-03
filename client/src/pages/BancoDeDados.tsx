@@ -18,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { CheckCircle2, Code2, Loader2, MoreVertical, PlayCircle } from "lucide-react";
+import { CheckCircle2, ClipboardCopy, Code2, Loader2, MoreVertical, PlayCircle } from "lucide-react";
 import { toast } from "sonner";
 
 function formatarData(valor: Date | string | null) {
@@ -34,6 +34,7 @@ function SecaoMigracoes() {
   const [verSql, setVerSql] = useState<{ nomeArquivo: string; conteudo: string } | null>(null);
   const [confirmarAplicar, setConfirmarAplicar] = useState<string | null>(null);
   const [confirmarMarcar, setConfirmarMarcar] = useState<string | null>(null);
+  const [mostrarTodas, setMostrarTodas] = useState(false);
 
   const aplicarMutation = trpc.bancoDeDados.migracoesAplicar.useMutation({
     onSuccess: (resultado, variaveis) => {
@@ -76,7 +77,7 @@ function SecaoMigracoes() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(migracoes ?? []).map((m) => (
+                {(mostrarTodas ? (migracoes ?? []) : (migracoes ?? []).slice(0, 5)).map((m) => (
                   <TableRow key={m.nomeArquivo}>
                     <TableCell className="font-mono text-xs">{m.nomeArquivo}</TableCell>
                     <TableCell>
@@ -122,6 +123,13 @@ function SecaoMigracoes() {
                 )}
               </TableBody>
             </Table>
+            {!mostrarTodas && (migracoes ?? []).length > 5 && (
+              <div className="flex justify-center pt-3">
+                <Button variant="outline" size="sm" onClick={() => setMostrarTodas(true)}>
+                  Mostrar todas ({(migracoes ?? []).length})
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </CardContent>
@@ -214,7 +222,19 @@ function SecaoConsultaSql() {
 
         {executarMutation.data && (
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">{executarMutation.data.total} linha(s)</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">{executarMutation.data.total} linha(s)</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(JSON.stringify(executarMutation.data!.linhas, null, 2));
+                  toast.success("JSON copiado.");
+                }}
+              >
+                <ClipboardCopy className="h-3.5 w-3.5 mr-2" /> Copiar JSON
+              </Button>
+            </div>
             <ScrollArea className="max-h-[50vh] border rounded-md">
               <Table>
                 <TableHeader>

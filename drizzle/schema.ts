@@ -1040,7 +1040,14 @@ export const interExtratos = mysqlTable("inter_extratos", {
   // Aviso não-bloqueante (ex.: "já tem outra 'Limpeza' este mês, confira
   // duplicidade") — null = sem aviso.
   alerta: text("alerta"),
-  syncedAt: timestamp("syncedAt").defaultNow().notNull(),
+  // Era só `syncedAt` (setado no insert, nunca tocado de novo) — um
+  // re-sync que corrigia o valor de uma linha existente (Caixa Físico,
+  // Sicredi/Inter reimportado) não deixava rastro de quando isso
+  // aconteceu, dificultando diagnosticar atraso de sincronização
+  // (2026-09-03). onUpdateNow() garante que updatedAt sempre reflete o
+  // último upsert de verdade, mesmo em código que esqueça de setá-lo.
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
   unidadeDataIdx: index("inter_extratos_unidade_data_idx").on(table.unidadeId, table.dataEntrada),
   idTransacaoIdx: index("inter_extratos_id_transacao_idx").on(table.idTransacao),
