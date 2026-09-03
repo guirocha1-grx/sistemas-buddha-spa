@@ -57,7 +57,6 @@ export default function GlobalSyncCenter() {
   const syncCaixa = trpc.contas.sincronizarCaixaFisico.useMutation();
   const syncMpConta = trpc.contas.sincronizarMercadoPago.useMutation();
   const syncMpVendas = trpc.adquirentes.sincronizarMercadoPago.useMutation();
-  const syncComanda = trpc.comandaRecepcao.sincronizar.useMutation();
   const syncComandaItens = trpc.comandaRecepcao.sincronizarItens.useMutation();
   const syncDrive = trpc.comandaRecepcao.sincronizarContasBancariasParaDrive.useMutation();
   const utils = trpc.useUtils();
@@ -96,7 +95,6 @@ export default function GlobalSyncCenter() {
     if (step.kind === "caixa") { await syncCaixa.mutateAsync({ unidadeId: step.unidadeId }); return "Lançamentos do caixa físico importados"; }
     if (step.kind === "mercadoPagoConta") { await syncMpConta.mutateAsync({ unidadeId: step.unidadeId, dataInicio: period.inicio, dataFim: period.fim }); return "Extrato da conta Mercado Pago atualizado"; }
     if (step.kind === "mercadoPagoAdquirentes") { await syncMpVendas.mutateAsync({ unidadeId: step.unidadeId, dataInicio: period.inicio, dataFim: period.fim }); return "Vendas aprovadas do Mercado Pago atualizadas"; }
-    if (step.kind === "comandaConsolidado") { await syncComanda.mutateAsync({ unidadeId: step.unidadeId, ano: period.ano, mes: period.mes }); return "Comanda consolidada da recepção atualizada"; }
     if (step.kind === "comandaItens") { await syncComandaItens.mutateAsync({ unidadeId: step.unidadeId, dataInicio: period.inicio, dataFim: period.fim }); return "Itens recentes da comanda virtual atualizados"; }
     await syncDrive.mutateAsync({ unidadeId: step.unidadeId, dataInicio: period.inicio, dataFim: period.fim });
     return "Conciliação de contas enviada ao Drive";

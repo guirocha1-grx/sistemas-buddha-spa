@@ -1,6 +1,6 @@
 export type SyncStatus = "pending" | "running" | "background" | "success" | "error" | "skipped";
 
-export type SyncStepKind = "inter" | "sicredi" | "caixa" | "mercadoPagoConta" | "mercadoPagoAdquirentes" | "comandaConsolidado" | "comandaItens" | "driveContas";
+export type SyncStepKind = "inter" | "sicredi" | "caixa" | "mercadoPagoConta" | "mercadoPagoAdquirentes" | "comandaItens" | "driveContas";
 
 export type SyncUnit = {
   id: number;
@@ -69,7 +69,6 @@ export function buildGlobalSyncPlan(unidades: SyncUnit[]): SyncStep[] {
       // step(unidade, "Contas Bancárias", "Conta corrente · Sicredi", "sicredi", configured([unidade.sicrediClientId, unidade.sicrediClientSecret, unidade.sicrediCertificado, unidade.sicrediChavePrivada])),
       step(unidade, "Contas Bancárias", "Caixa físico · Google Sheets", "caixa"),
       step(unidade, "Adquirentes", "Mercado Pago · vendas aprovadas", "mercadoPagoAdquirentes", Boolean(unidade.mpAccessToken)),
-      step(unidade, "Google Drive / Comanda da Recepção", "Comanda consolidada · recepção", "comandaConsolidado"),
       step(unidade, "Google Drive / Comanda da Recepção", "Comanda virtual · lançamentos", "comandaItens"),
       step(unidade, "Google Drive / Comanda da Recepção", "Contas bancárias → Drive", "driveContas"),
     ]);

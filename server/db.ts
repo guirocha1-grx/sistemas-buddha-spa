@@ -2897,46 +2897,13 @@ export async function listInterExtratos(
 // ===== Comanda Recepção (conciliação semanal de caixa) =====
 
 /**
- * Grava/atualiza os valores diários da "Comanda (Recepção)" lidos da
- * planilha Consolidado comanda (linhas 3-6, ver server/googleSheets.ts).
- */
-export async function upsertComandaDiaria(
-  unidadeId: number,
-  linhas: { data: string; dinheiro: number; cartaoDebito: number; cartaoCredito: number; pix: number }[],
-): Promise<number> {
-  const db = await getDb();
-  if (!db) return 0;
-  let gravados = 0;
-  for (const l of linhas) {
-    const existente = await db.select({ id: comandaDiaria.id }).from(comandaDiaria)
-      .where(and(eq(comandaDiaria.unidadeId, unidadeId), eq(comandaDiaria.data, l.data)))
-      .limit(1);
-    const valores = {
-      unidadeId,
-      data: l.data,
-      dinheiro: l.dinheiro.toFixed(2),
-      cartaoDebito: l.cartaoDebito.toFixed(2),
-      cartaoCredito: l.cartaoCredito.toFixed(2),
-      pix: l.pix.toFixed(2),
-    };
-    if (existente[0]) {
-      await db.update(comandaDiaria).set(valores).where(eq(comandaDiaria.id, existente[0].id));
-    } else {
-      await db.insert(comandaDiaria).values(valores);
-    }
-    gravados++;
-  }
-  return gravados;
-}
-
-/**
  * "Comanda virtual" (comanda_itens, preenchida pela recepção em tempo
  * real, uma aba por dia) tem prioridade sobre "Consolidado comanda"
- * (comanda_diaria, planilha mensal) quando o dia já tem algum item —
- * é a fonte mais viva e evita ficar zerado só porque a aba mensal do
- * mês corrente ainda não foi preenchida. Dias sem nenhum item (histórico
- * anterior a 2026-08-09, quando essa sincronização começou, ou falha
- * pontual de sync) continuam vindo do Consolidado.
+ * (comanda_diaria, planilha mensal — sincronização descontinuada em
+ * 2026-09-03) quando o dia já tem algum item. Dias sem nenhum item
+ * (histórico anterior a 2026-08-09, quando a Comanda virtual começou)
+ * continuam vindo do Consolidado, que só existe como fallback histórico
+ * congelado agora — nada mais escreve em comanda_diaria.
  */
 export async function listComandaDiaria(unidadeId: number, dataInicio: string, dataFim: string) {
   const db = await getDb();

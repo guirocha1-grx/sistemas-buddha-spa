@@ -30,7 +30,7 @@ import { consultarTodosPagamentos, consultarPagamentoPorId, criarPreferenciaPaga
 import { combinarLinksConfirmacao, dataSaoPaulo, listarLinksConfirmadosLocalmente, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
 import { listarMigracoes, aplicarMigracao, marcarMigracaoAplicada, executarConsultaSql } from "./migracoesRunner";
 import { PDFParse } from "pdf-parse";
-import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, lerComandaConsolidadoSheet, SPREADSHEET_IDS_COMANDA, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual, chaveComandaVirtualPorUnidade, SPREADSHEET_IDS_INFORME_VENDAS, escreverContasBancariasInforme, escreverBelleInforme } from "./googleSheets";
+import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual, chaveComandaVirtualPorUnidade, SPREADSHEET_IDS_INFORME_VENDAS, escreverContasBancariasInforme, escreverBelleInforme } from "./googleSheets";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTelegramParaRecepcao } from "./telegramApi";
 import { UNIDADE_GRUPO_GERAL_RBS_ID, GRUPOS_CHAMADO_RBS, type ChaveGrupoChamado, grupoChamadoPadrao, conversaIdDoGrupoChamado, montarMensagemChamadoTerapeuta } from "./chamadoTerapeuta";
@@ -3422,50 +3422,16 @@ Diretrizes:
 
   // ===== Comanda Recepção (conciliação semanal de caixa) =====
   comandaRecepcao: router({
-    sincronizar: syncProcedure.input(z.object({
-      unidadeId: z.number(),
-      ano: z.number(),
-      mes: z.number().min(1).max(12),
-    })).mutation(async ({ input }) => {
-      const unidade = await db.getUnidadeById(input.unidadeId);
-      if (!unidade) throw new Error("Unidade não encontrada");
-
-      const isRbs = unidade.slug.includes("ribeirao") || unidade.slug.includes("rbs");
-      const slug = isRbs ? "rbs" as const : "ssu" as const;
-      const spreadsheetId = SPREADSHEET_IDS_COMANDA[slug];
-
-      try {
-        const linhas = await lerComandaConsolidadoSheet(spreadsheetId, slug, input.ano, input.mes);
-        const gravados = await db.upsertComandaDiaria(input.unidadeId, linhas);
-
-        await db.createSyncLog({
-          unidadeId: input.unidadeId,
-          tipo: "comanda_recepcao",
-          status: "sucesso",
-          registrosProcessados: gravados,
-          detalhes: `Mês ${input.mes}/${input.ano}. Dias lidos: ${linhas.length}.`,
-        });
-        return { success: true, totalDias: linhas.length };
-      } catch (error: any) {
-        await db.createSyncLog({
-          unidadeId: input.unidadeId,
-          tipo: "comanda_recepcao",
-          status: "erro",
-          registrosProcessados: 0,
-          detalhes: error.message,
-        });
-        throw error;
-      }
-    }),
-
     /**
      * Sincroniza a "Comanda virtual" (item a item, uma aba por dia) pro
-     * período exato pedido — não pelo mês inteiro como `sincronizar`
-     * acima (a Consolidado comanda tem uma aba por mês; a Comanda
-     * virtual tem uma aba POR DIA, então sincronizar o mês inteiro toda
-     * vez seria caro à toa quando só a semana visível importa). Alimenta
-     * o drill-down (hover) da linha "Comanda (Recepção)" e também o
-     * número agregado quando o dia já tem item (ver listComandaDiaria).
+     * período exato pedido — uma aba POR DIA, então sincronizar o mês
+     * inteiro toda vez seria caro à toa quando só a semana visível
+     * importa. Alimenta o drill-down (hover) da linha "Comanda
+     * (Recepção)" e também o número agregado (ver listComandaDiaria).
+     * Único caminho de sincronização da Comanda hoje — a "Comanda
+     * consolidada" (planilha mensal, uma aba por mês) foi descontinuada
+     * (2026-09-03); listComandaDiaria só ainda lê dela como fallback
+     * pros dias históricos anteriores à Comanda virtual.
      */
     sincronizarItens: syncProcedure.input(z.object({
       unidadeId: z.number(),

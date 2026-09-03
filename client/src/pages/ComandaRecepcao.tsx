@@ -228,25 +228,12 @@ export default function ComandaRecepcao() {
 
   const itensLadoBPorCelula = faseAtiva === "fase1" ? itensPorCelula : itensBellePorCelula;
 
-  const sincronizarMutation = trpc.comandaRecepcao.sincronizar.useMutation({
-    onError: (err) => toast.error(`Erro na sincronização: ${err.message}`),
-  });
-
   const sincronizarItensMutation = trpc.comandaRecepcao.sincronizarItens.useMutation({
     onError: (err) => toast.error(`Erro ao sincronizar item a item: ${err.message}`),
   });
 
   async function handleSincronizar() {
     if (!unidadeId) return;
-    // Sincroniza o(s) mês(es) que a semana visível cobre (pode virar o mês) —
-    // a Consolidado comanda tem uma aba por mês.
-    const inicio = new Date(dataInicio);
-    const fim = new Date(dataFim);
-    const meses = new Set<string>();
-    for (const d = new Date(inicio); d <= fim; d.setDate(d.getDate() + 1)) {
-      meses.add(`${d.getFullYear()}-${d.getMonth() + 1}`);
-    }
-
     // Comanda virtual tem uma aba POR DIA (uma chamada à API do Sheets
     // cada) — sincronizar o mês inteiro (até 31 chamadas em sequência)
     // aumentava a chance de esbarrar em rate limit. 12 dias cobre bem
@@ -258,15 +245,6 @@ export default function ComandaRecepcao() {
     const itensInicio = itensInicioIdeal > dataInicio ? itensInicioIdeal : dataInicio;
 
     let houveErro = false;
-
-    try {
-      for (const chave of Array.from(meses)) {
-        const [ano, mes] = chave.split("-").map(Number);
-        await sincronizarMutation.mutateAsync({ unidadeId, ano, mes });
-      }
-    } catch {
-      houveErro = true;
-    }
 
     try {
       await sincronizarItensMutation.mutateAsync({ unidadeId, dataInicio: itensInicio, dataFim: itensFimIdeal });
@@ -812,11 +790,11 @@ export default function ComandaRecepcao() {
                             size="sm"
                             variant="outline"
                             className="h-6 px-2 text-xs font-normal"
-                            disabled={sincronizarMutation.isPending || sincronizarItensMutation.isPending || sincronizarContasBancariasMutation.isPending}
+                            disabled={sincronizarItensMutation.isPending || sincronizarContasBancariasMutation.isPending}
                             onClick={handleSincronizar}
                             title="Sincronizar comanda com dados Drive"
                           >
-                            {sincronizarMutation.isPending || sincronizarItensMutation.isPending || sincronizarContasBancariasMutation.isPending ? (
+                            {sincronizarItensMutation.isPending || sincronizarContasBancariasMutation.isPending ? (
                               <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                             ) : (
                               <RefreshCw className="h-3 w-3 mr-1" />

@@ -45,7 +45,6 @@ const ETAPAS = [
   { id: "caixa", nome: "Caixa Físico" },
   { id: "mercadopago-conta", nome: "Mercado Pago (conta)" },
   { id: "mercadopago-adquirente", nome: "Mercado Pago (adquirente)" },
-  { id: "comanda", nome: "Comanda consolidada" },
   { id: "comanda-itens", nome: "Comanda itens" },
   { id: "contas-drive", nome: "Contas bancárias → Drive" },
 ] as const;
@@ -88,7 +87,6 @@ function montarTarefas(unidades: Array<{ id: number; nome: string; slug: string 
   const caller = callerCron();
   const inicioMes = dataIsoBrt(0).slice(0, 8) + "01";
   const hoje = dataIsoBrt(0);
-  const [ano, mes] = hoje.split("-").map(Number);
   const tarefas: TarefaSync[] = [];
 
   for (const unidade of unidades) {
@@ -99,7 +97,6 @@ function montarTarefas(unidades: Array<{ id: number; nome: string; slug: string 
     tarefas.push({ chave: `${chave}-caixa`, unidadeNome: unidade.nome, etapa: "Caixa Físico", executar: () => caller.contas.sincronizarCaixaFisico({ unidadeId: unidade.id }) });
     tarefas.push({ chave: `${chave}-mercadopago-conta`, unidadeNome: unidade.nome, etapa: "Mercado Pago (conta)", executar: () => caller.contas.sincronizarMercadoPago(base) });
     tarefas.push({ chave: `${chave}-mercadopago-adquirente`, unidadeNome: unidade.nome, etapa: "Mercado Pago (adquirente)", executar: () => caller.adquirentes.sincronizarMercadoPago(base) });
-    tarefas.push({ chave: `${chave}-comanda`, unidadeNome: unidade.nome, etapa: "Comanda consolidada", executar: () => caller.comandaRecepcao.sincronizar({ unidadeId: unidade.id, ano, mes }) });
     tarefas.push({ chave: `${chave}-comanda-itens`, unidadeNome: unidade.nome, etapa: "Comanda itens", executar: () => caller.comandaRecepcao.sincronizarItens(base) });
     tarefas.push({ chave: `${chave}-contas-drive`, unidadeNome: unidade.nome, etapa: "Contas bancárias → Drive", executar: () => caller.comandaRecepcao.sincronizarContasBancariasParaDrive(base) });
   }
@@ -161,11 +158,10 @@ export async function enviarRelatorioDiario(): Promise<void> {
 export const ETAPAS_AGENDADAS: Array<{ chave: ChaveEtapa; minuto: number }> = [
   { chave: "ssu-inter", minuto: 0 }, { chave: "ssu-caixa", minuto: 1 },
   { chave: "ssu-mercadopago-conta", minuto: 2 }, { chave: "ssu-mercadopago-adquirente", minuto: 3 },
-  { chave: "ssu-comanda", minuto: 4 }, { chave: "ssu-comanda-itens", minuto: 5 },
-  { chave: "ssu-contas-drive", minuto: 6 }, { chave: "rbs-inter", minuto: 7 },
-  { chave: "rbs-caixa", minuto: 8 }, { chave: "rbs-mercadopago-conta", minuto: 9 },
-  { chave: "rbs-mercadopago-adquirente", minuto: 10 }, { chave: "rbs-comanda", minuto: 11 },
-  { chave: "rbs-comanda-itens", minuto: 12 }, { chave: "rbs-contas-drive", minuto: 13 },
+  { chave: "ssu-comanda-itens", minuto: 4 }, { chave: "ssu-contas-drive", minuto: 5 },
+  { chave: "rbs-inter", minuto: 6 }, { chave: "rbs-caixa", minuto: 7 },
+  { chave: "rbs-mercadopago-conta", minuto: 8 }, { chave: "rbs-mercadopago-adquirente", minuto: 9 },
+  { chave: "rbs-comanda-itens", minuto: 10 }, { chave: "rbs-contas-drive", minuto: 11 },
 ];
 
 /**
