@@ -1182,6 +1182,18 @@ export const comandaItens = mysqlTable("comanda_itens", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
   unidadeDataIdx: index("comanda_itens_unidade_data_idx").on(table.unidadeId, table.data),
+  // Sem isso, "já existe essa linha?" dependia de um SELECT no início
+  // do upsert (server/db.ts: upsertComandaItens) pra decidir inserir
+  // vs. atualizar — se a mesma sincronização rodasse de novo antes do
+  // insert anterior aparecer nesse SELECT (retry automático do
+  // "Sincronizar tudo" depois de 1 dia falhar por rate limit no meio
+  // de ~30 chamadas ao Sheets), a checagem não via a linha recém-criada
+  // e inseria de novo. Achado real (2026-09-03): toda linha de
+  // comanda_itens desde o início (27/07) estava duplicada 2x, dobrando
+  // o valor da "Comanda (Recepção)" na Conciliação PDV. O índice único
+  // faz o próprio banco garantir isso via INSERT ... ON DUPLICATE KEY
+  // UPDATE, sem depender de timing de leitura.
+  unidadeDataIdLinhaUnq: uniqueIndex("comanda_itens_unidade_data_idlinha_unq").on(table.unidadeId, table.data, table.idLinha),
 }));
 
 export type ComandaItem = typeof comandaItens.$inferSelect;

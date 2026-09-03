@@ -5734,17 +5734,17 @@ const LOTE_INSERT_COMANDA_ITENS = 500;
 
 /**
  * Upsert por unidadeId+data+idLinha (idLinha = "ID" sequencial da
- * própria planilha, dentro de cada dia). Uma consulta prévia busca as
- * chaves já existentes de uma vez (mesmo espírito de
- * upsertClientesImportados) — evita um SELECT por linha numa carga
- * histórica com milhares delas.
- *
- * Inserção em lote (não um INSERT por linha): numa carga histórica
- * (a esmagadora maioria é linha nova, nunca vista) um INSERT por linha
- * é lento o bastante pra estourar o timeout da requisição em
- * planilhas grandes — confirmado na prática (RBS, ~6 mil linhas,
- * timeout; SSU, ~3 mil, passou raspando). Update continua um a um —
- * bem mais raro (só acontece reimportando um dia já existente).
+ * própria planilha, dentro de cada dia) — em lote, via
+ * INSERT ... ON DUPLICATE KEY UPDATE contra o índice único
+ * comanda_itens_unidade_data_idlinha_unq. Decidir "insere ou atualiza"
+ * é o próprio banco que faz, atomicamente por linha; nada aqui lê o
+ * estado anterior pra tomar essa decisão (só pra rotular o retorno —
+ * ver comentário mais abaixo). Troca de um SELECT-então-decide feita em
+ * 2026-09-03 depois de um bug real: sob retry (comum — 1 dia falhando
+ * por rate limit no meio de ~30 chamadas ao Sheets já basta pro
+ * "Sincronizar tudo" tentar tudo de novo), o SELECT prévio às vezes não
+ * via o insert de segundos atrás e duplicava a linha. Toda linha da
+ * tabela desde 27/07 estava assim, duplicada 2x.
  */
 export async function upsertComandaItens(
   unidadeId: number,
@@ -5754,17 +5754,16 @@ export async function upsertComandaItens(
   if (!db) return { inseridos: 0, atualizados: 0 };
   if (linhas.length === 0) return { inseridos: 0, atualizados: 0 };
 
-  const existentes = await db
-    .select({ id: comandaItens.id, data: comandaItens.data, idLinha: comandaItens.idLinha })
-    .from(comandaItens)
-    .where(eq(comandaItens.unidadeId, unidadeId));
-  const existentesMap = new Map(existentes.map((e) => [`${e.data}|${e.idLinha}`, e.id]));
-
-  const paraInserir: InsertComandaItem[] = [];
-  const paraAtualizar: { id: number; dados: Partial<InsertComandaItem> }[] = [];
-
+  // Map, não array: se a própria leitura da planilha já trouxer o mesmo
+  // idLinha duas vezes (linha duplicada por engano na planilha), a
+  // última leitura da mesma chave vence — mesma convenção que o resto
+  // do sistema já assume pra idLinha.
+  const porChave = new Map<string, InsertComandaItem>();
   for (const l of linhas) {
-    const dadosBase = {
+    porChave.set(`${l.data}|${l.idLinha}`, {
+      unidadeId,
+      data: l.data,
+      idLinha: l.idLinha,
       cliente: l.cliente ?? null,
       aberturaResponsavel: l.aberturaResponsavel ?? null,
       visitasAnteriores: l.visitasAnteriores ?? null,
@@ -5783,27 +5782,67 @@ export async function upsertComandaItens(
       observacao: l.observacao ?? null,
       fechamentoResponsavel: l.fechamentoResponsavel ?? null,
       campoGerente: l.campoGerente ?? null,
-    };
+    });
+  }
+  const linhasParaGravar = Array.from(porChave.values());
 
-    const chave = `${l.data}|${l.idLinha}`;
-    const existenteId = existentesMap.get(chave);
-    if (existenteId) {
-      paraAtualizar.push({ id: existenteId, dados: dadosBase });
-    } else {
-      paraInserir.push({ unidadeId, data: l.data, idLinha: l.idLinha, ...dadosBase });
-    }
+  // Só pra rotular "N novos / M atualizados" no retorno (texto
+  // informativo do syncLog) — não decide mais o que gravar. Uma foto
+  // levemente desatualizada aqui erra no máximo o rótulo, nunca duplica
+  // linha: quem garante isso agora é o índice único
+  // (comanda_itens_unidade_data_idlinha_unq) + ON DUPLICATE KEY UPDATE
+  // abaixo, atômico no próprio banco — sem essa troca, um retry (ex.:
+  // "Sincronizar tudo" tentando de novo depois de 1 dia falhar por rate
+  // limit no meio de ~30 chamadas ao Sheets) podia rodar antes do
+  // insert anterior aparecer num SELECT prévio, e inserir a mesma linha
+  // de novo. Achado real (2026-09-03): toda linha de comanda_itens
+  // desde 27/07 estava duplicada 2x por causa exatamente disso.
+  const existentes = await db
+    .select({ data: comandaItens.data, idLinha: comandaItens.idLinha })
+    .from(comandaItens)
+    .where(eq(comandaItens.unidadeId, unidadeId));
+  const chavesExistentes = new Set(existentes.map((e) => `${e.data}|${e.idLinha}`));
+  let inseridos = 0;
+  let atualizados = 0;
+  for (const l of linhasParaGravar) {
+    if (chavesExistentes.has(`${l.data}|${l.idLinha}`)) atualizados++; else inseridos++;
   }
 
-  for (let i = 0; i < paraInserir.length; i += LOTE_INSERT_COMANDA_ITENS) {
-    const lote = paraInserir.slice(i, i + LOTE_INSERT_COMANDA_ITENS);
-    await db.insert(comandaItens).values(lote);
+  // Em lote (não um INSERT por linha): numa carga histórica (a
+  // esmagadora maioria é linha nova, nunca vista) um INSERT por linha é
+  // lento o bastante pra estourar o timeout da requisição em planilhas
+  // grandes — confirmado na prática (RBS, ~6 mil linhas, timeout; SSU,
+  // ~3 mil, passou raspando). VALUES(coluna) dentro do ON DUPLICATE KEY
+  // UPDATE refere-se ao valor que cada linha do lote tentou inserir —
+  // funciona certo mesmo com centenas de linhas diferentes no mesmo
+  // INSERT.
+  for (let i = 0; i < linhasParaGravar.length; i += LOTE_INSERT_COMANDA_ITENS) {
+    const lote = linhasParaGravar.slice(i, i + LOTE_INSERT_COMANDA_ITENS);
+    await db.insert(comandaItens).values(lote).onDuplicateKeyUpdate({
+      set: {
+        cliente: sql`VALUES(${comandaItens.cliente})`,
+        aberturaResponsavel: sql`VALUES(${comandaItens.aberturaResponsavel})`,
+        visitasAnteriores: sql`VALUES(${comandaItens.visitasAnteriores})`,
+        canalCaptacao: sql`VALUES(${comandaItens.canalCaptacao})`,
+        terapiaProduto: sql`VALUES(${comandaItens.terapiaProduto})`,
+        terapeuta: sql`VALUES(${comandaItens.terapeuta})`,
+        subtotal: sql`VALUES(${comandaItens.subtotal})`,
+        desconto: sql`VALUES(${comandaItens.desconto})`,
+        motivoDesconto: sql`VALUES(${comandaItens.motivoDesconto})`,
+        total: sql`VALUES(${comandaItens.total})`,
+        dinheiro: sql`VALUES(${comandaItens.dinheiro})`,
+        pix: sql`VALUES(${comandaItens.pix})`,
+        cartaoDebito: sql`VALUES(${comandaItens.cartaoDebito})`,
+        cartaoCredito: sql`VALUES(${comandaItens.cartaoCredito})`,
+        totalPagtos: sql`VALUES(${comandaItens.totalPagtos})`,
+        observacao: sql`VALUES(${comandaItens.observacao})`,
+        fechamentoResponsavel: sql`VALUES(${comandaItens.fechamentoResponsavel})`,
+        campoGerente: sql`VALUES(${comandaItens.campoGerente})`,
+      },
+    });
   }
 
-  for (const { id, dados } of paraAtualizar) {
-    await db.update(comandaItens).set(dados).where(eq(comandaItens.id, id));
-  }
-
-  return { inseridos: paraInserir.length, atualizados: paraAtualizar.length };
+  return { inseridos, atualizados };
 }
 
 export interface ItemComandaRecepcao {
