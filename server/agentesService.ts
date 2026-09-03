@@ -92,15 +92,6 @@ export function limitarMensagemCliente(mensagem: string, limite: number = LIMITE
   return `${texto.slice(0, corte).trim().replace(/[,:;\-]$/, "")}…`;
 }
 
-// "oi+"/"ola+" cobre variações comuns de digitação no WhatsApp ("oii",
-// "oiii", "olaa") — reclamação real da recepção (2026-09-03): o robô
-// às vezes respondia direto sem cumprimentar. "opa"/"eae"/"e ai"/"salve"
-// são aberturas cordiais igual de comuns que "oi"/"olá" e não entravam
-// antes.
-function contemSaudacao(texto: string) {
-  return /(?:^|\s)(?:oi+|ol[aá]+|opa|eae|e\s*a[ií]|salve|bom dia|boa tarde|boa noite)(?:[!,.?\s]|$)/i.test(texto);
-}
-
 function horaEmSaoPaulo(agora: Date) {
   const partes = new Intl.DateTimeFormat("en-US", {
     timeZone: FUSO_HORARIO_RBS,
@@ -125,14 +116,32 @@ function saudacaoPorHorario(agora: Date) {
  * mensagem recebida. "Que bom ter você aqui 😊" a pedido da recepção
  * (2026-09-03) — mais cordial que só "Bom dia!" seco antes de entrar
  * na resposta.
+ *
+ * Dispara sempre que é a 1ª resposta da equipe na conversa — não só
+ * quando a mensagem do cliente "contém saudação". Achado real
+ * (2026-09-03, 4 rejeições por falta de saudação): em 3 dos 4 casos o
+ * cliente mandou a saudação e o pedido em mensagens SEPARADAS (ex.:
+ * "Bom dia" / "tudo bem?" / "tem horário pra shiatsu?"), e a checagem
+ * antiga só olhava a última mensagem — perdia a saudação mesmo ela
+ * estando ali, a poucos segundos de distância. A recepção também
+ * confirmou que quer cumprimento sempre na abertura, mesmo quando o
+ * cliente não cumprimenta primeiro.
  */
 export function saudacaoInicialEspecialista(contexto: ContextoConversa, chaveAgente: string, agora: Date = new Date()) {
   if (chaveAgente === "aurea") return null;
+  const equipeJaRespondeu = contexto.mensagens.some((mensagem) => mensagem.direcao === "enviada");
+  if (equipeJaRespondeu) return null;
   const ultimaMensagem = ultimaMensagemCliente(contexto);
   const texto = (ultimaMensagem?.transcricao || ultimaMensagem?.conteudo || "").trim();
-  const equipeJaRespondeu = contexto.mensagens.some((mensagem) => mensagem.direcao === "enviada");
-  if (!texto || equipeJaRespondeu || !contemSaudacao(texto)) return null;
-  const perguntouComoEstamos = /\b(tudo bem|como (?:vai|est[aá]|est[aã]o))\b/i.test(texto);
+  if (!texto) return null;
+  // Antes da 1ª resposta, toda mensagem em contexto.mensagens é do
+  // cliente — concatena todas (não só a última) pra não perder um
+  // "tudo bem?" mandado numa mensagem separada da pergunta de verdade.
+  const textoDoTurno = contexto.mensagens
+    .filter((mensagem) => mensagem.direcao === "recebida")
+    .map((mensagem) => mensagem.transcricao || mensagem.conteudo || "")
+    .join(" ");
+  const perguntouComoEstamos = /\b(tudo bem|como (?:vai|est[aá]|est[aã]o))\b/i.test(textoDoTurno);
   return `${saudacaoPorHorario(agora)}${perguntouComoEstamos ? ", tudo bem e você?" : "!"} Que bom ter você aqui 😊`;
 }
 

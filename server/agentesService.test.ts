@@ -329,13 +329,15 @@ describe("orquestrador de agentes", () => {
     expect(invokeLLM).not.toHaveBeenCalled();
     expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
       agenteId: 3,
-      sugestao: "Boa tarde!\n\nClaro. Vou enviar as opções gerais de Day Spa para você conhecer.",
+      sugestao: "Boa tarde! Que bom ter você aqui 😊\n\nClaro. Vou enviar as opções gerais de Day Spa para você conhecer.",
       acaoPendente: "script_fluxo:210002",
     }));
     vi.useRealTimers();
   });
 
   it("encaminha o pedido inicial de voucher ao fluxo oficial antes de gerar texto livre", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T16:00:00.000Z"));
     agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quero entender como funciona o voucher para presentear."));
     agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [dianaAssistida]);
     agentesDb.listarScriptsParaAgentes.mockResolvedValue([{
@@ -354,23 +356,32 @@ describe("orquestrador de agentes", () => {
     expect(invokeLLM).not.toHaveBeenCalled();
     expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
       agenteId: 6,
-      sugestao: "Claro. Vou encaminhar as informações sobre vouchers para você.",
+      sugestao: "Boa tarde! Que bom ter você aqui 😊\n\nClaro. Vou encaminhar as informações sobre vouchers para você.",
       acaoPendente: "script_fluxo:210001",
     }));
+    vi.useRealTimers();
   });
 
   it("pede o período antes de a recepção verificar um horário sem preferência", async () => {
-    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Vocês têm horário para amanhã?"));
-    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);
+    // Mesmo motivo do fake timer em outros testes deste arquivo: a
+    // saudação forçada (2026-09-03) usa a hora real por padrão.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T16:00:00.000Z"));
+    try {
+      agentesDb.obterContextoConversa.mockResolvedValue(contexto("Vocês têm horário para amanhã?"));
+      agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);
 
-    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 437 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
+      await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 437 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
 
-    expect(invokeLLM).not.toHaveBeenCalled();
-    expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
-      agenteId: 5,
-      sugestao: "Você tem algum período de preferência? Pode me informar se seria de manhã, à tarde ou à noite? ✨",
-      variaveis: expect.objectContaining({ triagem_horario: "aguardando_periodo" }),
-    }));
+      expect(invokeLLM).not.toHaveBeenCalled();
+      expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
+        agenteId: 5,
+        sugestao: "Boa tarde! Que bom ter você aqui 😊\n\nVocê tem algum período de preferência? Pode me informar se seria de manhã, à tarde ou à noite? ✨",
+        variaveis: expect.objectContaining({ triagem_horario: "aguardando_periodo" }),
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("oferece apenas slots com tempo hábil quando o cliente pede hoje à tarde", async () => {
@@ -385,7 +396,7 @@ describe("orquestrador de agentes", () => {
       expect(invokeLLM).not.toHaveBeenCalled();
       expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
         agenteId: 5,
-        sugestao: "Para hoje, posso verificar 15:30 e 16:45. Algum desses fica melhor para você?",
+        sugestao: "Boa tarde! Que bom ter você aqui 😊\n\nPara hoje, posso verificar 15:30 e 16:45. Algum desses fica melhor para você?",
         variaveis: expect.objectContaining({ triagem_horario: "aguardando_escolha_slot", slots_oferecidos: "15:30, 16:45" }),
       }));
     } finally {
@@ -394,16 +405,22 @@ describe("orquestrador de agentes", () => {
   });
 
   it("mantém a coleta com Carol quando o cliente informa um horário específico", async () => {
-    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Teria algum horário entre 16h15 e 16h45 no dia 28?"));
-    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);
-    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("Qual será a terapia?") } }] });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T16:00:00.000Z"));
+    try {
+      agentesDb.obterContextoConversa.mockResolvedValue(contexto("Teria algum horário entre 16h15 e 16h45 no dia 28?"));
+      agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);
+      invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("Qual será a terapia?") } }] });
 
-    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 487 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
+      await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 487 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
 
-    expect(invokeLLM).toHaveBeenCalledTimes(1);
-    expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
-      sugestao: "Qual será a terapia?",
-    }));
+      expect(invokeLLM).toHaveBeenCalledTimes(1);
+      expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
+        sugestao: "Boa tarde! Que bom ter você aqui 😊\n\nQual será a terapia?",
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("suprime a sugestão da Carol quando ela repetiria uma pergunta já editada/descartada antes", async () => {
@@ -418,16 +435,22 @@ describe("orquestrador de agentes", () => {
   });
 
   it("oferece os slots de domingo na ordem aprovada", async () => {
-    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Tem horário para domingo à tarde?"));
-    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T16:00:00.000Z"));
+    try {
+      agentesDb.obterContextoConversa.mockResolvedValue(contexto("Tem horário para domingo à tarde?"));
+      agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [carolAssistida]);
 
-    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 492 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
+      await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 492 })).resolves.toEqual({ status: "concluida", sugestaoId: 91 });
 
-    expect(invokeLLM).not.toHaveBeenCalled();
-    expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
-      sugestao: "Para domingo, posso verificar 14:00 e 15:15. Algum desses fica melhor para você?",
-      variaveis: expect.objectContaining({ slots_oferecidos: "14:00, 15:15" }),
-    }));
+      expect(invokeLLM).not.toHaveBeenCalled();
+      expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
+        sugestao: "Boa tarde! Que bom ter você aqui 😊\n\nPara domingo, posso verificar 14:00 e 15:15. Algum desses fica melhor para você?",
+        variaveis: expect.objectContaining({ slots_oferecidos: "14:00, 15:15" }),
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("injeta a regra de última terapia, cadastro posterior e conclusão da Carol", () => {
@@ -603,6 +626,8 @@ describe("orquestrador de agentes", () => {
   });
 
   it("seleciona um Script pelo contexto, preservando uma transição cordial quando necessária", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T16:00:00.000Z"));
     agentesDb.obterContextoConversa.mockResolvedValue(contexto("Pode me explicar como é a drenagem linfática?"));
     agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [biancaAssistida]);
     agentesDb.listarScriptsParaAgentes.mockResolvedValue([{
@@ -623,8 +648,9 @@ describe("orquestrador de agentes", () => {
     expect(contextoEspecialista).toContain("Explicar técnica, benefícios e durações da drenagem linfática.");
     expect(contextoEspecialista).not.toContain("Técnica com movimentos sutis");
     expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({
-      sugestao: "Claro, vou explicar:\n\nTécnica com movimentos sutis que auxilia na redução de edemas e na sensação de leveza.",
+      sugestao: "Boa tarde! Que bom ter você aqui 😊\n\nClaro, vou explicar:\n\nTécnica com movimentos sutis que auxilia na redução de edemas e na sensação de leveza.",
     }));
+    vi.useRealTimers();
   });
 
   it("registra uma reprovação com motivo operacional", async () => {

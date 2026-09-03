@@ -375,10 +375,19 @@ export async function concluirExecucao(id: number, dados: {
 }
 
 const JANELA_AGRUPAMENTO_MENSAGENS_MS = 10_000;
+// Só na abertura da conversa (nenhuma mensagem "enviada" ainda) — dá mais
+// tempo pro cliente completar a saudação + o pedido em mensagens separadas
+// antes da 1ª resposta sair (achado real 2026-09-03: cliente manda "Bom dia"
+// e a pergunta de verdade 12-21s depois, o especialista responde só a
+// pergunta e "perde" a saudação que já tinha chegado). Fora da abertura
+// continua 10s — não vale atrasar toda resposta do dia a dia por causa
+// desse caso específico.
+const JANELA_AGRUPAMENTO_ABERTURA_MS = 25_000;
 const LIMITE_RECUPERAR_AGRUPAMENTO_MS = 2 * 60_000;
 
-export function dataLiberacaoAgrupamento(agora = new Date()): Date {
-  return new Date(agora.getTime() + JANELA_AGRUPAMENTO_MENSAGENS_MS);
+export function dataLiberacaoAgrupamento(agora = new Date(), ehAberturaDeConversa = false): Date {
+  const janela = ehAberturaDeConversa ? JANELA_AGRUPAMENTO_ABERTURA_MS : JANELA_AGRUPAMENTO_MENSAGENS_MS;
+  return new Date(agora.getTime() + janela);
 }
 
 /**
@@ -394,7 +403,10 @@ export async function agendarAgrupamentoMensagem(params: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Banco indisponível");
-  const processarApos = dataLiberacaoAgrupamento(params.agora);
+  const [jaRespondida] = await db.select({ id: inboxMensagens.id }).from(inboxMensagens)
+    .where(and(eq(inboxMensagens.conversaId, params.conversaId), eq(inboxMensagens.direcao, "enviada")))
+    .limit(1);
+  const processarApos = dataLiberacaoAgrupamento(params.agora, !jaRespondida);
   await db.insert(agentesAgrupamentosMensagens).values({
     conversaId: params.conversaId,
     unidadeId: params.unidadeId,
