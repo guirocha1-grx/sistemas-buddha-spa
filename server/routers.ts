@@ -30,7 +30,7 @@ import { consultarTodosPagamentos, consultarPagamentoPorId, criarPreferenciaPaga
 import { combinarLinksConfirmacao, dataSaoPaulo, listarLinksConfirmadosLocalmente, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
 import { listarMigracoes, aplicarMigracao, marcarMigracaoAplicada, executarConsultaSql } from "./migracoesRunner";
 import { PDFParse } from "pdf-parse";
-import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual, chaveComandaVirtualPorUnidade, SPREADSHEET_IDS_INFORME_VENDAS, escreverContasBancariasInforme, escreverBelleInforme } from "./googleSheets";
+import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual, chaveComandaVirtualPorUnidade, SPREADSHEET_IDS_INFORME_VENDAS, escreverContasBancariasInforme, escreverBelleInforme, lerResumoMensalSheet, lerMetasMensalSheet, SPREADSHEET_ID_CONTABILIDADE } from "./googleSheets";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTelegramParaRecepcao } from "./telegramApi";
 import { UNIDADE_GRUPO_GERAL_RBS_ID, GRUPOS_CHAMADO_RBS, type ChaveGrupoChamado, grupoChamadoPadrao, conversaIdDoGrupoChamado, montarMensagemChamadoTerapeuta } from "./chamadoTerapeuta";
@@ -802,6 +802,77 @@ export const appRouter = router({
       );
 
       return resultados;
+    }),
+
+    // Histórico mensal (planilha "Contabilidade SSU e RBS") — alimenta
+    // "Visão mês a mês". Granularidade mensal, fonte separada do resto
+    // do financeiro (que é diário, vindo de Comanda/Contas).
+    resumoMensal: router({
+      listar: protectedProcedure.input(z.object({
+        mesAnoInicio: z.string().optional(),
+      }).optional()).query(async ({ input }) => {
+        return db.listResumoMensalUnidade(input?.mesAnoInicio);
+      }),
+
+      sincronizar: syncProcedure.mutation(async () => {
+        const unidadeIdRbs = await db.getUnidadeIdPorChaveSsuRbs("rbs");
+        const unidadeIdSsu = await db.getUnidadeIdPorChaveSsuRbs("ssu");
+        const idsPorChave: Record<"rbs" | "ssu", number | null> = { rbs: unidadeIdRbs, ssu: unidadeIdSsu };
+
+        try {
+          const [linhasResumo, linhasMetas] = await Promise.all([
+            lerResumoMensalSheet(SPREADSHEET_ID_CONTABILIDADE),
+            lerMetasMensalSheet(SPREADSHEET_ID_CONTABILIDADE),
+          ]);
+
+          const metaPorChave = new Map(linhasMetas.map((m) => [`${m.unidadeChave}|${m.mesAno}`, m.metaFaturamento]));
+          const resumoPorChave = new Map(linhasResumo.map((l) => [`${l.unidadeChave}|${l.mesAno}`, l]));
+          // União dos meses que aparecem em Resumos OU em Metas — um mês
+          // futuro só tem meta ainda (sem resultado real), e precisa
+          // aparecer mesmo assim pra mostrar a meta antes do mês acontecer.
+          const todasAsChaves = new Set([...resumoPorChave.keys(), ...metaPorChave.keys()]);
+
+          const linhasParaGravar: db.LinhaResumoMensalParaGravar[] = [];
+          for (const chave of todasAsChaves) {
+            const [unidadeChave, mesAno] = chave.split("|") as ["rbs" | "ssu", string];
+            const unidadeId = idsPorChave[unidadeChave];
+            if (!unidadeId) continue;
+            const r = resumoPorChave.get(chave);
+            linhasParaGravar.push({
+              unidadeId,
+              mesAno,
+              totalRecebidoCaixa: r?.totalRecebidoCaixa ?? null,
+              voucherSite: r?.voucherSite ?? null,
+              gympassTotalpass: r?.gympassTotalpass ?? null,
+              faturamentoTotal: r?.faturamentoTotal ?? null,
+              atendimentosSemPlano: r?.atendimentosSemPlano ?? null,
+              atendimentosComPlano: r?.atendimentosComPlano ?? null,
+              totalAtendimentos: r?.totalAtendimentos ?? null,
+              planos: r?.planos ?? null,
+              metaFaturamento: metaPorChave.get(chave) ?? null,
+            });
+          }
+
+          const gravados = await db.upsertResumoMensalUnidade(linhasParaGravar);
+          for (const unidadeId of [unidadeIdRbs, unidadeIdSsu]) {
+            if (!unidadeId) continue;
+            await db.createSyncLog({
+              unidadeId,
+              tipo: "resumo_mensal",
+              status: "sucesso",
+              registrosProcessados: gravados,
+              detalhes: `Planilha Contabilidade SSU e RBS. Meses gravados (2 unidades): ${gravados}.`,
+            });
+          }
+          return { success: true, totalGravados: gravados };
+        } catch (error: any) {
+          for (const unidadeId of [unidadeIdRbs, unidadeIdSsu]) {
+            if (!unidadeId) continue;
+            await db.createSyncLog({ unidadeId, tipo: "resumo_mensal", status: "erro", registrosProcessados: 0, detalhes: error.message });
+          }
+          throw error;
+        }
+      }),
     }),
   }),
 

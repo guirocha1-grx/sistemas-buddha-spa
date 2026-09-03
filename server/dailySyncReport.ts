@@ -119,6 +119,15 @@ export async function executarEtapaSincronizacaoDiaria(chave: ChaveEtapa): Promi
   return { unidade: tarefa.unidadeNome, etapa: tarefa.etapa };
 }
 
+/**
+ * Semanal (não diária) — a planilha "Contabilidade SSU e RBS" é
+ * atualizada manualmente pelo contador/gestão, não pela operação do
+ * dia a dia, então não faz sentido reler todo dia (2026-09-03).
+ */
+export async function executarSincronizacaoResumoMensal(): Promise<void> {
+  await callerCron().financeiro.resumoMensal.sincronizar();
+}
+
 function fmtMoeda(v: number): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
 }

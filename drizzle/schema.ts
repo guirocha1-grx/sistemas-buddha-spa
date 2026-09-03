@@ -1200,6 +1200,37 @@ export type ComandaItem = typeof comandaItens.$inferSelect;
 export type InsertComandaItem = typeof comandaItens.$inferInsert;
 
 /**
+ * Histórico mensal por unidade — importado da planilha "Contabilidade
+ * SSU e RBS" (aba "Resumos", 3+ anos de série mensal) e da aba "Metas"
+ * (2026-09-03). Granularidade mensal (não diária, como o resto do
+ * financeiro) — é a fonte pro "Visão mês a mês" dentro de Financeiro,
+ * não substitui a Comanda/Contas do dia a dia.
+ */
+export const resumoMensalUnidade = mysqlTable("resumo_mensal_unidade", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  mesAno: varchar("mesAno", { length: 7 }).notNull(), // AAAA-MM
+  totalRecebidoCaixa: decimal("totalRecebidoCaixa", { precision: 12, scale: 2 }),
+  voucherSite: decimal("voucherSite", { precision: 12, scale: 2 }),
+  gympassTotalpass: decimal("gympassTotalpass", { precision: 12, scale: 2 }),
+  faturamentoTotal: decimal("faturamentoTotal", { precision: 12, scale: 2 }),
+  atendimentosSemPlano: int("atendimentosSemPlano"),
+  atendimentosComPlano: int("atendimentosComPlano"),
+  totalAtendimentos: int("totalAtendimentos"),
+  planos: int("planos"),
+  // Da aba "Metas" — null quando a planilha não cobre esse mês/unidade
+  // ainda (ex.: anos antes de 2025, que a aba Metas não tem).
+  metaFaturamento: decimal("metaFaturamento", { precision: 12, scale: 2 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeMesUnq: uniqueIndex("resumo_mensal_unidade_unidade_mes_unq").on(table.unidadeId, table.mesAno),
+}));
+
+export type ResumoMensalUnidade = typeof resumoMensalUnidade.$inferSelect;
+export type InsertResumoMensalUnidade = typeof resumoMensalUnidade.$inferInsert;
+
+/**
  * Plano de contas do DRE (estrutura definida em 2026-08-04, revisão
  * pendente pra Receitas/Pronampe/alguns itens sem exemplo real ainda —
  * ver comentário em server/dreCategorizacao.ts). "excluido" é uma seção

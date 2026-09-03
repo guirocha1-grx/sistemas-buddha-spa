@@ -14,6 +14,7 @@ import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescr
 import { storageGetSignedUrl, storageExists } from "./storage";
 import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, atendimentoTempoEventos, terapeutasLiberacoes, type InsertChamadoParametro } from "../drizzle/schema";
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
+import { resumoMensalUnidade, type InsertResumoMensalUnidade, type ResumoMensalUnidade } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda, calcularEvolucaoFidelizacao, type GranularidadeEvolucao } from "./terapeutasRelatorios";
 import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, nomesCorrespondem, identificarTerapeuta, nomesClienteCorrespondem, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
@@ -5843,6 +5844,85 @@ export async function upsertComandaItens(
   }
 
   return { inseridos, atualizados };
+}
+
+// ===== Resumo mensal (planilha "Contabilidade SSU e RBS") =====
+
+/** rbs -> unidade cujo slug tem "ribeirao"/"rbs"; ssu -> a outra. Mesma convenção de chaveUnidade em dailySyncReport.ts, invertida. */
+export async function getUnidadeIdPorChaveSsuRbs(chave: "rbs" | "ssu"): Promise<number | null> {
+  const todas = await getUnidades();
+  const unidade = todas.find((u) => {
+    const isRbs = u.slug.includes("ribeirao") || u.slug.includes("rbs");
+    return chave === "rbs" ? isRbs : !isRbs && u.slug !== "buddha-mkt";
+  });
+  return unidade?.id ?? null;
+}
+
+export interface LinhaResumoMensalParaGravar {
+  unidadeId: number;
+  mesAno: string; // AAAA-MM
+  // null = mês ainda sem resultado real (só meta, ex.: mês futuro) —
+  // diferente de 0, que é um resultado real de valor zero.
+  totalRecebidoCaixa: number | null;
+  voucherSite: number | null;
+  gympassTotalpass: number | null;
+  faturamentoTotal: number | null;
+  atendimentosSemPlano: number | null;
+  atendimentosComPlano: number | null;
+  totalAtendimentos: number | null;
+  planos: number | null;
+  metaFaturamento: number | null;
+}
+
+/**
+ * Upsert por unidadeId+mesAno via ON DUPLICATE KEY UPDATE (mesmo
+ * padrão consolidado hoje em upsertComandaItens — decisão "insere ou
+ * atualiza" atômica no próprio banco, contra o índice único
+ * resumo_mensal_unidade_unidade_mes_unq).
+ */
+export async function upsertResumoMensalUnidade(linhas: LinhaResumoMensalParaGravar[]): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  if (linhas.length === 0) return 0;
+
+  const paraTexto = (v: number | null) => (v === null ? null : v.toFixed(2));
+  const valores: InsertResumoMensalUnidade[] = linhas.map((l) => ({
+    unidadeId: l.unidadeId,
+    mesAno: l.mesAno,
+    totalRecebidoCaixa: paraTexto(l.totalRecebidoCaixa),
+    voucherSite: paraTexto(l.voucherSite),
+    gympassTotalpass: paraTexto(l.gympassTotalpass),
+    faturamentoTotal: paraTexto(l.faturamentoTotal),
+    atendimentosSemPlano: l.atendimentosSemPlano,
+    atendimentosComPlano: l.atendimentosComPlano,
+    totalAtendimentos: l.totalAtendimentos,
+    planos: l.planos,
+    metaFaturamento: paraTexto(l.metaFaturamento),
+  }));
+
+  await db.insert(resumoMensalUnidade).values(valores).onDuplicateKeyUpdate({
+    set: {
+      totalRecebidoCaixa: sql`VALUES(${resumoMensalUnidade.totalRecebidoCaixa})`,
+      voucherSite: sql`VALUES(${resumoMensalUnidade.voucherSite})`,
+      gympassTotalpass: sql`VALUES(${resumoMensalUnidade.gympassTotalpass})`,
+      faturamentoTotal: sql`VALUES(${resumoMensalUnidade.faturamentoTotal})`,
+      atendimentosSemPlano: sql`VALUES(${resumoMensalUnidade.atendimentosSemPlano})`,
+      atendimentosComPlano: sql`VALUES(${resumoMensalUnidade.atendimentosComPlano})`,
+      totalAtendimentos: sql`VALUES(${resumoMensalUnidade.totalAtendimentos})`,
+      planos: sql`VALUES(${resumoMensalUnidade.planos})`,
+      metaFaturamento: sql`VALUES(${resumoMensalUnidade.metaFaturamento})`,
+    },
+  });
+
+  return valores.length;
+}
+
+/** Lista o histórico mensal das 2 unidades, mais recente primeiro — alimenta "Visão mês a mês". */
+export async function listResumoMensalUnidade(mesAnoInicio?: string): Promise<ResumoMensalUnidade[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const condicoes = mesAnoInicio ? [gte(resumoMensalUnidade.mesAno, mesAnoInicio)] : [];
+  return db.select().from(resumoMensalUnidade).where(and(...condicoes)).orderBy(desc(resumoMensalUnidade.mesAno));
 }
 
 export interface ItemComandaRecepcao {

@@ -5,7 +5,7 @@
 // registradas antes no Heartbeat (6 campos com segundos, UTC).
 import cron from "node-cron";
 import { retomarFluxosPendentes, dispararFluxosAgendados, alertarBuddhaMktSemRetorno } from "../fluxosScheduled";
-import { executarEtapaSincronizacaoDiaria, enviarRelatorioDiario, ETAPAS_AGENDADAS, ETAPAS_REEXECUCAO_MEIODIA } from "../dailySyncReport";
+import { executarEtapaSincronizacaoDiaria, enviarRelatorioDiario, ETAPAS_AGENDADAS, ETAPAS_REEXECUCAO_MEIODIA, executarSincronizacaoResumoMensal } from "../dailySyncReport";
 import { processarAgrupamentosProntos } from "../agentesAgrupamento";
 import { verificarQualidadeAgentes } from "../agentesQualidadeAlerta";
 import { expirarSugestoesPendentesAntigas } from "../agentesDb";
@@ -72,6 +72,9 @@ export function registerScheduledJobs() {
   for (const { chave, minuto } of ETAPAS_REEXECUCAO_MEIODIA) {
     schedule(`sync-meiodia-${chave}`, `0 ${minuto} 15 * * *`, () => executarEtapaSincronizacaoDiaria(chave));
   }
+  // Segunda-feira 7h BRT (10h UTC) — planilha "Contabilidade SSU e RBS"
+  // é atualizada manualmente, semana a semana, não todo dia.
+  schedule("sync-resumo-mensal-semanal", "0 0 10 * * 1", executarSincronizacaoResumoMensal);
 
-  console.log(`[Scheduler] ${6 + ETAPAS_AGENDADAS.length + ETAPAS_REEXECUCAO_MEIODIA.length + 1} tarefas agendadas em processo.`);
+  console.log(`[Scheduler] ${6 + ETAPAS_AGENDADAS.length + ETAPAS_REEXECUCAO_MEIODIA.length + 2} tarefas agendadas em processo.`);
 }

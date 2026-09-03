@@ -3,10 +3,21 @@ import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, TrendingUp, Target } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Loader2, TrendingUp, Target, RefreshCw } from "lucide-react";
+import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { toast } from "sonner";
+
+const MESES_ABREV_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+function fmtMesAno(mesAno: string) {
+  const [ano, mes] = mesAno.split("-").map(Number);
+  return `${MESES_ABREV_PT[mes - 1]}/${String(ano).slice(-2)}`;
+}
 
 export default function Financeiro() {
-  const { unidadeSelecionada } = useUnidade();
+  const { unidadeSelecionada, unidades } = useUnidade();
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
   const fmtDate = (d: Date) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
@@ -25,6 +36,37 @@ export default function Financeiro() {
     { unidadeId: unidadeSelecionada?.id ?? 0 },
     { enabled: !!unidadeSelecionada }
   );
+
+  const utils = trpc.useUtils();
+  const { data: resumoMensal, isLoading: loadingResumoMensal } = trpc.financeiro.resumoMensal.listar.useQuery();
+  const sincronizarResumoMensalMutation = trpc.financeiro.resumoMensal.sincronizar.useMutation({
+    onSuccess: (r) => {
+      toast.success(`Resumo mensal sincronizado — ${r.totalGravados} mês(es)/unidade atualizados.`);
+      utils.financeiro.resumoMensal.listar.invalidate();
+    },
+    onError: (err) => toast.error(`Erro ao sincronizar: ${err.message}`),
+  });
+  // Buddha Mkt é uma unidade sintética (só WhatsApp Marketing) — nunca
+  // tem resumo mensal de faturamento, fora do comparativo (mesmo filtro
+  // usado em GlobalSyncCenter/dashboardConsolidado).
+  const unidadesFinanceiras = unidades.filter((u) => u.slug !== "buddha-mkt");
+  const nomeUnidade = (unidadeId: number) => unidadesFinanceiras.find((u) => u.id === unidadeId)?.nome ?? `Unidade ${unidadeId}`;
+
+  // Últimos 12 meses com algum dado, mais antigo primeiro (leitura de
+  // gráfico da esquerda pra direita) — resumoMensal já vem mais recente
+  // primeiro (ver db.ts: listResumoMensalUnidade).
+  const mesesRecentes = Array.from(new Set((resumoMensal ?? []).map((r) => r.mesAno))).slice(0, 12).reverse();
+  const chartResumoMensal = mesesRecentes.map((mesAno) => {
+    const linha: Record<string, number | string> = { mesAno, label: fmtMesAno(mesAno) };
+    let metaTotal = 0;
+    let temMeta = false;
+    for (const r of (resumoMensal ?? []).filter((r) => r.mesAno === mesAno)) {
+      linha[nomeUnidade(r.unidadeId)] = Number(r.faturamentoTotal ?? 0);
+      if (r.metaFaturamento !== null) { metaTotal += Number(r.metaFaturamento); temMeta = true; }
+    }
+    if (temMeta) linha["Meta (2 unidades)"] = metaTotal;
+    return linha;
+  });
 
   const fmtCurrency = (val: number) => val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -50,6 +92,7 @@ export default function Financeiro() {
           <TabsTrigger value="dre">DRE Simplificado</TabsTrigger>
           <TabsTrigger value="fluxo">Fluxo de Caixa</TabsTrigger>
           <TabsTrigger value="metas">Metas</TabsTrigger>
+          <TabsTrigger value="mes-a-mes">Visão mês a mês</TabsTrigger>
         </TabsList>
 
         {/* DRE */}
@@ -188,6 +231,105 @@ export default function Financeiro() {
                     </div>
                   </div>
                 </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Visão mês a mês */}
+        <TabsContent value="mes-a-mes" className="space-y-4">
+          <Card className="border-border/50 shadow-sm">
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle style={{ fontFamily: "'Cormorant Garamond', serif" }}>Visão mês a mês</CardTitle>
+                <CardDescription>
+                  Histórico mensal das duas unidades (planilha "Contabilidade SSU e RBS") — realizado x meta.
+                </CardDescription>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={sincronizarResumoMensalMutation.isPending}
+                onClick={() => sincronizarResumoMensalMutation.mutate()}
+              >
+                {sincronizarResumoMensalMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5 mr-2" />
+                )}
+                Sincronizar
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {loadingResumoMensal ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : chartResumoMensal.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  Nenhum dado ainda — clica em "Sincronizar" pra importar o histórico da planilha.
+                </p>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={320}>
+                    <ComposedChart data={chartResumoMensal} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.91 0.005 70)" />
+                      <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="oklch(0.55 0.01 60)" />
+                      <YAxis tick={{ fontSize: 12 }} stroke="oklch(0.55 0.01 60)" tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`} />
+                      <Tooltip
+                        formatter={(value: number) => fmtCurrency(value)}
+                        contentStyle={{
+                          backgroundColor: "oklch(1 0 0)",
+                          border: "1px solid oklch(0.91 0.005 70)",
+                          borderRadius: "0.5rem",
+                          fontSize: "12px",
+                        }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: "12px" }} />
+                      {unidadesFinanceiras.map((u, i) => (
+                        <Bar key={u.id} dataKey={u.nome} fill={i === 0 ? "oklch(0.50 0.12 30)" : "oklch(0.65 0.10 40)"} radius={[4, 4, 0, 0]} />
+                      ))}
+                      <Line type="monotone" dataKey="Meta (2 unidades)" stroke="oklch(0.35 0.02 60)" strokeWidth={2} strokeDasharray="5 4" dot={{ r: 3 }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+
+                  <div className="mt-6 overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Mês</TableHead>
+                          <TableHead>Unidade</TableHead>
+                          <TableHead className="text-right">Faturamento</TableHead>
+                          <TableHead className="text-right">Meta</TableHead>
+                          <TableHead className="text-right">% Meta</TableHead>
+                          <TableHead className="text-right">Atendimentos</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[...(resumoMensal ?? [])]
+                          .filter((r) => mesesRecentes.includes(r.mesAno))
+                          .sort((a, b) => (a.mesAno === b.mesAno ? a.unidadeId - b.unidadeId : b.mesAno.localeCompare(a.mesAno)))
+                          .map((r) => {
+                            const faturamento = r.faturamentoTotal !== null ? Number(r.faturamentoTotal) : null;
+                            const meta = r.metaFaturamento !== null ? Number(r.metaFaturamento) : null;
+                            const pctMeta = faturamento !== null && meta ? (faturamento / meta) * 100 : null;
+                            return (
+                              <TableRow key={r.id}>
+                                <TableCell className="font-mono text-xs">{fmtMesAno(r.mesAno)}</TableCell>
+                                <TableCell className="text-sm">{nomeUnidade(r.unidadeId)}</TableCell>
+                                <TableCell className="text-right text-sm">{faturamento !== null ? fmtCurrency(faturamento) : "—"}</TableCell>
+                                <TableCell className="text-right text-sm text-muted-foreground">{meta !== null ? fmtCurrency(meta) : "—"}</TableCell>
+                                <TableCell className={`text-right text-sm ${pctMeta !== null && pctMeta < 100 ? "text-destructive" : ""}`}>
+                                  {pctMeta !== null ? `${pctMeta.toFixed(0)}%` : "—"}
+                                </TableCell>
+                                <TableCell className="text-right text-sm">{r.totalAtendimentos ?? "—"}</TableCell>
+                              </TableRow>
+                            );
+                          })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>

@@ -672,3 +672,172 @@ export async function lerComandaVirtualDiaSheet(
 
   return []; // nenhum formato de nome achou aba — dia sem controle ainda (normal)
 }
+
+// ===== Resumo mensal (planilha "Contabilidade SSU e RBS") =====
+// Histórico mensal de faturamento/atendimentos por unidade + metas —
+// alimenta "Visão mês a mês" dentro de Financeiro (2026-09-03).
+
+export const SPREADSHEET_ID_CONTABILIDADE = "1NpoKjAxyiivxj_rNvErCLjQk2HFUfxaKzn4TenNbQAc";
+
+/**
+ * Acha a linha (índice 0-based) de um rótulo esperado numa coluna
+ * específica, com fallback tolerante numa janela de ±3 linhas caso a
+ * planilha ganhe/perca uma linha — mesmo espírito de
+ * acharLinhaComanda (removida com a Comanda consolidada), reescrita
+ * aqui porque essa planilha é uma fonte totalmente diferente.
+ */
+function acharLinhaPorRotulo(rows: unknown[][], colRotulo: number, idxEsperado: number, ...substrings: string[]): number {
+  const bate = (i: number) => substrings.some((s) => normalizarRotulo((rows[i] as unknown[])?.[colRotulo]).includes(s));
+  if (bate(idxEsperado)) return idxEsperado;
+  for (let i = Math.max(0, idxEsperado - 3); i <= Math.min(rows.length - 1, idxEsperado + 3); i++) {
+    if (bate(i)) return i;
+  }
+  throw new Error(`Linha "${substrings[0]}" não encontrada perto da linha ${idxEsperado + 1} da aba Resumos/Metas`);
+}
+
+/** "Jul.23" -> "2023-07". Formato fixo do cabeçalho de mês da planilha. */
+function mesAnoParaIso(rotulo: unknown): string | null {
+  const m = (rotulo ?? "").toString().trim().match(/^([A-Za-zç]{3})\.(\d{2})$/);
+  if (!m) return null;
+  const idx = MESES_ABREV.findIndex((abrev) => abrev.toLowerCase() === m[1].toLowerCase());
+  if (idx < 0) return null;
+  return `20${m[2]}-${String(idx + 1).padStart(2, "0")}`;
+}
+
+export interface LinhaResumoMensal {
+  unidadeChave: "rbs" | "ssu";
+  mesAno: string; // AAAA-MM
+  totalRecebidoCaixa: number;
+  voucherSite: number;
+  gympassTotalpass: number;
+  faturamentoTotal: number;
+  atendimentosSemPlano: number | null;
+  atendimentosComPlano: number | null;
+  totalAtendimentos: number | null;
+  planos: number | null;
+}
+
+// Linha esperada (0-based) de cada métrica dentro do bloco de cada
+// unidade na aba "Resumos" — confirmado direto na planilha em
+// 2026-09-03. RBS começa na linha 5 (1-indexado); SSU, um bloco
+// separado mais abaixo na mesma aba, começa na 21ª.
+const LINHAS_RESUMO_MENSAL: Record<"rbs" | "ssu", { base: number; rotuloBase: string[] }> = {
+  rbs: { base: 4, rotuloBase: ["total recebido em caixa"] }, // linha 5 (1-idx) = índice 4
+  ssu: { base: 20, rotuloBase: ["faturamento unidade"] }, // linha 21 (1-idx) = índice 20
+};
+
+/**
+ * Lê a aba "Resumos" — 2 blocos empilhados (RBS, depois SSU), cada um
+ * com "Total recebido em caixa"/"Faturamento unidade", Voucher site,
+ * Gympass/Totalpass, Faturamento Total, Atendimentos (sem/com
+ * plano/total) e Planos, uma coluna por mês desde jul/23. Cabeçalho de
+ * mês ("Jul.23"...) fica na linha 3 (1-indexado) pra ambos os blocos.
+ */
+export async function lerResumoMensalSheet(spreadsheetId: string): Promise<LinhaResumoMensal[]> {
+  const auth = getAuth();
+  if (!auth) throw new Error("Credenciais do Google Sheets não configuradas");
+  const sheets = google.sheets({ version: "v4", auth });
+
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Resumos!A1:AR40" });
+  const rows = (res.data.values || []) as unknown[][];
+  if (rows.length === 0) return [];
+
+  const linhaMeses = 2; // linha 3 (1-idx)
+  const colunasPorMes: { col: number; mesAno: string }[] = [];
+  const headerMeses = rows[linhaMeses] ?? [];
+  for (let col = 2; col < headerMeses.length; col++) {
+    const mesAno = mesAnoParaIso(headerMeses[col]);
+    if (mesAno) colunasPorMes.push({ col, mesAno });
+  }
+
+  const linhas: LinhaResumoMensal[] = [];
+  for (const unidadeChave of ["rbs", "ssu"] as const) {
+    const { base, rotuloBase } = LINHAS_RESUMO_MENSAL[unidadeChave];
+    const lTotalRecebido = acharLinhaPorRotulo(rows, 1, base, ...rotuloBase);
+    const lVoucher = acharLinhaPorRotulo(rows, 1, base + 1, "voucher");
+    const lGympass = acharLinhaPorRotulo(rows, 1, base + 2, "gympass", "totalpass");
+    const lFaturamentoTotal = acharLinhaPorRotulo(rows, 1, base + 3, "faturamento total");
+    const lSemPlano = acharLinhaPorRotulo(rows, 1, base + 4, "atendimentos sem plano");
+    const lComPlano = acharLinhaPorRotulo(rows, 1, base + 5, "atendimentos com plano");
+    const lTotalAtend = acharLinhaPorRotulo(rows, 1, base + 6, "total de atendimentos");
+    const lPlanos = acharLinhaPorRotulo(rows, 1, base + 7, "planos");
+
+    const num = (linha: number, col: number) => {
+      const v = (rows[linha] as unknown[])?.[col];
+      const n = parseValor((v ?? "").toString());
+      return v === undefined || v === null || v === "" ? null : n;
+    };
+
+    for (const { col, mesAno } of colunasPorMes) {
+      const faturamentoTotal = num(lFaturamentoTotal, col);
+      if (faturamentoTotal === null) continue; // mês sem dado real ainda (futuro)
+      linhas.push({
+        unidadeChave,
+        mesAno,
+        totalRecebidoCaixa: num(lTotalRecebido, col) ?? 0,
+        voucherSite: num(lVoucher, col) ?? 0,
+        gympassTotalpass: num(lGympass, col) ?? 0,
+        faturamentoTotal,
+        atendimentosSemPlano: num(lSemPlano, col),
+        atendimentosComPlano: num(lComPlano, col),
+        totalAtendimentos: num(lTotalAtend, col),
+        planos: num(lPlanos, col),
+      });
+    }
+  }
+  return linhas;
+}
+
+export interface LinhaMetaMensal {
+  unidadeChave: "rbs" | "ssu";
+  mesAno: string; // AAAA-MM
+  metaFaturamento: number;
+}
+
+// Linha esperada (0-based) do cabeçalho de meses (Jan..Dez) de cada
+// bloco de unidade na aba "Metas" — confirmado em 2026-09-03. Os anos
+// vêm um por linha logo abaixo, coluna B, até a linha "%" (não é ano).
+const LINHAS_METAS: Record<"rbs" | "ssu", number> = { rbs: 2, ssu: 9 }; // linha 3 e 10 (1-idx)
+
+/**
+ * Lê a aba "Metas" — por unidade, 1 linha por ano (coluna B = ano,
+ * C..N = Jan..Dez) com o valor "oficial" do mês: realizado nos meses
+ * que já passaram, meta de verdade nos meses futuros — a planilha não
+ * distingue as duas coisas, e não precisamos distinguir: o dashboard
+ * compara isso contra faturamentoTotal (Resumos, sempre o real) e a
+ * diferença já mostra sozinha se o mês é passado ou futuro.
+ */
+export async function lerMetasMensalSheet(spreadsheetId: string): Promise<LinhaMetaMensal[]> {
+  const auth = getAuth();
+  if (!auth) throw new Error("Credenciais do Google Sheets não configuradas");
+  const sheets = google.sheets({ version: "v4", auth });
+
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Metas!A1:N20" });
+  const rows = (res.data.values || []) as unknown[][];
+  if (rows.length === 0) return [];
+
+  const linhas: LinhaMetaMensal[] = [];
+  for (const unidadeChave of ["rbs", "ssu"] as const) {
+    const linhaHeader = acharLinhaPorRotulo(rows, 0, LINHAS_METAS[unidadeChave], unidadeChave);
+    const header = rows[linhaHeader] ?? [];
+
+    for (let i = linhaHeader + 1; i < rows.length; i++) {
+      const anoRaw = (rows[i]?.[1] ?? "").toString().trim();
+      const ano = Number.parseInt(anoRaw, 10);
+      if (!Number.isFinite(ano) || ano < 2000 || ano > 2100) break; // linha "%" ou fim do bloco
+      for (let col = 2; col < header.length; col++) {
+        const mesTxt = (header[col] ?? "").toString().trim();
+        const idxMes = MESES_ABREV.findIndex((abrev) => abrev.toLowerCase() === mesTxt.toLowerCase());
+        if (idxMes < 0) continue;
+        const valorRaw = (rows[i]?.[col] ?? "").toString();
+        if (!valorRaw.trim()) continue;
+        linhas.push({
+          unidadeChave,
+          mesAno: `${ano}-${String(idxMes + 1).padStart(2, "0")}`,
+          metaFaturamento: parseValor(valorRaw),
+        });
+      }
+    }
+  }
+  return linhas;
+}
