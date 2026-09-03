@@ -22,12 +22,12 @@ export default function Financeiro() {
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
   const fmtDate = (d: Date) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 
-  const { data: vendas, isLoading: loadingVendas } = trpc.financeiro.vendas.useQuery(
+  const { data: vendas } = trpc.financeiro.vendas.useQuery(
     { unidadeId: unidadeSelecionada?.id ?? 0, data_inicio: fmtDate(firstDay), data_fim: fmtDate(today) },
     { enabled: !!unidadeSelecionada }
   );
 
-  const { data: recebimentos, isLoading: loadingRec } = trpc.financeiro.recebimentos.useQuery(
+  const { data: recebimentos } = trpc.financeiro.recebimentos.useQuery(
     { unidadeId: unidadeSelecionada?.id ?? 0, data_inicio: fmtDate(firstDay), data_fim: fmtDate(today) },
     { enabled: !!unidadeSelecionada }
   );
@@ -46,25 +46,50 @@ export default function Financeiro() {
     },
     onError: (err) => toast.error(`Erro ao sincronizar: ${err.message}`),
   });
-  // Buddha Mkt é uma unidade sintética (só WhatsApp Marketing) — nunca
-  // tem resumo mensal de faturamento, fora do comparativo (mesmo filtro
-  // usado em GlobalSyncCenter/dashboardConsolidado).
-  const unidadesFinanceiras = unidades.filter((u) => u.slug !== "buddha-mkt");
-  const nomeUnidade = (unidadeId: number) => unidadesFinanceiras.find((u) => u.id === unidadeId)?.nome ?? `Unidade ${unidadeId}`;
+  // Resumo mensal é sempre de 1 unidade por vez, igual o resto da tela
+  // (seletor no topo) — "não faz sentido deixar junto" (2026-09-03): a
+  // oscilação natural entre as duas unidades não é comparável mês a mês.
+  const resumoUnidade = (resumoMensal ?? []).filter((r) => r.unidadeId === unidadeSelecionada?.id);
+  const linhaPorMes = new Map(resumoUnidade.map((r) => [r.mesAno, r]));
 
   // Últimos 12 meses com algum dado, mais antigo primeiro (leitura de
   // gráfico da esquerda pra direita) — resumoMensal já vem mais recente
   // primeiro (ver db.ts: listResumoMensalUnidade).
-  const mesesRecentes = Array.from(new Set((resumoMensal ?? []).map((r) => r.mesAno))).slice(0, 12).reverse();
-  const chartResumoMensal = mesesRecentes.map((mesAno) => {
-    const linha: Record<string, number | string> = { mesAno, label: fmtMesAno(mesAno) };
-    let metaTotal = 0;
-    let temMeta = false;
-    for (const r of (resumoMensal ?? []).filter((r) => r.mesAno === mesAno)) {
-      linha[nomeUnidade(r.unidadeId)] = Number(r.faturamentoTotal ?? 0);
-      if (r.metaFaturamento !== null) { metaTotal += Number(r.metaFaturamento); temMeta = true; }
+  const mesesRecentes = Array.from(new Set(resumoUnidade.map((r) => r.mesAno))).slice(0, 12).reverse();
+
+  // Composição do faturamento (de onde vem: caixa, voucher, parceria).
+  const chartComposicao = mesesRecentes.map((mesAno) => {
+    const r = linhaPorMes.get(mesAno);
+    return {
+      label: fmtMesAno(mesAno),
+      Caixa: Number(r?.totalRecebidoCaixa ?? 0),
+      Voucher: Number(r?.voucherSite ?? 0),
+      Parceria: Number(r?.gympassTotalpass ?? 0),
+    };
+  });
+
+  // Atendimentos, com/sem plano.
+  const chartAtendimentos = mesesRecentes.map((mesAno) => {
+    const r = linhaPorMes.get(mesAno);
+    return {
+      label: fmtMesAno(mesAno),
+      "Com plano": r?.atendimentosComPlano ?? 0,
+      "Sem plano": r?.atendimentosSemPlano ?? 0,
+    };
+  });
+
+  // Comparativo ano a ano, mesmo mês (2026-09-03: a oscilação mês a mês
+  // é grande o bastante pra tornar a análise horizontal pouco relevante
+  // — o que importa é Jan/25 x Jan/26, não Jan/26 x Fev/26).
+  const CORES_ANO = ["oklch(0.80 0.05 60)", "oklch(0.68 0.09 45)", "oklch(0.55 0.12 30)", "oklch(0.40 0.13 25)", "oklch(0.30 0.10 20)"];
+  const anosDisponiveis = Array.from(new Set(resumoUnidade.map((r) => r.mesAno.slice(0, 4)))).sort();
+  const chartAnoAAno = MESES_ABREV_PT.map((label, idx) => {
+    const mes = String(idx + 1).padStart(2, "0");
+    const linha: Record<string, number | string> = { label };
+    for (const ano of anosDisponiveis) {
+      const r = linhaPorMes.get(`${ano}-${mes}`);
+      if (r?.faturamentoTotal !== null && r?.faturamentoTotal !== undefined) linha[ano] = Number(r.faturamentoTotal);
     }
-    if (temMeta) linha["Meta (2 unidades)"] = metaTotal;
     return linha;
   });
 
@@ -81,104 +106,18 @@ export default function Financeiro() {
             Financeiro
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            DRE, fluxo de caixa e metas — dados do Belle Software
+            Visão mês a mês e metas por unidade
           </p>
         </div>
         <UnidadeSelector />
       </div>
 
-      <Tabs defaultValue="dre">
+      <Tabs defaultValue="mes-a-mes">
         <TabsList>
-          <TabsTrigger value="dre">DRE Simplificado</TabsTrigger>
-          <TabsTrigger value="fluxo">Fluxo de Caixa</TabsTrigger>
-          <TabsTrigger value="metas">Metas</TabsTrigger>
           <TabsTrigger value="mes-a-mes">Visão mês a mês</TabsTrigger>
+          <TabsTrigger value="metas">Metas</TabsTrigger>
         </TabsList>
 
-        {/* DRE */}
-        <TabsContent value="dre" className="space-y-4">
-          {loadingVendas ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            <Card className="border-border/50 shadow-sm">
-              <CardHeader>
-                <CardTitle style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-                  DRE Simplificado — {today.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
-                </CardTitle>
-                <CardDescription>Receita e vendas do período</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between border-b border-border/50 pb-2">
-                  <span className="text-sm text-muted-foreground">Receita Bruta (Vendas)</span>
-                  <span className="font-medium">{fmtCurrency(vendas?.valorTotal ?? 0)}</span>
-                </div>
-                <div className="flex justify-between border-b border-border/50 pb-2">
-                  <span className="text-sm text-muted-foreground">Total de Vendas</span>
-                  <span className="font-medium">{vendas?.totalVendas ?? 0}</span>
-                </div>
-                <div className="flex justify-between border-b border-border/50 pb-2">
-                  <span className="text-sm text-muted-foreground">Ticket Médio</span>
-                  <span className="font-medium">
-                    {fmtCurrency((vendas?.valorTotal ?? 0) / Math.max(vendas?.totalVendas ?? 1, 1))}
-                  </span>
-                </div>
-                <div className="flex justify-between border-b border-border/50 pb-2">
-                  <span className="text-sm text-muted-foreground">Recebimentos no Período</span>
-                  <span className="font-medium">{fmtCurrency(totalRecebimentos)}</span>
-                </div>
-                <div className="flex justify-between pt-2">
-                  <span className="text-sm font-semibold">Saldo do Período</span>
-                  <span className="font-bold">
-                    {fmtCurrency((vendas?.valorTotal ?? 0) - totalRecebimentos)}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        {/* Fluxo de Caixa */}
-        <TabsContent value="fluxo" className="space-y-4">
-          {loadingRec ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            <Card className="border-border/50 shadow-sm">
-              <CardHeader>
-                <CardTitle style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-                  Fluxo de Caixa — {today.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
-                </CardTitle>
-                <CardDescription>Recebimentos do período</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {recebimentos && recebimentos.length > 0 ? (
-                  <div className="space-y-2">
-                    {recebimentos.map((r: any) => (
-                      <div key={r.codigo} className="flex justify-between border-b border-border/30 pb-2">
-                        <div>
-                          <div className="text-sm font-medium">{r.descricao || "Recebimento"}</div>
-                          <div className="text-xs text-muted-foreground">{r.data} — {r.formaPagamento}</div>
-                        </div>
-                        <span className="font-medium text-sm">{fmtCurrency(r.valor)}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between pt-3 font-semibold">
-                      <span>Total Recebido</span>
-                      <span>{fmtCurrency(totalRecebimentos)}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    Nenhum recebimento no período.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
 
         {/* Metas */}
         <TabsContent value="metas" className="space-y-4">
@@ -238,101 +177,159 @@ export default function Financeiro() {
 
         {/* Visão mês a mês */}
         <TabsContent value="mes-a-mes" className="space-y-4">
-          <Card className="border-border/50 shadow-sm">
-            <CardHeader className="flex flex-row items-start justify-between gap-4">
-              <div>
-                <CardTitle style={{ fontFamily: "'Cormorant Garamond', serif" }}>Visão mês a mês</CardTitle>
-                <CardDescription>
-                  Histórico mensal das duas unidades (planilha "Contabilidade SSU e RBS") — realizado x meta.
-                </CardDescription>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={sincronizarResumoMensalMutation.isPending}
-                onClick={() => sincronizarResumoMensalMutation.mutate()}
-              >
-                {sincronizarResumoMensalMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5 mr-2" />
-                )}
-                Sincronizar
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {loadingResumoMensal ? (
-                <div className="flex justify-center py-12">
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                </div>
-              ) : chartResumoMensal.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  Nenhum dado ainda — clica em "Sincronizar" pra importar o histórico da planilha.
-                </p>
+          <div className="flex items-start justify-between gap-4">
+            <p className="text-sm text-muted-foreground">
+              {unidadeSelecionada?.nome ?? "Selecione uma unidade"} — planilha "Contabilidade SSU e RBS"
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={sincronizarResumoMensalMutation.isPending}
+              onClick={() => sincronizarResumoMensalMutation.mutate()}
+            >
+              {sincronizarResumoMensalMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
               ) : (
-                <>
-                  <ResponsiveContainer width="100%" height={320}>
-                    <ComposedChart data={chartResumoMensal} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <RefreshCw className="h-3.5 w-3.5 mr-2" />
+              )}
+              Sincronizar
+            </Button>
+          </div>
+
+          {loadingResumoMensal ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : resumoUnidade.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-12">
+              Nenhum dado ainda pra essa unidade — clica em "Sincronizar" pra importar o histórico da planilha.
+            </p>
+          ) : (
+            <>
+              {/* Comparativo ano a ano — a oscilação mês a mês é grande demais
+                  pra a leitura horizontal (mês anterior x mês seguinte) ser
+                  relevante; o que importa é o mesmo mês em anos diferentes. */}
+              <Card className="border-border/50 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                    Comparativo ano a ano
+                  </CardTitle>
+                  <CardDescription>Faturamento total por mês, um ano contra o outro — mesma época, anos diferentes.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <ComposedChart data={chartAnoAAno} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.91 0.005 70)" />
                       <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="oklch(0.55 0.01 60)" />
                       <YAxis tick={{ fontSize: 12 }} stroke="oklch(0.55 0.01 60)" tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`} />
                       <Tooltip
                         formatter={(value: number) => fmtCurrency(value)}
-                        contentStyle={{
-                          backgroundColor: "oklch(1 0 0)",
-                          border: "1px solid oklch(0.91 0.005 70)",
-                          borderRadius: "0.5rem",
-                          fontSize: "12px",
-                        }}
+                        contentStyle={{ backgroundColor: "oklch(1 0 0)", border: "1px solid oklch(0.91 0.005 70)", borderRadius: "0.5rem", fontSize: "12px" }}
                       />
                       <Legend wrapperStyle={{ fontSize: "12px" }} />
-                      {unidadesFinanceiras.map((u, i) => (
-                        <Bar key={u.id} dataKey={u.nome} fill={i === 0 ? "oklch(0.50 0.12 30)" : "oklch(0.65 0.10 40)"} radius={[4, 4, 0, 0]} />
+                      {anosDisponiveis.map((ano, i) => (
+                        <Line key={ano} type="monotone" dataKey={ano} stroke={CORES_ANO[i % CORES_ANO.length]} strokeWidth={2} dot={{ r: 3 }} connectNulls />
                       ))}
-                      <Line type="monotone" dataKey="Meta (2 unidades)" stroke="oklch(0.35 0.02 60)" strokeWidth={2} strokeDasharray="5 4" dot={{ r: 3 }} />
                     </ComposedChart>
                   </ResponsiveContainer>
+                </CardContent>
+              </Card>
 
-                  <div className="mt-6 overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Mês</TableHead>
-                          <TableHead>Unidade</TableHead>
-                          <TableHead className="text-right">Faturamento</TableHead>
-                          <TableHead className="text-right">Meta</TableHead>
-                          <TableHead className="text-right">% Meta</TableHead>
-                          <TableHead className="text-right">Atendimentos</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {[...(resumoMensal ?? [])]
-                          .filter((r) => mesesRecentes.includes(r.mesAno))
-                          .sort((a, b) => (a.mesAno === b.mesAno ? a.unidadeId - b.unidadeId : b.mesAno.localeCompare(a.mesAno)))
-                          .map((r) => {
-                            const faturamento = r.faturamentoTotal !== null ? Number(r.faturamentoTotal) : null;
-                            const meta = r.metaFaturamento !== null ? Number(r.metaFaturamento) : null;
-                            const pctMeta = faturamento !== null && meta ? (faturamento / meta) * 100 : null;
-                            return (
-                              <TableRow key={r.id}>
-                                <TableCell className="font-mono text-xs">{fmtMesAno(r.mesAno)}</TableCell>
-                                <TableCell className="text-sm">{nomeUnidade(r.unidadeId)}</TableCell>
-                                <TableCell className="text-right text-sm">{faturamento !== null ? fmtCurrency(faturamento) : "—"}</TableCell>
-                                <TableCell className="text-right text-sm text-muted-foreground">{meta !== null ? fmtCurrency(meta) : "—"}</TableCell>
-                                <TableCell className={`text-right text-sm ${pctMeta !== null && pctMeta < 100 ? "text-destructive" : ""}`}>
-                                  {pctMeta !== null ? `${pctMeta.toFixed(0)}%` : "—"}
-                                </TableCell>
-                                <TableCell className="text-right text-sm">{r.totalAtendimentos ?? "—"}</TableCell>
-                              </TableRow>
-                            );
-                          })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+              <div className="grid gap-4 lg:grid-cols-2">
+                {/* Composição do faturamento */}
+                <Card className="border-border/50 shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-lg" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                      Composição do faturamento
+                    </CardTitle>
+                    <CardDescription>De onde vem o total: caixa, voucher e parceria (Gympass/Totalpass).</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={280}>
+                      <ComposedChart data={chartComposicao} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.91 0.005 70)" />
+                        <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="oklch(0.55 0.01 60)" />
+                        <YAxis tick={{ fontSize: 11 }} stroke="oklch(0.55 0.01 60)" tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`} />
+                        <Tooltip
+                          formatter={(value: number) => fmtCurrency(value)}
+                          contentStyle={{ backgroundColor: "oklch(1 0 0)", border: "1px solid oklch(0.91 0.005 70)", borderRadius: "0.5rem", fontSize: "12px" }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: "12px" }} />
+                        <Bar dataKey="Caixa" stackId="fat" fill="oklch(0.50 0.12 30)" />
+                        <Bar dataKey="Voucher" stackId="fat" fill="oklch(0.68 0.10 45)" />
+                        <Bar dataKey="Parceria" stackId="fat" fill="oklch(0.82 0.06 60)" radius={[4, 4, 0, 0]} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                {/* Atendimentos */}
+                <Card className="border-border/50 shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-lg" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                      Atendimentos
+                    </CardTitle>
+                    <CardDescription>Com plano x sem plano, por mês.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={280}>
+                      <ComposedChart data={chartAtendimentos} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.91 0.005 70)" />
+                        <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="oklch(0.55 0.01 60)" />
+                        <YAxis tick={{ fontSize: 11 }} stroke="oklch(0.55 0.01 60)" allowDecimals={false} />
+                        <Tooltip contentStyle={{ backgroundColor: "oklch(1 0 0)", border: "1px solid oklch(0.91 0.005 70)", borderRadius: "0.5rem", fontSize: "12px" }} />
+                        <Legend wrapperStyle={{ fontSize: "12px" }} />
+                        <Bar dataKey="Com plano" stackId="atend" fill="oklch(0.50 0.12 30)" />
+                        <Bar dataKey="Sem plano" stackId="atend" fill="oklch(0.75 0.08 50)" radius={[4, 4, 0, 0]} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Detalhe mensal */}
+              <Card className="border-border/50 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Detalhe mensal</CardTitle>
+                  <CardDescription>Realizado x meta, mês a mês.</CardDescription>
+                </CardHeader>
+                <CardContent className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Mês</TableHead>
+                        <TableHead className="text-right">Faturamento</TableHead>
+                        <TableHead className="text-right">Meta</TableHead>
+                        <TableHead className="text-right">% Meta</TableHead>
+                        <TableHead className="text-right">Atendimentos</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {[...resumoUnidade]
+                        .filter((r) => mesesRecentes.includes(r.mesAno))
+                        .sort((a, b) => b.mesAno.localeCompare(a.mesAno))
+                        .map((r) => {
+                          const faturamento = r.faturamentoTotal !== null ? Number(r.faturamentoTotal) : null;
+                          const meta = r.metaFaturamento !== null ? Number(r.metaFaturamento) : null;
+                          const pctMeta = faturamento !== null && meta ? (faturamento / meta) * 100 : null;
+                          return (
+                            <TableRow key={r.id}>
+                              <TableCell className="font-mono text-xs">{fmtMesAno(r.mesAno)}</TableCell>
+                              <TableCell className="text-right text-sm">{faturamento !== null ? fmtCurrency(faturamento) : "—"}</TableCell>
+                              <TableCell className="text-right text-sm text-muted-foreground">{meta !== null ? fmtCurrency(meta) : "—"}</TableCell>
+                              <TableCell className={`text-right text-sm ${pctMeta !== null && pctMeta < 100 ? "text-destructive" : ""}`}>
+                                {pctMeta !== null ? `${pctMeta.toFixed(0)}%` : "—"}
+                              </TableCell>
+                              <TableCell className="text-right text-sm">{r.totalAtendimentos ?? "—"}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </>
+          )}
         </TabsContent>
       </Tabs>
     </div>
