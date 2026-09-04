@@ -17,6 +17,7 @@ import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, ty
 import { resumoMensalUnidade, type InsertResumoMensalUnidade, type ResumoMensalUnidade } from "../drizzle/schema";
 import { etiquetas, clienteEtiquetas, type Etiqueta } from "../drizzle/schema";
 import { camposPersonalizados, clienteCamposValores, type CampoPersonalizado } from "../drizzle/schema";
+import { listaEspera } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda, calcularEvolucaoFidelizacao, type GranularidadeEvolucao } from "./terapeutasRelatorios";
 import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, nomesCorrespondem, identificarTerapeuta, nomesClienteCorrespondem, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
@@ -5855,6 +5856,89 @@ export async function definirValorCampoCliente(clienteId: number, campoId: numbe
   if (!db) throw new Error("Banco de dados indisponível.");
   await db.insert(clienteCamposValores).values({ clienteId, campoId, valorNumero: String(valor) })
     .onDuplicateKeyUpdate({ set: { valorNumero: String(valor) } });
+}
+
+// ===== Lista de espera por dia (2026-09-04) — sessão do dia lotado, ver
+// listaEspera em schema.ts. Plano ativo é sempre recalculado na hora contra o
+// Belle (classificarPlanosRelacionamento), nunca guardado na linha — evita
+// mostrar "prioridade" pra quem o plano já venceu entre a entrada na fila e
+// a consulta da tela. =====
+
+export async function criarEntradaListaEspera(dados: {
+  unidadeId: number;
+  clienteId: number;
+  conversaId?: number | null;
+  data: string;
+  horarioDesejado?: string | null;
+  terapiaDesejada?: string | null;
+  criadoPorUserId?: number | null;
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  const resultado = await db.insert(listaEspera).values({
+    unidadeId: dados.unidadeId,
+    clienteId: dados.clienteId,
+    conversaId: dados.conversaId ?? null,
+    data: dados.data,
+    horarioDesejado: dados.horarioDesejado?.trim() || null,
+    terapiaDesejada: dados.terapiaDesejada?.trim() || null,
+    criadoPorUserId: dados.criadoPorUserId ?? null,
+  });
+  return Number(resultado[0].insertId);
+}
+
+/** Datas com pelo menos 1 pedido "aguardando" na unidade, mais recente primeiro — vira a lista de "sessões" abertas na tela. */
+export async function listDatasComListaEsperaAberta(unidadeId: number): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const linhas = await db.selectDistinct({ data: listaEspera.data }).from(listaEspera)
+    .where(and(eq(listaEspera.unidadeId, unidadeId), eq(listaEspera.status, "aguardando")))
+    .orderBy(desc(listaEspera.data));
+  return linhas.map((l) => l.data);
+}
+
+/**
+ * Pedidos "aguardando" de um dia, com dados do cliente e se tem plano ativo.
+ * Ordenado por prioridade (plano ativo primeiro) e, dentro de cada grupo, por
+ * ordem de chegada — decisão do usuário: quem tem plano passa na frente, sem
+ * embaralhar a ordem de pedido de cada grupo entre si.
+ */
+export async function listListaEsperaPorData(unidadeId: number, data: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const linhas = await db.select({
+    id: listaEspera.id,
+    clienteId: listaEspera.clienteId,
+    conversaId: listaEspera.conversaId,
+    horarioDesejado: listaEspera.horarioDesejado,
+    terapiaDesejada: listaEspera.terapiaDesejada,
+    createdAt: listaEspera.createdAt,
+    clienteNome: clientes.nome,
+    clienteCelular: clientes.celular,
+    clienteTelefone: clientes.telefone,
+  })
+    .from(listaEspera)
+    .innerJoin(clientes, eq(clientes.id, listaEspera.clienteId))
+    .where(and(eq(listaEspera.unidadeId, unidadeId), eq(listaEspera.data, data), eq(listaEspera.status, "aguardando")))
+    .orderBy(asc(listaEspera.createdAt));
+
+  const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const comPlano = await Promise.all(linhas.map(async (linha) => {
+    const planos = await listarPlanosBellePorCliente(unidadeId, linha.clienteId);
+    const resumo = classificarPlanosRelacionamento(planos, hojeBrt);
+    return { ...linha, temPlanoAtivo: resumo?.status === "ativo" };
+  }));
+
+  return comPlano.sort((a, b) => {
+    if (a.temPlanoAtivo !== b.temPlanoAtivo) return a.temPlanoAtivo ? -1 : 1;
+    return a.createdAt.getTime() - b.createdAt.getTime();
+  });
+}
+
+export async function atualizarStatusListaEspera(id: number, status: "convertido" | "cancelado"): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  await db.update(listaEspera).set({ status }).where(eq(listaEspera.id, id));
 }
 
 export async function removerEtiquetaDoCliente(clienteId: number, etiquetaId: number): Promise<void> {

@@ -26,7 +26,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
   Pencil, Check, CheckCheck, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft, Plus,
-  UserPlus, SmilePlus, Users, Download, ZoomIn, FileText, Bot, BellRing, CreditCard, Menu,
+  UserPlus, SmilePlus, Users, Download, ZoomIn, FileText, Bot, BellRing, CreditCard, Menu, ListTodo,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useSearch } from "wouter";
@@ -508,6 +508,14 @@ export default function Mensagens() {
   const [editandoProximoAtendimento, setEditandoProximoAtendimento] = useState(false);
   const [modoFormProximoAtendimento, setModoFormProximoAtendimento] = useState<"editar" | "incluir">("editar");
   const [formProximoAtendimento, setFormProximoAtendimento] = useState({ data: "", horario: "", servico: "" });
+  const [formListaEspera, setFormListaEspera] = useState<{ data: string; horarioDesejado: string; terapiaDesejada: string } | null>(null);
+  const criarListaEsperaMutation = trpc.listaEspera.criar.useMutation({
+    onSuccess: () => {
+      toast.success("Adicionado à lista de espera.");
+      setFormListaEspera(null);
+    },
+    onError: (e) => toast.error(e.message),
+  });
   // Serviço do próximo atendimento vem da Tabela de Preços — evita
   // digitar um nome de terapia que já existe cadastrado. Só busca
   // quando o popover realmente abre.
@@ -2159,6 +2167,60 @@ export default function Mensagens() {
                     )}
                   </div>
                 )}
+
+                {conversaSelecionada?.clienteId && conversaSelecionada?.unidadeId && conversaSelecionada.isGrupo !== "true" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full h-8 text-xs"
+                    onClick={() => {
+                      const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                      setFormListaEspera({ data: hojeBrt, horarioDesejado: "", terapiaDesejada: "" });
+                    }}
+                  >
+                    <ListTodo className="h-3.5 w-3.5 mr-1.5" /> Adicionar à lista de espera
+                  </Button>
+                )}
+
+                <Dialog open={!!formListaEspera} onOpenChange={(aberto) => !aberto && setFormListaEspera(null)}>
+                  <DialogContent className="max-w-xs">
+                    <DialogHeader>
+                      <DialogTitle className="text-sm">Adicionar à lista de espera</DialogTitle>
+                    </DialogHeader>
+                    {formListaEspera && (
+                      <div className="space-y-2">
+                        <div>
+                          <Label className="text-xs">Dia desejado</Label>
+                          <Input type="date" className="mt-1 h-8 text-xs" value={formListaEspera.data}
+                            onChange={(e) => setFormListaEspera({ ...formListaEspera, data: e.target.value })} />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Horário desejado</Label>
+                          <Input className="mt-1 h-8 text-xs" placeholder="Ex: manhã, 14h-16h, qualquer horário"
+                            value={formListaEspera.horarioDesejado}
+                            onChange={(e) => setFormListaEspera({ ...formListaEspera, horarioDesejado: e.target.value })} />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Terapia</Label>
+                          <Input className="mt-1 h-8 text-xs" value={formListaEspera.terapiaDesejada}
+                            onChange={(e) => setFormListaEspera({ ...formListaEspera, terapiaDesejada: e.target.value })} />
+                        </div>
+                        <Button size="sm" className="w-full h-7 text-xs" disabled={!formListaEspera.data || criarListaEsperaMutation.isPending}
+                          onClick={() => {
+                            if (!conversaSelecionadaId) return;
+                            criarListaEsperaMutation.mutate({
+                              conversaId: conversaSelecionadaId,
+                              data: formListaEspera.data,
+                              horarioDesejado: formListaEspera.horarioDesejado.trim() || undefined,
+                              terapiaDesejada: formListaEspera.terapiaDesejada.trim() || undefined,
+                            });
+                          }}>
+                          {criarListaEsperaMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Adicionar
+                        </Button>
+                      </div>
+                    )}
+                  </DialogContent>
+                </Dialog>
 
                 <ChamadoTerapeutaDialog
                   open={modalChamadoTerapeuta}

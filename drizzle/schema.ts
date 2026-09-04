@@ -613,6 +613,33 @@ export type ClienteCampoValor = typeof clienteCamposValores.$inferSelect;
 export type InsertClienteCampoValor = typeof clienteCamposValores.$inferInsert;
 export type InsertClienteEtiqueta = typeof clienteEtiquetas.$inferInsert;
 
+/**
+ * Lista de espera por dia (2026-09-04) — sessão do dia lotado: cliente pede
+ * pra entrar, recepção coleta no Inbox (dia, período/horário desejado,
+ * terapia) e manda pra cá. Quem tem plano ativo (Belle, calculado na hora —
+ * não guardado aqui) aparece primeiro, na ordem em que entrou; os demais
+ * seguem por ordem de chegada (createdAt). "Transformar em agendamento"
+ * reaproveita o mesmo fluxo de "Incluir novo atendimento" do Inbox, por
+ * isso guarda o conversaId de origem.
+ */
+export const listaEspera = mysqlTable("lista_espera", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  clienteId: int("clienteId").notNull(),
+  conversaId: int("conversaId"),
+  data: varchar("data", { length: 10 }).notNull(), // AAAA-MM-DD — o dia que o cliente quer
+  horarioDesejado: varchar("horarioDesejado", { length: 60 }), // livre: "manhã", "14h-16h", "qualquer horário"
+  terapiaDesejada: varchar("terapiaDesejada", { length: 250 }),
+  status: mysqlEnum("status", ["aguardando", "convertido", "cancelado"]).default("aguardando").notNull(),
+  criadoPorUserId: int("criadoPorUserId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  unidadeDataStatusIdx: index("lista_espera_unidade_data_status_idx").on(table.unidadeId, table.data, table.status),
+}));
+export type ListaEspera = typeof listaEspera.$inferSelect;
+export type InsertListaEspera = typeof listaEspera.$inferInsert;
+
 /** Opções operacionais que podem ser alteradas pelo administrador sem
  * mexer no formulário do chamado. */
 export const chamadosParametros = mysqlTable("chamados_parametros", {

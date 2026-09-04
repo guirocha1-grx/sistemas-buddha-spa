@@ -10,6 +10,7 @@ export const SUBSECOES: Record<string, { chave: string; label: string }[]> = {
   agenda: [
     { chave: "agenda:agenda", label: "Agenda" },
     { chave: "agenda:proximos-atendimentos", label: "Próximos atendimentos" },
+    { chave: "agenda:lista-espera", label: "Lista de espera" },
   ],
   terapeutas: [
     { chave: "terapeutas:fidelizacao", label: "Fidelização" },

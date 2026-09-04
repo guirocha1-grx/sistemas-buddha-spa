@@ -12,6 +12,7 @@ import Reativacao from "./pages/Reativacao";
 import Agenda from "@/pages/Agenda";
 import Terapeutas from "@/pages/Terapeutas";
 import ProximosAtendimentos from "./pages/ProximosAtendimentos";
+import ListaEspera from "./pages/ListaEspera";
 import Mensagens from "./pages/Mensagens";
 import Scripts from "./pages/Scripts";
 import Fluxos from "./pages/Fluxos";
@@ -51,6 +52,7 @@ function Router() {
         <Route path="/terapeutas" component={Terapeutas} />
         <Route path="/terapeutas/:subsecao" component={Terapeutas} />
         <Route path="/proximos-atendimentos" component={ProximosAtendimentos} />
+        <Route path="/lista-espera" component={ListaEspera} />
         <Route path="/mensagens" component={Mensagens} />
         <Route path="/scripts" component={Scripts} />
         <Route path="/fluxos" component={Fluxos} />

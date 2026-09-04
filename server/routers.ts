@@ -2349,6 +2349,54 @@ Diretrizes:
     }),
   }),
 
+  // ===== Lista de espera por dia (2026-09-04) — sessão do dia lotado.
+  // "criar" é sempre a partir de uma conversa do Inbox (mesmo padrão de
+  // inbox.conversas.criarProximoAtendimento), pra reaproveitar unidade/
+  // cliente já resolvidos e não deixar recepção digitar nada que já não
+  // esteja na conversa. =====
+  listaEspera: router({
+    criar: protectedProcedure.input(z.object({
+      conversaId: z.number(),
+      data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      horarioDesejado: z.string().max(60).optional(),
+      terapiaDesejada: z.string().max(250).optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const conversa = await db.getInboxConversaById(input.conversaId);
+      if (!conversa?.unidadeId || !conversa.clienteId || conversa.isGrupo === "true") {
+        throw new Error("A lista de espera só pode ser usada com um cliente vinculado a uma conversa individual");
+      }
+      if (!(await usuarioPodeOperarNaUnidade(ctx.user, conversa.unidadeId))) throw new Error("Sem acesso à unidade desta conversa");
+      const id = await db.criarEntradaListaEspera({
+        unidadeId: conversa.unidadeId,
+        clienteId: conversa.clienteId,
+        conversaId: conversa.id,
+        data: input.data,
+        horarioDesejado: input.horarioDesejado,
+        terapiaDesejada: input.terapiaDesejada,
+        criadoPorUserId: ctx.user.id,
+      });
+      return { id };
+    }),
+
+    datasAbertas: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input }) => {
+      return db.listDatasComListaEsperaAberta(input.unidadeId);
+    }),
+
+    porData: protectedProcedure.input(z.object({ unidadeId: z.number(), data: z.string() })).query(async ({ input }) => {
+      return db.listListaEsperaPorData(input.unidadeId, input.data);
+    }),
+
+    cancelar: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.atualizarStatusListaEspera(input.id, "cancelado");
+      return { success: true };
+    }),
+
+    marcarConvertido: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.atualizarStatusListaEspera(input.id, "convertido");
+      return { success: true };
+    }),
+  }),
+
   // ===== Segmentação de base pra Disparos (2026-09-03) — construtor de filtro
   // campo/operador/valor, sempre combinados por E (decisão explícita do
   // usuário: cobre os casos reais sem a complexidade de grupos com OU). Ver

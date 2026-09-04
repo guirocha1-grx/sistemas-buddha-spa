@@ -54,6 +54,7 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
     children: [
       { label: "Agenda", path: "/agenda", subsecao: "agenda:agenda" },
       { label: "Próximos atendimentos", path: "/proximos-atendimentos", subsecao: "agenda:proximos-atendimentos" },
+      { label: "Lista de espera", path: "/lista-espera", subsecao: "agenda:lista-espera" },
     ],
   },
   {
