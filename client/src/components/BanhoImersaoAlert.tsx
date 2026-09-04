@@ -14,7 +14,36 @@ type Contagem = {
   chave: string;
   clienteNome: string;
   terminaEm: number; // epoch ms — âncora real, não um contador que soma sozinho (sobrevive a timer atrasado em segundo plano e a F5)
+  duracaoTotalMs: number; // só pra calcular o % da animação da banheira, não afeta o horário de término
 };
+
+/** Ilustração da banheira enchendo — reaproveitada no botão flutuante (mini) e na tela cheia (grande). */
+function BanheiraEnchendo({ progresso, tamanho = "grande" }: { progresso: number; tamanho?: "grande" | "mini" }) {
+  const percentual = Math.round(Math.min(1, Math.max(0, progresso)) * 100);
+  if (tamanho === "mini") {
+    return (
+      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-amber-200">
+        <div className="h-full rounded-full bg-sky-500 transition-[width] duration-1000 ease-linear" style={{ width: `${percentual}%` }} />
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div
+        className="relative mx-auto h-28 w-44 overflow-hidden border-[3px] border-amber-800/60 bg-white/60 shadow-inner"
+        style={{ borderRadius: "3rem 3rem 1rem 1rem / 1.75rem 1.75rem 0.5rem 0.5rem" }}
+      >
+        <div
+          className="absolute inset-x-0 bottom-0 bg-gradient-to-b from-sky-300 to-sky-500 transition-[height] duration-1000 ease-linear"
+          style={{ height: `${percentual}%` }}
+        >
+          <div className="absolute inset-x-0 top-0 h-1.5 bg-sky-100/70" />
+        </div>
+      </div>
+      <p className="font-serif text-2xl font-semibold tabular-nums text-amber-900">{percentual}%</p>
+    </div>
+  );
+}
 
 const CHAVE_CONTAGEM = "banho-imersao-contagem";
 
@@ -124,11 +153,13 @@ export default function BanhoImersaoAlert() {
   }, [contagem]);
 
   const duracaoValida = Number.isFinite(Number(duracaoInput)) && Number(duracaoInput) > 0;
+  const progresso = contagem ? 1 - restanteMs / contagem.duracaoTotalMs : 0;
 
   function iniciarContagem() {
     if (!banho || !duracaoValida) return;
     const chave = `${banho.id}-${banho.dataAtendimento}-${banho.horario}`;
-    const nova: Contagem = { chave, clienteNome: banho.clienteNome, terminaEm: Date.now() + Number(duracaoInput) * 60_000 };
+    const duracaoTotalMs = Number(duracaoInput) * 60_000;
+    const nova: Contagem = { chave, clienteNome: banho.clienteNome, terminaEm: Date.now() + duracaoTotalMs, duracaoTotalMs };
     localStorage.setItem(CHAVE_CONTAGEM, JSON.stringify(nova));
     alarmeTocadoRef.current = false;
     setCheia(false);
@@ -193,9 +224,11 @@ export default function BanhoImersaoAlert() {
           style={{ bottom: "max(5.25rem, calc(env(safe-area-inset-bottom) + 4.25rem))", right: "max(1.25rem, env(safe-area-inset-right))" }}
           aria-label="Ver contagem de enchimento da banheira"
         >
-          <Droplets className="h-4 w-4 text-amber-700" />
-          <span className="font-serif text-sm font-semibold tabular-nums text-amber-950">{formatarRestante(restanteMs)}</span>
-          <span className="text-xs text-amber-700">enchendo banheira</span>
+          <Droplets className="h-4 w-4 shrink-0 text-amber-700" />
+          <span className="flex flex-col items-start gap-1">
+            <span className="font-serif text-sm font-semibold tabular-nums leading-none text-amber-950">{formatarRestante(restanteMs)}</span>
+            <BanheiraEnchendo progresso={progresso} tamanho="mini" />
+          </span>
         </button>
       )}
 
@@ -203,11 +236,11 @@ export default function BanhoImersaoAlert() {
       <AlertDialog open={!!contagem && !cheia && expandido} onOpenChange={setExpandido}>
         <AlertDialogContent className="max-w-sm border-amber-300 bg-amber-50 text-center">
           <AlertDialogHeader className="items-center">
-            <div className="mb-1 flex h-14 w-14 items-center justify-center rounded-full bg-amber-200"><Droplets className="h-7 w-7 text-amber-800" /></div>
             <AlertDialogTitle className="font-serif text-2xl text-amber-950">Enchendo a banheira</AlertDialogTitle>
             <AlertDialogDescription className="text-amber-950">Para <strong>{contagem?.clienteNome}</strong></AlertDialogDescription>
           </AlertDialogHeader>
-          <p className="font-serif text-5xl font-semibold tabular-nums text-amber-900">{formatarRestante(restanteMs)}</p>
+          <BanheiraEnchendo progresso={progresso} />
+          <p className="font-serif text-3xl font-semibold tabular-nums text-amber-900">{formatarRestante(restanteMs)}</p>
           <AlertDialogAction className="bg-amber-800 hover:bg-amber-900" onClick={() => setExpandido(false)}>Minimizar</AlertDialogAction>
         </AlertDialogContent>
       </AlertDialog>
