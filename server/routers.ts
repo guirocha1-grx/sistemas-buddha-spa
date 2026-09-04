@@ -105,7 +105,7 @@ const fluxoGatilhoConfigSchema = z.union([
   z.object({ canalCaptacao: z.string().optional() }).strict(), // cliente_novo
 ]);
 
-const fluxoNoTipoSchema = z.enum(["mensagem", "aguardar", "condicional", "salvar_variavel", "fim", "randomizador", "webhook", "midia", "menu"]);
+const fluxoNoTipoSchema = z.enum(["mensagem", "aguardar", "condicional", "salvar_variavel", "fim", "randomizador", "webhook", "midia", "menu", "aplicar_etiqueta", "incrementar_campo"]);
 
 const fluxoNoConfigSchema = z.union([
   z.object({ texto: z.string() }).strict(), // mensagem
@@ -153,6 +153,8 @@ const fluxoNoConfigSchema = z.union([
     diasTimeoutSemResposta: z.number().optional(),
     estilo: z.enum(["texto", "botoes", "lista"]).optional(),
   }).strict(), // menu
+  z.object({ etiquetaNome: z.string() }).strict(), // aplicar_etiqueta
+  z.object({ campoNome: z.string(), incremento: z.number() }).strict(), // incrementar_campo
 ]);
 
 /**
