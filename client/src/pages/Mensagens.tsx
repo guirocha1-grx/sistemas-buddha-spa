@@ -517,11 +517,13 @@ export default function Mensagens() {
     onError: (e) => toast.error(e.message),
   });
   // Serviço do próximo atendimento vem da Tabela de Preços — evita
-  // digitar um nome de terapia que já existe cadastrado. Só busca
-  // quando o popover realmente abre.
+  // digitar um nome de terapia que já existe cadastrado. Busca quando
+  // qualquer um dos dois diálogos que usam CampoBuscaLista abre (achado
+  // real: lista de espera ficava com "Nenhuma opção encontrada" porque só
+  // checava editandoProximoAtendimento, nunca formListaEspera).
   const tabelaPrecosQuery = trpc.tabelaPrecos.list.useQuery(
     { unidadeId: unidadeSelecionada?.id ?? 0 },
-    { enabled: !!unidadeSelecionada?.id && editandoProximoAtendimento },
+    { enabled: !!unidadeSelecionada?.id && (editandoProximoAtendimento || !!formListaEspera) },
   );
   // No Belle, domingo/feriado normalmente é um serviço À PARTE no
   // catálogo (nome próprio, geralmente "<nome da semana> Dom" — nem
@@ -2167,10 +2169,11 @@ export default function Mensagens() {
                             onChange={(e) => setFormListaEspera({ ...formListaEspera, data: e.target.value })} />
                         </div>
                         <div>
-                          <Label className="text-xs">Horário desejado</Label>
-                          <Input className="mt-1 h-8 text-xs" placeholder="Ex: manhã, 14h-16h, qualquer horário"
+                          <Label className="text-xs">Horário desejado (opcional)</Label>
+                          <Input type="time" className="mt-1 h-8 text-xs"
                             value={formListaEspera.horarioDesejado}
                             onChange={(e) => setFormListaEspera({ ...formListaEspera, horarioDesejado: e.target.value })} />
+                          <p className="mt-0.5 text-[10px] text-muted-foreground">Sem horário exato ("de tarde", "qualquer horário")? Deixa em branco e usa a Observação.</p>
                         </div>
                         <div className="space-y-1">
                           <div className="flex items-center gap-3">
