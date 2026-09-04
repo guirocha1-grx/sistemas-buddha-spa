@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import UnidadeSelector from "@/components/UnidadeSelector";
-import { rotaInboxConversa } from "@shared/inboxNavigation";
+import { chaveRascunhoConversa, rotaInboxConversa } from "@shared/inboxNavigation";
 import { CampoBuscaLista } from "@/components/CampoBuscaLista";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -226,10 +226,9 @@ export default function ListaEspera() {
                           title={pedido.conversaId ? "Chamar no WhatsApp" : "Pedido sem conversa vinculada"}
                           onClick={() => {
                             if (!pedido.conversaId || !dataSelecionada) return;
-                            setLocation(rotaInboxConversa(
-                              pedido.conversaId,
-                              montarMensagemConfirmacaoVaga(pedido.clienteNome, dataSelecionada, pedido.horarioDesejado, pedido.terapiaDesejada),
-                            ));
+                            const mensagem = montarMensagemConfirmacaoVaga(pedido.clienteNome, dataSelecionada, pedido.horarioDesejado, pedido.terapiaDesejada);
+                            sessionStorage.setItem(chaveRascunhoConversa(pedido.conversaId), mensagem);
+                            setLocation(rotaInboxConversa(pedido.conversaId));
                           }}
                         >
                           <MessageCircle className="h-4 w-4" />

@@ -31,6 +31,7 @@ import {
 import { toast } from "sonner";
 import { useSearch } from "wouter";
 import { telefonesCorrespondem } from "@shared/telefone";
+import { chaveRascunhoConversa } from "@shared/inboxNavigation";
 import { getInboxAttachmentUrl, type InboxAttachmentMetadata } from "@shared/inboxMedia";
 import { formatPhone, diasDesde, opcoesPreferenciaTerapeuta, SIMBOLO_NIVEL_TERAPEUTA } from "@/lib/utils";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
@@ -95,7 +96,6 @@ type SugestaoEmRevisao = {
   acaoPendente: string | null;
   fluxoPendenteNome: string | null;
 };
-const CHAVE_RASCUNHO_CONVERSA = "buddha_inbox_rascunho";
 
 function statusDotClass(status: string) {
   if (status === "encerrada") return "bg-gray-400";
@@ -391,10 +391,6 @@ export default function Mensagens() {
 
   const telefoneSolicitado = useMemo(() => {
     return new URLSearchParams(search).get("telefone")?.trim() ?? "";
-  }, [search]);
-
-  const mensagemSolicitada = useMemo(() => {
-    return new URLSearchParams(search).get("mensagem")?.trim() ?? "";
   }, [search]);
 
   const { data: mensageriaStatus } = trpc.mensageria.status.useQuery();
@@ -710,16 +706,12 @@ export default function Mensagens() {
   // da digitação).
   const solicitacaoAplicadaRef = useRef<string | null>(null);
   useEffect(() => {
-    const chave = `${conversaIdSolicitada ?? ""}|${telefoneSolicitado}|${mensagemSolicitada}`;
+    const chave = `${conversaIdSolicitada ?? ""}|${telefoneSolicitado}`;
     if (!conversaIdSolicitada && !telefoneSolicitado) return;
     if (solicitacaoAplicadaRef.current === chave) return;
     if (conversaIdSolicitada) {
       setBusca("");
       selecionarConversa(conversaIdSolicitada);
-      // Deep-link com mensagem é uma ação explícita (ex.: botão de
-      // WhatsApp da lista de espera) — sempre prevalece sobre um rascunho
-      // antigo que possa ter sobrado dessa conversa.
-      if (mensagemSolicitada) setTexto(mensagemSolicitada);
       solicitacaoAplicadaRef.current = chave;
       return;
     }
@@ -730,12 +722,12 @@ export default function Mensagens() {
       setBusca("");
       solicitacaoAplicadaRef.current = chave;
     }
-  }, [conversas, conversaIdSolicitada, telefoneSolicitado, mensagemSolicitada]);
+  }, [conversas, conversaIdSolicitada, telefoneSolicitado]);
 
   function selecionarConversa(conversaId: number) {
     if (conversaDonaDoTextoRef.current !== conversaId) {
       conversaDonaDoTextoRef.current = conversaId;
-      setTexto(sessionStorage.getItem(`${CHAVE_RASCUNHO_CONVERSA}:${conversaId}`) ?? "");
+      setTexto(sessionStorage.getItem(chaveRascunhoConversa(conversaId)) ?? "");
       setSugestaoEmRevisao(null);
       setSugestaoDispensadaId(null);
     }
@@ -805,7 +797,7 @@ export default function Mensagens() {
     if (conversaAnterior === conversaSelecionadaId) return;
     conversaDonaDoTextoRef.current = conversaSelecionadaId;
     const rascunho = conversaSelecionadaId
-      ? sessionStorage.getItem(`${CHAVE_RASCUNHO_CONVERSA}:${conversaSelecionadaId}`) ?? ""
+      ? sessionStorage.getItem(chaveRascunhoConversa(conversaSelecionadaId)) ?? ""
       : "";
     setTexto(rascunho);
     setEditandoNome(false);
@@ -821,7 +813,7 @@ export default function Mensagens() {
   useEffect(() => {
     const conversaId = conversaDonaDoTextoRef.current;
     if (!conversaId) return;
-    const chave = `${CHAVE_RASCUNHO_CONVERSA}:${conversaId}`;
+    const chave = chaveRascunhoConversa(conversaId);
     if (texto) sessionStorage.setItem(chave, texto);
     else sessionStorage.removeItem(chave);
   }, [texto]);
