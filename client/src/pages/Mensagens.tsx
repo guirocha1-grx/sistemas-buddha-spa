@@ -22,6 +22,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CampoBuscaLista } from "@/components/CampoBuscaLista";
+import { SeletorHorario } from "@/components/SeletorHorario";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
@@ -2101,8 +2102,8 @@ export default function Mensagens() {
                       </div>
                       <div>
                         <Label className="text-xs">Horário</Label>
-                        <Input type="time" step={300} className="mt-1 h-8 text-xs" value={formProximoAtendimento.horario}
-                          onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, horario: e.target.value }))} />
+                        <SeletorHorario className="mt-1" value={formProximoAtendimento.horario}
+                          onChange={(v) => setFormProximoAtendimento((f) => ({ ...f, horario: v }))} />
                       </div>
                       <div className="space-y-1">
                         <div className="flex items-center gap-3">
@@ -2170,9 +2171,15 @@ export default function Mensagens() {
                         </div>
                         <div>
                           <Label className="text-xs">Horário desejado (opcional)</Label>
-                          <Input type="time" step={300} className="mt-1 h-8 text-xs"
-                            value={formListaEspera.horarioDesejado}
-                            onChange={(e) => setFormListaEspera({ ...formListaEspera, horarioDesejado: e.target.value })} />
+                          <div className="mt-1 flex items-center gap-2">
+                            <SeletorHorario value={formListaEspera.horarioDesejado}
+                              onChange={(v) => setFormListaEspera({ ...formListaEspera, horarioDesejado: v })} />
+                            {formListaEspera.horarioDesejado && (
+                              <button type="button" className="text-xs text-muted-foreground underline underline-offset-2" onClick={() => setFormListaEspera({ ...formListaEspera, horarioDesejado: "" })}>
+                                Limpar
+                              </button>
+                            )}
+                          </div>
                           <p className="mt-0.5 text-[10px] text-muted-foreground">Sem horário exato ("de tarde", "qualquer horário")? Deixa em branco e usa a Observação.</p>
                         </div>
                         <div className="space-y-1">

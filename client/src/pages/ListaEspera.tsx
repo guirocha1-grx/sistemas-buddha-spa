@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { chaveRascunhoConversa, rotaInboxConversa } from "@shared/inboxNavigation";
 import { CampoBuscaLista } from "@/components/CampoBuscaLista";
+import { SeletorHorario } from "@/components/SeletorHorario";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -290,7 +291,7 @@ export default function ListaEspera() {
               </div>
               <div>
                 <Label className="text-xs">Horário confirmado</Label>
-                <Input type="time" step={300} className="mt-1 h-8 text-xs" value={conversao.horario} onChange={(e) => setConversao({ ...conversao, horario: e.target.value })} />
+                <SeletorHorario className="mt-1" value={conversao.horario} onChange={(v) => setConversao({ ...conversao, horario: v })} />
               </div>
               <div className="space-y-1">
                 <div className="flex items-center gap-3">
@@ -352,7 +353,7 @@ export default function ListaEspera() {
               </div>
               <div>
                 <Label className="text-xs">Horário desejado</Label>
-                <Input type="time" step={300} className="mt-1 h-8 text-xs" value={edicao.horarioDesejado} onChange={(e) => setEdicao({ ...edicao, horarioDesejado: e.target.value })} />
+                <SeletorHorario className="mt-1" value={edicao.horarioDesejado} onChange={(v) => setEdicao({ ...edicao, horarioDesejado: v })} />
               </div>
               <div className="space-y-1">
                 <div className="flex items-center gap-3">
