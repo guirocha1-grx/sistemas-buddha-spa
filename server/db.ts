@@ -1867,37 +1867,39 @@ export async function listTerapeutasAtivos(unidadeId: number) {
     .orderBy(asc(terapeutas.nomeAbreviado));
 }
 
-export async function getClientePreferenciaTerapeuta(clienteId: number, unidadeId: number) {
+/** Um cliente pode ter mais de um terapeuta preferido na mesma unidade — ver schema.ts. */
+export async function listClientePreferenciasTerapeuta(clienteId: number, unidadeId: number) {
   const db = await getDb();
-  if (!db) return null;
-  const resultado = await db.select().from(clientesPreferenciasTerapeuta)
+  if (!db) return [];
+  return db.select().from(clientesPreferenciasTerapeuta)
     .where(and(eq(clientesPreferenciasTerapeuta.clienteId, clienteId), eq(clientesPreferenciasTerapeuta.unidadeId, unidadeId)))
-    .limit(1);
-  return resultado[0] ?? null;
+    .orderBy(clientesPreferenciasTerapeuta.terapeutaNome);
 }
 
-export async function salvarClientePreferenciaTerapeuta(dados: {
-  clienteId: number; unidadeId: number; terapeutaId?: number | null; terapeutaNome?: string | null;
+export async function adicionarClientePreferenciaTerapeuta(dados: {
+  clienteId: number; unidadeId: number; terapeutaId: number; terapeutaNome: string;
 }) {
   const db = await getDb();
-  if (!db) return;
-  if (!dados.terapeutaId || !dados.terapeutaNome?.trim()) {
-    await db.delete(clientesPreferenciasTerapeuta).where(and(
-      eq(clientesPreferenciasTerapeuta.clienteId, dados.clienteId),
-      eq(clientesPreferenciasTerapeuta.unidadeId, dados.unidadeId),
-    ));
-    return;
-  }
+  if (!db) throw new Error("Banco de dados indisponível.");
   await db.insert(clientesPreferenciasTerapeuta).values({
     clienteId: dados.clienteId,
     unidadeId: dados.unidadeId,
     terapeutaId: dados.terapeutaId,
     terapeutaNome: dados.terapeutaNome.trim(),
   }).onDuplicateKeyUpdate({ set: {
-    terapeutaId: dados.terapeutaId,
     terapeutaNome: dados.terapeutaNome.trim(),
     updatedAt: new Date(),
   } });
+}
+
+export async function removerClientePreferenciaTerapeuta(clienteId: number, unidadeId: number, terapeutaId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  await db.delete(clientesPreferenciasTerapeuta).where(and(
+    eq(clientesPreferenciasTerapeuta.clienteId, clienteId),
+    eq(clientesPreferenciasTerapeuta.unidadeId, unidadeId),
+    eq(clientesPreferenciasTerapeuta.terapeutaId, terapeutaId),
+  ));
 }
 
 export async function criarChamadoParametro(dados: InsertChamadoParametro) {

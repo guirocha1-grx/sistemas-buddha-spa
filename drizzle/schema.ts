@@ -531,8 +531,13 @@ export const clientes = mysqlTable("clientes", {
 export type Cliente = typeof clientes.$inferSelect;
 export type InsertCliente = typeof clientes.$inferInsert;
 
-/** Preferência de terapeuta por cliente e unidade. O nome é mantido junto
- * ao ID para preservar o histórico do cliente se o cadastro mudar depois. */
+/**
+ * Preferência de terapeuta por cliente e unidade. O nome é mantido junto ao ID
+ * pra preservar o histórico do cliente se o cadastro mudar depois. Um cliente
+ * pode ter mais de um terapeuta preferido na mesma unidade (2026-09-03 — dado
+ * real: etiquetas livres do Inbox como "Pref Larah/Cláudia" já mostravam isso),
+ * por isso a unicidade é por terapeuta, não mais uma linha só por cliente+unidade.
+ */
 export const clientesPreferenciasTerapeuta = mysqlTable("clientes_preferencias_terapeuta", {
   id: int("id").autoincrement().primaryKey(),
   clienteId: int("clienteId").notNull(),
@@ -542,7 +547,7 @@ export const clientesPreferenciasTerapeuta = mysqlTable("clientes_preferencias_t
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
-  clienteUnidadeUnico: uniqueIndex("clientes_pref_terapeuta_cliente_unidade_idx").on(table.clienteId, table.unidadeId),
+  clienteUnidadeTerapeutaUnico: uniqueIndex("clientes_pref_terapeuta_cliente_unidade_terapeuta_idx").on(table.clienteId, table.unidadeId, table.terapeutaId),
   unidadeIdx: index("clientes_pref_terapeuta_unidade_idx").on(table.unidadeId),
 }));
 export type ClientePreferenciaTerapeuta = typeof clientesPreferenciasTerapeuta.$inferSelect;

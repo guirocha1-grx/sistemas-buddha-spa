@@ -500,12 +500,13 @@ export default function Clientes() {
   const chamadoOpcoesQuery = trpc.chamados.opcoes.useQuery(historicoAtendimentosInput, {
     enabled: !!unidadeSelecionada && !!selectedCliente,
   });
-  const salvarPreferenciaTerapeutaMutation = trpc.chamados.salvarPreferenciaCliente.useMutation({
-    onSuccess: () => {
-      chamadoOpcoesQuery.refetch();
-      toast.success("Preferência de terapeuta atualizada.");
-    },
-    onError: (erro) => toast.error(`Não foi possível atualizar a preferência: ${erro.message}`),
+  const adicionarPreferenciaMutation = trpc.chamados.adicionarPreferenciaCliente.useMutation({
+    onSuccess: () => chamadoOpcoesQuery.refetch(),
+    onError: (erro) => toast.error(`Não foi possível adicionar a preferência: ${erro.message}`),
+  });
+  const removerPreferenciaMutation = trpc.chamados.removerPreferenciaCliente.useMutation({
+    onSuccess: () => chamadoOpcoesQuery.refetch(),
+    onError: (erro) => toast.error(`Não foi possível remover a preferência: ${erro.message}`),
   });
 
   function toggleSort(col: OrderCol) {
@@ -772,35 +773,58 @@ export default function Clientes() {
                       <div className="rounded-lg border border-border/60 bg-muted/10 p-3 space-y-2">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <h3 className="font-medium text-sm">Terapeuta de preferência</h3>
-                            <p className="text-xs text-muted-foreground">Válido apenas para {unidadeSelecionada?.nome ?? "esta unidade"}.</p>
+                            <h3 className="font-medium text-sm">Terapeutas de preferência</h3>
+                            <p className="text-xs text-muted-foreground">Válido apenas para {unidadeSelecionada?.nome ?? "esta unidade"}. Pode marcar mais de um.</p>
                           </div>
-                          {chamadoOpcoesQuery.data?.preferencia?.terapeutaNome && <Badge variant="outline" className="text-[10px]">Preferencial</Badge>}
+                          {(chamadoOpcoesQuery.data?.preferencias?.length ?? 0) > 0 && <Badge variant="outline" className="text-[10px]">Preferencial</Badge>}
                         </div>
                         {chamadoOpcoesQuery.isLoading ? (
                           <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando terapeutas...</div>
                         ) : (
-                          <Select
-                            value={chamadoOpcoesQuery.data?.preferencia?.terapeutaId?.toString() ?? "nenhum"}
-                            onValueChange={(valor) => {
-                              const terapeuta = chamadoOpcoesQuery.data?.terapeutas.find((item) => item.id.toString() === valor);
-                              salvarPreferenciaTerapeutaMutation.mutate({
-                                clienteId: selectedCliente.id,
-                                unidadeId: unidadeSelecionada!.id,
-                                terapeutaId: terapeuta?.id ?? null,
-                                terapeutaNome: terapeuta ? (terapeuta.nomeAbreviado || terapeuta.nomeCompleto) : null,
-                              });
-                            }}
-                            disabled={salvarPreferenciaTerapeutaMutation.isPending}
-                          >
-                            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Sem preferência" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="nenhum">Sem preferência</SelectItem>
-                              {(chamadoOpcoesQuery.data?.terapeutas ?? []).map((terapeuta) => (
-                                <SelectItem key={terapeuta.id} value={terapeuta.id.toString()}>{terapeuta.nomeAbreviado || terapeuta.nomeCompleto}</SelectItem>
+                          <>
+                            <div className="flex flex-wrap gap-1.5">
+                              {(chamadoOpcoesQuery.data?.preferencias ?? []).length === 0 && (
+                                <span className="text-xs text-muted-foreground">Sem preferência ainda.</span>
+                              )}
+                              {(chamadoOpcoesQuery.data?.preferencias ?? []).map((pref) => (
+                                <Badge key={pref.id} variant="outline" className="text-xs gap-1 pr-1">
+                                  {pref.terapeutaNome}
+                                  <button
+                                    type="button"
+                                    className="hover:text-destructive"
+                                    onClick={() => pref.terapeutaId && removerPreferenciaMutation.mutate({
+                                      clienteId: selectedCliente.id, unidadeId: unidadeSelecionada!.id, terapeutaId: pref.terapeutaId,
+                                    })}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </Badge>
                               ))}
-                            </SelectContent>
-                          </Select>
+                            </div>
+                            <Select
+                              value=""
+                              onValueChange={(valor) => {
+                                const terapeuta = chamadoOpcoesQuery.data?.terapeutas.find((item) => item.id.toString() === valor);
+                                if (!terapeuta) return;
+                                adicionarPreferenciaMutation.mutate({
+                                  clienteId: selectedCliente.id,
+                                  unidadeId: unidadeSelecionada!.id,
+                                  terapeutaId: terapeuta.id,
+                                  terapeutaNome: terapeuta.nomeAbreviado || terapeuta.nomeCompleto,
+                                });
+                              }}
+                              disabled={adicionarPreferenciaMutation.isPending}
+                            >
+                              <SelectTrigger className="h-8 text-xs w-48"><SelectValue placeholder="Adicionar terapeuta" /></SelectTrigger>
+                              <SelectContent>
+                                {(chamadoOpcoesQuery.data?.terapeutas ?? [])
+                                  .filter((t) => !(chamadoOpcoesQuery.data?.preferencias ?? []).some((p) => p.terapeutaId === t.id))
+                                  .map((terapeuta) => (
+                                    <SelectItem key={terapeuta.id} value={terapeuta.id.toString()}>{terapeuta.nomeAbreviado || terapeuta.nomeCompleto}</SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                          </>
                         )}
                       </div>
 

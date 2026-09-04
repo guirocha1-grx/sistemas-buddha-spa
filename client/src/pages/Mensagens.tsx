@@ -17,14 +17,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CampoBuscaLista } from "@/components/CampoBuscaLista";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import {
   Search, Send, Paperclip, Loader2, MessageCircle, RefreshCw, Volume2, VolumeX, Ban,
   Pencil, Check, CheckCheck, X, Trash2, AlertTriangle, Sparkles, Tag as TagIcon, CheckCircle2, Merge, ArrowLeft, Plus,
-  UserPlus, SmilePlus, Users, Download, ZoomIn, FileText, Bot, BellRing, CreditCard,
+  UserPlus, SmilePlus, Users, Download, ZoomIn, FileText, Bot, BellRing, CreditCard, Menu,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useSearch } from "wouter";
@@ -178,6 +180,71 @@ function fileToBase64(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+/**
+ * Preferência de terapeuta compacta pro painel direito do Inbox (2026-09-03) —
+ * antes só existia em texto livre nas etiquetas da conversa (ex.: "Pref
+ * Larah/Cláudia"), sem padrão. Agora usa a mesma tabela estruturada da tela
+ * Clientes (clientes_preferencias_terapeuta), aceitando mais de um terapeuta.
+ */
+function PreferenciaTerapeutaInline({ clienteId, unidadeId }: { clienteId: number; unidadeId: number }) {
+  const utils = trpc.useUtils();
+  const opcoesQuery = trpc.chamados.opcoes.useQuery({ unidadeId, clienteId });
+  const invalidar = () => utils.chamados.opcoes.invalidate({ unidadeId, clienteId });
+  const adicionarMutation = trpc.chamados.adicionarPreferenciaCliente.useMutation({
+    onSuccess: invalidar,
+    onError: (e) => toast.error(e.message),
+  });
+  const removerMutation = trpc.chamados.removerPreferenciaCliente.useMutation({
+    onSuccess: invalidar,
+    onError: (e) => toast.error(e.message),
+  });
+
+  const preferencias = opcoesQuery.data?.preferencias ?? [];
+  const terapeutas = opcoesQuery.data?.terapeutas ?? [];
+  const disponiveis = terapeutas.filter((t) => !preferencias.some((p) => p.terapeutaId === t.id));
+
+  return (
+    <div className="flex items-center justify-center gap-1 mt-1 flex-wrap">
+      <span className="text-[10px] text-muted-foreground">Pref.</span>
+      {preferencias.length === 0 && <span className="text-[10px] text-muted-foreground">—</span>}
+      {preferencias.map((pref) => (
+        <Badge key={pref.id} variant="outline" className="text-[10px] h-5 gap-1 pr-1">
+          {pref.terapeutaNome}
+          <button
+            type="button"
+            className="hover:text-destructive"
+            onClick={() => pref.terapeutaId && removerMutation.mutate({ clienteId, unidadeId, terapeutaId: pref.terapeutaId })}
+          >
+            <X className="h-2.5 w-2.5" />
+          </button>
+        </Badge>
+      ))}
+      {disponiveis.length > 0 && (
+        <Select
+          value=""
+          onValueChange={(valor) => {
+            const terapeuta = disponiveis.find((t) => t.id.toString() === valor);
+            if (!terapeuta) return;
+            adicionarMutation.mutate({
+              clienteId, unidadeId, terapeutaId: terapeuta.id,
+              terapeutaNome: terapeuta.nomeAbreviado || terapeuta.nomeCompleto,
+            });
+          }}
+        >
+          <SelectTrigger className="h-5 px-1 gap-0.5 border-dashed" title="Adicionar terapeuta de preferência">
+            <Plus className="h-3 w-3 text-muted-foreground" />
+          </SelectTrigger>
+          <SelectContent>
+            {disponiveis.map((t) => (
+              <SelectItem key={t.id} value={t.id.toString()}>{t.nomeAbreviado || t.nomeCompleto}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+    </div>
+  );
 }
 
 export default function Mensagens() {
@@ -513,6 +580,16 @@ export default function Mensagens() {
     },
     onError: (error) => toast.error(error.message),
   });
+
+  // Catálogo compartilhado com Clientes.tsx e o construtor de segmentação de
+  // Disparos (2026-09-03) — etiqueta criada/aplicada aqui também vira filtro
+  // de segmento, sem precisar duplicar o cadastro em outra tela.
+  const catalogoEtiquetasQuery = trpc.etiquetas.list.useQuery();
+  const criarEtiquetaMutation = trpc.etiquetas.criar.useMutation();
+  const atribuirEtiquetaClienteMutation = trpc.etiquetas.atribuir.useMutation({
+    onSuccess: () => utils.etiquetas.list.invalidate(),
+  });
+  const removerEtiquetaClienteMutation = trpc.etiquetas.remover.useMutation();
 
   const definirEtiquetasMutation = trpc.inbox.conversas.definirEtiquetas.useMutation({
     onSuccess: () => {
@@ -968,19 +1045,34 @@ export default function Mensagens() {
     atualizarNomeMutation.mutate({ id: conversaSelecionadaId, nome: nomeEditavel.trim() });
   }
 
-  function adicionarEtiqueta() {
-    if (!novaEtiqueta.trim() || !conversaSelecionadaId) return;
-    if (etiquetasAtuais.includes(novaEtiqueta.trim())) {
+  // Grava tanto na conversa (exibição/histórico local, como sempre foi)
+  // quanto no catálogo compartilhado de etiquetas do cliente — assim uma tag
+  // aplicada aqui já fica disponível como filtro em Disparos.
+  function adicionarEtiqueta(nomeEtiqueta: string) {
+    const etiqueta = nomeEtiqueta.trim();
+    if (!etiqueta || !conversaSelecionadaId) return;
+    if (etiquetasAtuais.includes(etiqueta)) {
       setNovaEtiqueta("");
       return;
     }
-    definirEtiquetasMutation.mutate({ id: conversaSelecionadaId, etiquetas: [...etiquetasAtuais, novaEtiqueta.trim()] });
+    definirEtiquetasMutation.mutate({ id: conversaSelecionadaId, etiquetas: [...etiquetasAtuais, etiqueta] });
     setNovaEtiqueta("");
+    const clienteId = conversaSelecionada?.clienteId;
+    if (clienteId) {
+      criarEtiquetaMutation.mutate({ nome: etiqueta }, {
+        onSuccess: (etiquetaCatalogo) => atribuirEtiquetaClienteMutation.mutate({ clienteId, etiquetaId: etiquetaCatalogo.id }),
+      });
+    }
   }
 
   function removerEtiqueta(etq: string) {
     if (!conversaSelecionadaId) return;
     definirEtiquetasMutation.mutate({ id: conversaSelecionadaId, etiquetas: etiquetasAtuais.filter((e) => e !== etq) });
+    const clienteId = conversaSelecionada?.clienteId;
+    const etiquetaCatalogo = catalogoEtiquetasQuery.data?.find((e) => e.nome === etq);
+    if (clienteId && etiquetaCatalogo) {
+      removerEtiquetaClienteMutation.mutate({ clienteId, etiquetaId: etiquetaCatalogo.id });
+    }
   }
 
   const mensageriaAtiva = mensageriaStatus?.ativa ?? true;
@@ -1685,6 +1777,9 @@ export default function Mensagens() {
                   ) : (
                     <p className="text-xs text-muted-foreground">{formatPhone(conversaSelecionada?.telefone)}</p>
                   )}
+                  {conversaSelecionada?.clienteId && conversaSelecionada?.unidadeId && conversaSelecionada.isGrupo !== "true" && (
+                    <PreferenciaTerapeutaInline clienteId={conversaSelecionada.clienteId} unidadeId={conversaSelecionada.unidadeId} />
+                  )}
                   {/* Também aparece com LID já resolvido — a resolução some com o
                       aviso "número não confirmado", mas não junta sozinha com uma
                       conversa que essa mesma pessoa já tinha pelo telefone real
@@ -1930,114 +2025,118 @@ export default function Mensagens() {
                           {conversaSelecionada.resumoRelacionamento.proximoAtendimento.status === "Agendado (IA)" ? "CRM" : "Belle"}
                         </Badge>
                       </div>
-                      <div className="flex items-center gap-0.5">
-                        <Button size="icon" variant="ghost" className="h-5 w-5 text-emerald-700 hover:text-emerald-800" title="Chamar terapeuta" onClick={() => setModalChamadoTerapeuta(true)}>
-                          <BellRing className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-5 w-5 text-primary hover:bg-primary/10 hover:text-primary"
-                          title="Atualizar de acordo com conversa (IA)"
-                          aria-label="Atualizar de acordo com conversa (IA)"
-                          disabled={sugerirProximoAtendimentoMutation.isPending}
-                          onClick={() => conversaSelecionadaId && sugerirProximoAtendimentoMutation.mutate({ conversaId: conversaSelecionadaId })}
-                        >
-                          {sugerirProximoAtendimentoMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                        </Button>
-                        <Popover open={editandoProximoAtendimento} onOpenChange={(v) => {
-                          setEditandoProximoAtendimento(v);
-                          if (v && conversaSelecionada.resumoRelacionamento?.proximoAtendimento) {
-                            setModoFormProximoAtendimento("editar");
-                            const p = conversaSelecionada.resumoRelacionamento.proximoAtendimento;
-                            setFormProximoAtendimento({ data: p.dataAtendimento, horario: p.horario ?? "", servico: p.servicoNome ?? "" });
-                          }
-                        }}>
-                          <PopoverTrigger asChild>
-                            <Button size="icon" variant="ghost" className="h-5 w-5" title="Editar agendamento">
-                              <Pencil className="h-3 w-3" />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-64 space-y-2" align="end">
-                            <div>
-                              <Label className="text-xs">Data</Label>
-                              <Input type="date" className="mt-1 h-8 text-xs" value={formProximoAtendimento.data}
-                                onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, data: e.target.value }))} />
+                      {/* Sem PopoverTrigger: quem abre é o DropdownMenuItem "Editar agendamento" /
+                          "Incluir novo atendimento" abaixo, já com o form pré-preenchido certo pra
+                          cada caso — o Popover só fica controlado (abre/fecha) e ancorado no botão. */}
+                      <Popover open={editandoProximoAtendimento} onOpenChange={setEditandoProximoAtendimento}>
+                        <PopoverAnchor>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="icon" variant="ghost" className="h-5 w-5 text-emerald-700 hover:text-emerald-800" title="Opções do agendamento">
+                                <Menu className="h-3.5 w-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                              <DropdownMenuItem onSelect={() => setModalChamadoTerapeuta(true)}>
+                                <BellRing className="h-3.5 w-3.5 mr-2" /> Chamar terapeuta
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                disabled={sugerirProximoAtendimentoMutation.isPending}
+                                onSelect={() => conversaSelecionadaId && sugerirProximoAtendimentoMutation.mutate({ conversaId: conversaSelecionadaId })}
+                              >
+                                {sugerirProximoAtendimentoMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-2" />}
+                                Atualizar de acordo com a conversa (IA)
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  setModoFormProximoAtendimento("editar");
+                                  const p = conversaSelecionada.resumoRelacionamento?.proximoAtendimento;
+                                  if (p) setFormProximoAtendimento({ data: p.dataAtendimento, horario: p.horario ?? "", servico: p.servicoNome ?? "" });
+                                  setEditandoProximoAtendimento(true);
+                                }}
+                              >
+                                <Pencil className="h-3.5 w-3.5 mr-2" /> Editar agendamento
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                                  setModoFormProximoAtendimento("incluir");
+                                  setFormProximoAtendimento({ data: hojeBrt, horario: "", servico: "" });
+                                  setEditandoProximoAtendimento(true);
+                                }}
+                              >
+                                <Plus className="h-3.5 w-3.5 mr-2" /> Incluir novo atendimento
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                variant="destructive"
+                                disabled={cancelarProximoAtendimentoMutation.isPending}
+                                onSelect={() => {
+                                  const id = conversaSelecionada.resumoRelacionamento?.proximoAtendimento?.id;
+                                  if (id && confirm("Cancelar este agendamento?")) cancelarProximoAtendimentoMutation.mutate({ id });
+                                }}
+                              >
+                                <X className="h-3.5 w-3.5 mr-2" /> Cancelar agendamento
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </PopoverAnchor>
+                        <PopoverContent className="w-64 space-y-2" align="end">
+                          <div>
+                            <Label className="text-xs">Data</Label>
+                            <Input type="date" className="mt-1 h-8 text-xs" value={formProximoAtendimento.data}
+                              onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, data: e.target.value }))} />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Horário</Label>
+                            <Input type="time" className="mt-1 h-8 text-xs" value={formProximoAtendimento.horario}
+                              onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, horario: e.target.value }))} />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-3">
+                              <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                                <Checkbox checked={filtroServicoSegSab} onCheckedChange={(v) => setFiltroServicoSegSab(!!v)} className="h-3.5 w-3.5" />
+                                Seg-Sáb
+                              </label>
+                              <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                                <Checkbox checked={filtroServicoDomFer} onCheckedChange={(v) => setFiltroServicoDomFer(!!v)} className="h-3.5 w-3.5" />
+                                Dom-Fer
+                              </label>
                             </div>
-                            <div>
-                              <Label className="text-xs">Horário</Label>
-                              <Input type="time" className="mt-1 h-8 text-xs" value={formProximoAtendimento.horario}
-                                onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, horario: e.target.value }))} />
-                            </div>
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-3">
-                                <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
-                                  <Checkbox checked={filtroServicoSegSab} onCheckedChange={(v) => setFiltroServicoSegSab(!!v)} className="h-3.5 w-3.5" />
-                                  Seg-Sáb
-                                </label>
-                                <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
-                                  <Checkbox checked={filtroServicoDomFer} onCheckedChange={(v) => setFiltroServicoDomFer(!!v)} className="h-3.5 w-3.5" />
-                                  Dom-Fer
-                                </label>
-                              </div>
-                              <CampoBuscaLista
-                                label="Serviço"
-                                value={formProximoAtendimento.servico}
-                                onChange={(v) => setFormProximoAtendimento((f) => ({ ...f, servico: v }))}
-                                valores={nomesServicosProximoAtendimento}
-                                placeholder="Selecione ou digite"
-                                id="proximo-atendimento-servico-editar"
-                              />
-                            </div>
-                            <Button size="sm" className="w-full h-7 text-xs" disabled={editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending}
-                              onClick={() => {
-                                const id = conversaSelecionada.resumoRelacionamento?.proximoAtendimento?.id;
-                                if (modoFormProximoAtendimento === "editar") {
-                                  if (!id) return;
-                                  editarProximoAtendimentoMutation.mutate({
-                                    id,
-                                    dataAtendimento: formProximoAtendimento.data,
-                                    horario: formProximoAtendimento.horario || null,
-                                    servicoNome: formProximoAtendimento.servico || null,
-                                  });
-                                  return;
-                                }
-                                if (!conversaSelecionadaId || !formProximoAtendimento.data) return;
-                                criarProximoAtendimentoMutation.mutate({
-                                  conversaId: conversaSelecionadaId,
+                            <CampoBuscaLista
+                              label="Serviço"
+                              value={formProximoAtendimento.servico}
+                              onChange={(v) => setFormProximoAtendimento((f) => ({ ...f, servico: v }))}
+                              valores={nomesServicosProximoAtendimento}
+                              placeholder="Selecione ou digite"
+                              id="proximo-atendimento-servico-editar"
+                            />
+                          </div>
+                          <Button size="sm" className="w-full h-7 text-xs" disabled={editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending}
+                            onClick={() => {
+                              const id = conversaSelecionada.resumoRelacionamento?.proximoAtendimento?.id;
+                              if (modoFormProximoAtendimento === "editar") {
+                                if (!id) return;
+                                editarProximoAtendimentoMutation.mutate({
+                                  id,
                                   dataAtendimento: formProximoAtendimento.data,
                                   horario: formProximoAtendimento.horario || null,
                                   servicoNome: formProximoAtendimento.servico || null,
                                 });
-                              }}>
-                              {editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}{modoFormProximoAtendimento === "editar" ? "Salvar" : "Incluir"}
-                            </Button>
-                          </PopoverContent>
-                        </Popover>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-5 w-5 text-muted-foreground hover:text-foreground"
-                          title="Incluir próximo atendimento"
-                          aria-label="Incluir próximo atendimento"
-                          onClick={() => {
-                            const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
-                            setModoFormProximoAtendimento("incluir");
-                            setFormProximoAtendimento({ data: hojeBrt, horario: "", servico: "" });
-                            setEditandoProximoAtendimento(true);
-                          }}
-                        >
-                          <Plus className="h-3 w-3" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-5 w-5" title="Cancelar agendamento"
-                          disabled={cancelarProximoAtendimentoMutation.isPending}
-                          onClick={() => {
-                            const id = conversaSelecionada.resumoRelacionamento?.proximoAtendimento?.id;
-                            if (id && confirm("Cancelar este agendamento?")) cancelarProximoAtendimentoMutation.mutate({ id });
-                          }}>
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </div>
+                                return;
+                              }
+                              if (!conversaSelecionadaId || !formProximoAtendimento.data) return;
+                              criarProximoAtendimentoMutation.mutate({
+                                conversaId: conversaSelecionadaId,
+                                dataAtendimento: formProximoAtendimento.data,
+                                horario: formProximoAtendimento.horario || null,
+                                servicoNome: formProximoAtendimento.servico || null,
+                              });
+                            }}>
+                            {editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}{modoFormProximoAtendimento === "editar" ? "Salvar" : "Incluir"}
+                          </Button>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                     <p className="text-xs font-medium">
                       {formatarDataRelacao(conversaSelecionada.resumoRelacionamento.proximoAtendimento.dataAtendimento)}
@@ -2149,15 +2248,25 @@ export default function Mensagens() {
                       </Badge>
                     ))}
                   </div>
+                  {(catalogoEtiquetasQuery.data ?? []).filter((e) => !etiquetasAtuais.includes(e.nome)).length > 0 && (
+                    <Select value="" onValueChange={adicionarEtiqueta}>
+                      <SelectTrigger className="h-6 text-[11px]"><SelectValue placeholder="Adicionar existente" /></SelectTrigger>
+                      <SelectContent>
+                        {(catalogoEtiquetasQuery.data ?? []).filter((e) => !etiquetasAtuais.includes(e.nome)).map((e) => (
+                          <SelectItem key={e.id} value={e.nome}>{e.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <div className="flex gap-1">
                     <Input
                       value={novaEtiqueta}
                       onChange={(e) => setNovaEtiqueta(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") adicionarEtiqueta(); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") adicionarEtiqueta(novaEtiqueta); }}
                       placeholder="Nova etiqueta"
                       className="h-6 text-[11px]"
                     />
-                    <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={adicionarEtiqueta} disabled={!novaEtiqueta.trim()}>
+                    <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => adicionarEtiqueta(novaEtiqueta)} disabled={!novaEtiqueta.trim()}>
                       +
                     </Button>
                   </div>

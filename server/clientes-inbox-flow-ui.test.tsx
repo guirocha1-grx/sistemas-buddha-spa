@@ -198,9 +198,10 @@ const state = vi.hoisted(() => {
       atual: { useQuery: () => ({ data: null, isLoading: false }) },
     },
     chamados: {
-      opcoes: { useQuery: () => ({ data: { parametros: [], terapeutas: [] }, isLoading: false, refetch: vi.fn() }) },
+      opcoes: { useQuery: () => ({ data: { parametros: [], terapeutas: [], preferencias: [] }, isLoading: false, refetch: vi.fn() }) },
       enviarTeste: { useMutation: () => mutation() },
-      salvarPreferenciaCliente: { useMutation: () => mutation() },
+      adicionarPreferenciaCliente: { useMutation: () => mutation() },
+      removerPreferenciaCliente: { useMutation: () => mutation() },
     },
     servicos: {
       list: { useQuery: () => ({ data: [], isLoading: false }) },

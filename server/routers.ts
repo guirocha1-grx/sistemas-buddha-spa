@@ -4493,15 +4493,15 @@ Diretrizes:
 
   chamados: router({
     opcoes: protectedProcedure.input(z.object({ unidadeId: z.number(), clienteId: z.number().optional() })).query(async ({ input }) => {
-      const [parametros, terapeutasAtivos, preferencia] = await Promise.all([
+      const [parametros, terapeutasAtivos, preferencias] = await Promise.all([
         db.listChamadosParametros(input.unidadeId),
         db.listTerapeutasAtivos(input.unidadeId),
-        input.clienteId ? db.getClientePreferenciaTerapeuta(input.clienteId, input.unidadeId) : Promise.resolve(null),
+        input.clienteId ? db.listClientePreferenciasTerapeuta(input.clienteId, input.unidadeId) : Promise.resolve([]),
       ]);
       return {
         parametros,
         terapeutas: terapeutasAtivos,
-        preferencia,
+        preferencias,
         gruposChamado: GRUPOS_CHAMADO_RBS.map(({ chave, label }) => ({ chave, label })),
         grupoChamadoPadrao: grupoChamadoPadrao(new Date()),
       };
@@ -4523,10 +4523,18 @@ Diretrizes:
       await db.atualizarChamadoParametro(id, dados);
       return { success: true };
     }),
-    salvarPreferenciaCliente: protectedProcedure.input(z.object({
-      clienteId: z.number(), unidadeId: z.number(), terapeutaId: z.number().nullable(), terapeutaNome: z.string().nullable(),
+    // Um cliente pode preferir mais de um terapeuta na mesma unidade — ver
+    // clientes_preferencias_terapeuta em schema.ts (2026-09-03).
+    adicionarPreferenciaCliente: protectedProcedure.input(z.object({
+      clienteId: z.number(), unidadeId: z.number(), terapeutaId: z.number(), terapeutaNome: z.string().min(1),
     })).mutation(async ({ input }) => {
-      await db.salvarClientePreferenciaTerapeuta(input);
+      await db.adicionarClientePreferenciaTerapeuta(input);
+      return { success: true };
+    }),
+    removerPreferenciaCliente: protectedProcedure.input(z.object({
+      clienteId: z.number(), unidadeId: z.number(), terapeutaId: z.number(),
+    })).mutation(async ({ input }) => {
+      await db.removerClientePreferenciaTerapeuta(input.clienteId, input.unidadeId, input.terapeutaId);
       return { success: true };
     }),
     enviarTeste: protectedProcedure.input(z.object({
