@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
-import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -2024,126 +2024,128 @@ export default function Mensagens() {
                           {conversaSelecionada.resumoRelacionamento.proximoAtendimento.status === "Agendado (IA)" ? "CRM" : "Belle"}
                         </Badge>
                       </div>
-                      {/* Sem PopoverTrigger: quem abre é o DropdownMenuItem "Editar agendamento" /
-                          "Incluir novo atendimento" abaixo, já com o form pré-preenchido certo pra
-                          cada caso — o Popover só fica controlado (abre/fecha) e ancorado no botão. */}
-                      <Popover open={editandoProximoAtendimento} onOpenChange={setEditandoProximoAtendimento}>
-                        <PopoverAnchor>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button size="icon" variant="ghost" className="h-5 w-5 text-emerald-700 hover:text-emerald-800" title="Opções do agendamento">
-                                <Menu className="h-3.5 w-3.5" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-56">
-                              {/* onSelect com preventDefault + setTimeout: abrir um Dialog/Popover
-                                  direto no onSelect corre com o próprio menu se fechando (o Radix
-                                  devolve foco pro trigger e a camada de fechar-por-clique-fora do
-                                  Popover/Dialog interpreta isso como clique fora, fechando na hora —
-                                  achado real: "editar/incluir abre e fecha rápido"). Adiar pro próximo
-                                  tick deixa o menu terminar de fechar antes do outro overlay abrir. */}
-                              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setTimeout(() => setModalChamadoTerapeuta(true), 0); }}>
-                                <BellRing className="h-3.5 w-3.5 mr-2" /> Chamar terapeuta
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                disabled={sugerirProximoAtendimentoMutation.isPending}
-                                onSelect={() => conversaSelecionadaId && sugerirProximoAtendimentoMutation.mutate({ conversaId: conversaSelecionadaId })}
-                              >
-                                {sugerirProximoAtendimentoMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-2" />}
-                                Atualizar de acordo com a conversa (IA)
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onSelect={(e) => {
-                                  e.preventDefault();
-                                  setModoFormProximoAtendimento("editar");
-                                  const p = conversaSelecionada.resumoRelacionamento?.proximoAtendimento;
-                                  if (p) setFormProximoAtendimento({ data: p.dataAtendimento, horario: p.horario ?? "", servico: p.servicoNome ?? "" });
-                                  setTimeout(() => setEditandoProximoAtendimento(true), 0);
-                                }}
-                              >
-                                <Pencil className="h-3.5 w-3.5 mr-2" /> Editar agendamento
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onSelect={(e) => {
-                                  e.preventDefault();
-                                  const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
-                                  setModoFormProximoAtendimento("incluir");
-                                  setFormProximoAtendimento({ data: hojeBrt, horario: "", servico: "" });
-                                  setTimeout(() => setEditandoProximoAtendimento(true), 0);
-                                }}
-                              >
-                                <Plus className="h-3.5 w-3.5 mr-2" /> Incluir novo atendimento
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                variant="destructive"
-                                disabled={cancelarProximoAtendimentoMutation.isPending}
-                                onSelect={() => {
-                                  const id = conversaSelecionada.resumoRelacionamento?.proximoAtendimento?.id;
-                                  if (id && confirm("Cancelar este agendamento?")) cancelarProximoAtendimentoMutation.mutate({ id });
-                                }}
-                              >
-                                <X className="h-3.5 w-3.5 mr-2" /> Cancelar agendamento
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </PopoverAnchor>
-                        <PopoverContent className="w-64 space-y-2" align="end">
-                          <div>
-                            <Label className="text-xs">Data</Label>
-                            <Input type="date" className="mt-1 h-8 text-xs" value={formProximoAtendimento.data}
-                              onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, data: e.target.value }))} />
-                          </div>
-                          <div>
-                            <Label className="text-xs">Horário</Label>
-                            <Input type="time" className="mt-1 h-8 text-xs" value={formProximoAtendimento.horario}
-                              onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, horario: e.target.value }))} />
-                          </div>
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-3">
-                              <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
-                                <Checkbox checked={filtroServicoSegSab} onCheckedChange={(v) => setFiltroServicoSegSab(!!v)} className="h-3.5 w-3.5" />
-                                Seg-Sáb
-                              </label>
-                              <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
-                                <Checkbox checked={filtroServicoDomFer} onCheckedChange={(v) => setFiltroServicoDomFer(!!v)} className="h-3.5 w-3.5" />
-                                Dom-Fer
-                              </label>
-                            </div>
-                            <CampoBuscaLista
-                              label="Serviço"
-                              value={formProximoAtendimento.servico}
-                              onChange={(v) => setFormProximoAtendimento((f) => ({ ...f, servico: v }))}
-                              valores={nomesServicosProximoAtendimento}
-                              placeholder="Selecione ou digite"
-                              id="proximo-atendimento-servico-editar"
-                            />
-                          </div>
-                          <Button size="sm" className="w-full h-7 text-xs" disabled={editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending}
-                            onClick={() => {
+                      {/* Popover-a-partir-de-menu era pouco confiável (achado real: "editar/incluir
+                          abre e fecha rápido" mesmo com preventDefault+setTimeout — Popover não é
+                          modal, e a camada de fechar-por-clique-fora dele competia com o
+                          DropdownMenu se fechando). Dialog é modal e lida com isso de forma
+                          confiável — é o padrão que o próprio Radix recomenda pra abrir um overlay
+                          a partir de um item de menu. */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="icon" variant="ghost" className="h-5 w-5 text-emerald-700 hover:text-emerald-800" title="Opções do agendamento">
+                            <Menu className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                          <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setTimeout(() => setModalChamadoTerapeuta(true), 0); }}>
+                            <BellRing className="h-3.5 w-3.5 mr-2" /> Chamar terapeuta
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={sugerirProximoAtendimentoMutation.isPending}
+                            onSelect={() => conversaSelecionadaId && sugerirProximoAtendimentoMutation.mutate({ conversaId: conversaSelecionadaId })}
+                          >
+                            {sugerirProximoAtendimentoMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-2" />}
+                            Atualizar de acordo com a conversa (IA)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setModoFormProximoAtendimento("editar");
+                              const p = conversaSelecionada.resumoRelacionamento?.proximoAtendimento;
+                              if (p) setFormProximoAtendimento({ data: p.dataAtendimento, horario: p.horario ?? "", servico: p.servicoNome ?? "" });
+                              setTimeout(() => setEditandoProximoAtendimento(true), 0);
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5 mr-2" /> Editar agendamento
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                              setModoFormProximoAtendimento("incluir");
+                              setFormProximoAtendimento({ data: hojeBrt, horario: "", servico: "" });
+                              setTimeout(() => setEditandoProximoAtendimento(true), 0);
+                            }}
+                          >
+                            <Plus className="h-3.5 w-3.5 mr-2" /> Incluir novo atendimento
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            variant="destructive"
+                            disabled={cancelarProximoAtendimentoMutation.isPending}
+                            onSelect={() => {
                               const id = conversaSelecionada.resumoRelacionamento?.proximoAtendimento?.id;
-                              if (modoFormProximoAtendimento === "editar") {
-                                if (!id) return;
-                                editarProximoAtendimentoMutation.mutate({
-                                  id,
+                              if (id && confirm("Cancelar este agendamento?")) cancelarProximoAtendimentoMutation.mutate({ id });
+                            }}
+                          >
+                            <X className="h-3.5 w-3.5 mr-2" /> Cancelar agendamento
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <Dialog open={editandoProximoAtendimento} onOpenChange={setEditandoProximoAtendimento}>
+                        <DialogContent className="max-w-xs">
+                          <DialogHeader>
+                            <DialogTitle className="text-sm">
+                              {modoFormProximoAtendimento === "editar" ? "Editar agendamento" : "Incluir novo atendimento"}
+                            </DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-2">
+                            <div>
+                              <Label className="text-xs">Data</Label>
+                              <Input type="date" className="mt-1 h-8 text-xs" value={formProximoAtendimento.data}
+                                onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, data: e.target.value }))} />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Horário</Label>
+                              <Input type="time" className="mt-1 h-8 text-xs" value={formProximoAtendimento.horario}
+                                onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, horario: e.target.value }))} />
+                            </div>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-3">
+                                <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                                  <Checkbox checked={filtroServicoSegSab} onCheckedChange={(v) => setFiltroServicoSegSab(!!v)} className="h-3.5 w-3.5" />
+                                  Seg-Sáb
+                                </label>
+                                <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                                  <Checkbox checked={filtroServicoDomFer} onCheckedChange={(v) => setFiltroServicoDomFer(!!v)} className="h-3.5 w-3.5" />
+                                  Dom-Fer
+                                </label>
+                              </div>
+                              <CampoBuscaLista
+                                label="Serviço"
+                                value={formProximoAtendimento.servico}
+                                onChange={(v) => setFormProximoAtendimento((f) => ({ ...f, servico: v }))}
+                                valores={nomesServicosProximoAtendimento}
+                                placeholder="Selecione ou digite"
+                                id="proximo-atendimento-servico-editar"
+                              />
+                            </div>
+                            <Button size="sm" className="w-full h-7 text-xs" disabled={editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending}
+                              onClick={() => {
+                                const id = conversaSelecionada.resumoRelacionamento?.proximoAtendimento?.id;
+                                if (modoFormProximoAtendimento === "editar") {
+                                  if (!id) return;
+                                  editarProximoAtendimentoMutation.mutate({
+                                    id,
+                                    dataAtendimento: formProximoAtendimento.data,
+                                    horario: formProximoAtendimento.horario || null,
+                                    servicoNome: formProximoAtendimento.servico || null,
+                                  });
+                                  return;
+                                }
+                                if (!conversaSelecionadaId || !formProximoAtendimento.data) return;
+                                criarProximoAtendimentoMutation.mutate({
+                                  conversaId: conversaSelecionadaId,
                                   dataAtendimento: formProximoAtendimento.data,
                                   horario: formProximoAtendimento.horario || null,
                                   servicoNome: formProximoAtendimento.servico || null,
                                 });
-                                return;
-                              }
-                              if (!conversaSelecionadaId || !formProximoAtendimento.data) return;
-                              criarProximoAtendimentoMutation.mutate({
-                                conversaId: conversaSelecionadaId,
-                                dataAtendimento: formProximoAtendimento.data,
-                                horario: formProximoAtendimento.horario || null,
-                                servicoNome: formProximoAtendimento.servico || null,
-                              });
-                            }}>
-                            {editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}{modoFormProximoAtendimento === "editar" ? "Salvar" : "Incluir"}
-                          </Button>
-                        </PopoverContent>
-                      </Popover>
+                              }}>
+                              {editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}{modoFormProximoAtendimento === "editar" ? "Salvar" : "Incluir"}
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
                     </div>
                     <p className="text-xs font-medium">
                       {formatarDataRelacao(conversaSelecionada.resumoRelacionamento.proximoAtendimento.dataAtendimento)}
