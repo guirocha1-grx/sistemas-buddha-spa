@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
-import { Clock3, ListTodo, Loader2, Trash2 } from "lucide-react";
+import { Clock3, Crown, ListTodo, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 function formatarDataSessao(iso: string): string {
@@ -22,12 +22,11 @@ function formatarDataSessao(iso: string): string {
   return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
 
-function faz(createdAt: string | Date): string {
-  const minutos = Math.max(0, Math.round((Date.now() - new Date(createdAt).getTime()) / 60000));
-  if (minutos < 1) return "agora";
-  if (minutos < 60) return `há ${minutos}min`;
-  const horas = Math.round(minutos / 60);
-  return `há ${horas}h`;
+/** Data/hora do pedido — é o que decide a ordem dentro de cada grupo (plano ou não), por isso precisa aparecer explícito, não só "há Xh". */
+function pedidoEm(createdAt: string | Date): string {
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+  }).format(new Date(createdAt));
 }
 
 export default function ListaEspera() {
@@ -159,7 +158,9 @@ export default function ListaEspera() {
                         className={`flex items-center gap-3 px-5 py-3 ${pedido.temPlanoAtivo ? "bg-amber-50/60 dark:bg-amber-950/10" : ""}`}
                       >
                         {pedido.temPlanoAtivo ? (
-                          <Badge variant="outline" className="shrink-0 border-amber-300 text-amber-700">plano</Badge>
+                          <Badge variant="outline" className="shrink-0 gap-1 border-amber-300 text-amber-700" title="Plano ativo — prioridade na fila">
+                            <Crown className="h-3 w-3 fill-amber-500 text-amber-600" /> plano
+                          </Badge>
                         ) : (
                           <span className="w-6 shrink-0 text-center text-xs text-muted-foreground">{indice + 1}</span>
                         )}
@@ -168,7 +169,7 @@ export default function ListaEspera() {
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">
                             {pedido.terapiaDesejada || "Terapia não informada"}
                             {pedido.horarioDesejado ? ` · ${pedido.horarioDesejado}` : ""}
-                            {" · "}{faz(pedido.createdAt)}
+                            {" · pedido em "}{pedidoEm(pedido.createdAt)}
                           </p>
                           {pedido.observacao && (
                             <p className="mt-0.5 truncate text-xs italic text-muted-foreground/80">{pedido.observacao}</p>
