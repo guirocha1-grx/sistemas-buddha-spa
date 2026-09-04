@@ -2101,7 +2101,7 @@ export default function Mensagens() {
                       </div>
                       <div>
                         <Label className="text-xs">Horário</Label>
-                        <Input type="time" className="mt-1 h-8 text-xs" value={formProximoAtendimento.horario}
+                        <Input type="time" step={300} className="mt-1 h-8 text-xs" value={formProximoAtendimento.horario}
                           onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, horario: e.target.value }))} />
                       </div>
                       <div className="space-y-1">
@@ -2170,7 +2170,7 @@ export default function Mensagens() {
                         </div>
                         <div>
                           <Label className="text-xs">Horário desejado (opcional)</Label>
-                          <Input type="time" className="mt-1 h-8 text-xs"
+                          <Input type="time" step={300} className="mt-1 h-8 text-xs"
                             value={formListaEspera.horarioDesejado}
                             onChange={(e) => setFormListaEspera({ ...formListaEspera, horarioDesejado: e.target.value })} />
                           <p className="mt-0.5 text-[10px] text-muted-foreground">Sem horário exato ("de tarde", "qualquer horário")? Deixa em branco e usa a Observação.</p>
