@@ -15,6 +15,28 @@ describe("dividirEmComandos", () => {
   it("ignora comandos vazios entre pontos e vírgulas", () => {
     expect(dividirEmComandos("SELECT 1;;SELECT 2;")).toEqual(["SELECT 1", "SELECT 2"]);
   });
+
+  it("não corta o comando num ponto e vírgula dentro de uma string entre aspas", () => {
+    const comandos = dividirEmComandos(
+      "INSERT INTO a (texto) VALUES ('frase um; frase dois');\nINSERT INTO b (texto) VALUES (\"outra; frase\");",
+    );
+    expect(comandos).toEqual([
+      "INSERT INTO a (texto) VALUES ('frase um; frase dois')",
+      'INSERT INTO b (texto) VALUES ("outra; frase")',
+    ]);
+  });
+
+  it("entende aspas duplicadas como escape dentro da string", () => {
+    expect(dividirEmComandos("INSERT INTO a (t) VALUES ('ele disse ''oi; tudo bem''');")).toEqual([
+      "INSERT INTO a (t) VALUES ('ele disse ''oi; tudo bem''')",
+    ]);
+  });
+
+  it("entende barra invertida como escape dentro da string", () => {
+    expect(dividirEmComandos("INSERT INTO a (t) VALUES ('linha com \\'; aspa escapada');")).toEqual([
+      "INSERT INTO a (t) VALUES ('linha com \\'; aspa escapada')",
+    ]);
+  });
 });
 
 describe("validarConsultaSomenteLeitura", () => {

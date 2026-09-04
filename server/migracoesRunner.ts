@@ -46,13 +46,57 @@ function caminhoSeguro(nomeArquivo: string, arquivosValidos: string[]): string {
   return path.join(DIRETORIO_DRIZZLE, nomeArquivo);
 }
 
-/** Remove linhas de comentário "--" e separa em comandos individuais (o driver não roda múltiplos comandos numa só chamada). */
+/**
+ * Remove linhas de comentário "--" e separa em comandos individuais (o driver não roda
+ * múltiplos comandos numa só chamada). Respeita aspas simples, duplas e crase: um ";" dentro
+ * de uma string (ex.: texto de prompt em português, que usa ";" com frequência) não corta o
+ * comando ao meio — só ";" fora de aspas separa. Também entende escape por barra invertida
+ * ('\'') e por aspas duplicadas ('' dentro de string), já que ambos aparecem em SQL do MySQL.
+ */
 export function dividirEmComandos(conteudoSql: string): string[] {
   const semComentarios = conteudoSql
     .split("\n")
     .map((linha) => (linha.trim().startsWith("--") ? "" : linha))
     .join("\n");
-  return semComentarios.split(";").map((trecho) => trecho.trim()).filter(Boolean);
+
+  const comandos: string[] = [];
+  let atual = "";
+  let aspas: "'" | '"' | "`" | null = null;
+  for (let i = 0; i < semComentarios.length; i++) {
+    const char = semComentarios[i];
+    if (aspas) {
+      atual += char;
+      if (char === "\\" && aspas !== "`") {
+        i++;
+        if (i < semComentarios.length) atual += semComentarios[i];
+        continue;
+      }
+      if (char === aspas) {
+        if (semComentarios[i + 1] === aspas) {
+          atual += aspas;
+          i++;
+        } else {
+          aspas = null;
+        }
+      }
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      aspas = char;
+      atual += char;
+      continue;
+    }
+    if (char === ";") {
+      const trecho = atual.trim();
+      if (trecho) comandos.push(trecho);
+      atual = "";
+      continue;
+    }
+    atual += char;
+  }
+  const ultimo = atual.trim();
+  if (ultimo) comandos.push(ultimo);
+  return comandos;
 }
 
 /**
