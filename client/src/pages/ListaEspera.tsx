@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import UnidadeSelector from "@/components/UnidadeSelector";
+import { CampoBuscaLista } from "@/components/CampoBuscaLista";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,7 +36,26 @@ export default function ListaEspera() {
   const utils = trpc.useUtils();
 
   const [dataSelecionada, setDataSelecionada] = useState<string | null>(null);
-  const [conversao, setConversao] = useState<{ id: number; conversaId: number | null; clienteNome: string; data: string; horario: string; servico: string } | null>(null);
+  const [conversao, setConversao] = useState<{ id: number; conversaId: number | null; clienteNome: string; data: string; horario: string; servico: string; observacao: string | null } | null>(null);
+
+  // Mesmo padrão do Inbox (Mensagens.tsx) pro campo de serviço — quanto mais
+  // parecido com o form de agendamento de verdade, mais fácil vira um
+  // agendamento depois. Só busca quando o diálogo de conversão realmente abre.
+  const tabelaPrecosQuery = trpc.tabelaPrecos.list.useQuery(
+    { unidadeId: unidadeId ?? 0 },
+    { enabled: !!unidadeId && !!conversao },
+  );
+  const [filtroServicoSegSab, setFiltroServicoSegSab] = useState(true);
+  const [filtroServicoDomFer, setFiltroServicoDomFer] = useState(false);
+  const nomesServicos = useMemo(() => {
+    const nomes = new Set<string>();
+    for (const item of tabelaPrecosQuery.data ?? []) {
+      const ehDom = /\bdom\.?$/i.test(item.servico.trim());
+      if (filtroServicoSegSab && !ehDom) nomes.add(item.servico);
+      if (filtroServicoDomFer) nomes.add(ehDom ? item.servico : `${item.servico} Dom`);
+    }
+    return Array.from(nomes);
+  }, [tabelaPrecosQuery.data, filtroServicoSegSab, filtroServicoDomFer]);
 
   const datasQuery = trpc.listaEspera.datasAbertas.useQuery({ unidadeId: unidadeId ?? 0 }, { enabled: !!unidadeId });
   const datas = datasQuery.data ?? [];
@@ -149,6 +170,9 @@ export default function ListaEspera() {
                             {pedido.horarioDesejado ? ` · ${pedido.horarioDesejado}` : ""}
                             {" · "}{faz(pedido.createdAt)}
                           </p>
+                          {pedido.observacao && (
+                            <p className="mt-0.5 truncate text-xs italic text-muted-foreground/80">{pedido.observacao}</p>
+                          )}
                         </div>
                         <Button
                           size="sm"
@@ -161,6 +185,7 @@ export default function ListaEspera() {
                             data: dataSelecionada,
                             horario: "",
                             servico: pedido.terapiaDesejada ?? "",
+                            observacao: pedido.observacao,
                           })}
                         >
                           <Clock3 className="mr-1.5 h-3.5 w-3.5" /> Transformar em agendamento
@@ -209,10 +234,32 @@ export default function ListaEspera() {
                 <Label className="text-xs">Horário confirmado</Label>
                 <Input type="time" className="mt-1 h-8 text-xs" value={conversao.horario} onChange={(e) => setConversao({ ...conversao, horario: e.target.value })} />
               </div>
-              <div>
-                <Label className="text-xs">Terapia</Label>
-                <Input className="mt-1 h-8 text-xs" value={conversao.servico} onChange={(e) => setConversao({ ...conversao, servico: e.target.value })} />
+              <div className="space-y-1">
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                    <Checkbox checked={filtroServicoSegSab} onCheckedChange={(v) => setFiltroServicoSegSab(!!v)} className="h-3.5 w-3.5" />
+                    Seg-Sáb
+                  </label>
+                  <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                    <Checkbox checked={filtroServicoDomFer} onCheckedChange={(v) => setFiltroServicoDomFer(!!v)} className="h-3.5 w-3.5" />
+                    Dom-Fer
+                  </label>
+                </div>
+                <CampoBuscaLista
+                  label="Terapia"
+                  value={conversao.servico}
+                  onChange={(v) => setConversao({ ...conversao, servico: v })}
+                  valores={nomesServicos}
+                  placeholder="Selecione ou digite"
+                  id="lista-espera-conversao-servico"
+                />
               </div>
+              {conversao.observacao && (
+                <div className="rounded-md border border-dashed p-2">
+                  <p className="text-[10px] font-medium text-muted-foreground">Observação da fila</p>
+                  <p className="mt-0.5 text-xs">{conversao.observacao}</p>
+                </div>
+              )}
               <Button
                 size="sm"
                 className="w-full h-7 text-xs"

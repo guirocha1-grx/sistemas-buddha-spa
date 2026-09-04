@@ -630,6 +630,7 @@ export const listaEspera = mysqlTable("lista_espera", {
   data: varchar("data", { length: 10 }).notNull(), // AAAA-MM-DD — o dia que o cliente quer
   horarioDesejado: varchar("horarioDesejado", { length: 60 }), // livre: "manhã", "14h-16h", "qualquer horário"
   terapiaDesejada: varchar("terapiaDesejada", { length: 250 }),
+  observacao: text("observacao"), // livre — "a partir desse horário", "pode ser com a Larah", etc.
   status: mysqlEnum("status", ["aguardando", "convertido", "cancelado"]).default("aguardando").notNull(),
   criadoPorUserId: int("criadoPorUserId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

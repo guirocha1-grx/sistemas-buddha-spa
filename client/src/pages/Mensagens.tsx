@@ -508,7 +508,7 @@ export default function Mensagens() {
   const [editandoProximoAtendimento, setEditandoProximoAtendimento] = useState(false);
   const [modoFormProximoAtendimento, setModoFormProximoAtendimento] = useState<"editar" | "incluir">("editar");
   const [formProximoAtendimento, setFormProximoAtendimento] = useState({ data: "", horario: "", servico: "" });
-  const [formListaEspera, setFormListaEspera] = useState<{ data: string; horarioDesejado: string; terapiaDesejada: string } | null>(null);
+  const [formListaEspera, setFormListaEspera] = useState<{ data: string; horarioDesejado: string; terapiaDesejada: string; observacao: string } | null>(null);
   const criarListaEsperaMutation = trpc.listaEspera.criar.useMutation({
     onSuccess: () => {
       toast.success("Adicionado à lista de espera.");
@@ -1953,68 +1953,35 @@ export default function Mensagens() {
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/20 p-2.5">
                     <div className="flex items-center justify-between gap-1.5">
                       <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-500">Próximo atendimento: Não há agendamentos</p>
-                      <Popover open={editandoProximoAtendimento} onOpenChange={setEditandoProximoAtendimento}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-5 w-5 text-muted-foreground hover:text-foreground"
-                            title="Incluir próximo atendimento"
-                            aria-label="Incluir próximo atendimento"
-                            onClick={() => {
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="icon" variant="ghost" className="h-5 w-5 text-muted-foreground hover:text-foreground" title="Opções">
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
                               const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
                               setModoFormProximoAtendimento("incluir");
                               setFormProximoAtendimento({ data: hojeBrt, horario: "", servico: "" });
+                              setTimeout(() => setEditandoProximoAtendimento(true), 0);
                             }}
                           >
-                            <Plus className="h-3 w-3" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-64 space-y-2" align="end">
-                          <div>
-                            <Label className="text-xs">Data</Label>
-                            <Input type="date" className="mt-1 h-8 text-xs" value={formProximoAtendimento.data}
-                              onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, data: e.target.value }))} />
-                          </div>
-                          <div>
-                            <Label className="text-xs">Horário</Label>
-                            <Input type="time" className="mt-1 h-8 text-xs" value={formProximoAtendimento.horario}
-                              onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, horario: e.target.value }))} />
-                          </div>
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-3">
-                              <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
-                                <Checkbox checked={filtroServicoSegSab} onCheckedChange={(v) => setFiltroServicoSegSab(!!v)} className="h-3.5 w-3.5" />
-                                Seg-Sáb
-                              </label>
-                              <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
-                                <Checkbox checked={filtroServicoDomFer} onCheckedChange={(v) => setFiltroServicoDomFer(!!v)} className="h-3.5 w-3.5" />
-                                Dom-Fer
-                              </label>
-                            </div>
-                            <CampoBuscaLista
-                              label="Serviço"
-                              value={formProximoAtendimento.servico}
-                              onChange={(v) => setFormProximoAtendimento((f) => ({ ...f, servico: v }))}
-                              valores={nomesServicosProximoAtendimento}
-                              placeholder="Selecione ou digite"
-                              id="proximo-atendimento-servico-incluir"
-                            />
-                          </div>
-                          <Button size="sm" className="w-full h-7 text-xs" disabled={criarProximoAtendimentoMutation.isPending}
-                            onClick={() => {
-                              if (!conversaSelecionadaId || !formProximoAtendimento.data) return;
-                              criarProximoAtendimentoMutation.mutate({
-                                conversaId: conversaSelecionadaId,
-                                dataAtendimento: formProximoAtendimento.data,
-                                horario: formProximoAtendimento.horario || null,
-                                servicoNome: formProximoAtendimento.servico || null,
-                              });
-                            }}>
-                            {criarProximoAtendimentoMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Incluir
-                          </Button>
-                        </PopoverContent>
-                      </Popover>
+                            <Plus className="h-3.5 w-3.5 mr-2" /> Incluir atendimento
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                              setTimeout(() => setFormListaEspera({ data: hojeBrt, horarioDesejado: "", terapiaDesejada: "", observacao: "" }), 0);
+                            }}
+                          >
+                            <ListTodo className="h-3.5 w-3.5 mr-2" /> Adicionar à lista de espera
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 )}
@@ -2077,6 +2044,15 @@ export default function Mensagens() {
                           >
                             <Plus className="h-3.5 w-3.5 mr-2" /> Incluir novo atendimento
                           </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                              setTimeout(() => setFormListaEspera({ data: hojeBrt, horarioDesejado: "", terapiaDesejada: "", observacao: "" }), 0);
+                            }}
+                          >
+                            <ListTodo className="h-3.5 w-3.5 mr-2" /> Adicionar à lista de espera
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             variant="destructive"
@@ -2090,70 +2066,6 @@ export default function Mensagens() {
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      <Dialog open={editandoProximoAtendimento} onOpenChange={setEditandoProximoAtendimento}>
-                        <DialogContent className="max-w-xs">
-                          <DialogHeader>
-                            <DialogTitle className="text-sm">
-                              {modoFormProximoAtendimento === "editar" ? "Editar agendamento" : "Incluir novo atendimento"}
-                            </DialogTitle>
-                          </DialogHeader>
-                          <div className="space-y-2">
-                            <div>
-                              <Label className="text-xs">Data</Label>
-                              <Input type="date" className="mt-1 h-8 text-xs" value={formProximoAtendimento.data}
-                                onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, data: e.target.value }))} />
-                            </div>
-                            <div>
-                              <Label className="text-xs">Horário</Label>
-                              <Input type="time" className="mt-1 h-8 text-xs" value={formProximoAtendimento.horario}
-                                onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, horario: e.target.value }))} />
-                            </div>
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-3">
-                                <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
-                                  <Checkbox checked={filtroServicoSegSab} onCheckedChange={(v) => setFiltroServicoSegSab(!!v)} className="h-3.5 w-3.5" />
-                                  Seg-Sáb
-                                </label>
-                                <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
-                                  <Checkbox checked={filtroServicoDomFer} onCheckedChange={(v) => setFiltroServicoDomFer(!!v)} className="h-3.5 w-3.5" />
-                                  Dom-Fer
-                                </label>
-                              </div>
-                              <CampoBuscaLista
-                                label="Serviço"
-                                value={formProximoAtendimento.servico}
-                                onChange={(v) => setFormProximoAtendimento((f) => ({ ...f, servico: v }))}
-                                valores={nomesServicosProximoAtendimento}
-                                placeholder="Selecione ou digite"
-                                id="proximo-atendimento-servico-editar"
-                              />
-                            </div>
-                            <Button size="sm" className="w-full h-7 text-xs" disabled={editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending}
-                              onClick={() => {
-                                const id = conversaSelecionada.resumoRelacionamento?.proximoAtendimento?.id;
-                                if (modoFormProximoAtendimento === "editar") {
-                                  if (!id) return;
-                                  editarProximoAtendimentoMutation.mutate({
-                                    id,
-                                    dataAtendimento: formProximoAtendimento.data,
-                                    horario: formProximoAtendimento.horario || null,
-                                    servicoNome: formProximoAtendimento.servico || null,
-                                  });
-                                  return;
-                                }
-                                if (!conversaSelecionadaId || !formProximoAtendimento.data) return;
-                                criarProximoAtendimentoMutation.mutate({
-                                  conversaId: conversaSelecionadaId,
-                                  dataAtendimento: formProximoAtendimento.data,
-                                  horario: formProximoAtendimento.horario || null,
-                                  servicoNome: formProximoAtendimento.servico || null,
-                                });
-                              }}>
-                              {editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}{modoFormProximoAtendimento === "editar" ? "Salvar" : "Incluir"}
-                            </Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
                     </div>
                     <p className="text-xs font-medium">
                       {formatarDataRelacao(conversaSelecionada.resumoRelacionamento.proximoAtendimento.dataAtendimento)}
@@ -2168,20 +2080,80 @@ export default function Mensagens() {
                   </div>
                 )}
 
-                {conversaSelecionada?.clienteId && conversaSelecionada?.unidadeId && conversaSelecionada.isGrupo !== "true" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full h-8 text-xs"
-                    onClick={() => {
-                      const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
-                      setFormListaEspera({ data: hojeBrt, horarioDesejado: "", terapiaDesejada: "" });
-                    }}
-                  >
-                    <ListTodo className="h-3.5 w-3.5 mr-1.5" /> Adicionar à lista de espera
-                  </Button>
-                )}
+                {/* Dialog compartilhado de "editar/incluir próximo atendimento" — vale tanto
+                    pro menu do card vazio quanto pro card já preenchido, por isso mora fora
+                    dos dois blocos condicionais acima (senão some do DOM quando o outro
+                    estado está ativo e o menu não teria o que abrir). */}
+                <Dialog open={editandoProximoAtendimento} onOpenChange={setEditandoProximoAtendimento}>
+                  <DialogContent className="max-w-xs">
+                    <DialogHeader>
+                      <DialogTitle className="text-sm">
+                        {modoFormProximoAtendimento === "editar" ? "Editar agendamento" : "Incluir novo atendimento"}
+                      </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-2">
+                      <div>
+                        <Label className="text-xs">Data</Label>
+                        <Input type="date" className="mt-1 h-8 text-xs" value={formProximoAtendimento.data}
+                          onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, data: e.target.value }))} />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Horário</Label>
+                        <Input type="time" className="mt-1 h-8 text-xs" value={formProximoAtendimento.horario}
+                          onChange={(e) => setFormProximoAtendimento((f) => ({ ...f, horario: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-3">
+                          <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                            <Checkbox checked={filtroServicoSegSab} onCheckedChange={(v) => setFiltroServicoSegSab(!!v)} className="h-3.5 w-3.5" />
+                            Seg-Sáb
+                          </label>
+                          <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                            <Checkbox checked={filtroServicoDomFer} onCheckedChange={(v) => setFiltroServicoDomFer(!!v)} className="h-3.5 w-3.5" />
+                            Dom-Fer
+                          </label>
+                        </div>
+                        <CampoBuscaLista
+                          label="Serviço"
+                          value={formProximoAtendimento.servico}
+                          onChange={(v) => setFormProximoAtendimento((f) => ({ ...f, servico: v }))}
+                          valores={nomesServicosProximoAtendimento}
+                          placeholder="Selecione ou digite"
+                          id="proximo-atendimento-servico"
+                        />
+                      </div>
+                      <Button size="sm" className="w-full h-7 text-xs" disabled={editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending}
+                        onClick={() => {
+                          const id = conversaSelecionada?.resumoRelacionamento?.proximoAtendimento?.id;
+                          if (modoFormProximoAtendimento === "editar") {
+                            if (!id) return;
+                            editarProximoAtendimentoMutation.mutate({
+                              id,
+                              dataAtendimento: formProximoAtendimento.data,
+                              horario: formProximoAtendimento.horario || null,
+                              servicoNome: formProximoAtendimento.servico || null,
+                            });
+                            return;
+                          }
+                          if (!conversaSelecionadaId || !formProximoAtendimento.data) return;
+                          criarProximoAtendimentoMutation.mutate({
+                            conversaId: conversaSelecionadaId,
+                            dataAtendimento: formProximoAtendimento.data,
+                            horario: formProximoAtendimento.horario || null,
+                            servicoNome: formProximoAtendimento.servico || null,
+                          });
+                        }}>
+                        {editarProximoAtendimentoMutation.isPending || criarProximoAtendimentoMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}{modoFormProximoAtendimento === "editar" ? "Salvar" : "Incluir"}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
 
+                {/* Quanto mais parecido com o form de agendamento de verdade, mais fácil
+                    vira um agendamento depois — mesmo campo de serviço (CampoBuscaLista +
+                    filtro Seg-Sáb/Dom-Fer) usado acima. Observação é livre, pra recepção
+                    anotar o que precisar pra organizar a fila (ex.: "a partir das 15h",
+                    "pode ser com a Larah"). */}
                 <Dialog open={!!formListaEspera} onOpenChange={(aberto) => !aberto && setFormListaEspera(null)}>
                   <DialogContent className="max-w-xs">
                     <DialogHeader>
@@ -2200,10 +2172,31 @@ export default function Mensagens() {
                             value={formListaEspera.horarioDesejado}
                             onChange={(e) => setFormListaEspera({ ...formListaEspera, horarioDesejado: e.target.value })} />
                         </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-3">
+                            <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                              <Checkbox checked={filtroServicoSegSab} onCheckedChange={(v) => setFiltroServicoSegSab(!!v)} className="h-3.5 w-3.5" />
+                              Seg-Sáb
+                            </label>
+                            <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                              <Checkbox checked={filtroServicoDomFer} onCheckedChange={(v) => setFiltroServicoDomFer(!!v)} className="h-3.5 w-3.5" />
+                              Dom-Fer
+                            </label>
+                          </div>
+                          <CampoBuscaLista
+                            label="Terapia"
+                            value={formListaEspera.terapiaDesejada}
+                            onChange={(v) => setFormListaEspera({ ...formListaEspera, terapiaDesejada: v })}
+                            valores={nomesServicosProximoAtendimento}
+                            placeholder="Selecione ou digite"
+                            id="lista-espera-servico"
+                          />
+                        </div>
                         <div>
-                          <Label className="text-xs">Terapia</Label>
-                          <Input className="mt-1 h-8 text-xs" value={formListaEspera.terapiaDesejada}
-                            onChange={(e) => setFormListaEspera({ ...formListaEspera, terapiaDesejada: e.target.value })} />
+                          <Label className="text-xs">Observação</Label>
+                          <Textarea rows={2} className="mt-1 text-xs" placeholder="Ex: a partir das 15h, pode ser com a Larah, aceita sábado..."
+                            value={formListaEspera.observacao}
+                            onChange={(e) => setFormListaEspera({ ...formListaEspera, observacao: e.target.value })} />
                         </div>
                         <Button size="sm" className="w-full h-7 text-xs" disabled={!formListaEspera.data || criarListaEsperaMutation.isPending}
                           onClick={() => {
@@ -2213,6 +2206,7 @@ export default function Mensagens() {
                               data: formListaEspera.data,
                               horarioDesejado: formListaEspera.horarioDesejado.trim() || undefined,
                               terapiaDesejada: formListaEspera.terapiaDesejada.trim() || undefined,
+                              observacao: formListaEspera.observacao.trim() || undefined,
                             });
                           }}>
                           {criarListaEsperaMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Adicionar

@@ -5871,6 +5871,7 @@ export async function criarEntradaListaEspera(dados: {
   data: string;
   horarioDesejado?: string | null;
   terapiaDesejada?: string | null;
+  observacao?: string | null;
   criadoPorUserId?: number | null;
 }): Promise<number> {
   const db = await getDb();
@@ -5882,6 +5883,7 @@ export async function criarEntradaListaEspera(dados: {
     data: dados.data,
     horarioDesejado: dados.horarioDesejado?.trim() || null,
     terapiaDesejada: dados.terapiaDesejada?.trim() || null,
+    observacao: dados.observacao?.trim() || null,
     criadoPorUserId: dados.criadoPorUserId ?? null,
   });
   return Number(resultado[0].insertId);
@@ -5912,6 +5914,7 @@ export async function listListaEsperaPorData(unidadeId: number, data: string) {
     conversaId: listaEspera.conversaId,
     horarioDesejado: listaEspera.horarioDesejado,
     terapiaDesejada: listaEspera.terapiaDesejada,
+    observacao: listaEspera.observacao,
     createdAt: listaEspera.createdAt,
     clienteNome: clientes.nome,
     clienteCelular: clientes.celular,

@@ -2360,6 +2360,7 @@ Diretrizes:
       data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       horarioDesejado: z.string().max(60).optional(),
       terapiaDesejada: z.string().max(250).optional(),
+      observacao: z.string().max(1000).optional(),
     })).mutation(async ({ input, ctx }) => {
       const conversa = await db.getInboxConversaById(input.conversaId);
       if (!conversa?.unidadeId || !conversa.clienteId || conversa.isGrupo === "true") {
@@ -2373,6 +2374,7 @@ Diretrizes:
         data: input.data,
         horarioDesejado: input.horarioDesejado,
         terapiaDesejada: input.terapiaDesejada,
+        observacao: input.observacao,
         criadoPorUserId: ctx.user.id,
       });
       return { id };
