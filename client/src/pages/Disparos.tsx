@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Clock, Loader2, Megaphone, Plus, Search, Send } from "lucide-react";
 import { toast } from "sonner";
+import { SegmentoFiltros, filtroSegmentoVazio, type FiltroSegmento } from "@/components/SegmentoFiltros";
 
 const STATUS_LABEL: Record<string, string> = {
   rascunho: "Rascunho",
@@ -49,6 +50,8 @@ export default function Disparos() {
   const [variaveisConfig, setVariaveisConfig] = useState<Array<{ fonte: "nome_cliente" | "fixo"; valor: string }>>([]);
   const [busca, setBusca] = useState("");
   const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
+  const [modoSelecao, setModoSelecao] = useState<"segmento" | "manual">("segmento");
+  const [filtrosSegmento, setFiltrosSegmento] = useState<FiltroSegmento[]>([filtroSegmentoVazio()]);
 
   const templatesAprovados = (templatesQuery.data ?? []).filter((t) => t.status === "aprovado");
   const templateSelecionado = templatesAprovados.find((t) => String(t.id) === templateId);
@@ -75,6 +78,7 @@ export default function Disparos() {
 
   const resetForm = () => {
     setNome(""); setTemplateId(""); setFluxoRespostaId(""); setVariaveisConfig([]); setBusca(""); setSelecionados(new Set());
+    setModoSelecao("segmento"); setFiltrosSegmento([filtroSegmentoVazio()]);
   };
 
   const createMut = trpc.disparos.create.useMutation({
@@ -116,9 +120,25 @@ export default function Disparos() {
     });
   };
 
+  const filtrosPreenchidos = filtrosSegmento.filter((f) => f.valor.trim() !== "");
+
   const salvar = () => {
     if (!nome.trim() || !templateId) {
       toast.error("Nome e template são obrigatórios");
+      return;
+    }
+    if (modoSelecao === "segmento") {
+      if (filtrosPreenchidos.length === 0) {
+        toast.error("Defina pelo menos um filtro de segmentação");
+        return;
+      }
+      createMut.mutate({
+        nome: nome.trim(),
+        templateId: Number(templateId),
+        fluxoRespostaId: fluxoRespostaId ? Number(fluxoRespostaId) : undefined,
+        variaveisConfig: variaveisConfig.length > 0 ? variaveisConfig : undefined,
+        filtros: filtrosPreenchidos,
+      });
       return;
     }
     if (selecionados.size === 0) {
@@ -283,43 +303,67 @@ export default function Disparos() {
 
             <div className="pt-2">
               <div className="flex items-center justify-between mb-2 gap-2">
-                <Label className="text-xs text-muted-foreground">
-                  Destinatários * ({selecionados.size} selecionado{selecionados.size !== 1 ? "s" : ""})
-                </Label>
-                <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={marcarTodosFiltrados}>
-                  Marcar todos filtrados
-                </Button>
+                <Label className="text-xs text-muted-foreground">Destinatários *</Label>
+                <div className="flex items-center rounded-md border p-0.5 text-xs">
+                  <button
+                    type="button"
+                    className={`px-2 py-1 rounded-sm ${modoSelecao === "segmento" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+                    onClick={() => setModoSelecao("segmento")}
+                  >
+                    Segmentar por filtro
+                  </button>
+                  <button
+                    type="button"
+                    className={`px-2 py-1 rounded-sm ${modoSelecao === "manual" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+                    onClick={() => setModoSelecao("manual")}
+                  >
+                    Selecionar manualmente
+                  </button>
+                </div>
               </div>
-              <div className="relative mb-2">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input className="pl-8 h-8" placeholder="Buscar por nome ou celular" value={busca} onChange={(e) => setBusca(e.target.value)} />
-              </div>
-              <div className="border rounded-md max-h-64 overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-8"></TableHead>
-                      <TableHead>Nome</TableHead>
-                      <TableHead>Celular</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {clientesQuery.isLoading ? (
-                      <TableRow><TableCell colSpan={3} className="text-center text-xs text-muted-foreground py-4">Carregando...</TableCell></TableRow>
-                    ) : clientesFiltrados.slice(0, 200).map((c) => (
-                      <TableRow key={c.id} className="cursor-pointer" onClick={() => toggleCliente(c.id)}>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Checkbox checked={selecionados.has(c.id)} onCheckedChange={() => toggleCliente(c.id)} />
-                        </TableCell>
-                        <TableCell className="text-sm">{c.nome}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{c.celular || c.telefone || "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              {clientesFiltrados.length > 200 && (
-                <p className="text-xs text-muted-foreground mt-1">Mostrando os primeiros 200 — refine a busca pra ver mais.</p>
+
+              {modoSelecao === "segmento" ? (
+                <SegmentoFiltros filtros={filtrosSegmento} onChange={setFiltrosSegmento} />
+              ) : (
+                <>
+                  <div className="flex items-center justify-end mb-2">
+                    <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={marcarTodosFiltrados}>
+                      Marcar todos filtrados
+                    </Button>
+                  </div>
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input className="pl-8 h-8" placeholder="Buscar por nome ou celular" value={busca} onChange={(e) => setBusca(e.target.value)} />
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-2">{selecionados.size} selecionado{selecionados.size !== 1 ? "s" : ""}</p>
+                  <div className="border rounded-md max-h-64 overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-8"></TableHead>
+                          <TableHead>Nome</TableHead>
+                          <TableHead>Celular</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {clientesQuery.isLoading ? (
+                          <TableRow><TableCell colSpan={3} className="text-center text-xs text-muted-foreground py-4">Carregando...</TableCell></TableRow>
+                        ) : clientesFiltrados.slice(0, 200).map((c) => (
+                          <TableRow key={c.id} className="cursor-pointer" onClick={() => toggleCliente(c.id)}>
+                            <TableCell onClick={(e) => e.stopPropagation()}>
+                              <Checkbox checked={selecionados.has(c.id)} onCheckedChange={() => toggleCliente(c.id)} />
+                            </TableCell>
+                            <TableCell className="text-sm">{c.nome}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{c.celular || c.telefone || "—"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  {clientesFiltrados.length > 200 && (
+                    <p className="text-xs text-muted-foreground mt-1">Mostrando os primeiros 200 — refine a busca pra ver mais.</p>
+                  )}
+                </>
               )}
             </div>
           </div>

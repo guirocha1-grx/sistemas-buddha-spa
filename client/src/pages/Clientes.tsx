@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, Users, Loader2, Phone, Mail, Calendar, Upload, UserCheck, IdCard, ArrowUp, ArrowDown, ArrowUpDown, X, MessageCircle, RefreshCw, ClipboardList, Link2 } from "lucide-react";
+import { Search, Users, Loader2, Phone, Mail, Calendar, Upload, UserCheck, IdCard, ArrowUp, ArrowDown, ArrowUpDown, X, MessageCircle, RefreshCw, ClipboardList, Link2, Tag, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { rotaInboxConversa } from "@shared/inboxNavigation";
@@ -387,6 +387,94 @@ function SortTh({ col, label, orderBy, orderDir, onSort, className }: {
   );
 }
 
+/**
+ * Etiqueta manual do cliente (2026-09-03) — alimenta o construtor de
+ * segmentação de Disparos (ver client/src/components/SegmentoFiltros.tsx)
+ * pra marcar algo que não vem do Belle (ex.: "veio pelo Instagram").
+ */
+function EtiquetasCliente({ clienteId }: { clienteId: number }) {
+  const utils = trpc.useUtils();
+  const [novaEtiqueta, setNovaEtiqueta] = useState("");
+  const etiquetasDoClienteQuery = trpc.etiquetas.porCliente.useQuery({ clienteId });
+  const catalogoQuery = trpc.etiquetas.list.useQuery();
+
+  const invalidar = () => {
+    utils.etiquetas.porCliente.invalidate({ clienteId });
+    utils.etiquetas.list.invalidate();
+  };
+
+  const atribuirMutation = trpc.etiquetas.atribuir.useMutation({
+    onSuccess: invalidar,
+    onError: (e) => toast.error(e.message),
+  });
+  const removerMutation = trpc.etiquetas.remover.useMutation({
+    onSuccess: invalidar,
+    onError: (e) => toast.error(e.message),
+  });
+  const criarMutation = trpc.etiquetas.criar.useMutation({
+    onSuccess: (etiqueta) => {
+      atribuirMutation.mutate({ clienteId, etiquetaId: etiqueta.id });
+      setNovaEtiqueta("");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const atribuidas = etiquetasDoClienteQuery.data ?? [];
+  const idsAtribuidos = new Set(atribuidas.map((e) => e.id));
+  const disponiveis = (catalogoQuery.data ?? []).filter((e) => !idsAtribuidos.has(e.id));
+
+  return (
+    <div className="rounded-lg border border-border/60 bg-muted/10 p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+        <h3 className="font-medium text-sm">Etiquetas</h3>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {atribuidas.length === 0 && <span className="text-xs text-muted-foreground">Nenhuma etiqueta ainda.</span>}
+        {atribuidas.map((etiqueta) => (
+          <Badge key={etiqueta.id} variant="outline" className="text-xs gap-1 pr-1">
+            {etiqueta.nome}
+            <button
+              type="button"
+              className="hover:text-destructive"
+              onClick={() => removerMutation.mutate({ clienteId, etiquetaId: etiqueta.id })}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </Badge>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        {disponiveis.length > 0 && (
+          <Select value="" onValueChange={(v) => atribuirMutation.mutate({ clienteId, etiquetaId: Number(v) })}>
+            <SelectTrigger className="h-7 w-40 text-xs"><SelectValue placeholder="Adicionar existente" /></SelectTrigger>
+            <SelectContent>
+              {disponiveis.map((e) => <SelectItem key={e.id} value={String(e.id)}>{e.nome}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+        <Input
+          className="h-7 w-36 text-xs"
+          placeholder="Nova etiqueta"
+          value={novaEtiqueta}
+          onChange={(ev) => setNovaEtiqueta(ev.target.value)}
+          onKeyDown={(ev) => { if (ev.key === "Enter" && novaEtiqueta.trim()) criarMutation.mutate({ nome: novaEtiqueta.trim() }); }}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 px-2 text-xs"
+          disabled={!novaEtiqueta.trim() || criarMutation.isPending}
+          onClick={() => criarMutation.mutate({ nome: novaEtiqueta.trim() })}
+        >
+          <Plus className="h-3 w-3 mr-1" /> Criar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function Clientes() {
   const { user } = useAuth();
   const { unidadeSelecionada } = useUnidade();
@@ -678,6 +766,8 @@ export default function Clientes() {
                           <Badge variant="outline" className="border-blue-300 text-blue-700">Ribeirão Shopping</Badge>
                         )}
                       </div>
+
+                      <EtiquetasCliente clienteId={selectedCliente.id} />
 
                       <div className="rounded-lg border border-border/60 bg-muted/10 p-3 space-y-2">
                         <div className="flex items-center justify-between gap-3">

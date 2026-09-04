@@ -226,6 +226,12 @@ async function resolverEPromoverLids(unidade: NonNullable<Awaited<ReturnType<typ
   return { totalTelefones: telefones.length, resolvidos, semWhatsapp, erros, conversasPromovidas };
 }
 
+const filtroSegmentoSchema = z.object({
+  campo: z.enum(["unidade", "sexo", "diasDesdeUltimoAtendimento", "diasDesdeCadastro", "qtdAtendimentos", "terapiaFeita", "etiqueta"]),
+  operador: z.enum(["igual", "diferente", "maior", "menor", "maior_igual", "menor_igual", "contem"]),
+  valor: z.string(),
+});
+
 export const appRouter = router({
   agentes: agentesRouter,
   tabelaPrecos: tabelaPrecosRouter,
@@ -2258,6 +2264,55 @@ Diretrizes:
     }),
   }),
 
+  // ===== Etiquetas manuais de cliente (2026-09-03) — catálogo compartilhado
+  // entre as duas unidades, usado pelo construtor de segmentação de Disparos
+  // (ver "segmentos" logo abaixo) pra marcar algo que não vem do Belle (ex.:
+  // "veio pelo Instagram"). =====
+  etiquetas: router({
+    list: protectedProcedure.query(async () => db.listEtiquetas()),
+
+    criar: protectedProcedure.input(z.object({
+      nome: z.string().min(1).max(60),
+      cor: z.string().max(20).optional(),
+    })).mutation(async ({ input }) => db.criarEtiqueta(input.nome, input.cor)),
+
+    excluir: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.excluirEtiqueta(input.id);
+      return { success: true };
+    }),
+
+    porCliente: protectedProcedure.input(z.object({ clienteId: z.number() })).query(async ({ input }) => {
+      return db.listEtiquetasPorCliente(input.clienteId);
+    }),
+
+    atribuir: protectedProcedure.input(z.object({ clienteId: z.number(), etiquetaId: z.number() })).mutation(async ({ input }) => {
+      await db.atribuirEtiqueta(input.clienteId, input.etiquetaId);
+      return { success: true };
+    }),
+
+    remover: protectedProcedure.input(z.object({ clienteId: z.number(), etiquetaId: z.number() })).mutation(async ({ input }) => {
+      await db.removerEtiquetaDoCliente(input.clienteId, input.etiquetaId);
+      return { success: true };
+    }),
+  }),
+
+  // ===== Segmentação de base pra Disparos (2026-09-03) — construtor de filtro
+  // campo/operador/valor, sempre combinados por E (decisão explícita do
+  // usuário: cobre os casos reais sem a complexidade de grupos com OU). Ver
+  // db.ts (contarClientesSegmento/listarClientesSegmento) pros campos aceitos. =====
+  segmentos: router({
+    opcoesTerapias: adminProcedure.query(async () => db.opcoesTerapias()),
+
+    contar: adminProcedure.input(z.array(filtroSegmentoSchema)).query(async ({ input }) => {
+      const total = await db.contarClientesSegmento(input);
+      return { total };
+    }),
+
+    clientes: adminProcedure.input(z.array(filtroSegmentoSchema)).query(async ({ input }) => {
+      return db.listarClientesSegmento(input);
+    }),
+  }),
+
   // ===== Buddha Mkt: Disparos (campanhas de marketing) =====
   disparos: router({
     list: adminProcedure.query(async () => db.listDisparos()),
@@ -2274,6 +2329,9 @@ Diretrizes:
       return { disparo, destinatarios };
     }),
 
+    // Aceita a lista manual de sempre (clienteIds) OU os filtros do construtor
+    // de segmentação (ver "segmentos" acima) — nesse caso a base é resolvida
+    // aqui no servidor, sem o cliente precisar ir e voltar com milhares de IDs.
     create: adminProcedure.input(z.object({
       nome: z.string().min(1),
       templateId: z.number(),
@@ -2282,9 +2340,18 @@ Diretrizes:
         fonte: z.enum(["nome_cliente", "fixo"]),
         valor: z.string().optional(),
       }).strict()).optional(),
-      clienteIds: z.array(z.number()).min(1),
+      clienteIds: z.array(z.number()).optional(),
+      filtros: z.array(filtroSegmentoSchema).optional(),
     })).mutation(async ({ input }) => {
-      const clientesResolvidos = await db.getClientesPorIds(input.clienteIds);
+      const clienteIds = input.clienteIds?.length
+        ? input.clienteIds
+        : input.filtros?.length
+          ? (await db.listarClientesSegmento(input.filtros)).map((c) => c.id)
+          : null;
+      if (!clienteIds || clienteIds.length === 0) {
+        throw new Error("Selecione destinatários manualmente ou defina ao menos um filtro de segmentação.");
+      }
+      const clientesResolvidos = await db.getClientesPorIds(clienteIds);
       const destinatarios = clientesResolvidos
         .map((c) => ({ clienteId: c.id, telefone: c.celular || c.telefone || "" }))
         .filter((d) => d.telefone);
@@ -2293,7 +2360,7 @@ Diretrizes:
         nome: input.nome, templateId: input.templateId, fluxoRespostaId: input.fluxoRespostaId,
         variaveisConfig: input.variaveisConfig, destinatarios,
       });
-      return { id };
+      return { id, totalDestinatarios: destinatarios.length };
     }),
 
     // Loop sequencial simples (sem fila/retry — v1, ver plano "Fora de

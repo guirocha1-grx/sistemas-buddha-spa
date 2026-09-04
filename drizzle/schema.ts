@@ -548,6 +548,32 @@ export const clientesPreferenciasTerapeuta = mysqlTable("clientes_preferencias_t
 export type ClientePreferenciaTerapeuta = typeof clientesPreferenciasTerapeuta.$inferSelect;
 export type InsertClientePreferenciaTerapeuta = typeof clientesPreferenciasTerapeuta.$inferInsert;
 
+/**
+ * Etiqueta manual (2026-09-03) — marcação livre pra segmentar disparos por algo
+ * que não é derivável dos dados importados do Belle (ex.: "veio pelo Instagram",
+ * "reclamou uma vez"). Catálogo compartilhado entre as duas unidades.
+ */
+export const etiquetas = mysqlTable("etiquetas", {
+  id: int("id").autoincrement().primaryKey(),
+  nome: varchar("nome", { length: 60 }).notNull().unique(),
+  cor: varchar("cor", { length: 20 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type Etiqueta = typeof etiquetas.$inferSelect;
+export type InsertEtiqueta = typeof etiquetas.$inferInsert;
+
+export const clienteEtiquetas = mysqlTable("cliente_etiquetas", {
+  id: int("id").autoincrement().primaryKey(),
+  clienteId: int("clienteId").notNull(),
+  etiquetaId: int("etiquetaId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  clienteEtiquetaUnica: uniqueIndex("cliente_etiquetas_cliente_etiqueta_idx").on(table.clienteId, table.etiquetaId),
+  etiquetaIdx: index("cliente_etiquetas_etiqueta_idx").on(table.etiquetaId),
+}));
+export type ClienteEtiqueta = typeof clienteEtiquetas.$inferSelect;
+export type InsertClienteEtiqueta = typeof clienteEtiquetas.$inferInsert;
+
 /** Opções operacionais que podem ser alteradas pelo administrador sem
  * mexer no formulário do chamado. */
 export const chamadosParametros = mysqlTable("chamados_parametros", {

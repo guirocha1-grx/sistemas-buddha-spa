@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { eq, asc, desc, and, or, gt, gte, lte, isNull, isNotNull, like, ne, inArray, lt, sql, getTableColumns } from "drizzle-orm";
+import { eq, asc, desc, and, or, gt, gte, lte, isNull, isNotNull, like, ne, inArray, notInArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, belleRegistrosFinanceiros, bellePlanosClientes, bellePlanosServicos, lidMapping, atendentes, atendenteSessoes, terapeutas, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertBelleRegistroFinanceiro, type InsertBellePlanoCliente, type InsertBellePlanoServico, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
@@ -15,6 +15,7 @@ import { storageGetSignedUrl, storageExists } from "./storage";
 import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, atendimentoTempoEventos, terapeutasLiberacoes, type InsertChamadoParametro } from "../drizzle/schema";
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
 import { resumoMensalUnidade, type InsertResumoMensalUnidade, type ResumoMensalUnidade } from "../drizzle/schema";
+import { etiquetas, clienteEtiquetas, type Etiqueta } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda, calcularEvolucaoFidelizacao, type GranularidadeEvolucao } from "./terapeutasRelatorios";
 import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, nomesCorrespondem, identificarTerapeuta, nomesClienteCorrespondem, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
@@ -5727,6 +5728,191 @@ export async function buscarClienteLocalPorCpf(cpf: string) {
   const normalizar = (coluna: any) => sql`REPLACE(REPLACE(${coluna}, '.', ''), '-', '')`;
   const resultado = await db.select().from(clientes).where(sql`${normalizar(clientes.cpf)} = ${digitos}`).limit(1);
   return resultado[0];
+}
+
+// ===== Etiquetas manuais de cliente (2026-09-03) — base do construtor de
+// segmentação de Disparos, junto com os filtros sobre campos calculados logo
+// abaixo (contarClientesSegmento/listarClientesSegmento). Catálogo único,
+// compartilhado entre as duas unidades. =====
+
+export async function listEtiquetas(): Promise<Etiqueta[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(etiquetas).orderBy(etiquetas.nome);
+}
+
+export async function criarEtiqueta(nome: string, cor?: string | null): Promise<Etiqueta> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  const nomeNormalizado = nome.trim();
+  if (!nomeNormalizado) throw new Error("Nome da etiqueta é obrigatório.");
+  const existente = await db.select().from(etiquetas).where(eq(etiquetas.nome, nomeNormalizado)).limit(1);
+  if (existente[0]) return existente[0];
+  const resultado = await db.insert(etiquetas).values({ nome: nomeNormalizado, cor: cor ?? null });
+  return { id: Number(resultado[0].insertId), nome: nomeNormalizado, cor: cor ?? null, createdAt: new Date() };
+}
+
+export async function excluirEtiqueta(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  await db.delete(clienteEtiquetas).where(eq(clienteEtiquetas.etiquetaId, id));
+  await db.delete(etiquetas).where(eq(etiquetas.id, id));
+}
+
+export async function listEtiquetasPorCliente(clienteId: number): Promise<Etiqueta[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: etiquetas.id, nome: etiquetas.nome, cor: etiquetas.cor, createdAt: etiquetas.createdAt })
+    .from(clienteEtiquetas)
+    .innerJoin(etiquetas, eq(etiquetas.id, clienteEtiquetas.etiquetaId))
+    .where(eq(clienteEtiquetas.clienteId, clienteId))
+    .orderBy(etiquetas.nome);
+}
+
+export async function atribuirEtiqueta(clienteId: number, etiquetaId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  await db.insert(clienteEtiquetas).values({ clienteId, etiquetaId })
+    .onDuplicateKeyUpdate({ set: { clienteId: sql`${clienteEtiquetas.clienteId}` } });
+}
+
+export async function removerEtiquetaDoCliente(clienteId: number, etiquetaId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  await db.delete(clienteEtiquetas).where(and(eq(clienteEtiquetas.clienteId, clienteId), eq(clienteEtiquetas.etiquetaId, etiquetaId)));
+}
+
+// ===== Segmentação de Disparos (2026-09-03) =====
+// Construtor de filtro campo/operador/valor pro problema real: base de ~10 mil
+// clientes, e a tela de Disparos só deixava buscar por nome. Os filtros sempre
+// combinam por E (decisão do usuário — ver histórico da conversa; OU entre
+// grupos fica pra depois se fizer falta). Cobre com dado que já existia
+// (unidade, dias desde a última visita/cadastro, qtd. de atendimentos, terapia
+// já feita no histórico do Belle) mais a etiqueta manual acima, pro que não dá
+// pra derivar do Belle (ex.: "veio pelo Instagram").
+
+type DbConectado = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
+export type OperadorSegmento = "igual" | "diferente" | "maior" | "menor" | "maior_igual" | "menor_igual" | "contem";
+export type CampoSegmento = "unidade" | "sexo" | "diasDesdeUltimoAtendimento" | "diasDesdeCadastro" | "qtdAtendimentos" | "terapiaFeita" | "etiqueta";
+
+export interface FiltroSegmento {
+  campo: CampoSegmento;
+  operador: OperadorSegmento;
+  valor: string;
+}
+
+function condicaoNumericaSql(expressao: ReturnType<typeof sql>, operador: OperadorSegmento, valor: number) {
+  switch (operador) {
+    case "igual": return sql`${expressao} = ${valor}`;
+    case "diferente": return sql`${expressao} != ${valor}`;
+    case "maior": return sql`${expressao} > ${valor}`;
+    case "menor": return sql`${expressao} < ${valor}`;
+    case "maior_igual": return sql`${expressao} >= ${valor}`;
+    case "menor_igual": return sql`${expressao} <= ${valor}`;
+    default: throw new Error(`Operador "${operador}" não é válido para este campo.`);
+  }
+}
+
+async function condicaoFiltroSegmento(db: DbConectado, filtro: FiltroSegmento) {
+  switch (filtro.campo) {
+    case "unidade": {
+      if (filtro.operador !== "igual" && filtro.operador !== "diferente") {
+        throw new Error('Campo "Unidade" só aceita operador igual/diferente.');
+      }
+      // Ramos separados (em vez de resolver a coluna numa variável) porque
+      // clienteSsu/clienteRbs são colunas distintas — unificar num único tipo
+      // de variável só pra passar pro eq() não compensa a perda de clareza.
+      const valorBool = filtro.operador === "igual";
+      if (filtro.valor === "ssu") return eq(clientes.clienteSsu, valorBool);
+      if (filtro.valor === "rbs") return eq(clientes.clienteRbs, valorBool);
+      throw new Error('Valor de "Unidade" deve ser "ssu" ou "rbs".');
+    }
+    case "sexo": {
+      if (filtro.operador !== "igual" && filtro.operador !== "diferente") {
+        throw new Error('Campo "Sexo" só aceita operador igual/diferente.');
+      }
+      const valor = filtro.valor as "Feminino" | "Masculino" | "Outros";
+      return filtro.operador === "igual" ? eq(clientes.sexo, valor) : ne(clientes.sexo, valor);
+    }
+    case "diasDesdeUltimoAtendimento": {
+      const valorNumero = Number(filtro.valor);
+      if (!Number.isFinite(valorNumero)) throw new Error('Valor de "Dias desde a última visita" precisa ser um número.');
+      return condicaoNumericaSql(sql`DATEDIFF(CURDATE(), ${clientes.ultimoAtendimento})`, filtro.operador, valorNumero);
+    }
+    case "diasDesdeCadastro": {
+      const valorNumero = Number(filtro.valor);
+      if (!Number.isFinite(valorNumero)) throw new Error('Valor de "Dias desde o cadastro" precisa ser um número.');
+      return condicaoNumericaSql(sql`DATEDIFF(CURDATE(), ${clientes.dataCadastro})`, filtro.operador, valorNumero);
+    }
+    case "qtdAtendimentos": {
+      const valorNumero = Number(filtro.valor);
+      if (!Number.isFinite(valorNumero)) throw new Error('Valor de "Quantidade de atendimentos" precisa ser um número.');
+      return condicaoNumericaSql(sql`${clientes.qtdAtendimentosFinalizados}`, filtro.operador, valorNumero);
+    }
+    case "terapiaFeita": {
+      if (!filtro.valor.trim()) throw new Error('Valor de "Terapia já feita" é obrigatório.');
+      if (filtro.operador !== "igual" && filtro.operador !== "contem") {
+        throw new Error('Campo "Terapia já feita" só aceita operador igual/contém.');
+      }
+      const condicaoServico = filtro.operador === "igual"
+        ? eq(belleAtendimentos.servicoNome, filtro.valor)
+        : like(belleAtendimentos.servicoNome, `%${filtro.valor}%`);
+      const subquery = db.select({ clienteId: belleAtendimentos.clienteId }).from(belleAtendimentos).where(condicaoServico);
+      return inArray(clientes.id, subquery);
+    }
+    case "etiqueta": {
+      if (!filtro.valor.trim()) throw new Error('Valor de "Etiqueta" é obrigatório.');
+      if (filtro.operador !== "igual" && filtro.operador !== "diferente") {
+        throw new Error('Campo "Etiqueta" só aceita operador igual (tem) / diferente (não tem).');
+      }
+      const subquery = db.select({ clienteId: clienteEtiquetas.clienteId })
+        .from(clienteEtiquetas)
+        .innerJoin(etiquetas, eq(etiquetas.id, clienteEtiquetas.etiquetaId))
+        .where(eq(etiquetas.nome, filtro.valor));
+      return filtro.operador === "igual" ? inArray(clientes.id, subquery) : notInArray(clientes.id, subquery);
+    }
+    default:
+      throw new Error("Campo de segmentação desconhecido.");
+  }
+}
+
+async function condicoesSegmento(db: DbConectado, filtros: FiltroSegmento[]) {
+  const condicoes = [];
+  for (const filtro of filtros) condicoes.push(await condicaoFiltroSegmento(db, filtro));
+  return condicoes;
+}
+
+export async function contarClientesSegmento(filtros: FiltroSegmento[]): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const condicoes = await condicoesSegmento(db, filtros);
+  const resultado = await db.select({ total: sql<number>`COUNT(*)` }).from(clientes)
+    .where(condicoes.length > 0 ? and(...condicoes) : undefined);
+  return Number(resultado[0]?.total ?? 0);
+}
+
+/** Usado tanto pra amostra na tela quanto pra resolver os destinatários finais ao criar o disparo. */
+export async function listarClientesSegmento(filtros: FiltroSegmento[], limite = 20000) {
+  const db = await getDb();
+  if (!db) return [];
+  const condicoes = await condicoesSegmento(db, filtros);
+  return db.select({ id: clientes.id, nome: clientes.nome, celular: clientes.celular, telefone: clientes.telefone })
+    .from(clientes)
+    .where(condicoes.length > 0 ? and(...condicoes) : undefined)
+    .orderBy(clientes.nome)
+    .limit(limite);
+}
+
+/** Lista de serviços distintos já atendidos, pro autocomplete do filtro "Terapia já feita". */
+export async function opcoesTerapias(limite = 300): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const linhas = await db.selectDistinct({ servicoNome: belleAtendimentos.servicoNome }).from(belleAtendimentos)
+    .where(sql`${belleAtendimentos.servicoNome} IS NOT NULL AND ${belleAtendimentos.servicoNome} != ''`)
+    .orderBy(belleAtendimentos.servicoNome)
+    .limit(limite);
+  return linhas.map((l) => l.servicoNome as string).filter(Boolean);
 }
 
 // ===== Comanda virtual (item a item — auditoria da Comanda Recepção) =====
