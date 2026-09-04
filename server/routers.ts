@@ -27,7 +27,7 @@ import { parsePlanosBelleXls, parseVinculosPlanosBelleXlsx } from "./planosBelle
 import { parseComandaVirtualXlsx } from "./comandaVirtualXlsxParser";
 import { parseExtratoOfx, parseSaldoOfx } from "./interExtratoOfxParser";
 import { consultarTodosPagamentos, consultarPagamentoPorId, criarPreferenciaPagamento, cancelarPreferenciaPagamento, extrairValoresMp, criarRelatorioLiberado, listarRelatoriosLiberados, baixarRelatorioLiberado, parseRelatorioLiberadoMp, ehCompraEquipamentoPoint, resumirOrigemPagamentoMp, classificarOrigemPagamentoMp } from "./mercadoPagoApi";
-import { combinarLinksConfirmacao, dataSaoPaulo, listarLinksConfirmadosLocalmente, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
+import { combinarLinksConfirmacao, dataSaoPaulo, excluirPixDeContasProprias, listarLinksConfirmadosLocalmente, listarLinksMercadoPagoRecentes, listarPixInterRecentes } from "./confirmacaoPagamento";
 import { listarMigracoes, aplicarMigracao, marcarMigracaoAplicada, executarConsultaSql } from "./migracoesRunner";
 import { PDFParse } from "pdf-parse";
 import { lerCaixaFisicoSheet, SPREADSHEET_IDS, SPREADSHEET_ABAS, SPREADSHEET_IDS_COMANDA_VIRTUAL, lerComandaVirtualDiaSheet, preencherLinhaVaziaComandaVirtual, chaveComandaVirtualPorUnidade, SPREADSHEET_IDS_INFORME_VENDAS, escreverContasBancariasInforme, escreverBelleInforme, lerResumoMensalSheet, lerMetasMensalSheet, SPREADSHEET_ID_CONTABILIDADE } from "./googleSheets";
@@ -4299,12 +4299,13 @@ Diretrizes:
         transacoes.push(...pagina.transacoes);
       }
 
+      const cnpjsPorUnidade = await db.listCnpjsPorUnidade();
       const resultado = {
         dataInicio,
         dataFim,
         consultaEm: consultaEm.toISOString(),
         totalConsultado: transacoes.length,
-        pagamentos: listarPixInterRecentes(transacoes, inicioJanela),
+        pagamentos: excluirPixDeContasProprias(listarPixInterRecentes(transacoes, inicioJanela), new Set(cnpjsPorUnidade.keys())),
       };
       await db.salvarConsultaConfirmacaoPagamento({
         unidadeId: input.unidadeId,

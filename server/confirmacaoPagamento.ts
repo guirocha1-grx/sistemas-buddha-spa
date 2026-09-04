@@ -82,6 +82,23 @@ export function listarPixInterRecentes(transacoes: InterTransacaoCompleta[], ini
     .sort((a, b) => b.dataHora.localeCompare(a.dataHora));
 }
 
+/**
+ * Remove Pix cujo CPF/CNPJ do pagador bate com alguma conta própria
+ * cadastrada (qualquer unidade — ver listCnpjsPorUnidade em db.ts).
+ * São transferências entre as próprias empresas, não pagamento de
+ * cliente, e não devem aparecer na fila de confirmação.
+ */
+export function excluirPixDeContasProprias(
+  pagamentos: ConfirmacaoPixInter[],
+  cnpjsProprios: Set<string>,
+): ConfirmacaoPixInter[] {
+  if (cnpjsProprios.size === 0) return pagamentos;
+  return pagamentos.filter((pagamento) => {
+    const digitos = pagamento.cpfCnpjPagador?.replace(/\D/g, "");
+    return !digitos || !cnpjsProprios.has(digitos);
+  });
+}
+
 export function listarLinksMercadoPagoRecentes(pagamentos: MpPagamento[], inicio: Date): ConfirmacaoLinkMercadoPago[] {
   return pagamentos
     .filter((pagamento) => pagamento.status === "approved")
