@@ -716,11 +716,10 @@ export default function Mensagens() {
     if (conversaIdSolicitada) {
       setBusca("");
       selecionarConversa(conversaIdSolicitada);
-      // Só sobrescreve se não havia rascunho salvo — não queremos apagar
-      // algo que a recepção já estava escrevendo pra essa conversa.
-      if (mensagemSolicitada && !sessionStorage.getItem(`${CHAVE_RASCUNHO_CONVERSA}:${conversaIdSolicitada}`)) {
-        setTexto(mensagemSolicitada);
-      }
+      // Deep-link com mensagem é uma ação explícita (ex.: botão de
+      // WhatsApp da lista de espera) — sempre prevalece sobre um rascunho
+      // antigo que possa ter sobrado dessa conversa.
+      if (mensagemSolicitada) setTexto(mensagemSolicitada);
       solicitacaoAplicadaRef.current = chave;
       return;
     }
