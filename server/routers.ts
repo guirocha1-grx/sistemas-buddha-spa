@@ -227,9 +227,10 @@ async function resolverEPromoverLids(unidade: NonNullable<Awaited<ReturnType<typ
 }
 
 const filtroSegmentoSchema = z.object({
-  campo: z.enum(["unidade", "sexo", "diasDesdeUltimoAtendimento", "diasDesdeCadastro", "qtdAtendimentos", "terapiaFeita", "etiqueta"]),
+  campo: z.enum(["unidade", "sexo", "diasDesdeUltimoAtendimento", "diasDesdeCadastro", "qtdAtendimentos", "terapiaFeita", "etiqueta", "campoPersonalizado"]),
   operador: z.enum(["igual", "diferente", "maior", "menor", "maior_igual", "menor_igual", "contem"]),
   valor: z.string(),
+  campoPersonalizadoId: z.number().optional(),
 });
 
 export const appRouter = router({
@@ -2304,6 +2305,44 @@ Diretrizes:
 
     remover: protectedProcedure.input(z.object({ clienteId: z.number(), etiquetaId: z.number() })).mutation(async ({ input }) => {
       await db.removerEtiquetaDoCliente(input.clienteId, input.etiquetaId);
+      return { success: true };
+    }),
+  }),
+
+  // ===== Campos personalizados (2026-09-04) — valor numérico por cliente
+  // (ex.: "contador de resposta a disparo"). Definição do campo é admin (fica
+  // na aba Etiquetas de Configuração do Inbox, junto); o valor em si é escrito
+  // sobretudo pelo motor de Fluxo (server/fluxos.ts, fase 2). =====
+  camposPersonalizados: router({
+    list: protectedProcedure.query(async () => db.listCamposPersonalizados()),
+
+    criar: adminProcedure.input(z.object({
+      nome: z.string().min(1).max(60),
+      descricao: z.string().max(300).optional(),
+    })).mutation(async ({ input }) => db.criarCampoPersonalizado(input.nome, input.descricao)),
+
+    atualizar: adminProcedure.input(z.object({
+      id: z.number(),
+      nome: z.string().min(1).max(60),
+      descricao: z.string().max(300).optional(),
+    })).mutation(async ({ input }) => {
+      await db.atualizarCampoPersonalizado(input.id, input.nome, input.descricao);
+      return { success: true };
+    }),
+
+    excluir: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.excluirCampoPersonalizado(input.id);
+      return { success: true };
+    }),
+
+    porCliente: protectedProcedure.input(z.object({ clienteId: z.number() })).query(async ({ input }) => {
+      return db.listValoresCamposPorCliente(input.clienteId);
+    }),
+
+    definirValor: adminProcedure.input(z.object({
+      clienteId: z.number(), campoId: z.number(), valor: z.number(),
+    })).mutation(async ({ input }) => {
+      await db.definirValorCampoCliente(input.clienteId, input.campoId, input.valor);
       return { success: true };
     }),
   }),

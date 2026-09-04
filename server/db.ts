@@ -16,6 +16,7 @@ import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacio
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
 import { resumoMensalUnidade, type InsertResumoMensalUnidade, type ResumoMensalUnidade } from "../drizzle/schema";
 import { etiquetas, clienteEtiquetas, type Etiqueta } from "../drizzle/schema";
+import { camposPersonalizados, clienteCamposValores, type CampoPersonalizado } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda, calcularEvolucaoFidelizacao, type GranularidadeEvolucao } from "./terapeutasRelatorios";
 import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, nomesCorrespondem, identificarTerapeuta, nomesClienteCorrespondem, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
@@ -5743,15 +5744,15 @@ export async function listEtiquetas(): Promise<Etiqueta[]> {
   return db.select().from(etiquetas).orderBy(etiquetas.nome);
 }
 
-export async function criarEtiqueta(nome: string, cor?: string | null): Promise<Etiqueta> {
+export async function criarEtiqueta(nome: string, cor?: string | null, tipo: "manual" | "sistema" = "manual"): Promise<Etiqueta> {
   const db = await getDb();
   if (!db) throw new Error("Banco de dados indisponível.");
   const nomeNormalizado = nome.trim();
   if (!nomeNormalizado) throw new Error("Nome da etiqueta é obrigatório.");
   const existente = await db.select().from(etiquetas).where(eq(etiquetas.nome, nomeNormalizado)).limit(1);
   if (existente[0]) return existente[0];
-  const resultado = await db.insert(etiquetas).values({ nome: nomeNormalizado, cor: cor ?? null });
-  return { id: Number(resultado[0].insertId), nome: nomeNormalizado, cor: cor ?? null, createdAt: new Date() };
+  const resultado = await db.insert(etiquetas).values({ nome: nomeNormalizado, cor: cor ?? null, tipo });
+  return { id: Number(resultado[0].insertId), nome: nomeNormalizado, cor: cor ?? null, tipo, createdAt: new Date() };
 }
 
 export async function atualizarEtiqueta(id: number, nome: string, cor?: string | null): Promise<void> {
@@ -5772,7 +5773,7 @@ export async function excluirEtiqueta(id: number): Promise<void> {
 export async function listEtiquetasPorCliente(clienteId: number): Promise<Etiqueta[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select({ id: etiquetas.id, nome: etiquetas.nome, cor: etiquetas.cor, createdAt: etiquetas.createdAt })
+  return db.select({ id: etiquetas.id, nome: etiquetas.nome, cor: etiquetas.cor, tipo: etiquetas.tipo, createdAt: etiquetas.createdAt })
     .from(clienteEtiquetas)
     .innerJoin(etiquetas, eq(etiquetas.id, clienteEtiquetas.etiquetaId))
     .where(eq(clienteEtiquetas.clienteId, clienteId))
@@ -5784,6 +5785,68 @@ export async function atribuirEtiqueta(clienteId: number, etiquetaId: number): P
   if (!db) throw new Error("Banco de dados indisponível.");
   await db.insert(clienteEtiquetas).values({ clienteId, etiquetaId })
     .onDuplicateKeyUpdate({ set: { clienteId: sql`${clienteEtiquetas.clienteId}` } });
+}
+
+// ===== Campos personalizados (2026-09-04) — valor numérico por cliente
+// (ex.: "contador de resposta a disparo"), pensado pra ser incrementado por
+// um nó de Fluxo (fase 2, ver server/fluxos.ts) e usado como filtro de
+// segmentação em Disparos, do mesmo jeito que etiqueta. =====
+
+export async function listCamposPersonalizados(): Promise<CampoPersonalizado[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(camposPersonalizados).orderBy(camposPersonalizados.nome);
+}
+
+export async function criarCampoPersonalizado(nome: string, descricao?: string | null): Promise<CampoPersonalizado> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  const nomeNormalizado = nome.trim();
+  if (!nomeNormalizado) throw new Error("Nome do campo é obrigatório.");
+  const existente = await db.select().from(camposPersonalizados).where(eq(camposPersonalizados.nome, nomeNormalizado)).limit(1);
+  if (existente[0]) return existente[0];
+  const resultado = await db.insert(camposPersonalizados).values({ nome: nomeNormalizado, descricao: descricao ?? null, tipo: "numero" });
+  return { id: Number(resultado[0].insertId), nome: nomeNormalizado, tipo: "numero", descricao: descricao ?? null, createdAt: new Date() };
+}
+
+export async function atualizarCampoPersonalizado(id: number, nome: string, descricao?: string | null): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  const nomeNormalizado = nome.trim();
+  if (!nomeNormalizado) throw new Error("Nome do campo é obrigatório.");
+  await db.update(camposPersonalizados).set({ nome: nomeNormalizado, ...(descricao !== undefined ? { descricao } : {}) }).where(eq(camposPersonalizados.id, id));
+}
+
+export async function excluirCampoPersonalizado(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  await db.delete(clienteCamposValores).where(eq(clienteCamposValores.campoId, id));
+  await db.delete(camposPersonalizados).where(eq(camposPersonalizados.id, id));
+}
+
+export async function listValoresCamposPorCliente(clienteId: number): Promise<Array<{ campoId: number; nome: string; valorNumero: string | null }>> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ campoId: camposPersonalizados.id, nome: camposPersonalizados.nome, valorNumero: clienteCamposValores.valorNumero })
+    .from(clienteCamposValores)
+    .innerJoin(camposPersonalizados, eq(camposPersonalizados.id, clienteCamposValores.campoId))
+    .where(eq(clienteCamposValores.clienteId, clienteId))
+    .orderBy(camposPersonalizados.nome);
+}
+
+/** Soma `incremento` (pode ser negativo) ao valor atual do cliente pra esse campo — cria a linha com 0 + incremento se ainda não existir. */
+export async function incrementarCampoCliente(clienteId: number, campoId: number, incremento: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  await db.insert(clienteCamposValores).values({ clienteId, campoId, valorNumero: String(incremento) })
+    .onDuplicateKeyUpdate({ set: { valorNumero: sql`${clienteCamposValores.valorNumero} + ${incremento}` } });
+}
+
+export async function definirValorCampoCliente(clienteId: number, campoId: number, valor: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  await db.insert(clienteCamposValores).values({ clienteId, campoId, valorNumero: String(valor) })
+    .onDuplicateKeyUpdate({ set: { valorNumero: String(valor) } });
 }
 
 export async function removerEtiquetaDoCliente(clienteId: number, etiquetaId: number): Promise<void> {
@@ -5804,12 +5867,14 @@ export async function removerEtiquetaDoCliente(clienteId: number, etiquetaId: nu
 type DbConectado = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 export type OperadorSegmento = "igual" | "diferente" | "maior" | "menor" | "maior_igual" | "menor_igual" | "contem";
-export type CampoSegmento = "unidade" | "sexo" | "diasDesdeUltimoAtendimento" | "diasDesdeCadastro" | "qtdAtendimentos" | "terapiaFeita" | "etiqueta";
+export type CampoSegmento = "unidade" | "sexo" | "diasDesdeUltimoAtendimento" | "diasDesdeCadastro" | "qtdAtendimentos" | "terapiaFeita" | "etiqueta" | "campoPersonalizado";
 
 export interface FiltroSegmento {
   campo: CampoSegmento;
   operador: OperadorSegmento;
   valor: string;
+  /** Só quando campo === "campoPersonalizado": qual campo (campos_personalizados.id). */
+  campoPersonalizadoId?: number;
 }
 
 function condicaoNumericaSql(expressao: ReturnType<typeof sql>, operador: OperadorSegmento, valor: number) {
@@ -5881,6 +5946,16 @@ async function condicaoFiltroSegmento(db: DbConectado, filtro: FiltroSegmento) {
         .innerJoin(etiquetas, eq(etiquetas.id, clienteEtiquetas.etiquetaId))
         .where(eq(etiquetas.nome, filtro.valor));
       return filtro.operador === "igual" ? inArray(clientes.id, subquery) : notInArray(clientes.id, subquery);
+    }
+    case "campoPersonalizado": {
+      if (!filtro.campoPersonalizadoId) throw new Error('Filtro de "Campo personalizado" precisa informar qual campo.');
+      const valorNumero = Number(filtro.valor);
+      if (!Number.isFinite(valorNumero)) throw new Error('Valor de "Campo personalizado" precisa ser um número.');
+      const condicaoValor = condicaoNumericaSql(sql`${clienteCamposValores.valorNumero}`, filtro.operador, valorNumero);
+      const subquery = db.select({ clienteId: clienteCamposValores.clienteId })
+        .from(clienteCamposValores)
+        .where(and(eq(clienteCamposValores.campoId, filtro.campoPersonalizadoId), condicaoValor));
+      return inArray(clientes.id, subquery);
     }
     default:
       throw new Error("Campo de segmentação desconhecido.");

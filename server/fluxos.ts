@@ -23,6 +23,10 @@ import {
   listFluxoExecucoesPausadasVencidas,
   listFluxoNos,
   updateFluxoExecucao,
+  criarEtiqueta,
+  atribuirEtiqueta,
+  criarCampoPersonalizado,
+  incrementarCampoCliente,
 } from "./db";
 import { zapiApi } from "./zapiApi";
 import { buddhaMktApi } from "./buddhaMktApi";
@@ -500,6 +504,31 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
         // ou pelo timeout do cron de retomar-fluxos.
         const { processarNoMenu } = await import("./fluxosMenu");
         await processarNoMenu(execucaoId);
+        return;
+      }
+
+      case "aplicar_etiqueta": {
+        // Sem cliente vinculado à conversa, não tem quem marcar — segue o
+        // fluxo em vez de travar a execução por causa disso (não é erro
+        // do fluxo, é uma conversa ainda não vinculada a um cadastro).
+        const config = no.config as Extract<FluxoNoConfig, { etiquetaNome: string }>;
+        const conversa = await getInboxConversaById(execucao.conversaId);
+        if (conversa?.clienteId && config.etiquetaNome?.trim()) {
+          const etiqueta = await criarEtiqueta(config.etiquetaNome.trim(), null, "sistema");
+          await atribuirEtiqueta(conversa.clienteId, etiqueta.id);
+        }
+        await avancar(execucaoId, no.proximoNoOrdem, profundidade);
+        return;
+      }
+
+      case "incrementar_campo": {
+        const config = no.config as Extract<FluxoNoConfig, { campoNome: string; incremento: number }>;
+        const conversa = await getInboxConversaById(execucao.conversaId);
+        if (conversa?.clienteId && config.campoNome?.trim()) {
+          const campo = await criarCampoPersonalizado(config.campoNome.trim());
+          await incrementarCampoCliente(conversa.clienteId, campo.id, config.incremento ?? 1);
+        }
+        await avancar(execucaoId, no.proximoNoOrdem, profundidade);
         return;
       }
     }

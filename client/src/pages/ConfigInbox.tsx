@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, QrCode, RefreshCw, CheckCircle2, XCircle, AlertCircle, Tag, Plus, Pencil, Check, X, Trash2 } from "lucide-react";
+import { Loader2, QrCode, RefreshCw, CheckCircle2, XCircle, AlertCircle, Tag, Plus, Pencil, Check, X, Trash2, Hash } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
@@ -135,6 +135,129 @@ function EtiquetasManager() {
   );
 }
 
+/**
+ * Gerenciamento de campos personalizados numéricos (2026-09-04) — ex.:
+ * "contador de resposta a disparo". O valor de cada cliente é escrito
+ * sobretudo pelo motor de Fluxo; aqui só se define/renomeia/exclui o campo
+ * em si (o catálogo), igual à aba Etiquetas.
+ */
+function CamposPersonalizadosManager() {
+  const utils = trpc.useUtils();
+  const listQuery = trpc.camposPersonalizados.list.useQuery();
+  const [novoNome, setNovoNome] = useState("");
+  const [editandoId, setEditandoId] = useState<number | null>(null);
+  const [nomeEditado, setNomeEditado] = useState("");
+
+  const invalidar = () => utils.camposPersonalizados.list.invalidate();
+  const criarMutation = trpc.camposPersonalizados.criar.useMutation({
+    onSuccess: () => { invalidar(); setNovoNome(""); },
+    onError: (e) => toast.error(e.message),
+  });
+  const atualizarMutation = trpc.camposPersonalizados.atualizar.useMutation({
+    onSuccess: () => { invalidar(); setEditandoId(null); },
+    onError: (e) => toast.error(e.message),
+  });
+  const excluirMutation = trpc.camposPersonalizados.excluir.useMutation({
+    onSuccess: invalidar,
+    onError: (e) => toast.error(e.message),
+  });
+
+  function salvarEdicao(id: number) {
+    if (!nomeEditado.trim()) return;
+    atualizarMutation.mutate({ id, nome: nomeEditado.trim() });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Hash className="h-4 w-4" /> Campos personalizados
+        </CardTitle>
+        <CardDescription>
+          Valor numérico por cliente (ex.: contador de resposta a disparo). Também vira filtro no construtor de segmentação de Disparos.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex gap-2">
+          <Input
+            placeholder="Novo campo (ex.: Respostas a disparo)"
+            value={novoNome}
+            onChange={(e) => setNovoNome(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && novoNome.trim()) criarMutation.mutate({ nome: novoNome.trim() }); }}
+          />
+          <Button
+            disabled={!novoNome.trim() || criarMutation.isPending}
+            onClick={() => criarMutation.mutate({ nome: novoNome.trim() })}
+          >
+            {criarMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Plus className="h-4 w-4 mr-1.5" />}
+            Criar
+          </Button>
+        </div>
+
+        <div className="rounded-md border divide-y">
+          {listQuery.isLoading ? (
+            <div className="p-4 flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
+            </div>
+          ) : (listQuery.data ?? []).length === 0 ? (
+            <p className="p-4 text-sm text-muted-foreground">Nenhum campo cadastrado ainda.</p>
+          ) : (
+            (listQuery.data ?? []).map((campo) => (
+              <div key={campo.id} className="flex items-center justify-between gap-2 p-2.5">
+                {editandoId === campo.id ? (
+                  <Input
+                    className="h-8 text-sm flex-1"
+                    value={nomeEditado}
+                    onChange={(e) => setNomeEditado(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") salvarEdicao(campo.id);
+                      if (e.key === "Escape") setEditandoId(null);
+                    }}
+                    autoFocus
+                  />
+                ) : (
+                  <span className="text-sm">{campo.nome}</span>
+                )}
+                <div className="flex items-center gap-1 shrink-0">
+                  {editandoId === campo.id ? (
+                    <>
+                      <Button size="icon" variant="ghost" className="h-7 w-7" disabled={!nomeEditado.trim() || atualizarMutation.isPending} onClick={() => salvarEdicao(campo.id)}>
+                        <Check className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditandoId(null)}>
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditandoId(campo.id); setNomeEditado(campo.nome); }}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 hover:text-destructive"
+                        disabled={excluirMutation.isPending}
+                        onClick={() => {
+                          if (confirm(`Excluir o campo "${campo.nome}"? O valor salvo pra cada cliente também será apagado.`)) {
+                            excluirMutation.mutate({ id: campo.id });
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ConfigInbox() {
   const { unidadeSelecionada } = useUnidade();
   const unidadeId = unidadeSelecionada?.id;
@@ -174,6 +297,7 @@ export default function ConfigInbox() {
         <TabsList>
           <TabsTrigger value="conexao">Conexão</TabsTrigger>
           <TabsTrigger value="etiquetas">Etiquetas</TabsTrigger>
+          <TabsTrigger value="campos">Campos personalizados</TabsTrigger>
         </TabsList>
 
         <TabsContent value="conexao" className="space-y-6">
@@ -304,6 +428,10 @@ export default function ConfigInbox() {
 
         <TabsContent value="etiquetas" className="space-y-6">
           <EtiquetasManager />
+        </TabsContent>
+
+        <TabsContent value="campos" className="space-y-6">
+          <CamposPersonalizadosManager />
         </TabsContent>
       </Tabs>
     </div>

@@ -33,10 +33,10 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/component
 import { toast } from "sonner";
 import {
   ArrowLeft, Plus, Trash2, X, Save, MessageSquare, Clock, GitFork, Variable, Flag, Play, Search, Star, Zap,
-  Shuffle, Webhook as WebhookIcon, Image, ListChecks, ChevronDown,
+  Shuffle, Webhook as WebhookIcon, Image, ListChecks, ChevronDown, Tag, Hash,
 } from "lucide-react";
 
-type NoTipo = "mensagem" | "aguardar" | "condicional" | "salvar_variavel" | "fim" | "randomizador" | "webhook" | "midia" | "menu";
+type NoTipo = "mensagem" | "aguardar" | "condicional" | "salvar_variavel" | "fim" | "randomizador" | "webhook" | "midia" | "menu" | "aplicar_etiqueta" | "incrementar_campo";
 
 type FluxoNo = {
   id: number;
@@ -60,9 +60,11 @@ const TIPO_INFO: Record<NoTipo, { label: string; icon: any; cor: string }> = {
   webhook: { label: "Disparo de Webhook", icon: WebhookIcon, cor: "text-cyan-600 bg-cyan-50" },
   midia: { label: "Conteúdo com mídia", icon: Image, cor: "text-teal-600 bg-teal-50" },
   menu: { label: "Menu", icon: ListChecks, cor: "text-indigo-600 bg-indigo-50" },
+  aplicar_etiqueta: { label: "Aplicar etiqueta", icon: Tag, cor: "text-rose-600 bg-rose-50" },
+  incrementar_campo: { label: "Incrementar campo", icon: Hash, cor: "text-lime-600 bg-lime-50" },
 };
 
-const TIPOS_CRIAVEIS: NoTipo[] = ["mensagem", "aguardar", "condicional", "salvar_variavel", "randomizador", "webhook", "midia", "menu", "fim"];
+const TIPOS_CRIAVEIS: NoTipo[] = ["mensagem", "aguardar", "condicional", "salvar_variavel", "randomizador", "webhook", "midia", "menu", "aplicar_etiqueta", "incrementar_campo", "fim"];
 
 function configPadrao(tipo: NoTipo): any {
   switch (tipo) {
@@ -75,6 +77,8 @@ function configPadrao(tipo: NoTipo): any {
     case "webhook": return { url: "", variavelResposta: "", campoResposta: "", ordemSeErro: null };
     case "midia": return { tipoMidia: "imagem", storageKey: "", nomeArquivo: "", legenda: "" };
     case "menu": return { texto: "Escolha uma opção:", opcoes: [{ label: "Opção 1", ordemDestino: null }], ordemSeNaoEntendeu: null, diasTimeoutSemResposta: 3 };
+    case "aplicar_etiqueta": return { etiquetaNome: "" };
+    case "incrementar_campo": return { campoNome: "", incremento: 1 };
   }
 }
 
@@ -104,6 +108,10 @@ function resumoNo(no: FluxoNo): string {
       const opcoes = no.config?.opcoes ?? [];
       return `"${(no.config?.texto ?? "").slice(0, 40)}${(no.config?.texto?.length ?? 0) > 40 ? "…" : ""}" — ${opcoes.length} opção(ões)`;
     }
+    case "aplicar_etiqueta":
+      return no.config?.etiquetaNome ? `Etiqueta "${no.config.etiquetaNome}"` : "(sem etiqueta definida)";
+    case "incrementar_campo":
+      return no.config?.campoNome ? `${no.config.campoNome} += ${no.config?.incremento ?? 1}` : "(sem campo definido)";
   }
 }
 
@@ -846,6 +854,11 @@ function NoPainel({
   );
   const [timeoutMenu, setTimeoutMenu] = useState(String(no.config?.diasTimeoutSemResposta ?? 3));
   const [estiloMenu, setEstiloMenu] = useState<"texto" | "botoes" | "lista">(no.config?.estilo ?? "texto");
+  const [etiquetaNome, setEtiquetaNome] = useState(no.config?.etiquetaNome ?? "");
+  const [campoNome, setCampoNome] = useState(no.config?.campoNome ?? "");
+  const [incremento, setIncremento] = useState(String(no.config?.incremento ?? 1));
+  const etiquetasQuery = trpc.etiquetas.list.useQuery(undefined, { enabled: no.tipo === "aplicar_etiqueta" });
+  const camposPersonalizadosQuery = trpc.camposPersonalizados.list.useQuery(undefined, { enabled: no.tipo === "incrementar_campo" });
 
   const uploadMidiaMut = trpc.fluxos.nos.uploadMidia.useMutation({
     onSuccess: (r) => toast.success("Arquivo enviado — " + r.storageKey.split("/").pop()),
@@ -921,6 +934,8 @@ function NoPainel({
         };
         break;
       }
+      case "aplicar_etiqueta": config = { etiquetaNome: etiquetaNome.trim() }; break;
+      case "incrementar_campo": config = { campoNome: campoNome.trim(), incremento: parseInt(incremento) || 1 }; break;
     }
     onSalvar(config);
   };
@@ -1212,6 +1227,52 @@ function NoPainel({
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Timeout sem resposta (dias)</label>
               <Input type="number" min="1" className="w-24" value={timeoutMenu} onChange={(e) => setTimeoutMenu(e.target.value)} />
+            </div>
+          </div>
+        )}
+
+        {no.tipo === "aplicar_etiqueta" && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Marca o cliente da conversa com esta etiqueta ao passar por este ponto do fluxo. Se a etiqueta ainda não existir no catálogo, é criada automaticamente (tipo "sistema").
+            </p>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Etiqueta</label>
+              <Input
+                list="fluxo-etiquetas-existentes"
+                placeholder="Ex: Disparo: Zen Friday Novembro"
+                value={etiquetaNome}
+                onChange={(e) => setEtiquetaNome(e.target.value)}
+              />
+              <datalist id="fluxo-etiquetas-existentes">
+                {(etiquetasQuery.data ?? []).map((et) => <option key={et.id} value={et.nome} />)}
+              </datalist>
+            </div>
+          </div>
+        )}
+
+        {no.tipo === "incrementar_campo" && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Soma o valor abaixo ao campo numérico do cliente da conversa (pode ser negativo). Se o campo ainda não existir, é criado automaticamente.
+            </p>
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <label className="text-xs text-muted-foreground mb-1 block">Campo</label>
+                <Input
+                  list="fluxo-campos-existentes"
+                  placeholder="Ex: Respostas a disparo"
+                  value={campoNome}
+                  onChange={(e) => setCampoNome(e.target.value)}
+                />
+                <datalist id="fluxo-campos-existentes">
+                  {(camposPersonalizadosQuery.data ?? []).map((c) => <option key={c.id} value={c.nome} />)}
+                </datalist>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Incremento</label>
+                <Input type="number" className="w-24" value={incremento} onChange={(e) => setIncremento(e.target.value)} />
+              </div>
             </div>
           </div>
         )}

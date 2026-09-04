@@ -7,15 +7,17 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, Trash2, Users } from "lucide-react";
 
 export type CampoSegmento =
-  | "unidade" | "sexo" | "diasDesdeUltimoAtendimento" | "diasDesdeCadastro" | "qtdAtendimentos" | "terapiaFeita" | "etiqueta";
+  | "unidade" | "sexo" | "diasDesdeUltimoAtendimento" | "diasDesdeCadastro" | "qtdAtendimentos" | "terapiaFeita" | "etiqueta" | "campoPersonalizado";
 export type OperadorSegmento = "igual" | "diferente" | "maior" | "menor" | "maior_igual" | "menor_igual" | "contem";
 export interface FiltroSegmento {
   campo: CampoSegmento;
   operador: OperadorSegmento;
   valor: string;
+  /** Só quando campo === "campoPersonalizado": qual campo (campos_personalizados.id). */
+  campoPersonalizadoId?: number;
 }
 
-type TipoValor = "unidade" | "sexo" | "numero" | "texto_livre" | "etiqueta";
+type TipoValor = "unidade" | "sexo" | "numero" | "texto_livre" | "etiqueta" | "campoPersonalizado";
 
 const CAMPOS: Array<{ valor: CampoSegmento; label: string; tipoValor: TipoValor; operadores: Array<{ valor: OperadorSegmento; label: string }> }> = [
   { valor: "unidade", label: "Unidade", tipoValor: "unidade", operadores: [
@@ -42,6 +44,10 @@ const CAMPOS: Array<{ valor: CampoSegmento; label: string; tipoValor: TipoValor;
   { valor: "etiqueta", label: "Etiqueta", tipoValor: "etiqueta", operadores: [
     { valor: "igual", label: "tem" }, { valor: "diferente", label: "não tem" },
   ] },
+  { valor: "campoPersonalizado", label: "Campo personalizado", tipoValor: "campoPersonalizado", operadores: [
+    { valor: "maior", label: "maior que" }, { valor: "menor", label: "menor que" }, { valor: "igual", label: "igual a" },
+    { valor: "maior_igual", label: "maior ou igual a" }, { valor: "menor_igual", label: "menor ou igual a" },
+  ] },
 ];
 
 function campoInfo(campo: CampoSegmento) {
@@ -61,6 +67,7 @@ export function filtroSegmentoVazio(): FiltroSegmento {
 export function SegmentoFiltros({ filtros, onChange }: { filtros: FiltroSegmento[]; onChange: (f: FiltroSegmento[]) => void }) {
   const terapiasQuery = trpc.segmentos.opcoesTerapias.useQuery();
   const etiquetasQuery = trpc.etiquetas.list.useQuery();
+  const camposPersonalizadosQuery = trpc.camposPersonalizados.list.useQuery();
 
   // Debounce evita 1 request por tecla digitada nos campos numéricos/texto.
   const [filtrosDebounced, setFiltrosDebounced] = useState(filtros);
@@ -71,7 +78,9 @@ export function SegmentoFiltros({ filtros, onChange }: { filtros: FiltroSegmento
 
   const filtrosValidos = useMemo(() => filtrosDebounced.filter((f) => {
     if (!f.valor.trim()) return false;
-    if (campoInfo(f.campo).tipoValor === "numero") return Number.isFinite(Number(f.valor));
+    const tipoValor = campoInfo(f.campo).tipoValor;
+    if (tipoValor === "numero") return Number.isFinite(Number(f.valor));
+    if (tipoValor === "campoPersonalizado") return Number.isFinite(Number(f.valor)) && !!f.campoPersonalizadoId;
     return true;
   }), [filtrosDebounced]);
 
@@ -140,6 +149,22 @@ export function SegmentoFiltros({ filtros, onChange }: { filtros: FiltroSegmento
                   {(etiquetasQuery.data ?? []).map((e) => <SelectItem key={e.id} value={e.nome}>{e.nome}</SelectItem>)}
                 </SelectContent>
               </Select>
+            ) : info.tipoValor === "campoPersonalizado" ? (
+              <>
+                <Select value={filtro.campoPersonalizadoId?.toString() ?? ""} onValueChange={(v) => atualizarFiltro(i, { campoPersonalizadoId: Number(v) })}>
+                  <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="Qual campo" /></SelectTrigger>
+                  <SelectContent>
+                    {(camposPersonalizadosQuery.data ?? []).map((c) => <SelectItem key={c.id} value={c.id.toString()}>{c.nome}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  className="h-8 w-20 text-xs"
+                  value={filtro.valor}
+                  onChange={(e) => atualizarFiltro(i, { valor: e.target.value })}
+                  placeholder="0"
+                />
+              </>
             ) : (
               <Input
                 className="h-8 w-52 text-xs"

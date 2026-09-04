@@ -562,6 +562,11 @@ export const etiquetas = mysqlTable("etiquetas", {
   id: int("id").autoincrement().primaryKey(),
   nome: varchar("nome", { length: 60 }).notNull().unique(),
   cor: varchar("cor", { length: 20 }),
+  // "manual": recepção cria/atribui na tela Etiquetas ou no Inbox/Clientes.
+  // "sistema": criada/atribuída automaticamente por um fluxo (ex.: "Disparo:
+  // Zen Friday", "Respondeu disparo") — não é editável/atribuível por
+  // recepção pela tela normal (2026-09-04).
+  tipo: mysqlEnum("tipo", ["manual", "sistema"]).default("manual").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type Etiqueta = typeof etiquetas.$inferSelect;
@@ -577,6 +582,35 @@ export const clienteEtiquetas = mysqlTable("cliente_etiquetas", {
   etiquetaIdx: index("cliente_etiquetas_etiqueta_idx").on(table.etiquetaId),
 }));
 export type ClienteEtiqueta = typeof clienteEtiquetas.$inferSelect;
+
+/**
+ * Campo numérico customizado por cliente (2026-09-04) — ex.: "contador de
+ * resposta a disparo", incrementado automaticamente por um nó de Fluxo.
+ * Só "numero" por enquanto; o enum de tipo fica pronto pra crescer (texto,
+ * data) sem precisar de nova tabela.
+ */
+export const camposPersonalizados = mysqlTable("campos_personalizados", {
+  id: int("id").autoincrement().primaryKey(),
+  nome: varchar("nome", { length: 60 }).notNull().unique(),
+  tipo: mysqlEnum("tipo", ["numero"]).default("numero").notNull(),
+  descricao: varchar("descricao", { length: 300 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type CampoPersonalizado = typeof camposPersonalizados.$inferSelect;
+export type InsertCampoPersonalizado = typeof camposPersonalizados.$inferInsert;
+
+export const clienteCamposValores = mysqlTable("cliente_campos_valores", {
+  id: int("id").autoincrement().primaryKey(),
+  clienteId: int("clienteId").notNull(),
+  campoId: int("campoId").notNull(),
+  valorNumero: decimal("valorNumero", { precision: 14, scale: 2 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  clienteCampoUnico: uniqueIndex("cliente_campos_valores_cliente_campo_idx").on(table.clienteId, table.campoId),
+  campoIdx: index("cliente_campos_valores_campo_idx").on(table.campoId),
+}));
+export type ClienteCampoValor = typeof clienteCamposValores.$inferSelect;
+export type InsertClienteCampoValor = typeof clienteCamposValores.$inferInsert;
 export type InsertClienteEtiqueta = typeof clienteEtiquetas.$inferInsert;
 
 /** Opções operacionais que podem ser alteradas pelo administrador sem
@@ -1555,12 +1589,14 @@ export type FluxoNoConfig =
       ordemSeNaoEntendeu: number | null;
       diasTimeoutSemResposta?: number;
       estilo?: "texto" | "botoes" | "lista";
-    }; // menu
+    } // menu
+  | { etiquetaNome: string } // aplicar_etiqueta (2026-09-04) — cria (tipo "sistema") se não existir e atribui ao cliente da conversa
+  | { campoNome: string; incremento: number }; // incrementar_campo (2026-09-04) — cria o campo se não existir e soma incremento (pode ser negativo) ao valor do cliente
 
 export const fluxoNos = mysqlTable("fluxo_nos", {
   id: int("id").autoincrement().primaryKey(),
   fluxoId: int("fluxoId").notNull(),
-  tipo: mysqlEnum("tipo", ["mensagem", "aguardar", "condicional", "salvar_variavel", "fim", "randomizador", "webhook", "midia", "menu"]).notNull(),
+  tipo: mysqlEnum("tipo", ["mensagem", "aguardar", "condicional", "salvar_variavel", "fim", "randomizador", "webhook", "midia", "menu", "aplicar_etiqueta", "incrementar_campo"]).notNull(),
   ordem: int("ordem").notNull(), // chave interna do motor — identidade visual/canvas usa o `id`
   config: json("config").$type<FluxoNoConfig>().notNull(),
   proximoNoOrdem: int("proximoNoOrdem"), // próximo passo padrão — null = encerra o fluxo (exceto condicional/fim)
