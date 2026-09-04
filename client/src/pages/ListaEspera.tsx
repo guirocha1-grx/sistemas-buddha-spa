@@ -44,10 +44,9 @@ function montarMensagemConfirmacaoVaga(nomeCliente: string, dataIso: string, hor
   const primeiroNome = nomeCliente.trim().split(/\s+/)[0] || nomeCliente;
   let quando = formatarDataMensagem(dataIso);
   if (horarioDesejado) quando += `, às ${horarioDesejado}`;
-  let mensagem = `Olá, ${primeiroNome}! Temos uma boa notícia: conseguimos confirmar seu horário para ${quando}`;
-  if (terapiaDesejada) mensagem += ` (${terapiaDesejada})`;
-  mensagem += ". Podemos manter esse agendamento?";
-  return mensagem;
+  if (terapiaDesejada) quando += ` (${terapiaDesejada})`;
+  return `Olá, ${primeiroNome}! Uma ótima notícia para o seu autocuidado: conseguimos disponibilizar o horário que você desejava para sua pausa. Está disponível: ${quando}.\n\n`
+    + "Para respeitarmos o fluxo da nossa lista de espera, manteremos esse horário reservado para você por 30 minutos. Podemos confirmar o seu agendamento?";
 }
 
 export default function ListaEspera() {
