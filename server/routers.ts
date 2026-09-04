@@ -2388,6 +2388,22 @@ Diretrizes:
       return db.listListaEsperaPorData(input.unidadeId, input.data);
     }),
 
+    atualizar: protectedProcedure.input(z.object({
+      id: z.number(),
+      data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      horarioDesejado: z.string().max(60).optional(),
+      terapiaDesejada: z.string().max(250).optional(),
+      observacao: z.string().max(1000).optional(),
+    })).mutation(async ({ input }) => {
+      await db.atualizarEntradaListaEspera(input.id, {
+        data: input.data,
+        horarioDesejado: input.horarioDesejado,
+        terapiaDesejada: input.terapiaDesejada,
+        observacao: input.observacao,
+      });
+      return { success: true };
+    }),
+
     cancelar: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await db.atualizarStatusListaEspera(input.id, "cancelado");
       return { success: true };

@@ -8,11 +8,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
-import { Clock3, Crown, ListTodo, Loader2, Trash2 } from "lucide-react";
+import { Clock3, Crown, ListTodo, Loader2, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 function formatarDataSessao(iso: string): string {
@@ -36,13 +37,14 @@ export default function ListaEspera() {
 
   const [dataSelecionada, setDataSelecionada] = useState<string | null>(null);
   const [conversao, setConversao] = useState<{ id: number; conversaId: number | null; clienteNome: string; data: string; horario: string; servico: string; observacao: string | null } | null>(null);
+  const [edicao, setEdicao] = useState<{ id: number; clienteNome: string; data: string; horarioDesejado: string; terapiaDesejada: string; observacao: string } | null>(null);
 
   // Mesmo padrão do Inbox (Mensagens.tsx) pro campo de serviço — quanto mais
   // parecido com o form de agendamento de verdade, mais fácil vira um
-  // agendamento depois. Só busca quando o diálogo de conversão realmente abre.
+  // agendamento depois. Só busca quando algum diálogo que usa o campo abre.
   const tabelaPrecosQuery = trpc.tabelaPrecos.list.useQuery(
     { unidadeId: unidadeId ?? 0 },
-    { enabled: !!unidadeId && !!conversao },
+    { enabled: !!unidadeId && (!!conversao || !!edicao) },
   );
   const [filtroServicoSegSab, setFiltroServicoSegSab] = useState(true);
   const [filtroServicoDomFer, setFiltroServicoDomFer] = useState(false);
@@ -82,6 +84,10 @@ export default function ListaEspera() {
   });
   const marcarConvertidoMutation = trpc.listaEspera.marcarConvertido.useMutation({
     onSuccess: invalidarTudo,
+    onError: (e) => toast.error(e.message),
+  });
+  const atualizarMutation = trpc.listaEspera.atualizar.useMutation({
+    onSuccess: () => { invalidarTudo(); toast.success("Pedido atualizado."); setEdicao(null); },
     onError: (e) => toast.error(e.message),
   });
   const criarAtendimentoMutation = trpc.inbox.conversas.criarProximoAtendimento.useMutation({
@@ -191,6 +197,22 @@ export default function ListaEspera() {
                         >
                           <Clock3 className="mr-1.5 h-3.5 w-3.5" /> Transformar em agendamento
                         </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 shrink-0 text-muted-foreground"
+                          title="Editar pedido"
+                          onClick={() => setEdicao({
+                            id: pedido.id,
+                            clienteNome: pedido.clienteNome,
+                            data: dataSelecionada,
+                            horarioDesejado: pedido.horarioDesejado ?? "",
+                            terapiaDesejada: pedido.terapiaDesejada ?? "",
+                            observacao: pedido.observacao ?? "",
+                          })}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Remover da lista">
@@ -276,6 +298,64 @@ export default function ListaEspera() {
                 }}
               >
                 {criarAtendimentoMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Confirmar agendamento
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!edicao} onOpenChange={(aberto) => !aberto && setEdicao(null)}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Editar pedido — {edicao?.clienteNome}</DialogTitle>
+          </DialogHeader>
+          {edicao && (
+            <div className="space-y-2">
+              <div>
+                <Label className="text-xs">Data</Label>
+                <Input type="date" className="mt-1 h-8 text-xs" value={edicao.data} onChange={(e) => setEdicao({ ...edicao, data: e.target.value })} />
+              </div>
+              <div>
+                <Label className="text-xs">Horário desejado</Label>
+                <Input type="time" className="mt-1 h-8 text-xs" value={edicao.horarioDesejado} onChange={(e) => setEdicao({ ...edicao, horarioDesejado: e.target.value })} />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                    <Checkbox checked={filtroServicoSegSab} onCheckedChange={(v) => setFiltroServicoSegSab(!!v)} className="h-3.5 w-3.5" />
+                    Seg-Sáb
+                  </label>
+                  <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
+                    <Checkbox checked={filtroServicoDomFer} onCheckedChange={(v) => setFiltroServicoDomFer(!!v)} className="h-3.5 w-3.5" />
+                    Dom-Fer
+                  </label>
+                </div>
+                <CampoBuscaLista
+                  label="Terapia"
+                  value={edicao.terapiaDesejada}
+                  onChange={(v) => setEdicao({ ...edicao, terapiaDesejada: v })}
+                  valores={nomesServicos}
+                  placeholder="Selecione ou digite"
+                  id="lista-espera-edicao-servico"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Observação</Label>
+                <Textarea className="mt-1 text-xs" rows={2} value={edicao.observacao} onChange={(e) => setEdicao({ ...edicao, observacao: e.target.value })} />
+              </div>
+              <Button
+                size="sm"
+                className="w-full h-7 text-xs"
+                disabled={atualizarMutation.isPending}
+                onClick={() => atualizarMutation.mutate({
+                  id: edicao.id,
+                  data: edicao.data,
+                  horarioDesejado: edicao.horarioDesejado.trim() || undefined,
+                  terapiaDesejada: edicao.terapiaDesejada.trim() || undefined,
+                  observacao: edicao.observacao.trim() || undefined,
+                })}
+              >
+                {atualizarMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Salvar alterações
               </Button>
             </div>
           )}

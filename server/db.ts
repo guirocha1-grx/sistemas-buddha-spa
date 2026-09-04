@@ -5944,6 +5944,22 @@ export async function atualizarStatusListaEspera(id: number, status: "convertido
   await db.update(listaEspera).set({ status }).where(eq(listaEspera.id, id));
 }
 
+export async function atualizarEntradaListaEspera(id: number, dados: {
+  data: string;
+  horarioDesejado?: string | null;
+  terapiaDesejada?: string | null;
+  observacao?: string | null;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  await db.update(listaEspera).set({
+    data: dados.data,
+    horarioDesejado: dados.horarioDesejado?.trim() || null,
+    terapiaDesejada: dados.terapiaDesejada?.trim() || null,
+    observacao: dados.observacao?.trim() || null,
+  }).where(eq(listaEspera.id, id));
+}
+
 export async function removerEtiquetaDoCliente(clienteId: number, etiquetaId: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Banco de dados indisponível.");
