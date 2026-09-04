@@ -5787,6 +5787,14 @@ export async function atribuirEtiqueta(clienteId: number, etiquetaId: number): P
     .onDuplicateKeyUpdate({ set: { clienteId: sql`${clienteEtiquetas.clienteId}` } });
 }
 
+/** Usado pelo nó de Fluxo "Remover etiqueta" — não cria, só busca (nada a remover se não existir). */
+export async function buscarEtiquetaPorNome(nome: string): Promise<Etiqueta | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const resultado = await db.select().from(etiquetas).where(eq(etiquetas.nome, nome.trim())).limit(1);
+  return resultado[0] ?? null;
+}
+
 // ===== Campos personalizados (2026-09-04) — valor numérico por cliente
 // (ex.: "contador de resposta a disparo"), pensado pra ser incrementado por
 // um nó de Fluxo (fase 2, ver server/fluxos.ts) e usado como filtro de

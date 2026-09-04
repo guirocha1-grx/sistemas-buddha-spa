@@ -25,6 +25,8 @@ import {
   updateFluxoExecucao,
   criarEtiqueta,
   atribuirEtiqueta,
+  buscarEtiquetaPorNome,
+  removerEtiquetaDoCliente,
   criarCampoPersonalizado,
   incrementarCampoCliente,
 } from "./db";
@@ -516,6 +518,18 @@ async function processarPasso(execucaoId: number, profundidade: number): Promise
         if (conversa?.clienteId && config.etiquetaNome?.trim()) {
           const etiqueta = await criarEtiqueta(config.etiquetaNome.trim(), null, "sistema");
           await atribuirEtiqueta(conversa.clienteId, etiqueta.id);
+        }
+        await avancar(execucaoId, no.proximoNoOrdem, profundidade);
+        return;
+      }
+
+      case "remover_etiqueta": {
+        // Não cria a etiqueta se não existir — não há nada a remover nesse caso.
+        const config = no.config as Extract<FluxoNoConfig, { etiquetaNome: string }>;
+        const conversa = await getInboxConversaById(execucao.conversaId);
+        if (conversa?.clienteId && config.etiquetaNome?.trim()) {
+          const etiqueta = await buscarEtiquetaPorNome(config.etiquetaNome.trim());
+          if (etiqueta) await removerEtiquetaDoCliente(conversa.clienteId, etiqueta.id);
         }
         await avancar(execucaoId, no.proximoNoOrdem, profundidade);
         return;

@@ -1590,13 +1590,13 @@ export type FluxoNoConfig =
       diasTimeoutSemResposta?: number;
       estilo?: "texto" | "botoes" | "lista";
     } // menu
-  | { etiquetaNome: string } // aplicar_etiqueta (2026-09-04) — cria (tipo "sistema") se não existir e atribui ao cliente da conversa
+  | { etiquetaNome: string } // aplicar_etiqueta (cria como tipo "sistema" se não existir e atribui) / remover_etiqueta (remove se o cliente tiver; não cria) — 2026-09-04
   | { campoNome: string; incremento: number }; // incrementar_campo (2026-09-04) — cria o campo se não existir e soma incremento (pode ser negativo) ao valor do cliente
 
 export const fluxoNos = mysqlTable("fluxo_nos", {
   id: int("id").autoincrement().primaryKey(),
   fluxoId: int("fluxoId").notNull(),
-  tipo: mysqlEnum("tipo", ["mensagem", "aguardar", "condicional", "salvar_variavel", "fim", "randomizador", "webhook", "midia", "menu", "aplicar_etiqueta", "incrementar_campo"]).notNull(),
+  tipo: mysqlEnum("tipo", ["mensagem", "aguardar", "condicional", "salvar_variavel", "fim", "randomizador", "webhook", "midia", "menu", "aplicar_etiqueta", "remover_etiqueta", "incrementar_campo"]).notNull(),
   ordem: int("ordem").notNull(), // chave interna do motor — identidade visual/canvas usa o `id`
   config: json("config").$type<FluxoNoConfig>().notNull(),
   proximoNoOrdem: int("proximoNoOrdem"), // próximo passo padrão — null = encerra o fluxo (exceto condicional/fim)

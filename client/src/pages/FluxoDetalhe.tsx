@@ -36,7 +36,7 @@ import {
   Shuffle, Webhook as WebhookIcon, Image, ListChecks, ChevronDown, Tag, Hash,
 } from "lucide-react";
 
-type NoTipo = "mensagem" | "aguardar" | "condicional" | "salvar_variavel" | "fim" | "randomizador" | "webhook" | "midia" | "menu" | "aplicar_etiqueta" | "incrementar_campo";
+type NoTipo = "mensagem" | "aguardar" | "condicional" | "salvar_variavel" | "fim" | "randomizador" | "webhook" | "midia" | "menu" | "aplicar_etiqueta" | "remover_etiqueta" | "incrementar_campo";
 
 type FluxoNo = {
   id: number;
@@ -61,10 +61,11 @@ const TIPO_INFO: Record<NoTipo, { label: string; icon: any; cor: string }> = {
   midia: { label: "Conteúdo com mídia", icon: Image, cor: "text-teal-600 bg-teal-50" },
   menu: { label: "Menu", icon: ListChecks, cor: "text-indigo-600 bg-indigo-50" },
   aplicar_etiqueta: { label: "Aplicar etiqueta", icon: Tag, cor: "text-rose-600 bg-rose-50" },
+  remover_etiqueta: { label: "Remover etiqueta", icon: Tag, cor: "text-slate-600 bg-slate-100" },
   incrementar_campo: { label: "Incrementar campo", icon: Hash, cor: "text-lime-600 bg-lime-50" },
 };
 
-const TIPOS_CRIAVEIS: NoTipo[] = ["mensagem", "aguardar", "condicional", "salvar_variavel", "randomizador", "webhook", "midia", "menu", "aplicar_etiqueta", "incrementar_campo", "fim"];
+const TIPOS_CRIAVEIS: NoTipo[] = ["mensagem", "aguardar", "condicional", "salvar_variavel", "randomizador", "webhook", "midia", "menu", "aplicar_etiqueta", "remover_etiqueta", "incrementar_campo", "fim"];
 
 function configPadrao(tipo: NoTipo): any {
   switch (tipo) {
@@ -78,6 +79,7 @@ function configPadrao(tipo: NoTipo): any {
     case "midia": return { tipoMidia: "imagem", storageKey: "", nomeArquivo: "", legenda: "" };
     case "menu": return { texto: "Escolha uma opção:", opcoes: [{ label: "Opção 1", ordemDestino: null }], ordemSeNaoEntendeu: null, diasTimeoutSemResposta: 3 };
     case "aplicar_etiqueta": return { etiquetaNome: "" };
+    case "remover_etiqueta": return { etiquetaNome: "" };
     case "incrementar_campo": return { campoNome: "", incremento: 1 };
   }
 }
@@ -110,6 +112,8 @@ function resumoNo(no: FluxoNo): string {
     }
     case "aplicar_etiqueta":
       return no.config?.etiquetaNome ? `Etiqueta "${no.config.etiquetaNome}"` : "(sem etiqueta definida)";
+    case "remover_etiqueta":
+      return no.config?.etiquetaNome ? `Remove etiqueta "${no.config.etiquetaNome}"` : "(sem etiqueta definida)";
     case "incrementar_campo":
       return no.config?.campoNome ? `${no.config.campoNome} += ${no.config?.incremento ?? 1}` : "(sem campo definido)";
   }
@@ -857,7 +861,7 @@ function NoPainel({
   const [etiquetaNome, setEtiquetaNome] = useState(no.config?.etiquetaNome ?? "");
   const [campoNome, setCampoNome] = useState(no.config?.campoNome ?? "");
   const [incremento, setIncremento] = useState(String(no.config?.incremento ?? 1));
-  const etiquetasQuery = trpc.etiquetas.list.useQuery(undefined, { enabled: no.tipo === "aplicar_etiqueta" });
+  const etiquetasQuery = trpc.etiquetas.list.useQuery(undefined, { enabled: no.tipo === "aplicar_etiqueta" || no.tipo === "remover_etiqueta" });
   const camposPersonalizadosQuery = trpc.camposPersonalizados.list.useQuery(undefined, { enabled: no.tipo === "incrementar_campo" });
 
   const uploadMidiaMut = trpc.fluxos.nos.uploadMidia.useMutation({
@@ -935,6 +939,7 @@ function NoPainel({
         break;
       }
       case "aplicar_etiqueta": config = { etiquetaNome: etiquetaNome.trim() }; break;
+      case "remover_etiqueta": config = { etiquetaNome: etiquetaNome.trim() }; break;
       case "incrementar_campo": config = { campoNome: campoNome.trim(), incremento: parseInt(incremento) || 1 }; break;
     }
     onSalvar(config);
@@ -1241,6 +1246,26 @@ function NoPainel({
               <Input
                 list="fluxo-etiquetas-existentes"
                 placeholder="Ex: Disparo: Zen Friday Novembro"
+                value={etiquetaNome}
+                onChange={(e) => setEtiquetaNome(e.target.value)}
+              />
+              <datalist id="fluxo-etiquetas-existentes">
+                {(etiquetasQuery.data ?? []).map((et) => <option key={et.id} value={et.nome} />)}
+              </datalist>
+            </div>
+          </div>
+        )}
+
+        {no.tipo === "remover_etiqueta" && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Remove esta etiqueta do cliente da conversa ao passar por este ponto do fluxo — sem efeito se ele não tiver a etiqueta (não cria a etiqueta se ela não existir).
+            </p>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Etiqueta</label>
+              <Input
+                list="fluxo-etiquetas-existentes"
+                placeholder="Ex: Aguardando resposta de disparo"
                 value={etiquetaNome}
                 onChange={(e) => setEtiquetaNome(e.target.value)}
               />
