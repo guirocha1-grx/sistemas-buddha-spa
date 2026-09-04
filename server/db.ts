@@ -5754,6 +5754,14 @@ export async function criarEtiqueta(nome: string, cor?: string | null): Promise<
   return { id: Number(resultado[0].insertId), nome: nomeNormalizado, cor: cor ?? null, createdAt: new Date() };
 }
 
+export async function atualizarEtiqueta(id: number, nome: string, cor?: string | null): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  const nomeNormalizado = nome.trim();
+  if (!nomeNormalizado) throw new Error("Nome da etiqueta é obrigatório.");
+  await db.update(etiquetas).set({ nome: nomeNormalizado, ...(cor !== undefined ? { cor } : {}) }).where(eq(etiquetas.id, id));
+}
+
 export async function excluirEtiqueta(id: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Banco de dados indisponível.");

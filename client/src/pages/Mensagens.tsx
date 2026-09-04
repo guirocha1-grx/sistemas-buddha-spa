@@ -269,7 +269,6 @@ export default function Mensagens() {
   const [buscaMensagem, setBuscaMensagem] = useState("");
   const [editandoNome, setEditandoNome] = useState(false);
   const [nomeEditavel, setNomeEditavel] = useState("");
-  const [novaEtiqueta, setNovaEtiqueta] = useState("");
   const [modalKillSwitch, setModalKillSwitch] = useState(false);
   const [modalExcluir, setModalExcluir] = useState(false);
   const [modalUnificar, setModalUnificar] = useState(false);
@@ -590,10 +589,10 @@ export default function Mensagens() {
   });
 
   // Catálogo compartilhado com Clientes.tsx e o construtor de segmentação de
-  // Disparos (2026-09-03) — etiqueta criada/aplicada aqui também vira filtro
-  // de segmento, sem precisar duplicar o cadastro em outra tela.
+  // Disparos (2026-09-03) — etiqueta aplicada aqui também vira filtro de
+  // segmento. Criar/editar/excluir etiqueta do catálogo é só em Configuração
+  // do Inbox (admin) — aqui só se atribui uma já existente.
   const catalogoEtiquetasQuery = trpc.etiquetas.list.useQuery();
-  const criarEtiquetaMutation = trpc.etiquetas.criar.useMutation();
   const atribuirEtiquetaClienteMutation = trpc.etiquetas.atribuir.useMutation({
     onSuccess: () => utils.etiquetas.list.invalidate(),
   });
@@ -1053,24 +1052,16 @@ export default function Mensagens() {
     atualizarNomeMutation.mutate({ id: conversaSelecionadaId, nome: nomeEditavel.trim() });
   }
 
-  // Grava tanto na conversa (exibição/histórico local, como sempre foi)
-  // quanto no catálogo compartilhado de etiquetas do cliente — assim uma tag
-  // aplicada aqui já fica disponível como filtro em Disparos.
-  function adicionarEtiqueta(nomeEtiqueta: string) {
-    const etiqueta = nomeEtiqueta.trim();
-    if (!etiqueta || !conversaSelecionadaId) return;
-    if (etiquetasAtuais.includes(etiqueta)) {
-      setNovaEtiqueta("");
-      return;
-    }
-    definirEtiquetasMutation.mutate({ id: conversaSelecionadaId, etiquetas: [...etiquetasAtuais, etiqueta] });
-    setNovaEtiqueta("");
+  // Só aplica etiqueta já existente no catálogo (criar fica restrito a admin,
+  // na tela Configuração do Inbox — ver ConfigInbox.tsx). Grava tanto na
+  // conversa (exibição/histórico local, como sempre foi) quanto no catálogo
+  // compartilhado de etiquetas do cliente, que já fica disponível como
+  // filtro em Disparos.
+  function adicionarEtiqueta(etiquetaCatalogo: { id: number; nome: string }) {
+    if (!conversaSelecionadaId || etiquetasAtuais.includes(etiquetaCatalogo.nome)) return;
+    definirEtiquetasMutation.mutate({ id: conversaSelecionadaId, etiquetas: [...etiquetasAtuais, etiquetaCatalogo.nome] });
     const clienteId = conversaSelecionada?.clienteId;
-    if (clienteId) {
-      criarEtiquetaMutation.mutate({ nome: etiqueta }, {
-        onSuccess: (etiquetaCatalogo) => atribuirEtiquetaClienteMutation.mutate({ clienteId, etiquetaId: etiquetaCatalogo.id }),
-      });
-    }
+    if (clienteId) atribuirEtiquetaClienteMutation.mutate({ clienteId, etiquetaId: etiquetaCatalogo.id });
   }
 
   function removerEtiqueta(etq: string) {
@@ -2250,7 +2241,7 @@ export default function Mensagens() {
 
                 <div className="space-y-2">
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Etiquetas</p>
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap items-center gap-1">
                     {etiquetasAtuais.length === 0 && (
                       <p className="text-[10px] text-muted-foreground/60 italic">Nenhuma etiqueta ainda.</p>
                     )}
@@ -2263,28 +2254,25 @@ export default function Mensagens() {
                         </button>
                       </Badge>
                     ))}
-                  </div>
-                  {(catalogoEtiquetasQuery.data ?? []).filter((e) => !etiquetasAtuais.includes(e.nome)).length > 0 && (
-                    <Select value="" onValueChange={adicionarEtiqueta}>
-                      <SelectTrigger className="h-6 text-[11px]"><SelectValue placeholder="Adicionar existente" /></SelectTrigger>
-                      <SelectContent>
-                        {(catalogoEtiquetasQuery.data ?? []).filter((e) => !etiquetasAtuais.includes(e.nome)).map((e) => (
-                          <SelectItem key={e.id} value={e.nome}>{e.nome}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  <div className="flex gap-1">
-                    <Input
-                      value={novaEtiqueta}
-                      onChange={(e) => setNovaEtiqueta(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") adicionarEtiqueta(novaEtiqueta); }}
-                      placeholder="Nova etiqueta"
-                      className="h-6 text-[11px]"
-                    />
-                    <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => adicionarEtiqueta(novaEtiqueta)} disabled={!novaEtiqueta.trim()}>
-                      +
-                    </Button>
+                    {(() => {
+                      const disponiveis = (catalogoEtiquetasQuery.data ?? []).filter((e) => !etiquetasAtuais.includes(e.nome));
+                      if (disponiveis.length === 0) return null;
+                      return (
+                        <Select value="" onValueChange={(valor) => {
+                          const etiqueta = disponiveis.find((e) => e.id.toString() === valor);
+                          if (etiqueta) adicionarEtiqueta(etiqueta);
+                        }}>
+                          <SelectTrigger className="h-4 px-1 gap-0.5 border-none opacity-50 hover:opacity-100" title="Adicionar etiqueta">
+                            <Plus className="h-2.5 w-2.5 text-muted-foreground" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {disponiveis.map((e) => (
+                              <SelectItem key={e.id} value={e.id.toString()}>{e.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      );
+                    })()}
                   </div>
                 </div>
 

@@ -392,9 +392,13 @@ function SortTh({ col, label, orderBy, orderDir, onSort, className }: {
  * segmentação de Disparos (ver client/src/components/SegmentoFiltros.tsx)
  * pra marcar algo que não vem do Belle (ex.: "veio pelo Instagram").
  */
+/**
+ * Atribuir/remover etiqueta já existente do catálogo. Criar/editar/excluir
+ * etiqueta fica restrito a admin, na tela Configuração do Inbox
+ * (client/src/pages/ConfigInbox.tsx) — aqui é só atribuição.
+ */
 function EtiquetasCliente({ clienteId }: { clienteId: number }) {
   const utils = trpc.useUtils();
-  const [novaEtiqueta, setNovaEtiqueta] = useState("");
   const etiquetasDoClienteQuery = trpc.etiquetas.porCliente.useQuery({ clienteId });
   const catalogoQuery = trpc.etiquetas.list.useQuery();
 
@@ -411,13 +415,6 @@ function EtiquetasCliente({ clienteId }: { clienteId: number }) {
     onSuccess: invalidar,
     onError: (e) => toast.error(e.message),
   });
-  const criarMutation = trpc.etiquetas.criar.useMutation({
-    onSuccess: (etiqueta) => {
-      atribuirMutation.mutate({ clienteId, etiquetaId: etiqueta.id });
-      setNovaEtiqueta("");
-    },
-    onError: (e) => toast.error(e.message),
-  });
 
   const atribuidas = etiquetasDoClienteQuery.data ?? [];
   const idsAtribuidos = new Set(atribuidas.map((e) => e.id));
@@ -429,7 +426,7 @@ function EtiquetasCliente({ clienteId }: { clienteId: number }) {
         <Tag className="h-3.5 w-3.5 text-muted-foreground" />
         <h3 className="font-medium text-sm">Etiquetas</h3>
       </div>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         {atribuidas.length === 0 && <span className="text-xs text-muted-foreground">Nenhuma etiqueta ainda.</span>}
         {atribuidas.map((etiqueta) => (
           <Badge key={etiqueta.id} variant="outline" className="text-xs gap-1 pr-1">
@@ -443,33 +440,16 @@ function EtiquetasCliente({ clienteId }: { clienteId: number }) {
             </button>
           </Badge>
         ))}
-      </div>
-      <div className="flex items-center gap-2 flex-wrap">
         {disponiveis.length > 0 && (
           <Select value="" onValueChange={(v) => atribuirMutation.mutate({ clienteId, etiquetaId: Number(v) })}>
-            <SelectTrigger className="h-7 w-40 text-xs"><SelectValue placeholder="Adicionar existente" /></SelectTrigger>
+            <SelectTrigger className="h-5 px-1 gap-0.5 border-none opacity-50 hover:opacity-100" title="Adicionar etiqueta">
+              <Plus className="h-3 w-3 text-muted-foreground" />
+            </SelectTrigger>
             <SelectContent>
               {disponiveis.map((e) => <SelectItem key={e.id} value={String(e.id)}>{e.nome}</SelectItem>)}
             </SelectContent>
           </Select>
         )}
-        <Input
-          className="h-7 w-36 text-xs"
-          placeholder="Nova etiqueta"
-          value={novaEtiqueta}
-          onChange={(ev) => setNovaEtiqueta(ev.target.value)}
-          onKeyDown={(ev) => { if (ev.key === "Enter" && novaEtiqueta.trim()) criarMutation.mutate({ nome: novaEtiqueta.trim() }); }}
-        />
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="h-7 px-2 text-xs"
-          disabled={!novaEtiqueta.trim() || criarMutation.isPending}
-          onClick={() => criarMutation.mutate({ nome: novaEtiqueta.trim() })}
-        >
-          <Plus className="h-3 w-3 mr-1" /> Criar
-        </Button>
       </div>
     </div>
   );

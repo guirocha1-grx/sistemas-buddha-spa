@@ -2271,10 +2271,22 @@ Diretrizes:
   etiquetas: router({
     list: protectedProcedure.query(async () => db.listEtiquetas()),
 
-    criar: protectedProcedure.input(z.object({
+    // Criar/editar/excluir ficam restritas a admin (gerência) — a tela de
+    // gerenciamento fica em Configuração do Inbox. Recepção só atribui/
+    // remove etiqueta já existente de um cliente (abaixo).
+    criar: adminProcedure.input(z.object({
       nome: z.string().min(1).max(60),
       cor: z.string().max(20).optional(),
     })).mutation(async ({ input }) => db.criarEtiqueta(input.nome, input.cor)),
+
+    atualizar: adminProcedure.input(z.object({
+      id: z.number(),
+      nome: z.string().min(1).max(60),
+      cor: z.string().max(20).optional(),
+    })).mutation(async ({ input }) => {
+      await db.atualizarEtiqueta(input.id, input.nome, input.cor);
+      return { success: true };
+    }),
 
     excluir: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await db.excluirEtiqueta(input.id);
