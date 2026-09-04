@@ -393,6 +393,10 @@ export default function Mensagens() {
     return new URLSearchParams(search).get("telefone")?.trim() ?? "";
   }, [search]);
 
+  const mensagemSolicitada = useMemo(() => {
+    return new URLSearchParams(search).get("mensagem")?.trim() ?? "";
+  }, [search]);
+
   const { data: mensageriaStatus } = trpc.mensageria.status.useQuery();
   const setMensageriaStatus = trpc.mensageria.setStatus.useMutation({
     onSuccess: () => {
@@ -706,12 +710,17 @@ export default function Mensagens() {
   // da digitação).
   const solicitacaoAplicadaRef = useRef<string | null>(null);
   useEffect(() => {
-    const chave = `${conversaIdSolicitada ?? ""}|${telefoneSolicitado}`;
+    const chave = `${conversaIdSolicitada ?? ""}|${telefoneSolicitado}|${mensagemSolicitada}`;
     if (!conversaIdSolicitada && !telefoneSolicitado) return;
     if (solicitacaoAplicadaRef.current === chave) return;
     if (conversaIdSolicitada) {
       setBusca("");
       selecionarConversa(conversaIdSolicitada);
+      // Só sobrescreve se não havia rascunho salvo — não queremos apagar
+      // algo que a recepção já estava escrevendo pra essa conversa.
+      if (mensagemSolicitada && !sessionStorage.getItem(`${CHAVE_RASCUNHO_CONVERSA}:${conversaIdSolicitada}`)) {
+        setTexto(mensagemSolicitada);
+      }
       solicitacaoAplicadaRef.current = chave;
       return;
     }
@@ -722,7 +731,7 @@ export default function Mensagens() {
       setBusca("");
       solicitacaoAplicadaRef.current = chave;
     }
-  }, [conversas, conversaIdSolicitada, telefoneSolicitado]);
+  }, [conversas, conversaIdSolicitada, telefoneSolicitado, mensagemSolicitada]);
 
   function selecionarConversa(conversaId: number) {
     if (conversaDonaDoTextoRef.current !== conversaId) {

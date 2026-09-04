@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import UnidadeSelector from "@/components/UnidadeSelector";
+import { rotaInboxConversa } from "@shared/inboxNavigation";
 import { CampoBuscaLista } from "@/components/CampoBuscaLista";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
-import { Clock3, Crown, ListTodo, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Clock3, Crown, ListTodo, Loader2, MessageCircle, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 function formatarDataSessao(iso: string): string {
@@ -30,7 +32,26 @@ function pedidoEm(createdAt: string | Date): string {
   }).format(new Date(createdAt));
 }
 
+function formatarDataMensagem(iso: string): string {
+  const [ano, mes, dia] = iso.split("-").map(Number);
+  const data = new Date(ano, mes - 1, dia);
+  const diaSemana = new Intl.DateTimeFormat("pt-BR", { weekday: "long" }).format(data);
+  return `${diaSemana}, ${String(dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}`;
+}
+
+/** Mensagem padrão pra avisar quem está na fila que abriu vaga — fica pronta na caixa de texto do Inbox, editável antes de enviar. */
+function montarMensagemConfirmacaoVaga(nomeCliente: string, dataIso: string, horarioDesejado: string | null, terapiaDesejada: string | null): string {
+  const primeiroNome = nomeCliente.trim().split(/\s+/)[0] || nomeCliente;
+  let quando = formatarDataMensagem(dataIso);
+  if (horarioDesejado) quando += `, às ${horarioDesejado}`;
+  let mensagem = `Olá, ${primeiroNome}! Temos uma boa notícia: conseguimos confirmar seu horário para ${quando}`;
+  if (terapiaDesejada) mensagem += ` (${terapiaDesejada})`;
+  mensagem += ". Podemos manter esse agendamento?";
+  return mensagem;
+}
+
 export default function ListaEspera() {
+  const [, setLocation] = useLocation();
   const { unidadeSelecionada } = useUnidade();
   const unidadeId = unidadeSelecionada?.id;
   const utils = trpc.useUtils();
@@ -196,6 +217,22 @@ export default function ListaEspera() {
                           })}
                         >
                           <Clock3 className="mr-1.5 h-3.5 w-3.5" /> Transformar em agendamento
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 shrink-0 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+                          disabled={!pedido.conversaId}
+                          title={pedido.conversaId ? "Chamar no WhatsApp" : "Pedido sem conversa vinculada"}
+                          onClick={() => {
+                            if (!pedido.conversaId || !dataSelecionada) return;
+                            setLocation(rotaInboxConversa(
+                              pedido.conversaId,
+                              montarMensagemConfirmacaoVaga(pedido.clienteNome, dataSelecionada, pedido.horarioDesejado, pedido.terapiaDesejada),
+                            ));
+                          }}
+                        >
+                          <MessageCircle className="h-4 w-4" />
                         </Button>
                         <Button
                           size="icon"
