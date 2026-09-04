@@ -32,7 +32,7 @@ import { toast } from "sonner";
 import { useSearch } from "wouter";
 import { telefonesCorrespondem } from "@shared/telefone";
 import { getInboxAttachmentUrl, type InboxAttachmentMetadata } from "@shared/inboxMedia";
-import { formatPhone, diasDesde, opcoesPreferenciaTerapeuta } from "@/lib/utils";
+import { formatPhone, diasDesde, opcoesPreferenciaTerapeuta, SIMBOLO_NIVEL_TERAPEUTA } from "@/lib/utils";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { ScriptPicker } from "@/components/ScriptPicker";
 import { ChamadoTerapeutaDialog } from "@/components/ChamadoTerapeutaDialog";
@@ -204,23 +204,31 @@ function PreferenciaTerapeutaInline({ clienteId, unidadeId }: { clienteId: numbe
   const preferencias = opcoesQuery.data?.preferencias ?? [];
   const terapeutas = opcoesPreferenciaTerapeuta(opcoesQuery.data?.terapeutas ?? []);
   const disponiveis = terapeutas.filter((t) => !preferencias.some((p) => p.terapeutaId === t.id));
+  // Símbolo de nível só existe pra terapeuta real (não pras opções de gênero
+  // sintéticas nem pro legado "Pendente de sorteio") — daí vir da lista crua,
+  // antes do opcoesPreferenciaTerapeuta acrescentar as sintéticas.
+  const nivelPorTerapeutaId = new Map((opcoesQuery.data?.terapeutas ?? []).map((t) => [t.id, t.nivel]));
 
   return (
     <div className="flex items-center justify-center gap-1 mt-1 flex-wrap">
       <span className="text-[10px] text-muted-foreground">Pref.</span>
       {preferencias.length === 0 && <span className="text-[10px] text-muted-foreground">—</span>}
-      {preferencias.map((pref) => (
-        <Badge key={pref.id} variant="outline" className="text-[10px] h-5 gap-1 pr-1">
-          {pref.terapeutaNome}
-          <button
-            type="button"
-            className="hover:text-destructive"
-            onClick={() => pref.terapeutaId && removerMutation.mutate({ clienteId, unidadeId, terapeutaId: pref.terapeutaId })}
-          >
-            <X className="h-2.5 w-2.5" />
-          </button>
-        </Badge>
-      ))}
+      {preferencias.map((pref) => {
+        const nivel = pref.terapeutaId ? nivelPorTerapeutaId.get(pref.terapeutaId) : undefined;
+        return (
+          <Badge key={pref.id} variant="outline" className="text-[12.5px] h-5 gap-1 pr-1">
+            {pref.terapeutaNome}
+            {nivel && <span title={`Nível ${nivel}`}>{SIMBOLO_NIVEL_TERAPEUTA[nivel]}</span>}
+            <button
+              type="button"
+              className="hover:text-destructive"
+              onClick={() => pref.terapeutaId && removerMutation.mutate({ clienteId, unidadeId, terapeutaId: pref.terapeutaId })}
+            >
+              <X className="h-2.5 w-2.5" />
+            </button>
+          </Badge>
+        );
+      })}
       {disponiveis.length > 0 && (
         <Select
           value=""
@@ -233,8 +241,8 @@ function PreferenciaTerapeutaInline({ clienteId, unidadeId }: { clienteId: numbe
             });
           }}
         >
-          <SelectTrigger className="h-5 px-1 gap-0.5 border-dashed" title="Adicionar terapeuta de preferência">
-            <Plus className="h-3 w-3 text-muted-foreground" />
+          <SelectTrigger className="h-4 px-1 gap-0.5 border-none opacity-50 hover:opacity-100" title="Adicionar terapeuta de preferência">
+            <Plus className="h-2.5 w-2.5 text-muted-foreground" />
           </SelectTrigger>
           <SelectContent>
             {disponiveis.map((t) => (

@@ -1861,7 +1861,7 @@ export async function listChamadosParametrosAdmin(unidadeId: number) {
 export async function listTerapeutasAtivos(unidadeId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
+  return db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado, nivel: terapeutas.nivel })
     .from(terapeutas)
     .where(and(eq(terapeutas.unidadeId, unidadeId), eq(terapeutas.ativo, true)))
     .orderBy(asc(terapeutas.nomeAbreviado));

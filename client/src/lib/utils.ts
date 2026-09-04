@@ -43,6 +43,9 @@ export function diasDesde(data: string | null | undefined): number | null {
   return Math.round(diffMs / (1000 * 60 * 60 * 24));
 }
 
+/** Mesmo símbolo por nível usado em TerapeutasSection.tsx — compacto o bastante pra não poluir a exibição. */
+export const SIMBOLO_NIVEL_TERAPEUTA: Record<string, string> = { diamante: "💎", ouro: "🥇", prata: "🥈", bronze: "🥉" };
+
 /**
  * Duas opções de gênero pra preferência de terapeuta (2026-09-04) — id
  * sintético negativo, mesmo padrão já usado pra lead sem belleId real
