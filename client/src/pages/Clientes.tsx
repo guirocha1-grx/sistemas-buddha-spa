@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { rotaInboxConversa } from "@shared/inboxNavigation";
 import { ClienteWhatsAppButton } from "@/components/ClienteWhatsAppButton";
-import { diasDesde } from "@/lib/utils";
+import { diasDesde, opcoesPreferenciaTerapeuta } from "@/lib/utils";
 
 function fileParaBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -804,7 +804,7 @@ export default function Clientes() {
                             <Select
                               value=""
                               onValueChange={(valor) => {
-                                const terapeuta = chamadoOpcoesQuery.data?.terapeutas.find((item) => item.id.toString() === valor);
+                                const terapeuta = opcoesPreferenciaTerapeuta(chamadoOpcoesQuery.data?.terapeutas ?? []).find((item) => item.id.toString() === valor);
                                 if (!terapeuta) return;
                                 adicionarPreferenciaMutation.mutate({
                                   clienteId: selectedCliente.id,
@@ -817,7 +817,7 @@ export default function Clientes() {
                             >
                               <SelectTrigger className="h-8 text-xs w-48"><SelectValue placeholder="Adicionar terapeuta" /></SelectTrigger>
                               <SelectContent>
-                                {(chamadoOpcoesQuery.data?.terapeutas ?? [])
+                                {opcoesPreferenciaTerapeuta(chamadoOpcoesQuery.data?.terapeutas ?? [])
                                   .filter((t) => !(chamadoOpcoesQuery.data?.preferencias ?? []).some((p) => p.terapeutaId === t.id))
                                   .map((terapeuta) => (
                                     <SelectItem key={terapeuta.id} value={terapeuta.id.toString()}>{terapeuta.nomeAbreviado || terapeuta.nomeCompleto}</SelectItem>

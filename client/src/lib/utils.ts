@@ -42,3 +42,28 @@ export function diasDesde(data: string | null | undefined): number | null {
   const diffMs = hoje.getTime() - referencia.getTime();
   return Math.round(diffMs / (1000 * 60 * 60 * 24));
 }
+
+/**
+ * Duas opções de gênero pra preferência de terapeuta (2026-09-04) — id
+ * sintético negativo, mesmo padrão já usado pra lead sem belleId real
+ * (nunca colide com id de terapeuta de verdade, que é sempre positivo).
+ * Ficam só na lista de preferência: não são linha na tabela `terapeutas`,
+ * então não aparecem no diálogo de "Chamar terapeuta" nem entram no nome
+ * da mensagem de chamado.
+ */
+export const OPCOES_GENERO_PREFERENCIA_TERAPEUTA = [
+  { id: -1, nomeAbreviado: "Terapeuta Mulher", nomeCompleto: "Terapeuta Mulher" },
+  { id: -2, nomeAbreviado: "Terapeuta Homem", nomeCompleto: "Terapeuta Homem" },
+];
+
+/**
+ * Monta a lista de opções pra selecionar preferência de terapeuta: remove o
+ * terapeuta curinga "Pendente de sorteio" (não faz sentido como preferência)
+ * e acrescenta as opções de gênero acima.
+ */
+export function opcoesPreferenciaTerapeuta<T extends { nomeCompleto: string }>(terapeutas: T[]) {
+  return [
+    ...terapeutas.filter((t) => t.nomeCompleto !== "Pendente de sorteio"),
+    ...OPCOES_GENERO_PREFERENCIA_TERAPEUTA,
+  ];
+}

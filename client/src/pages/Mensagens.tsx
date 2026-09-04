@@ -32,7 +32,7 @@ import { toast } from "sonner";
 import { useSearch } from "wouter";
 import { telefonesCorrespondem } from "@shared/telefone";
 import { getInboxAttachmentUrl, type InboxAttachmentMetadata } from "@shared/inboxMedia";
-import { formatPhone, diasDesde } from "@/lib/utils";
+import { formatPhone, diasDesde, opcoesPreferenciaTerapeuta } from "@/lib/utils";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { ScriptPicker } from "@/components/ScriptPicker";
 import { ChamadoTerapeutaDialog } from "@/components/ChamadoTerapeutaDialog";
@@ -202,7 +202,7 @@ function PreferenciaTerapeutaInline({ clienteId, unidadeId }: { clienteId: numbe
   });
 
   const preferencias = opcoesQuery.data?.preferencias ?? [];
-  const terapeutas = opcoesQuery.data?.terapeutas ?? [];
+  const terapeutas = opcoesPreferenciaTerapeuta(opcoesQuery.data?.terapeutas ?? []);
   const disponiveis = terapeutas.filter((t) => !preferencias.some((p) => p.terapeutaId === t.id));
 
   return (
@@ -2037,7 +2037,13 @@ export default function Mensagens() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-56">
-                              <DropdownMenuItem onSelect={() => setModalChamadoTerapeuta(true)}>
+                              {/* onSelect com preventDefault + setTimeout: abrir um Dialog/Popover
+                                  direto no onSelect corre com o próprio menu se fechando (o Radix
+                                  devolve foco pro trigger e a camada de fechar-por-clique-fora do
+                                  Popover/Dialog interpreta isso como clique fora, fechando na hora —
+                                  achado real: "editar/incluir abre e fecha rápido"). Adiar pro próximo
+                                  tick deixa o menu terminar de fechar antes do outro overlay abrir. */}
+                              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setTimeout(() => setModalChamadoTerapeuta(true), 0); }}>
                                 <BellRing className="h-3.5 w-3.5 mr-2" /> Chamar terapeuta
                               </DropdownMenuItem>
                               <DropdownMenuItem
@@ -2048,21 +2054,23 @@ export default function Mensagens() {
                                 Atualizar de acordo com a conversa (IA)
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                onSelect={() => {
+                                onSelect={(e) => {
+                                  e.preventDefault();
                                   setModoFormProximoAtendimento("editar");
                                   const p = conversaSelecionada.resumoRelacionamento?.proximoAtendimento;
                                   if (p) setFormProximoAtendimento({ data: p.dataAtendimento, horario: p.horario ?? "", servico: p.servicoNome ?? "" });
-                                  setEditandoProximoAtendimento(true);
+                                  setTimeout(() => setEditandoProximoAtendimento(true), 0);
                                 }}
                               >
                                 <Pencil className="h-3.5 w-3.5 mr-2" /> Editar agendamento
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                onSelect={() => {
+                                onSelect={(e) => {
+                                  e.preventDefault();
                                   const hojeBrt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
                                   setModoFormProximoAtendimento("incluir");
                                   setFormProximoAtendimento({ data: hojeBrt, horario: "", servico: "" });
-                                  setEditandoProximoAtendimento(true);
+                                  setTimeout(() => setEditandoProximoAtendimento(true), 0);
                                 }}
                               >
                                 <Plus className="h-3.5 w-3.5 mr-2" /> Incluir novo atendimento
