@@ -123,6 +123,42 @@ describe("orquestrador de agentes", () => {
     })).toBe("Classificação interna.");
   });
 
+  // Achado real 2026-09-06 (analise_evolucao_agentes_2026-09-06.md, seção
+  // 3): rejeição "Apresentação primeiro" numa conversa cuja última
+  // mensagem da equipe tinha 22 dias — equipeJaRespondeu sozinho (sem
+  // olhar a data) tratava isso como conversa em andamento.
+  it("repete a saudação quando a equipe não responde há mais de 7 dias (reabertura)", () => {
+    const agora = new Date("2026-08-28T16:00:00.000Z");
+    const conversaReaberta = contexto("Vocês têm horário para amanhã?");
+    conversaReaberta.mensagens = [
+      { direcao: "enviada", conteudo: "Foi um prazer te atender!", transcricao: null, createdAt: new Date("2026-08-10T16:00:00.000Z") },
+      ...conversaReaberta.mensagens,
+    ];
+
+    expect(aplicarSaudacaoInicialEspecialista({
+      contexto: conversaReaberta,
+      chaveAgente: "carol",
+      mensagem: "Posso verificar a disponibilidade.",
+      agora,
+    })).toBe("Boa tarde! Que bom ter você aqui 😊\n\nPosso verificar a disponibilidade.");
+  });
+
+  it("não repete a saudação quando a equipe respondeu há menos de 7 dias", () => {
+    const agora = new Date("2026-08-28T16:00:00.000Z");
+    const conversaRecente = contexto("Vocês têm horário para amanhã?");
+    conversaRecente.mensagens = [
+      { direcao: "enviada", conteudo: "Posso ajudar com mais alguma coisa?", transcricao: null, createdAt: new Date("2026-08-22T16:00:00.000Z") },
+      ...conversaRecente.mensagens,
+    ];
+
+    expect(aplicarSaudacaoInicialEspecialista({
+      contexto: conversaRecente,
+      chaveAgente: "carol",
+      mensagem: "Posso verificar a disponibilidade.",
+      agora,
+    })).toBe("Posso verificar a disponibilidade.");
+  });
+
   beforeEach(() => {
     vi.resetAllMocks();
     agentesDb.buscarExecucaoPorMensagem.mockResolvedValue(undefined);

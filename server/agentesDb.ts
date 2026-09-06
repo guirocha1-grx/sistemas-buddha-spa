@@ -23,7 +23,7 @@ import {
   type InsertAgenteAtendimento,
 } from "../drizzle/schema";
 import { getDb, obterModoEfetivoAutomacaoAgentes } from "./db";
-import { taxaAprovacaoHumana } from "./agentesPolicy";
+import { LIMITE_DIAS_REABERTURA_CONVERSA, taxaAprovacaoHumana } from "./agentesPolicy";
 import { asc, ne } from "drizzle-orm";
 
 export type VariaveisAgente = Record<string, string | number | boolean | null>;
@@ -45,7 +45,13 @@ export const AGENTES_INICIAIS: Array<Pick<InsertAgenteAtendimento, "chave" | "no
  *  nome numa resposta real. */
 const REGRA_SEM_IDENTIFICACAO = "Nunca diga seu nome, nunca diga que é uma especialista/atendente diferente da que já estava conversando, e nunca cumprimente de novo como se a conversa estivesse recomeçando — responda como continuação natural do mesmo atendimento, sem revelar a troca interna entre especialistas.";
 
-const REGRA_CONVERSA_PROGRESSIVA = "Conduza a conversa como uma pessoa: prefira perguntas abertas e peça no máximo duas informações por mensagem. Aguarde a resposta do cliente antes de solicitar o próximo dado. Não despeje uma lista completa de perguntas. Exceção: em agendamento, emissão de nota fiscal ou voucher, quando todos os dados forem indispensáveis para concluir a solicitação, você pode enviar uma lista objetiva de coleta em uma única mensagem.";
+// Achado real (analise_evolucao_agentes_2026-09-06.md, seção 3): a Diana
+// usou a exceção de voucher/agendamento pra despejar 3 perguntas numeradas
+// numa mensagem só ("1) Serviço...; 2) Nome...; 3) Mensagem..."), rejeitada
+// pela recepção com "Não colocar muitas perguntas numeradas assim, sempre
+// uma pergunta por vez". A exceção existia justamente pra permitir isso —
+// removida: uma pergunta por vez vale sempre, sem exceção de fluxo.
+const REGRA_CONVERSA_PROGRESSIVA = "Conduza a conversa como uma pessoa: prefira perguntas abertas e peça no máximo uma informação por mensagem. Aguarde a resposta do cliente antes de solicitar o próximo dado, mesmo em agendamento, emissão de nota fiscal ou voucher. Nunca envie uma lista numerada ou completa de perguntas de uma vez.";
 
 const REGRA_ACOLHIMENTO_INICIAL_ESPECIALISTA = "Quando a mensagem recente trouxer uma saudação e esta for a primeira resposta da equipe na conversa, cumprimente primeiro de forma natural e responda à pergunta cordial quando houver, por exemplo: \"Boa tarde, tudo bem e você?\". Deixe uma linha em branco e trate a solicitação na sequência. Não repita esse acolhimento em conversa já respondida.";
 
@@ -403,10 +409,17 @@ export async function agendarAgrupamentoMensagem(params: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Banco indisponível");
-  const [jaRespondida] = await db.select({ id: inboxMensagens.id }).from(inboxMensagens)
+  const [ultimaEnviada] = await db.select({ createdAt: inboxMensagens.createdAt }).from(inboxMensagens)
     .where(and(eq(inboxMensagens.conversaId, params.conversaId), eq(inboxMensagens.direcao, "enviada")))
+    .orderBy(desc(inboxMensagens.createdAt))
     .limit(1);
-  const processarApos = dataLiberacaoAgrupamento(params.agora, !jaRespondida);
+  const agora = params.agora ?? new Date();
+  // Mesmo critério de "reabertura de conversa" da saudação inicial (ver
+  // agentesPolicy.ts) — sem isso, uma conversa reaberta depois de semanas
+  // caía direto na janela curta de 10s, mesmo merecendo o mesmo tempo
+  // extra que uma conversa nova pra saudação + pedido chegarem separados.
+  const diasSemResposta = ultimaEnviada ? (agora.getTime() - new Date(ultimaEnviada.createdAt).getTime()) / 86_400_000 : Infinity;
+  const processarApos = dataLiberacaoAgrupamento(agora, diasSemResposta >= LIMITE_DIAS_REABERTURA_CONVERSA);
   await db.insert(agentesAgrupamentosMensagens).values({
     conversaId: params.conversaId,
     unidadeId: params.unidadeId,

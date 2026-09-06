@@ -2,6 +2,17 @@ const CHAVES_AGENTES = ["aurea", "bianca", "fabricia", "estela", "carol", "diana
 const STATUS_FINAIS = ["in_process", "success", "failure", "enviar_resumo_dayspa"] as const;
 const MOTIVOS_AVALIACAO = ["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"] as const;
 
+/**
+ * Sem mensagem enviada pela equipe há mais desse tanto de dias conta como
+ * reabertura da conversa — usado tanto pra decidir se a saudação inicial
+ * dispara de novo (agentesService.ts) quanto pra dar a janela maior de
+ * agrupamento da abertura (agentesDb.ts). Achado real (2026-09-06):
+ * rejeição "Apresentação primeiro" numa conversa cuja última mensagem da
+ * equipe tinha 22 dias, sobre um assunto totalmente diferente do novo
+ * contato do cliente.
+ */
+export const LIMITE_DIAS_REABERTURA_CONVERSA = 7;
+
 export type ChaveAgente = (typeof CHAVES_AGENTES)[number];
 export type StatusAgente = (typeof STATUS_FINAIS)[number] | ChaveAgente;
 export type MotivoAvaliacao = (typeof MOTIVOS_AVALIACAO)[number];
