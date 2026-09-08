@@ -4508,6 +4508,24 @@ export async function criarTransacaoManualEntreUnidades(dados: DadosTransacaoMan
   return result[0]?.id;
 }
 
+// Sempre guardado na perspectiva da unidade 1 (Shopping Santa Úrsula) —
+// positivo = unidade 1 entrou com saldo credor (recebeu líquido antes do
+// controle começar), negativo = unidade 1 entrou devendo. Pedido do
+// usuário 2026-09-08: "conta corrente" com saldo inicial editável, pra
+// registrar empréstimo/histórico anterior ao início do rastreamento.
+const CHAVE_SALDO_INICIAL_TRANSACOES_ENTRE_UNIDADES = "saldo_inicial_transacoes_entre_unidades_unidade1";
+
+export async function getSaldoInicialTransacoesEntreUnidades(): Promise<number> {
+  const config = await getConfig(CHAVE_SALDO_INICIAL_TRANSACOES_ENTRE_UNIDADES);
+  return config?.valor ? parseFloat(config.valor) : 0;
+}
+
+/** `valor` já na perspectiva de `unidadeId` — convertido pra perspectiva canônica (unidade 1) antes de gravar. */
+export async function definirSaldoInicialTransacoesEntreUnidades(unidadeId: number, valor: number): Promise<void> {
+  const valorUnidade1 = unidadeId === 1 ? valor : -valor;
+  await setConfig(CHAVE_SALDO_INICIAL_TRANSACOES_ENTRE_UNIDADES, String(valorUnidade1));
+}
+
 /**
  * Saldo líquido por par de unidades — soma tudo (rateio de despesa +
  * transferência real + manual) nos dois sentidos e devolve só o

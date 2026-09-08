@@ -3168,6 +3168,18 @@ Diretrizes:
       const id = await db.criarTransacaoManualEntreUnidades(input);
       return { success: true, id };
     }),
+
+    saldoInicial: protectedProcedure.query(async () => {
+      return { valorUnidade1: await db.getSaldoInicialTransacoesEntreUnidades() };
+    }),
+
+    definirSaldoInicial: adminProcedure.input(z.object({
+      unidadeId: z.number(),
+      valor: z.number(),
+    })).mutation(async ({ input }) => {
+      await db.definirSaldoInicialTransacoesEntreUnidades(input.unidadeId, input.valor);
+      return { success: true };
+    }),
   }),
 
   // ===== Sicredi =====
