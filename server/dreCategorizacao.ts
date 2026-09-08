@@ -167,7 +167,14 @@ export const DRE_DESCRICOES_SEED: { nome: string; categoriaNome: string; chave?:
   { nome: "Contribuição Sindical", categoriaNome: "Contribuição Sindical" },
   { nome: "Juros + Multas", categoriaNome: "Juros + Multas" },
   { nome: EXCLUIDO_NOME, categoriaNome: EXCLUIDO_NOME, chave: CHAVE_EXCLUIDO },
-  { nome: "Transação entre Unidades", categoriaNome: EXCLUIDO_NOME, chave: CHAVE_TRANSACAO_ENTRE_UNIDADES },
+  // Unificado com a antiga Descrição separada "Empréstimo entre unidades"
+  // (id 57, sem chave) — eram a mesma coisa na prática (dinheiro
+  // circulando entre as unidades), duas categorias confundiam mais do
+  // que ajudavam. Decisão do usuário 2026-09-08: mesclar as duas, mantendo
+  // só esta (que já tem a chave usada por confirmarSugestao/categorizarManual
+  // pra gerar automaticamente a linha em transacoes_entre_unidades — ver
+  // migração 2026-09-08-mesclar-emprestimo-entre-unidades.sql).
+  { nome: "Empréstimo entre Unidades", categoriaNome: EXCLUIDO_NOME, chave: CHAVE_TRANSACAO_ENTRE_UNIDADES },
   { nome: "Parcerias Comerciais", categoriaNome: "Parcerias Comerciais" },
   { nome: "Totalpass", categoriaNome: "Parcerias Comerciais" },
   { nome: "Wellhub", categoriaNome: "Parcerias Comerciais" },
