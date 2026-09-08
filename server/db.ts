@@ -4278,17 +4278,12 @@ export async function categorizarManual(transacaoId: number, dreDescricaoId: num
 
   const [transacao] = await db.select().from(interExtratos).where(eq(interExtratos.id, transacaoId)).limit(1);
   await db.update(interExtratos).set({ dreDescricaoId, categorizacaoStatus: "confirmada" }).where(eq(interExtratos.id, transacaoId));
+  if (transacao) await registrarTransferenciaRealSeAplicavel(db, transacao, dreDescricaoId);
   return { regraAprendida: false };
 }
 
 /**
- * Confirma uma sugestão automática sem trocar a categoria — o "tá
- * certo" de 1 clique. Só age em linha "sugerida"; ignora silenciosamente
- * qualquer outro estado (evita confirmar algo que já não é sugestão).
- */
-/**
- * Confirma uma sugestão automática. Caso especial: se a Descrição
- * confirmada for "Transação entre Unidades" (chave
+ * Se a Descrição final for "Transação entre Unidades" (chave
  * CHAVE_TRANSACAO_ENTRE_UNIDADES) E a transação for de saída (D — o
  * dinheiro saiu desta unidade rumo à outra), gera 1 linha em
  * `transacoes_entre_unidades` automaticamente. Só no lado "D" de
@@ -4297,6 +4292,52 @@ export async function categorizarManual(transacaoId: number, dreDescricaoId: num
  * dois lados duplicaria o valor no saldo; o lado "D" já é o suficiente
  * pra registrar a dívida (quem mandou = credora, quem recebeu =
  * devedora).
+ *
+ * Compartilhado por confirmarSugestao E categorizarManual — achado real
+ * 2026-09-08: uma transação categorizada "Transação entre Unidades" pelo
+ * seletor manual (categorizarManual) nunca virava linha aqui, porque essa
+ * geração só existia dentro de confirmarSugestao (o "confirmar sugestão
+ * automática" de 1 clique). Duas ações diferentes chegam no mesmo estado
+ * final (dreDescricaoId + confirmada) e as duas precisam do mesmo efeito.
+ * Verifica se já existe linha pra essa transação antes de inserir —
+ * categorizarManual pode ser chamada mais de uma vez na mesma transação
+ * (recategorizando), sem o guard de "só se sugerida" que confirmarSugestao
+ * já tem naturalmente.
+ */
+async function registrarTransferenciaRealSeAplicavel(
+  db: DbConectado,
+  transacao: typeof interExtratos.$inferSelect,
+  dreDescricaoIdFinal: number | null,
+): Promise<void> {
+  if (transacao.tipoOperacao !== "D") return;
+  const transacaoEntreUnidadesId = await resolverDescricaoIdPorChave(CHAVE_TRANSACAO_ENTRE_UNIDADES);
+  if (!transacaoEntreUnidadesId || dreDescricaoIdFinal !== transacaoEntreUnidadesId) return;
+  const cnpjsPorUnidade = await listCnpjsPorUnidade();
+  const cnpjContraparte = [transacao.cpfCnpjOrigem, transacao.cpfCnpjDestino]
+    .map((c) => c?.replace(/\D/g, ""))
+    .find((c): c is string => !!c && cnpjsPorUnidade.has(c) && cnpjsPorUnidade.get(c) !== transacao.unidadeId);
+  const unidadeDevedora = cnpjContraparte ? cnpjsPorUnidade.get(cnpjContraparte) : undefined;
+  if (unidadeDevedora === undefined) return;
+
+  const [existente] = await db.select({ id: transacoesEntreUnidades.id }).from(transacoesEntreUnidades)
+    .where(eq(transacoesEntreUnidades.interExtratoId, transacao.id)).limit(1);
+  if (existente) return;
+
+  await db.insert(transacoesEntreUnidades).values({
+    data: transacao.dataEntrada,
+    tipo: "transferencia_real",
+    unidadeCredora: transacao.unidadeId,
+    unidadeDevedora,
+    valor: transacao.valor,
+    descricao: transacao.titulo || "Transferência entre unidades",
+    interExtratoId: transacao.id,
+  });
+}
+
+/**
+ * Confirma uma sugestão automática sem trocar a categoria — o "tá
+ * certo" de 1 clique. Só age em linha "sugerida"; ignora silenciosamente
+ * qualquer outro estado (evita confirmar algo que já não é sugestão).
  */
 export async function confirmarSugestao(transacaoId: number) {
   const db = await getDb();
@@ -4308,26 +4349,7 @@ export async function confirmarSugestao(transacaoId: number) {
   if (!transacao) return;
 
   await db.update(interExtratos).set({ categorizacaoStatus: "confirmada" }).where(eq(interExtratos.id, transacaoId));
-
-  const transacaoEntreUnidadesId = await resolverDescricaoIdPorChave(CHAVE_TRANSACAO_ENTRE_UNIDADES);
-  if (transacaoEntreUnidadesId && transacao.dreDescricaoId === transacaoEntreUnidadesId && transacao.tipoOperacao === "D") {
-    const cnpjsPorUnidade = await listCnpjsPorUnidade();
-    const cnpjContraparte = [transacao.cpfCnpjOrigem, transacao.cpfCnpjDestino]
-      .map((c) => c?.replace(/\D/g, ""))
-      .find((c): c is string => !!c && cnpjsPorUnidade.has(c) && cnpjsPorUnidade.get(c) !== transacao.unidadeId);
-    const unidadeDevedora = cnpjContraparte ? cnpjsPorUnidade.get(cnpjContraparte) : undefined;
-    if (unidadeDevedora !== undefined) {
-      await db.insert(transacoesEntreUnidades).values({
-        data: transacao.dataEntrada,
-        tipo: "transferencia_real",
-        unidadeCredora: transacao.unidadeId,
-        unidadeDevedora,
-        valor: transacao.valor,
-        descricao: transacao.titulo || "Transferência entre unidades",
-        interExtratoId: transacao.id,
-      });
-    }
-  }
+  await registrarTransferenciaRealSeAplicavel(db, transacao, transacao.dreDescricaoId);
 }
 
 // ===== Split de lançamento =====
