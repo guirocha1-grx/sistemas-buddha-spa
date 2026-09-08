@@ -55,6 +55,18 @@ describe("nomesClienteCorrespondem", () => {
   it("não casa clientes genuinamente diferentes", () => {
     expect(nomesClienteCorrespondem("Marcos Rocha", "Rodrigo Costa")).toBe(false);
   });
+
+  // Achado real 2026-09-08 (Conciliação PDV, Fase 3): "Alexandre De Jesus
+  // Gomes" e "Alexandre Clemente Neto" tiveram atendimento no mesmo dia —
+  // bater só o primeiro nome casou os dois, gerando divergência de
+  // terapeuta contra o cliente errado.
+  it("não casa clientes diferentes que só compartilham o primeiro nome", () => {
+    expect(nomesClienteCorrespondem("Alexandre De Jesus Gomes", "Alexandre Clemente Neto")).toBe(false);
+  });
+
+  it("exige um segundo nome pra confirmar quando um dos dois só tem um token", () => {
+    expect(nomesClienteCorrespondem("Alexandre", "Alexandre Clemente Neto")).toBe(false);
+  });
 });
 
 function hora(texto: string): Date {

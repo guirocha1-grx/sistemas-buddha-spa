@@ -155,21 +155,35 @@ const PREFIXO_HONORIFICO = /^(sr|sra|dr|dra|srs)\.?\s+/;
  * nome (transposição, letra a mais/a menos — ex.: "Daniele" vs
  * "Daniela", "Giovanna" vs "Giovana", "Prisacila" vs "Priscila", todos
  * distância 1, achados reais 2026-09-02 na Fase 3 de Terapeutas).
- * Restrito a nomes com 5+ letras pra não arriscar confundir nomes
- * curtos de clientes diferentes — a comparação já é só dentro dos
- * atendimentos do mesmo dia (lista pequena), então o risco de colisão
- * é baixo mesmo assim, mas continua exigindo conferência manual.
+ *
+ * Exige o primeiro nome bater (exato ou com esse erro pequeno) E pelo
+ * menos mais um token do nome em comum (sobrenome/nome do meio) —
+ * bater só o primeiro nome não é suficiente: achado real 2026-09-08
+ * na Fase 3 de Terapeutas, "Alexandre De Jesus Gomes" (Comanda) casou
+ * com "Alexandre Clemente Neto" (Belle), duas pessoas diferentes com
+ * atendimento no mesmo dia, gerando divergência de terapeuta contra o
+ * cliente errado. Nome com um token só (sem sobrenome pra conferir)
+ * não corresponde a nada — prefere não achar a arriscar casar errado.
  */
 export function nomesClienteCorrespondem(nomeA: string | null | undefined, nomeB: string | null | undefined): boolean {
   const a = normalizarTexto(nomeA).replace(PREFIXO_HONORIFICO, "");
   const b = normalizarTexto(nomeB).replace(PREFIXO_HONORIFICO, "");
   if (!a || !b) return false;
   if (a === b) return true;
-  const primeiroA = a.split(/\s+/)[0];
-  const primeiroB = b.split(/\s+/)[0];
-  if (primeiroA.length >= 2 && primeiroA === primeiroB) return true;
-  if (primeiroA.length >= 5 && primeiroB.length >= 5 && distanciaEdicao(primeiroA, primeiroB) <= 1) return true;
-  return false;
+  const [primeiroA, ...restoA] = a.split(/\s+/);
+  const [primeiroB, ...restoB] = b.split(/\s+/);
+  const primeiroBate = (primeiroA.length >= 2 && primeiroA === primeiroB)
+    || (primeiroA.length >= 5 && primeiroB.length >= 5 && distanciaEdicao(primeiroA, primeiroB) <= 1);
+  if (!primeiroBate || restoA.length === 0 || restoB.length === 0) return false;
+  return restoA.some((tokenA) => restoB.some((tokenB) => {
+    if (tokenA === tokenB) return true;
+    const minLen = Math.min(tokenA.length, tokenB.length);
+    if (minLen < 4) return false;
+    // Tokens mais longos toleram mais edições — "Batalzar"/"Baltazar"
+    // (distância 2, transposição) é o mesmo achado real 2026-09-02 que
+    // já cobria o primeiro nome.
+    return distanciaEdicao(tokenA, tokenB) <= (minLen >= 6 ? 2 : 1);
+  }));
 }
 
 export interface IdentificadoresAtendimento {
