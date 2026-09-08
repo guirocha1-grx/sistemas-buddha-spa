@@ -90,7 +90,6 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
       { label: "Parâmetros", path: "/financeiro/parametros", subsecao: "financeiro:parametros" },
     ],
   },
-  { icon: Sparkles, label: "Copilot", path: "/copilot", modulo: "copilot" },
   { icon: Sparkles, label: "Agentes", path: "/agentes", adminOnly: true },
   { icon: Image, label: "Lâminas", path: "/laminas", modulo: "laminas" },
   { icon: UserPlus, label: "Leads", path: "/leads", modulo: "leads" },
