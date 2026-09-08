@@ -147,6 +147,17 @@ export function identificarTerapeuta(nomeRaw: string | null | undefined, roster:
 }
 
 const PREFIXO_HONORIFICO = /^(sr|sra|dr|dra|srs)\.?\s+/;
+const CONECTIVO_NOME = new Set(["da", "de", "do", "das", "dos"]);
+
+function tokensDoNomeBatem(tokenA: string, tokenB: string): boolean {
+  if (tokenA === tokenB) return true;
+  const minLen = Math.min(tokenA.length, tokenB.length);
+  if (minLen < 4) return false;
+  // Tokens mais longos toleram mais edições — "Batalzar"/"Baltazar"
+  // (distância 2, transposição) é o mesmo achado real 2026-09-02 que
+  // já cobria o primeiro nome.
+  return distanciaEdicao(tokenA, tokenB) <= (minLen >= 6 ? 2 : 1);
+}
 
 /**
  * Igual a `nomesCorrespondem`, mas pra nome de CLIENTE casando Comanda
@@ -156,34 +167,33 @@ const PREFIXO_HONORIFICO = /^(sr|sra|dr|dra|srs)\.?\s+/;
  * "Daniela", "Giovanna" vs "Giovana", "Prisacila" vs "Priscila", todos
  * distância 1, achados reais 2026-09-02 na Fase 3 de Terapeutas).
  *
- * Exige o primeiro nome bater (exato ou com esse erro pequeno) E pelo
- * menos mais um token do nome em comum (sobrenome/nome do meio) —
- * bater só o primeiro nome não é suficiente: achado real 2026-09-08
- * na Fase 3 de Terapeutas, "Alexandre De Jesus Gomes" (Comanda) casou
- * com "Alexandre Clemente Neto" (Belle), duas pessoas diferentes com
- * atendimento no mesmo dia, gerando divergência de terapeuta contra o
- * cliente errado. Nome com um token só (sem sobrenome pra conferir)
- * não corresponde a nada — prefere não achar a arriscar casar errado.
+ * Exige o primeiro nome bater (exato ou com esse erro pequeno) E TODOS
+ * os tokens do sobrenome mais curto acharem correspondência no outro
+ * lado (ignorando conectivos "da/de/do"). Dois achados reais
+ * 2026-09-08 na Fase 3 de Terapeutas motivaram essa exigência mais
+ * forte que "algum token em comum": "Alexandre De Jesus Gomes" casava
+ * com "Alexandre Clemente Neto" (zero sobrenome em comum, só o
+ * primeiro nome), e "Maria Rita Faleiros da Silva Moreira" casava com
+ * "Maria José Junqueira da Silva" só por compartilharem o sobrenome
+ * "Silva" — comum demais pra ser evidência sozinho. Nome com um token
+ * só (sem sobrenome pra conferir) não corresponde a nada — prefere não
+ * achar a arriscar casar errado.
  */
 export function nomesClienteCorrespondem(nomeA: string | null | undefined, nomeB: string | null | undefined): boolean {
   const a = normalizarTexto(nomeA).replace(PREFIXO_HONORIFICO, "");
   const b = normalizarTexto(nomeB).replace(PREFIXO_HONORIFICO, "");
   if (!a || !b) return false;
   if (a === b) return true;
-  const [primeiroA, ...restoA] = a.split(/\s+/);
-  const [primeiroB, ...restoB] = b.split(/\s+/);
+  const [primeiroA, ...restoACompleto] = a.split(/\s+/);
+  const [primeiroB, ...restoBCompleto] = b.split(/\s+/);
   const primeiroBate = (primeiroA.length >= 2 && primeiroA === primeiroB)
     || (primeiroA.length >= 5 && primeiroB.length >= 5 && distanciaEdicao(primeiroA, primeiroB) <= 1);
-  if (!primeiroBate || restoA.length === 0 || restoB.length === 0) return false;
-  return restoA.some((tokenA) => restoB.some((tokenB) => {
-    if (tokenA === tokenB) return true;
-    const minLen = Math.min(tokenA.length, tokenB.length);
-    if (minLen < 4) return false;
-    // Tokens mais longos toleram mais edições — "Batalzar"/"Baltazar"
-    // (distância 2, transposição) é o mesmo achado real 2026-09-02 que
-    // já cobria o primeiro nome.
-    return distanciaEdicao(tokenA, tokenB) <= (minLen >= 6 ? 2 : 1);
-  }));
+  if (!primeiroBate) return false;
+  const restoA = restoACompleto.filter((token) => !CONECTIVO_NOME.has(token));
+  const restoB = restoBCompleto.filter((token) => !CONECTIVO_NOME.has(token));
+  if (restoA.length === 0 || restoB.length === 0) return false;
+  const [menor, maior] = restoA.length <= restoB.length ? [restoA, restoB] : [restoB, restoA];
+  return menor.every((tokenMenor) => maior.some((tokenMaior) => tokensDoNomeBatem(tokenMenor, tokenMaior)));
 }
 
 export interface IdentificadoresAtendimento {

@@ -67,6 +67,20 @@ describe("nomesClienteCorrespondem", () => {
   it("exige um segundo nome pra confirmar quando um dos dois só tem um token", () => {
     expect(nomesClienteCorrespondem("Alexandre", "Alexandre Clemente Neto")).toBe(false);
   });
+
+  // Achado real 2026-09-08 (Conciliação PDV, Fase 3): "Maria Rita Faleiros
+  // da Silva Moreira" casava com "Maria José Junqueira da Silva" só por
+  // compartilharem o primeiro nome "Maria" e o sobrenome "Silva" — comum
+  // demais em nomes brasileiros pra ser evidência sozinho de que é a
+  // mesma pessoa. Exigir todos os tokens do sobrenome mais curto (não só
+  // algum) resolve isso sem quebrar "Batalzar"/"Baltazar lazzarini".
+  it("não casa clientes diferentes que só compartilham um sobrenome comum", () => {
+    expect(nomesClienteCorrespondem("Maria Rita Faleiros da Silva Moreira", "Maria José Junqueira da Silva")).toBe(false);
+  });
+
+  it("ignora conectivos (da/de/do) na comparação de sobrenome", () => {
+    expect(nomesClienteCorrespondem("Maria da Silva", "Maria de Silva")).toBe(true);
+  });
 });
 
 function hora(texto: string): Date {
