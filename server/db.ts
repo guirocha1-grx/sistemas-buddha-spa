@@ -3010,6 +3010,11 @@ export async function listarDivergenciasTerapeutas(unidadeId: number, dataInicio
       eq(belleAtendimentos.unidadeId, unidadeId),
       gte(belleAtendimentos.dataAtendimento, dataInicio),
       lte(belleAtendimentos.dataAtendimento, dataFim),
+      // Sem isso, um atendimento Desmarcado/Cancelado no Belle contava
+      // como "correspondência" — bug real relatado 2026-09-08: cliente
+      // aparecia batido com um profissional do Belle que nem chegou a
+      // atender de verdade, gerando "Terapeuta diverge" indevido.
+      eq(belleAtendimentos.status, "Atendido"),
     )),
     db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
       .from(terapeutas).where(eq(terapeutas.unidadeId, unidadeId)),
