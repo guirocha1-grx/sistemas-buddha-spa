@@ -5,12 +5,16 @@
 -- então ficavam duplicados ao lado do atendimento real (achado real
 -- 2026-09-08, Conciliação PDV Fase 3).
 --
--- Sintaxe de multi-table DELETE por vírgula (mais antiga que INNER JOIN
--- ... ON) — a primeira tentativa com INNER JOIN deu erro de sintaxe no
--- TiDB ("line 2 column 35 near 'real ON ...'").
-DELETE ia FROM belle_atendimentos AS ia, belle_atendimentos AS real
-WHERE ia.unidadeId = real.unidadeId
-  AND ia.dataAtendimento = real.dataAtendimento
-  AND LOWER(ia.clienteNome) = LOWER(real.clienteNome)
-  AND ia.status = 'Agendado (IA)'
-  AND real.status <> 'Agendado (IA)';
+-- Duas tentativas de DELETE multi-tabela (INNER JOIN...ON e depois junção
+-- por vírgula) deram erro de sintaxe no TiDB, sempre logo após a 2ª
+-- tabela — esse TiDB não aceita DELETE multi-tabela. Reescrito como DELETE
+-- de uma tabela só, com o cruzamento numa subquery correlacionada.
+DELETE FROM belle_atendimentos
+WHERE status = 'Agendado (IA)'
+  AND EXISTS (
+    SELECT 1 FROM belle_atendimentos AS real
+    WHERE real.unidadeId = belle_atendimentos.unidadeId
+      AND real.dataAtendimento = belle_atendimentos.dataAtendimento
+      AND LOWER(real.clienteNome) = LOWER(belle_atendimentos.clienteNome)
+      AND real.status <> 'Agendado (IA)'
+  );
