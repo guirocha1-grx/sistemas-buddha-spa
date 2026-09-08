@@ -3010,11 +3010,19 @@ export async function listarDivergenciasTerapeutas(unidadeId: number, dataInicio
       eq(belleAtendimentos.unidadeId, unidadeId),
       gte(belleAtendimentos.dataAtendimento, dataInicio),
       lte(belleAtendimentos.dataAtendimento, dataFim),
-      // Sem isso, um atendimento Desmarcado/Cancelado no Belle contava
-      // como "correspondência" — bug real relatado 2026-09-08: cliente
-      // aparecia batido com um profissional do Belle que nem chegou a
-      // atender de verdade, gerando "Terapeuta diverge" indevido.
-      eq(belleAtendimentos.status, "Atendido"),
+      // Exclui só quem realmente não aconteceu (Desmarcado/Cancelado) —
+      // bug real relatado 2026-09-08: um desses contava como
+      // "correspondência" e gerava "Terapeuta diverge" indevido contra
+      // um profissional que nem chegou a atender.
+      //
+      // NÃO restringe a "Atendido": tentei isso primeiro e quebrou muito
+      // mais casos do que corrigiu (mesmo relato, poucos minutos depois)
+      // — nesta unidade boa parte dos atendimentos que a Comanda já
+      // registrou como cobrados continua com status "Marcado" ou
+      // "Agendado (IA)" no Belle (a recepção não atualiza o status lá
+      // depois de atender), então exigir "Atendido" derrubava
+      // correspondências legítimas pra "Cliente não encontrado no Belle".
+      notInArray(belleAtendimentos.status, ["Desmarcado", "Cancelado"]),
     )),
     db.select({ id: terapeutas.id, nomeCompleto: terapeutas.nomeCompleto, nomeAbreviado: terapeutas.nomeAbreviado })
       .from(terapeutas).where(eq(terapeutas.unidadeId, unidadeId)),
