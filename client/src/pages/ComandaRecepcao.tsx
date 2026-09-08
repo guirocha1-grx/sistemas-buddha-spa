@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -14,7 +15,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, RefreshCw, UploadCloud, ChevronLeft, ChevronRight, Upload, Send, AlertTriangle } from "lucide-react";
+import { Loader2, RefreshCw, UploadCloud, ChevronLeft, ChevronRight, Upload, Send, AlertTriangle, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { gerarTextoConciliacao } from "@shared/conciliacao";
 
@@ -184,6 +185,26 @@ export default function ComandaRecepcao() {
     { unidadeId: unidadeId!, dataInicio, dataFim },
     { enabled: !!unidadeId && faseAtiva === "fase3" },
   );
+
+  // Correção manual da Fase 3 — quando o casamento automático por nome
+  // não acha o atendimento certo no Belle (abreviação, sobrenome
+  // faltando) ou acha o errado, a recepção escolhe à mão entre os
+  // atendimentos do mesmo dia.
+  const [corrigindoManualmente, setCorrigindoManualmente] = useState<{ comandaItemId: number; data: string; cliente: string } | null>(null);
+  const [buscaCorrecaoManual, setBuscaCorrecaoManual] = useState("");
+  const belleDoDiaQuery = trpc.comandaRecepcao.belleAtendimentosDoDia.useQuery(
+    { unidadeId: unidadeId!, data: corrigindoManualmente?.data ?? "" },
+    { enabled: !!unidadeId && !!corrigindoManualmente },
+  );
+  const corresponderManualmenteMutation = trpc.comandaRecepcao.corresponderManualmente.useMutation({
+    onSuccess: () => {
+      utils.comandaRecepcao.divergenciasTerapeutas.invalidate();
+      setCorrigindoManualmente(null);
+      setBuscaCorrecaoManual("");
+      toast.success("Correspondência atualizada.");
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   // Item a item da "Comanda virtual" — alimenta o hover de auditoria da
   // linha "Comanda (Recepção)", compartilhado pelas duas fases (o lado
@@ -954,6 +975,7 @@ export default function ComandaRecepcao() {
                         <th className="px-3 py-2 text-left text-xs font-medium whitespace-nowrap">Terapeuta (Comanda)</th>
                         <th className="px-3 py-2 text-left text-xs font-medium whitespace-nowrap">Terapeuta (Belle)</th>
                         <th className="px-3 py-2 text-left text-xs font-medium whitespace-nowrap">Situação</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium whitespace-nowrap"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -972,6 +994,16 @@ export default function ComandaRecepcao() {
                             ) : (
                               <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Cliente não encontrado no Belle</span>
                             )}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={() => { setCorrigindoManualmente({ comandaItemId: item.comandaItemId, data: item.data, cliente: item.cliente }); setBuscaCorrecaoManual(""); }}
+                            >
+                              Corrigir manualmente
+                            </Button>
                           </td>
                         </tr>
                       ))}
@@ -1003,6 +1035,74 @@ export default function ComandaRecepcao() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmarTrocaFase(false)}>Cancelar</Button>
             <Button onClick={() => { setFaseAtiva("fase2"); setConfirmarTrocaFase(false); }}>Confirmar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!corrigindoManualmente} onOpenChange={(open) => !open && setCorrigindoManualmente(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Corrigir manualmente — {corrigindoManualmente?.cliente}</DialogTitle>
+            <DialogDescription>
+              Atendimentos do Belle em {corrigindoManualmente ? fmtDiaCurto(corrigindoManualmente.data) : ""}. Escolha o que
+              corresponde a esse lançamento da Comanda.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={buscaCorrecaoManual}
+              onChange={(e) => setBuscaCorrecaoManual(e.target.value)}
+              placeholder="Buscar por cliente ou terapeuta..."
+              className="h-8 pl-8 text-sm"
+            />
+          </div>
+          <div className="max-h-80 overflow-y-auto rounded-md border">
+            {belleDoDiaQuery.isLoading ? (
+              <div className="flex items-center justify-center h-20 text-muted-foreground text-sm gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
+              </div>
+            ) : (
+              (() => {
+                const busca = buscaCorrecaoManual.trim().toLowerCase();
+                const candidatos = (belleDoDiaQuery.data ?? []).filter((c) =>
+                  !busca || c.clienteNome.toLowerCase().includes(busca) || (c.profissionalNome ?? "").toLowerCase().includes(busca)
+                );
+                return candidatos.length === 0 ? (
+                  <div className="flex items-center justify-center h-20 text-muted-foreground text-sm">Nenhum atendimento do Belle encontrado nesse dia.</div>
+                ) : (
+                  <ul className="divide-y">
+                    {candidatos.map((c) => (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          disabled={corresponderManualmenteMutation.isPending}
+                          className="flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm hover:bg-muted/50 disabled:opacity-50"
+                          onClick={() => corrigindoManualmente && corresponderManualmenteMutation.mutate({ comandaItemId: corrigindoManualmente.comandaItemId, belleAtendimentoId: c.id })}
+                        >
+                          <span className="font-medium">{c.clienteNome}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {c.servicoNome ?? "—"} · {c.profissionalNome ?? "sem profissional"} · {c.status}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()
+            )}
+          </div>
+          <DialogFooter className="sm:justify-between">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground"
+              disabled={corresponderManualmenteMutation.isPending}
+              onClick={() => corrigindoManualmente && corresponderManualmenteMutation.mutate({ comandaItemId: corrigindoManualmente.comandaItemId, belleAtendimentoId: null })}
+            >
+              <X className="mr-1 h-3.5 w-3.5" /> Confirmar que não tem correspondência
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setCorrigindoManualmente(null)}>Cancelar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

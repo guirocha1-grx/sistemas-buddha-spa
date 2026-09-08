@@ -12,7 +12,7 @@ import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
 import { storageGetSignedUrl, storageExists } from "./storage";
-import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, atendimentoTempoEventos, terapeutasLiberacoes, type InsertChamadoParametro } from "../drizzle/schema";
+import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, atendimentoTempoEventos, terapeutasLiberacoes, conciliacaoCorrespondenciasManuais, type InsertChamadoParametro } from "../drizzle/schema";
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
 import { resumoMensalUnidade, type InsertResumoMensalUnidade, type ResumoMensalUnidade } from "../drizzle/schema";
 import { etiquetas, clienteEtiquetas, type Etiqueta } from "../drizzle/schema";
@@ -2965,6 +2965,7 @@ export async function contarVendasComandaPeriodo(unidadeId: number, dataInicio: 
 }
 
 export interface DivergenciaTerapeuta {
+  comandaItemId: number;
   data: string;
   cliente: string;
   terapia: string | null;
@@ -2991,6 +2992,7 @@ export async function listarDivergenciasTerapeutas(unidadeId: number, dataInicio
 
   const [itensComanda, atendimentosBelle, roster] = await Promise.all([
     db.select({
+      id: comandaItens.id,
       data: comandaItens.data,
       cliente: comandaItens.cliente,
       terapiaProduto: comandaItens.terapiaProduto,
@@ -3002,6 +3004,7 @@ export async function listarDivergenciasTerapeutas(unidadeId: number, dataInicio
       isNotNull(comandaItens.terapeuta),
     )),
     db.select({
+      id: belleAtendimentos.id,
       dataAtendimento: belleAtendimentos.dataAtendimento,
       clienteNome: belleAtendimentos.clienteNome,
       servicoNome: belleAtendimentos.servicoNome,
@@ -3029,11 +3032,23 @@ export async function listarDivergenciasTerapeutas(unidadeId: number, dataInicio
   ]);
 
   const belleporData = new Map<string, typeof atendimentosBelle>();
+  const belleporId = new Map<number, (typeof atendimentosBelle)[number]>();
   for (const atendimento of atendimentosBelle) {
     const lista = belleporData.get(atendimento.dataAtendimento) ?? [];
     lista.push(atendimento);
     belleporData.set(atendimento.dataAtendimento, lista);
+    belleporId.set(atendimento.id, atendimento);
   }
+
+  // Correção manual (tela Conciliação PDV Fase 3, "Corrigir manualmente")
+  // pra quando o casamento automático por nome não acha o atendimento
+  // certo ou acha o errado — ver definirCorrespondenciaManualComanda.
+  const correspondenciasManuais = itensComanda.length > 0
+    ? await db.select({ comandaItemId: conciliacaoCorrespondenciasManuais.comandaItemId, belleAtendimentoId: conciliacaoCorrespondenciasManuais.belleAtendimentoId })
+        .from(conciliacaoCorrespondenciasManuais)
+        .where(inArray(conciliacaoCorrespondenciasManuais.comandaItemId, itensComanda.map((item) => item.id)))
+    : [];
+  const correspondenciaPorComandaItem = new Map(correspondenciasManuais.map((c) => [c.comandaItemId, c.belleAtendimentoId]));
 
   const divergencias: DivergenciaTerapeuta[] = [];
   for (const item of itensComanda) {
@@ -3048,29 +3063,81 @@ export async function listarDivergenciasTerapeutas(unidadeId: number, dataInicio
     const terapeutaComandaId = identificarTerapeuta(terapeuta, roster);
     if (terapeutaComandaId === null) continue;
 
-    const candidatos = (belleporData.get(item.data) ?? []).filter((b) => nomesClienteCorrespondem(b.clienteNome, cliente));
-    if (candidatos.length === 0) {
-      divergencias.push({ data: item.data, cliente, terapia: item.terapiaProduto, terapeutaComanda: terapeuta, terapeutaBelle: null, situacao: "sem_correspondencia_belle" });
-      continue;
+    // Item já corrigido manualmente: belleAtendimentoId nulo = recepção
+    // confirmou que não tem correspondência mesmo, some da lista sem
+    // recalcular. Um id que não existe mais (linha removida) cai pro
+    // casamento automático normal, como se não tivesse correção.
+    const correcaoManual = correspondenciaPorComandaItem.get(item.id);
+    let atendimento: (typeof atendimentosBelle)[number] | undefined;
+    if (correcaoManual !== undefined) {
+      if (correcaoManual === null) continue;
+      atendimento = belleporId.get(correcaoManual);
     }
-    // Cliente com mais de um atendimento no mesmo dia: desempata pela
-    // terapia quando bate; senão prefere um candidato com terapeuta
-    // humano reconhecido (ex.: ignora a sala "Banho II" de um banho de
-    // imersão sem terapeuta dedicado, que o Belle lista como se fosse
-    // o profissional do atendimento).
-    const atendimento = candidatos.find((b) => nomesCorrespondem(b.servicoNome, item.terapiaProduto))
-      ?? candidatos.find((b) => identificarTerapeuta(b.profissionalNome, roster) !== null)
-      ?? candidatos[0];
+
+    if (!atendimento) {
+      const candidatos = (belleporData.get(item.data) ?? []).filter((b) => nomesClienteCorrespondem(b.clienteNome, cliente));
+      if (candidatos.length === 0) {
+        divergencias.push({ comandaItemId: item.id, data: item.data, cliente, terapia: item.terapiaProduto, terapeutaComanda: terapeuta, terapeutaBelle: null, situacao: "sem_correspondencia_belle" });
+        continue;
+      }
+      // Cliente com mais de um atendimento no mesmo dia: desempata pela
+      // terapia quando bate; senão prefere um candidato com terapeuta
+      // humano reconhecido (ex.: ignora a sala "Banho II" de um banho de
+      // imersão sem terapeuta dedicado, que o Belle lista como se fosse
+      // o profissional do atendimento).
+      atendimento = candidatos.find((b) => nomesCorrespondem(b.servicoNome, item.terapiaProduto))
+        ?? candidatos.find((b) => identificarTerapeuta(b.profissionalNome, roster) !== null)
+        ?? candidatos[0];
+    }
+
     const terapeutaBelleId = identificarTerapeuta(atendimento.profissionalNome, roster);
     // Belle não registrou um terapeuta humano pra esse atendimento
     // (só a sala/recurso) — não dá pra comparar, não é divergência.
     if (terapeutaBelleId === null) continue;
     if (terapeutaBelleId !== terapeutaComandaId) {
-      divergencias.push({ data: item.data, cliente, terapia: item.terapiaProduto, terapeutaComanda: terapeuta, terapeutaBelle: atendimento.profissionalNome, situacao: "divergente" });
+      divergencias.push({ comandaItemId: item.id, data: item.data, cliente, terapia: item.terapiaProduto, terapeutaComanda: terapeuta, terapeutaBelle: atendimento.profissionalNome, situacao: "divergente" });
     }
   }
 
   return divergencias.sort((a, b) => a.data.localeCompare(b.data) || a.cliente.localeCompare(b.cliente));
+}
+
+export interface BelleAtendimentoDoDia {
+  id: number;
+  clienteNome: string;
+  servicoNome: string | null;
+  profissionalNome: string | null;
+  status: string;
+}
+
+/** Candidatos pra escolha manual na Fase 3 — mesmo dia, mesmo filtro de status do casamento automático. */
+export async function listarBelleAtendimentosDoDia(unidadeId: number, data: string): Promise<BelleAtendimentoDoDia[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: belleAtendimentos.id,
+    clienteNome: belleAtendimentos.clienteNome,
+    servicoNome: belleAtendimentos.servicoNome,
+    profissionalNome: belleAtendimentos.profissionalNome,
+    status: belleAtendimentos.status,
+  }).from(belleAtendimentos).where(and(
+    eq(belleAtendimentos.unidadeId, unidadeId),
+    eq(belleAtendimentos.dataAtendimento, data),
+    notInArray(belleAtendimentos.status, ["Desmarcado", "Cancelado"]),
+  )).orderBy(asc(belleAtendimentos.clienteNome));
+}
+
+/**
+ * Grava a correspondência escolhida à mão pra um item da Comanda na
+ * Fase 3 (Terapeutas). belleAtendimentoId null = recepção confirmou
+ * que não tem correspondência mesmo (some da lista sem forçar escolha).
+ */
+export async function definirCorrespondenciaManualComanda(comandaItemId: number, belleAtendimentoId: number | null, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Banco de dados indisponível.");
+  await db.insert(conciliacaoCorrespondenciasManuais)
+    .values({ comandaItemId, belleAtendimentoId, criadoPorUserId: userId })
+    .onDuplicateKeyUpdate({ set: { belleAtendimentoId, criadoPorUserId: userId } });
 }
 
 export interface ResumoContasBancariasDia {

@@ -1293,6 +1293,29 @@ export type ComandaItem = typeof comandaItens.$inferSelect;
 export type InsertComandaItem = typeof comandaItens.$inferInsert;
 
 /**
+ * Correção manual de um item da Comanda pra Conciliação PDV Fase 3
+ * (Terapeutas) — quando o casamento automático por nome (ver
+ * nomesClienteCorrespondem em tempoAtendimento.ts) não acha o
+ * atendimento certo no Belle ou acha o errado, a recepção escolhe à
+ * mão. belleAtendimentoId nulo = "confirmado manualmente que não tem
+ * correspondência mesmo" (some da lista sem exigir escolher uma
+ * linha). Um item da Comanda só tem uma correção ativa por vez.
+ */
+export const conciliacaoCorrespondenciasManuais = mysqlTable("conciliacao_correspondencias_manuais", {
+  id: int("id").autoincrement().primaryKey(),
+  comandaItemId: int("comandaItemId").notNull(),
+  belleAtendimentoId: int("belleAtendimentoId"),
+  criadoPorUserId: int("criadoPorUserId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  comandaItemUnico: uniqueIndex("conciliacao_correspondencias_comanda_item_idx").on(table.comandaItemId),
+}));
+
+export type ConciliacaoCorrespondenciaManual = typeof conciliacaoCorrespondenciasManuais.$inferSelect;
+export type InsertConciliacaoCorrespondenciaManual = typeof conciliacaoCorrespondenciasManuais.$inferInsert;
+
+/**
  * Histórico mensal por unidade — importado da planilha "Contabilidade
  * SSU e RBS" (aba "Resumos", 3+ anos de série mensal) e da aba "Metas"
  * (2026-09-03). Granularidade mensal (não diária, como o resto do

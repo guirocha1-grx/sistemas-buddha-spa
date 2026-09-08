@@ -4106,6 +4106,21 @@ Diretrizes:
     })).query(async ({ input }) => {
       return db.listarDivergenciasTerapeutas(input.unidadeId, input.dataInicio, input.dataFim);
     }),
+
+    belleAtendimentosDoDia: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      data: z.string(),
+    })).query(async ({ input }) => {
+      return db.listarBelleAtendimentosDoDia(input.unidadeId, input.data);
+    }),
+
+    corresponderManualmente: protectedProcedure.input(z.object({
+      comandaItemId: z.number(),
+      belleAtendimentoId: z.number().nullable(),
+    })).mutation(async ({ input, ctx }) => {
+      await db.definirCorrespondenciaManualComanda(input.comandaItemId, input.belleAtendimentoId, ctx.user.id);
+      return { success: true };
+    }),
   }),
 
   // ===== Plano de contas do DRE =====
