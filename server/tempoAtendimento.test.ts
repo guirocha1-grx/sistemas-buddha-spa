@@ -42,6 +42,14 @@ describe("nomesClienteCorrespondem", () => {
     expect(nomesClienteCorrespondem("Pedro Luis Taveira", "Sr. Pedro Luis Taveira")).toBe(true);
   });
 
+  // Achado real 2026-09-08: o Belle também exporta o tratamento entre
+  // parênteses e colado ("(Sr )Maria Rita...") como código interno de
+  // "cliente com observação" — sem tratar isso, "(sr" e ")maria" viravam
+  // dois tokens quebrados e a pessoa nunca batia com nada.
+  it("tolera prefixo de tratamento entre parênteses e colado ao nome", () => {
+    expect(nomesClienteCorrespondem("Maria Rita Faleiros da Silva Moreira", "(Sr )Maria Rita Faleiros da Silva Moreira Nascimento")).toBe(true);
+  });
+
   it("tolera erro de digitação pequeno no primeiro nome", () => {
     expect(nomesClienteCorrespondem("Daniele fernandes", "Daniela Fernandes")).toBe(true);
     expect(nomesClienteCorrespondem("Giovanna Brito", "Giovana Brito")).toBe(true);

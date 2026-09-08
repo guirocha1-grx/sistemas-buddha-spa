@@ -146,7 +146,12 @@ export function identificarTerapeuta(nomeRaw: string | null | undefined, roster:
   return null;
 }
 
-const PREFIXO_HONORIFICO = /^(sr|sra|dr|dra|srs)\.?\s+/;
+// O Belle também exporta o tratamento entre parênteses e colado ao nome,
+// sem espaço depois — "(Sr )Maria Rita..." — como um código interno pra
+// sinalizar cliente com observação que a recepção precisa ler (achado
+// real 2026-09-08: isso quebrava a tokenização inteira do nome, "(sr" e
+// ")maria" viravam dois tokens diferentes, derrubando qualquer match).
+const PREFIXO_HONORIFICO = /^\(?(sr|sra|dr|dra|srs)\.?\s*\)?\s*/;
 const CONECTIVO_NOME = new Set(["da", "de", "do", "das", "dos"]);
 
 function tokensDoNomeBatem(tokenA: string, tokenB: string): boolean {
