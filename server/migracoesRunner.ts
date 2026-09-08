@@ -157,6 +157,23 @@ export async function listarMigracoes(): Promise<MigracaoListada[]> {
   });
 }
 
+/**
+ * O driver (Drizzle) lança `Error("Failed query: <sql> params: ...")` com a
+ * causa real do MySQL/TiDB em `error.cause`, não em `error.message` — sem
+ * isso, a tela de Migrações só mostra "Failed query: ..." sem o motivo de
+ * verdade, exatamente como já tinha acontecido com erroMsg de execução de
+ * agente (ver agentesService.ts). Junta os dois pra quem for depurar ver a
+ * causa de fato.
+ */
+function descreverErroComando(comando: string, error: unknown): Error {
+  const mensagem = error instanceof Error ? error.message : String(error);
+  const causa = error instanceof Error ? error.cause : undefined;
+  const causaTexto = causa === undefined || causa === null
+    ? null
+    : causa instanceof Error ? causa.message : typeof causa === "string" ? causa : JSON.stringify(causa);
+  return new Error(`${mensagem}${causaTexto ? ` | causa: ${causaTexto}` : ""}\n\nComando: ${comando}`);
+}
+
 /** Executa de fato os comandos do arquivo, lido direto do disco (nunca do que o cliente mandar) e registra o resultado. */
 export async function aplicarMigracao(nomeArquivo: string, usuario: Usuario): Promise<{ comandosExecutados: number }> {
   const db = await getDb();
@@ -165,7 +182,11 @@ export async function aplicarMigracao(nomeArquivo: string, usuario: Usuario): Pr
   const caminho = caminhoSeguro(nomeArquivo, listarArquivosSql());
   const comandos = dividirEmComandos(fs.readFileSync(caminho, "utf8"));
   for (const comando of comandos) {
-    await db.execute(sql.raw(comando));
+    try {
+      await db.execute(sql.raw(comando));
+    } catch (error) {
+      throw descreverErroComando(comando, error);
+    }
   }
   await registrarAplicacao(db, nomeArquivo, usuario, false);
   return { comandosExecutados: comandos.length };
