@@ -4,10 +4,13 @@
 -- vez de clienteId. O bug fazia esses palpites nunca serem removidos,
 -- então ficavam duplicados ao lado do atendimento real (achado real
 -- 2026-09-08, Conciliação PDV Fase 3).
-DELETE ia FROM belle_atendimentos ia
-INNER JOIN belle_atendimentos real
-  ON real.unidadeId = ia.unidadeId
-  AND real.dataAtendimento = ia.dataAtendimento
-  AND LOWER(real.clienteNome) = LOWER(ia.clienteNome)
-  AND real.status <> 'Agendado (IA)'
-WHERE ia.status = 'Agendado (IA)';
+--
+-- Sintaxe de multi-table DELETE por vírgula (mais antiga que INNER JOIN
+-- ... ON) — a primeira tentativa com INNER JOIN deu erro de sintaxe no
+-- TiDB ("line 2 column 35 near 'real ON ...'").
+DELETE ia FROM belle_atendimentos AS ia, belle_atendimentos AS real
+WHERE ia.unidadeId = real.unidadeId
+  AND ia.dataAtendimento = real.dataAtendimento
+  AND LOWER(ia.clienteNome) = LOWER(real.clienteNome)
+  AND ia.status = 'Agendado (IA)'
+  AND real.status <> 'Agendado (IA)';
