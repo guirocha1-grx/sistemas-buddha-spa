@@ -5233,17 +5233,34 @@ export async function upsertAtendimentosBelleImportados(
   }
 
   // A planilha real ganha do agendamento inferido na conversa — uma vez
-  // que o Belle traz QUALQUER dado desse cliente nesse import, os
-  // palpites pendentes dele somem (ver registrarAgendamentoInferidoBelle).
-  const clienteIdsComDadoReal = Array.from(new Set(
-    valoresParaGravar.map((v) => v.clienteId).filter((id): id is number => id != null),
-  ));
-  if (clienteIdsComDadoReal.length > 0) {
-    await db.delete(belleAtendimentos).where(and(
-      eq(belleAtendimentos.unidadeId, unidadeId),
-      inArray(belleAtendimentos.clienteId, clienteIdsComDadoReal),
-      eq(belleAtendimentos.status, STATUS_AGENDADO_POR_IA),
-    ));
+  // que o Belle traz um atendimento do mesmo cliente na mesma data nesse
+  // import, o palpite pendente some (ver registrarAgendamentoInferidoBelle).
+  //
+  // Casa por NOME + DATA (nomesClienteCorrespondem), não por clienteId:
+  // o palpite quase nunca tem clienteId (criado a partir da conversa,
+  // antes de qualquer resolução formal — confirmado em produção
+  // 2026-09-08, todos nulos) e boa parte das linhas reais importadas
+  // também fica sem clienteId (só vincula quando o telefone bate com um
+  // único cliente). Casar por clienteId praticamente nunca disparava —
+  // os palpites "Agendado (IA)" nunca somiam depois do import de
+  // verdade, ficando duplicados ao lado do atendimento real.
+  const datasDoImport = Array.from(new Set(valoresParaGravar.map((v) => v.dataAtendimento)));
+  const palpitesPendentes = datasDoImport.length > 0
+    ? await db.select({ id: belleAtendimentos.id, clienteNome: belleAtendimentos.clienteNome, dataAtendimento: belleAtendimentos.dataAtendimento })
+        .from(belleAtendimentos)
+        .where(and(
+          eq(belleAtendimentos.unidadeId, unidadeId),
+          eq(belleAtendimentos.status, STATUS_AGENDADO_POR_IA),
+          inArray(belleAtendimentos.dataAtendimento, datasDoImport),
+        ))
+    : [];
+  const idsPalpitesSuperados = palpitesPendentes
+    .filter((palpite) => valoresParaGravar.some((real) =>
+      real.dataAtendimento === palpite.dataAtendimento && nomesClienteCorrespondem(real.clienteNome, palpite.clienteNome)
+    ))
+    .map((palpite) => palpite.id);
+  if (idsPalpitesSuperados.length > 0) {
+    await db.delete(belleAtendimentos).where(inArray(belleAtendimentos.id, idsPalpitesSuperados));
   }
 
   return { inseridos, atualizados, vinculadosComSeguranca, semVinculo, ambiguos };
