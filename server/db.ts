@@ -4535,19 +4535,31 @@ export interface LinhaDreAgregada {
 
 /**
  * Agregação Receita x Despesa / DRE — soma inter_extratos (sem split) +
- * lancamento_splits (linhas de split) por Descrição, num período de
- * meses, no regime pedido. Exclui sempre secao="excluido" (transferência
- * entre contas/unidades — não é P&L de verdade).
+ * lancamento_splits (linhas de split) + adquirente_vendas (vendas de
+ * maquininha, valor BRUTO) por Descrição, num período de meses, no
+ * regime pedido. Exclui sempre secao="excluido" (transferência entre
+ * contas/unidades — não é P&L de verdade).
  *
- * CAIXA: sempre pela dataEntrada da transação-mãe, split ou não — nunca
- * olha mesReferencia nem a competência da Descrição. Uma licença anual
- * rateada em 12 meses de competência ainda aparece inteira, num mês só,
- * aqui.
+ * adquirente_vendas entra pelo valor BRUTO (não o valorLiquido) porque
+ * é essa a Descrição real de receita ("Receita Cartão de Débito/
+ * Crédito") — o depósito líquido correspondente que chega no banco via
+ * inter_extratos é categorizado à parte como "Receita Líq. Cartão de
+ * Débito/Crédito", sempre secao="excluido" (ver dreCategorizacao.ts),
+ * exatamente pra não contar a mesma venda 2x aqui. Faltava essa fonte
+ * na agregação (só lia inter_extratos/lancamento_splits) — achado
+ * 2026-09-09: DRE mostrando Receita Bruta bem menor que o real porque
+ * toda venda de cartão ficava de fora.
  *
- * COMPETÊNCIA: transação sem split usa o mês do dataEntrada, ajustado
- * -1 mês se a Descrição dela tiver competencia="mes_anterior"; linha de
- * split usa seu próprio mesReferencia direto (explícito sempre vence a
- * regra da Descrição — é uma decisão manual e pontual do usuário).
+ * CAIXA: sempre pela dataEntrada/dataHora da transação-mãe, split ou
+ * não — nunca olha mesReferencia nem a competência da Descrição. Uma
+ * licença anual rateada em 12 meses de competência ainda aparece
+ * inteira, num mês só, aqui.
+ *
+ * COMPETÊNCIA: transação sem split usa o mês do dataEntrada/dataHora,
+ * ajustado -1 mês se a Descrição dela tiver competencia="mes_anterior";
+ * linha de split usa seu próprio mesReferencia direto (explícito sempre
+ * vence a regra da Descrição — é uma decisão manual e pontual do
+ * usuário). adquirente_vendas não tem split, só a regra da Descrição.
  */
 export async function listDreAgregado(
   unidadeId: number,
@@ -4562,8 +4574,8 @@ export async function listDreAgregado(
   const dataFim = `${mesFim}-31`; // comparação de string "AAAA-MM-DD" — dia inválido num mês de 30 ainda ordena depois do último dia real
 
   const somasPorDescricao = new Map<number, number>();
-  const somar = (id: number | null, valor: string) => {
-    if (id === null) return;
+  const somar = (id: number | null, valor: string | null) => {
+    if (id === null || valor === null) return;
     somasPorDescricao.set(id, (somasPorDescricao.get(id) ?? 0) + parseFloat(valor));
   };
 
@@ -4587,6 +4599,16 @@ export async function listDreAgregado(
         lte(interExtratos.dataEntrada, dataFim),
       ));
     for (const s of splits) somar(s.dreDescricaoId, s.valor);
+
+    const vendas = await db.select({ dreDescricaoId: adquirenteVendas.dreDescricaoId, valor: adquirenteVendas.valorBruto })
+      .from(adquirenteVendas)
+      .where(and(
+        eq(adquirenteVendas.unidadeId, unidadeId),
+        gte(adquirenteVendas.dataHora, dataInicio),
+        lte(adquirenteVendas.dataHora, `${dataFim} 23:59:59`),
+        isNotNull(adquirenteVendas.dreDescricaoId),
+      ));
+    for (const v of vendas) somar(v.dreDescricaoId, v.valor);
   } else {
     // Janela ampliada em +1 mês no fim, pra pegar transação de mesFim+1
     // marcada "mes_anterior" que cai dentro do período de competência
@@ -4621,6 +4643,26 @@ export async function listDreAgregado(
         lte(lancamentoSplits.mesReferencia, mesFim),
       ));
     for (const s of splits) somar(s.dreDescricaoId, s.valor);
+
+    const dataFimAmpliadaHora = `${mesSeguinte(mesFim)}-31 23:59:59`;
+    const vendas = await db.select({
+      dreDescricaoId: adquirenteVendas.dreDescricaoId,
+      valor: adquirenteVendas.valorBruto,
+      dataHora: adquirenteVendas.dataHora,
+      competencia: dreDescricoes.competencia,
+    })
+      .from(adquirenteVendas)
+      .innerJoin(dreDescricoes, eq(adquirenteVendas.dreDescricaoId, dreDescricoes.id))
+      .where(and(
+        eq(adquirenteVendas.unidadeId, unidadeId),
+        gte(adquirenteVendas.dataHora, dataInicio),
+        lte(adquirenteVendas.dataHora, dataFimAmpliadaHora),
+      ));
+    for (const v of vendas) {
+      const mesVenda = v.dataHora.slice(0, 7);
+      const mesCompetencia = v.competencia === "mes_anterior" ? mesAnterior(mesVenda) : mesVenda;
+      if (mesCompetencia >= mesInicio && mesCompetencia <= mesFim) somar(v.dreDescricaoId, v.valor);
+    }
   }
 
   if (somasPorDescricao.size === 0) return [];
