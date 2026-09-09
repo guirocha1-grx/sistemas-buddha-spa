@@ -52,12 +52,6 @@ function toIso(date: Date): string {
   return date.toISOString().split("T")[0];
 }
 
-function subtrairDias(dataIso: string, dias: number): string {
-  const d = new Date(`${dataIso}T00:00:00`);
-  d.setDate(d.getDate() - dias);
-  return toIso(d);
-}
-
 function segundaFeiraDa(date: Date): Date {
   const d = new Date(date);
   const diaSemana = d.getDay(); // 0 = domingo
@@ -255,20 +249,24 @@ export default function ComandaRecepcao() {
 
   async function handleSincronizar() {
     if (!unidadeId) return;
-    // Comanda virtual tem uma aba POR DIA (uma chamada à API do Sheets
-    // cada) — sincronizar o mês inteiro (até 31 chamadas em sequência)
-    // aumentava a chance de esbarrar em rate limit. 12 dias cobre bem
-    // mais que o suficiente pro uso real (conciliação é sempre dos
-    // dias recentes) sem esse custo.
+    // Sincroniza sempre o período visível inteiro (Semana ou Mês — a
+    // tela nunca deixa escolher mais que isso, no máximo ~31 dias).
+    // Antes cortava pros últimos 12 dias a partir de hoje pra evitar
+    // rate limit do Sheets (comanda virtual tem 1 aba POR DIA, 1
+    // chamada cada) — só que isso deixava dia antigo (fora dos últimos
+    // 12 dias) preso pra sempre com o que foi sincronizado da 1ª vez,
+    // mesmo reabrindo o mês em "Mês" e clicando Sincronizar (achado
+    // real 2026-09-10: recepção corrigiu um lançamento de 07/08 na
+    // planilha, mas nada re-sincronizava aquele dia porque "hoje" já
+    // tinha passado dos 12 dias). Cada dia já tenta de novo sozinho em
+    // caso de erro (rate limit transitório) sem travar o resto do mês.
     const hojeIso = toIso(new Date());
-    const itensFimIdeal = dataFim < hojeIso ? dataFim : hojeIso;
-    const itensInicioIdeal = subtrairDias(itensFimIdeal, 11);
-    const itensInicio = itensInicioIdeal > dataInicio ? itensInicioIdeal : dataInicio;
+    const itensFim = dataFim < hojeIso ? dataFim : hojeIso;
 
     let houveErro = false;
 
     try {
-      await sincronizarItensMutation.mutateAsync({ unidadeId, dataInicio: itensInicio, dataFim: itensFimIdeal });
+      await sincronizarItensMutation.mutateAsync({ unidadeId, dataInicio, dataFim: itensFim });
     } catch {
       houveErro = true;
     }
