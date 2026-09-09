@@ -1013,7 +1013,7 @@ export default function Extratos() {
                 </div>
                 <label className="flex items-center gap-2 h-8 text-sm cursor-pointer">
                   <Checkbox checked={soPendentes} onCheckedChange={(v) => setSoPendentes(!!v)} />
-                  Só falta tratar (pendente/sugerida)
+                  Tratamento pendente
                 </label>
                 {contaAtual?.tipo === "caixa_fisico" && (
                   <label className="flex items-center gap-2 h-8 text-sm cursor-pointer">

@@ -10,7 +10,7 @@ import { normalizarTelefone, variantesTelefone, telefoneCanonico, telefonesCorre
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
-import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, mesAnterior, mesSeguinte, type RegraMatch, type DreSecao } from "./dreCategorizacao";
+import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, CHAVE_TRANSFERENCIA_MESMO_CNPJ, mesAnterior, mesSeguinte, type RegraMatch, type DreSecao } from "./dreCategorizacao";
 import { storageGetSignedUrl, storageExists } from "./storage";
 import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, atendimentoTempoEventos, terapeutasLiberacoes, conciliacaoCorrespondenciasManuais, type InsertChamadoParametro } from "../drizzle/schema";
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
@@ -4107,30 +4107,46 @@ export interface DadosParaCategorizar {
  *    só vira trabalho manual repetitivo (confirmado pelo usuário em
  *    2026-08-12: "se for na conta caixa e valor = 0 pode considerar
  *    Confirmado automaticamente" — critério exato, não é heurística);
- * 2) CNPJ de origem/destino batendo com uma conta de uma unidade
- *    *diferente* da do lançamento = transferência bancária real entre
- *    unidades (ex.: RBS manda dinheiro pro SSU cobrir uma conta) —
- *    critério exato (CNPJ cadastrado), sugere "Transação entre
- *    Unidades" mas nunca confirma sozinho (1 clique, como toda
- *    sugestão); ao confirmar (`confirmarSugestao`) gera 1 linha em
- *    `transacoes_entre_unidades`;
+ * 2) CNPJ de origem/destino batendo com uma conta cadastrada (de
+ *    qualquer unidade) = transferência bancária real entre contas —
+ *    critério exato (CNPJ cadastrado), roda antes de qualquer regra de
+ *    texto porque um texto genérico tipo "Pix recebido" não distingue
+ *    isso de uma venda de verdade. Duas Descrições possíveis,
+ *    decididas comparando a unidade dona do CNPJ da contraparte com a
+ *    unidade do lançamento (nunca pelo texto/nome da contraparte
+ *    sozinho — Agama transferindo pra Satori é uma coisa, Agama
+ *    transferindo pra outra conta da própria Agama é outra, mesmo
+ *    aparecendo o mesmo nome "Agama" no extrato):
+ *    - unidade *diferente* → "Empréstimo entre Unidades" (chave
+ *      CHAVE_TRANSACAO_ENTRE_UNIDADES) — ao confirmar
+ *      (`confirmarSugestao`/`categorizarManual`) gera 1 linha em
+ *      `transacoes_entre_unidades`;
+ *    - unidade *igual* → "Transf. contas mesmo CNPJ" (chave
+ *      CHAVE_TRANSFERENCIA_MESMO_CNPJ) — só remanejo interno entre duas
+ *      contas da mesma empresa, sem efeito nenhum entre unidades.
+ *    Nunca confirma sozinho (1 clique, como toda sugestão);
  * 3) regra de texto/valor (como sempre foi).
  * Se a regra tiver alertaSeRepetirNoMes e já existir outra transação
  * da mesma descrição na mesma conta no mesmo mês, marca um aviso (não
  * bloqueia, só avisa).
  *
- * Removidas em 2026-08-12 (a pedido do usuário, "vamos testar só com
- * padrões"): a exclusão automática por CNPJ de conta própria *da
- * mesma unidade* (transferência entre contas) e a exclusão automática
- * de origem "mercadopago" — essa última porque o Mercado Pago deixou
- * de ser só liquidação de adquirente (hoje recebe outros tipos de
- * entrada também), então excluir tudo incondicionalmente virou
- * incorreto. Sem padrão correspondente, essas transações agora ficam
- * "Pendente" (não mais um Excluído do DRE automático) — decisão
- * explícita do usuário mesmo sabendo que isso pode reabrir o bug de
- * contaminação do Pix na Comanda Recepção que essa exclusão automática
- * tinha corrigido, até que os padrões de texto cubram os casos do
- * Mercado Pago.
+ * Removida em 2026-08-12 (a pedido do usuário, "vamos testar só com
+ * padrões"): a exclusão automática de origem "mercadopago" — o Mercado
+ * Pago deixou de ser só liquidação de adquirente (hoje recebe outros
+ * tipos de entrada também), então excluir tudo incondicionalmente
+ * virou incorreto. Continua removida hoje (Mercado Pago só sai pra
+ * conta Inter correspondente, então já funciona bem só com padrão de
+ * texto — sem ambiguidade de unidade pra resolver por CNPJ).
+ *
+ * O item 2 (CNPJ de conta própria) tinha sido removido junto nessa
+ * mesma decisão e foi *reintroduzido* em 2026-09-09, mas agora
+ * corretamente: antes era "todo CNPJ de conta própria = exclui do
+ * DRE", sem separar mesma unidade de unidade diferente — aí um Pix da
+ * Satori caindo na conta da Agama (empréstimo real) e um Pix da Agama
+ * caindo numa conta da própria Agama (remanejo interno) tomavam a
+ * mesma Descrição, quando são coisas bem diferentes. Agora as duas
+ * viram sugestões separadas (ver acima), então não recai no mesmo
+ * problema de 2026-08-12.
  */
 export async function categorizarTransacaoAutomaticamente(
   dados: DadosParaCategorizar,
@@ -4147,11 +4163,13 @@ export async function categorizarTransacaoAutomaticamente(
 
   const cnpjContraparte = [dados.cpfCnpjOrigem, dados.cpfCnpjDestino]
     .map((c) => c?.replace(/\D/g, ""))
-    .find((c): c is string => !!c && cnpjsPorUnidade.has(c) && cnpjsPorUnidade.get(c) !== dados.unidadeId);
+    .find((c): c is string => !!c && cnpjsPorUnidade.has(c));
   if (cnpjContraparte) {
-    const transacaoEntreUnidadesId = await resolverDescricaoIdPorChave(CHAVE_TRANSACAO_ENTRE_UNIDADES);
-    if (transacaoEntreUnidadesId) {
-      return { dreDescricaoId: transacaoEntreUnidadesId, categorizacaoStatus: "sugerida", alerta: null };
+    const unidadeContraparte = cnpjsPorUnidade.get(cnpjContraparte)!;
+    const chave = unidadeContraparte === dados.unidadeId ? CHAVE_TRANSFERENCIA_MESMO_CNPJ : CHAVE_TRANSACAO_ENTRE_UNIDADES;
+    const descricaoId = await resolverDescricaoIdPorChave(chave);
+    if (descricaoId) {
+      return { dreDescricaoId: descricaoId, categorizacaoStatus: "sugerida", alerta: null };
     }
   }
 

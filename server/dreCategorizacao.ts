@@ -143,6 +143,15 @@ export const CHAVE_RECEITA_LIQ_CARTAO_CREDITO = "receita_liq_c_credito";
 // afeta o DRE, e ao ser confirmada gera 1 linha em
 // transacoes_entre_unidades (server/db.ts, confirmarSugestao).
 export const CHAVE_TRANSACAO_ENTRE_UNIDADES = "transacao_entre_unidades";
+// Transferência entre duas contas da MESMA unidade/CNPJ (ex.: Sicredi
+// Agama -> Inter Agama) — mesmo mecanismo de detecção por CNPJ que a
+// de cima, mas comparando contra a unidade do PRÓPRIO lançamento em vez
+// de uma diferente. Não dá pra usar 1 regra de texto genérica tipo
+// "Pix recebido" pra pegar isso, porque o mesmo texto também aparece
+// numa transferência real entre unidades (Agama -> Satori) — só o CNPJ
+// da contraparte, comparado com a unidade de destino, decide qual das
+// duas é (decisão do usuário 2026-09-09).
+export const CHAVE_TRANSFERENCIA_MESMO_CNPJ = "transferencia_mesmo_cnpj";
 
 /**
  * Descrições semeadas — o nível intermediário entre Categoria e
@@ -175,6 +184,7 @@ export const DRE_DESCRICOES_SEED: { nome: string; categoriaNome: string; chave?:
   // pra gerar automaticamente a linha em transacoes_entre_unidades — ver
   // migração 2026-09-08-mesclar-emprestimo-entre-unidades.sql).
   { nome: "Empréstimo entre Unidades", categoriaNome: EXCLUIDO_NOME, chave: CHAVE_TRANSACAO_ENTRE_UNIDADES },
+  { nome: "Transf. contas mesmo CNPJ", categoriaNome: EXCLUIDO_NOME, chave: CHAVE_TRANSFERENCIA_MESMO_CNPJ },
   { nome: "Parcerias Comerciais", categoriaNome: "Parcerias Comerciais" },
   { nome: "Totalpass", categoriaNome: "Parcerias Comerciais" },
   { nome: "Wellhub", categoriaNome: "Parcerias Comerciais" },
