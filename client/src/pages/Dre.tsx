@@ -14,11 +14,6 @@ function fmtCurrency(value: number) {
   return value < 0 ? `(${texto})` : texto;
 }
 
-function fmtDataCurta(data: string) {
-  const [, mes, dia] = data.split("-");
-  return `${dia}/${mes}`;
-}
-
 function mesAtual() {
   return new Date().toISOString().slice(0, 7);
 }
@@ -108,26 +103,16 @@ function DetalheCategoriaHover({
         ) : grupos.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-2">Nenhum lançamento encontrado.</p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-0.5">
             {grupos.map(([forma, { itens, total }]) => (
-              <div key={forma}>
-                <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-muted-foreground pb-0.5 border-b border-border/50">
-                  <span>{forma}</span>
-                  <span>{fmtCurrency(total * sinal)}</span>
-                </div>
-                <div className="space-y-0.5 mt-0.5">
-                  {itens.map((l, i) => (
-                    <div key={i} className="flex items-start justify-between gap-2 text-xs py-0.5">
-                      <div className="min-w-0">
-                        <div className="truncate font-medium">{l.titulo}</div>
-                        <div className="text-muted-foreground text-[10px]">{fmtDataCurta(l.data)}</div>
-                      </div>
-                      <span className={`shrink-0 ${sinal < 0 ? "text-rose-700" : "text-emerald-700"}`}>
-                        {fmtCurrency(l.valor * sinal)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+              <div key={forma} className="flex items-center justify-between text-xs py-1 border-b border-border/30 last:border-0">
+                <span className="font-medium">{forma}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground text-[10px]">{itens.length} venda{itens.length === 1 ? "" : "s"}</span>
+                  <span className={`font-medium ${sinal < 0 ? "text-rose-700" : "text-emerald-700"}`}>
+                    {fmtCurrency(total * sinal)}
+                  </span>
+                </span>
               </div>
             ))}
           </div>
