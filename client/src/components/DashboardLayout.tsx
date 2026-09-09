@@ -26,7 +26,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { startGoogleLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, CalendarClock, KanbanSquare, DollarSign, Sparkles, Image, UserPlus, Settings, MessageCircle, ChevronRight, ScrollText, Repeat, Users2, Loader2, Workflow, Megaphone, AlertTriangle, BookOpenCheck, Database, Terminal, HelpCircle } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Calendar, CalendarClock, KanbanSquare, DollarSign, Image, Settings, MessageCircle, ChevronRight, ScrollText, Repeat, Users2, Loader2, Workflow, Megaphone, BookOpenCheck, HelpCircle } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -50,7 +50,7 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
   { icon: Users, label: "Clientes", path: "/clientes", modulo: "clientes" },
   { icon: KanbanSquare, label: "Reativação", path: "/reativacao", modulo: "reativacao" },
   {
-    icon: Calendar, label: "Agenda", path: "/agenda", modulo: "agenda",
+    icon: Calendar, label: "Atendimento", path: "/agenda", modulo: "agenda",
     children: [
       { label: "Agenda", path: "/agenda", subsecao: "agenda:agenda" },
       { label: "Próximos atendimentos", path: "/proximos-atendimentos", subsecao: "agenda:proximos-atendimentos" },
@@ -92,17 +92,21 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
       { label: "Parâmetros", path: "/financeiro/parametros", subsecao: "financeiro:parametros" },
     ],
   },
-  { icon: Sparkles, label: "Agentes", path: "/agentes", adminOnly: true },
   { icon: Image, label: "Lâminas", path: "/laminas", modulo: "laminas" },
-  { icon: UserPlus, label: "Leads", path: "/leads", modulo: "leads" },
   { icon: MessageCircle, label: "Config. Inbox", path: "/config-inbox", modulo: "mensagens" },
   { icon: HelpCircle, label: "Ajuda", path: "/ajuda" },
-  { icon: Settings, label: "Configurações", path: "/configuracoes", modulo: "configuracoes", adminOnly: true },
-  { icon: Users2, label: "Usuários", path: "/usuarios", adminOnly: true },
-  { icon: ScrollText, label: "Log de Auditoria", path: "/auditoria", adminOnly: true },
-  { icon: AlertTriangle, label: "Tratamento de erros", path: "/tratamento-erros", adminOnly: true },
-  { icon: Database, label: "Manutenção de dados", path: "/manutencao-dados", adminOnly: true },
-  { icon: Terminal, label: "Banco de Dados", path: "/banco-de-dados", adminOnly: true },
+  {
+    icon: Settings, label: "Configurações", path: "/configuracoes", adminOnly: true,
+    children: [
+      { label: "Configurações Gerais", path: "/configuracoes" },
+      { label: "Usuários", path: "/usuarios" },
+      { label: "Agentes", path: "/agentes" },
+      { label: "Log de Auditoria", path: "/auditoria" },
+      { label: "Tratamento de Erros", path: "/tratamento-erros" },
+      { label: "Manutenção de Dados", path: "/manutencao-dados" },
+      { label: "Banco de Dados", path: "/banco-de-dados" },
+    ],
+  },
 ];
 
 function GoogleIcon({ className }: { className?: string }) {
