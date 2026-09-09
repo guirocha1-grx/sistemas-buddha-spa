@@ -4304,6 +4304,20 @@ Diretrizes:
     })).query(async ({ input }) => {
       return db.listDreAgregado(input.unidadeId, input.mesInicio, input.mesFim, input.regime);
     }),
+
+    /**
+     * Drill-down: lançamentos individuais que compõem 1 Categoria, no
+     * mesmo período/regime — usado pelo hover "detalhar" da tela de DRE.
+     */
+    lancamentosPorCategoria: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      mesInicio: z.string().regex(/^\d{4}-\d{2}$/),
+      mesFim: z.string().regex(/^\d{4}-\d{2}$/),
+      regime: z.enum(["caixa", "competencia"]),
+      dreCategoriaId: z.number(),
+    })).query(async ({ input }) => {
+      return db.listDreLancamentosPorCategoria(input.unidadeId, input.mesInicio, input.mesFim, input.regime, input.dreCategoriaId);
+    }),
   }),
 
   // ===== Confirmação de Pagamento (recepção — últimos 48h) =====

@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
@@ -6,6 +6,7 @@ import { SeletorMes } from "@/components/SeletorMes";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { Loader2, ChevronRight } from "lucide-react";
 
 function fmtCurrency(value: number) {
@@ -13,8 +14,72 @@ function fmtCurrency(value: number) {
   return value < 0 ? `(${texto})` : texto;
 }
 
+function fmtDataCurta(data: string) {
+  const [, mes, dia] = data.split("-");
+  return `${dia}/${mes}`;
+}
+
 function mesAtual() {
   return new Date().toISOString().slice(0, 7);
+}
+
+/**
+ * Categoria como trigger de hover: busca (lazy, só quando aberto) os
+ * lançamentos individuais que compõem essa Categoria no período/regime
+ * atual — drill-down pedido pelo usuário 2026-09-09, pra não precisar
+ * sair do DRE pra saber o que tem dentro de um número.
+ */
+function DetalheCategoriaHover({
+  unidadeId,
+  mesInicio,
+  mesFim,
+  regime,
+  dreCategoriaId,
+  sinal,
+  children,
+}: {
+  unidadeId: number;
+  mesInicio: string;
+  mesFim: string;
+  regime: "caixa" | "competencia";
+  dreCategoriaId: number;
+  sinal: number;
+  children: ReactNode;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const query = trpc.dre.lancamentosPorCategoria.useQuery(
+    { unidadeId, mesInicio, mesFim, regime, dreCategoriaId },
+    { enabled: aberto },
+  );
+
+  return (
+    <HoverCard open={aberto} onOpenChange={setAberto} openDelay={150}>
+      <HoverCardTrigger asChild>
+        <span className="cursor-default border-b border-dotted border-muted-foreground/40">{children}</span>
+      </HoverCardTrigger>
+      <HoverCardContent className="w-96 max-h-80 overflow-y-auto p-2" align="start">
+        {query.isLoading ? (
+          <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+        ) : !query.data || query.data.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-2">Nenhum lançamento encontrado.</p>
+        ) : (
+          <div className="space-y-0.5">
+            {query.data.map((l, i) => (
+              <div key={i} className="flex items-start justify-between gap-2 text-xs py-1 border-b border-border/30 last:border-0">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{l.titulo}</div>
+                  <div className="text-muted-foreground text-[10px]">{fmtDataCurta(l.data)} · {l.dreDescricaoNome}</div>
+                </div>
+                <span className={`shrink-0 font-medium ${sinal < 0 ? "text-rose-700" : "text-emerald-700"}`}>
+                  {fmtCurrency(l.valor * sinal)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </HoverCardContent>
+    </HoverCard>
+  );
 }
 
 type LinhaCascata =
@@ -46,15 +111,15 @@ export default function Dre() {
   // Detalhe por Categoria (soma as Descrições dela) dentro de cada
   // Seção — alimenta a setinha "detalhar" de cada linha da cascata.
   const categoriasPorSecao = useMemo(() => {
-    const porSecao = new Map<string, Map<number, { nome: string; valor: number }>>();
+    const porSecao = new Map<string, Map<number, { id: number; nome: string; valor: number }>>();
     for (const l of linhas) {
       if (!porSecao.has(l.secao)) porSecao.set(l.secao, new Map());
       const porCategoria = porSecao.get(l.secao)!;
-      const atual = porCategoria.get(l.dreCategoriaId) ?? { nome: l.dreCategoriaNome, valor: 0 };
+      const atual = porCategoria.get(l.dreCategoriaId) ?? { id: l.dreCategoriaId, nome: l.dreCategoriaNome, valor: 0 };
       atual.valor += l.valor;
       porCategoria.set(l.dreCategoriaId, atual);
     }
-    const resultado: Record<string, { nome: string; valor: number }[]> = {};
+    const resultado: Record<string, { id: number; nome: string; valor: number }[]> = {};
     for (const [secao, porCategoria] of porSecao) {
       resultado[secao] = Array.from(porCategoria.values()).sort((a, b) => b.valor - a.valor);
     }
@@ -181,10 +246,22 @@ export default function Dre() {
                         </TableCell>
                       </TableRow>
                       {expandida && categorias?.map((c) => {
-                        const valorExibido = c.valor * (linha.tipo === "valor" ? linha.sinal ?? 1 : 1);
+                        const sinal = linha.tipo === "valor" ? linha.sinal ?? 1 : 1;
+                        const valorExibido = c.valor * sinal;
                         return (
                           <TableRow key={`${linha.label}-${c.nome}`} className="text-xs">
-                            <TableCell className="pl-9 text-muted-foreground">{c.nome}</TableCell>
+                            <TableCell className="pl-9 text-muted-foreground">
+                              <DetalheCategoriaHover
+                                unidadeId={unidadeId!}
+                                mesInicio={mesInicio}
+                                mesFim={mesFim}
+                                regime={regime}
+                                dreCategoriaId={c.id}
+                                sinal={sinal}
+                              >
+                                {c.nome}
+                              </DetalheCategoriaHover>
+                            </TableCell>
                             <TableCell className={`text-right text-muted-foreground ${valorExibido < 0 ? "text-rose-700/70" : ""}`}>
                               {fmtCurrency(valorExibido)}
                             </TableCell>

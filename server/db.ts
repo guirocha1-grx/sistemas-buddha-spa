@@ -4693,6 +4693,205 @@ export async function listDreAgregado(
     .sort((a, b) => a.ordem - b.ordem || a.dreCategoriaNome.localeCompare(b.dreCategoriaNome));
 }
 
+export interface LinhaDreLancamento {
+  data: string; // "AAAA-MM-DD"
+  titulo: string;
+  valor: number; // sempre positivo, igual às fontes (o sinal é decidido pela seção na tela)
+  origem: string;
+  dreDescricaoNome: string;
+}
+
+/**
+ * Drill-down do DRE: lista os lançamentos individuais (de qualquer das
+ * 3 fontes que listDreAgregado soma) que compõem uma Categoria, no
+ * mesmo período/regime — usada pelo hover "detalhar" de cada Categoria
+ * na tela de DRE. Mesmas regras de caixa/competência de listDreAgregado,
+ * só que devolvendo linha a linha em vez de somado.
+ */
+export async function listDreLancamentosPorCategoria(
+  unidadeId: number,
+  mesInicio: string,
+  mesFim: string,
+  regime: "caixa" | "competencia",
+  dreCategoriaId: number,
+): Promise<LinhaDreLancamento[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const descricoesDaCategoria = await db.select({
+    id: dreDescricoes.id,
+    nome: dreDescricoes.nome,
+    competencia: dreDescricoes.competencia,
+  }).from(dreDescricoes).where(eq(dreDescricoes.dreCategoriaId, dreCategoriaId));
+  if (descricoesDaCategoria.length === 0) return [];
+
+  const idsDescricao = descricoesDaCategoria.map((d) => d.id);
+  const nomePorId = new Map(descricoesDaCategoria.map((d) => [d.id, d.nome]));
+  const competenciaPorId = new Map(descricoesDaCategoria.map((d) => [d.id, d.competencia]));
+
+  const dataInicio = `${mesInicio}-01`;
+  const dataFim = `${mesFim}-31`;
+  const resultado: LinhaDreLancamento[] = [];
+
+  if (regime === "caixa") {
+    const semSplit = await db.select({
+      dataEntrada: interExtratos.dataEntrada,
+      titulo: interExtratos.titulo,
+      descricao: interExtratos.descricao,
+      valor: interExtratos.valor,
+      origem: interExtratos.origem,
+      dreDescricaoId: interExtratos.dreDescricaoId,
+    }).from(interExtratos).where(and(
+      eq(interExtratos.unidadeId, unidadeId),
+      gte(interExtratos.dataEntrada, dataInicio),
+      lte(interExtratos.dataEntrada, dataFim),
+      inArray(interExtratos.dreDescricaoId, idsDescricao),
+    ));
+    for (const t of semSplit) {
+      resultado.push({
+        data: t.dataEntrada,
+        titulo: t.titulo || t.descricao || "—",
+        valor: parseFloat(t.valor),
+        origem: t.origem ?? "inter",
+        dreDescricaoNome: nomePorId.get(t.dreDescricaoId!) ?? "",
+      });
+    }
+
+    const splits = await db.select({
+      dataEntrada: interExtratos.dataEntrada,
+      titulo: interExtratos.titulo,
+      observacao: lancamentoSplits.observacao,
+      valor: lancamentoSplits.valor,
+      origem: interExtratos.origem,
+      dreDescricaoId: lancamentoSplits.dreDescricaoId,
+    }).from(lancamentoSplits)
+      .innerJoin(interExtratos, eq(lancamentoSplits.interExtratoId, interExtratos.id))
+      .where(and(
+        eq(interExtratos.unidadeId, unidadeId),
+        gte(interExtratos.dataEntrada, dataInicio),
+        lte(interExtratos.dataEntrada, dataFim),
+        inArray(lancamentoSplits.dreDescricaoId, idsDescricao),
+      ));
+    for (const s of splits) {
+      resultado.push({
+        data: s.dataEntrada,
+        titulo: s.observacao || `${s.titulo || "Split"} (dividido)`,
+        valor: parseFloat(s.valor),
+        origem: s.origem ?? "inter",
+        dreDescricaoNome: nomePorId.get(s.dreDescricaoId) ?? "",
+      });
+    }
+
+    const vendas = await db.select({
+      dataHora: adquirenteVendas.dataHora,
+      tipo: adquirenteVendas.tipo,
+      bandeira: adquirenteVendas.bandeira,
+      valor: adquirenteVendas.valorBruto,
+      adquirente: adquirenteVendas.adquirente,
+      dreDescricaoId: adquirenteVendas.dreDescricaoId,
+    }).from(adquirenteVendas).where(and(
+      eq(adquirenteVendas.unidadeId, unidadeId),
+      gte(adquirenteVendas.dataHora, dataInicio),
+      lte(adquirenteVendas.dataHora, `${dataFim} 23:59:59`),
+      inArray(adquirenteVendas.dreDescricaoId, idsDescricao),
+    ));
+    for (const v of vendas) {
+      if (v.valor === null) continue;
+      resultado.push({
+        data: v.dataHora.slice(0, 10),
+        titulo: [v.tipo, v.bandeira].filter(Boolean).join(" - ") || "Venda maquininha",
+        valor: parseFloat(v.valor),
+        origem: v.adquirente,
+        dreDescricaoNome: nomePorId.get(v.dreDescricaoId!) ?? "",
+      });
+    }
+  } else {
+    const dataFimAmpliada = `${mesSeguinte(mesFim)}-31`;
+    const semSplit = await db.select({
+      dataEntrada: interExtratos.dataEntrada,
+      titulo: interExtratos.titulo,
+      descricao: interExtratos.descricao,
+      valor: interExtratos.valor,
+      origem: interExtratos.origem,
+      dreDescricaoId: interExtratos.dreDescricaoId,
+    }).from(interExtratos).where(and(
+      eq(interExtratos.unidadeId, unidadeId),
+      gte(interExtratos.dataEntrada, dataInicio),
+      lte(interExtratos.dataEntrada, dataFimAmpliada),
+      inArray(interExtratos.dreDescricaoId, idsDescricao),
+    ));
+    for (const t of semSplit) {
+      const mesTransacao = t.dataEntrada.slice(0, 7);
+      const competencia = competenciaPorId.get(t.dreDescricaoId!) ?? "mes_lancamento";
+      const mesCompetencia = competencia === "mes_anterior" ? mesAnterior(mesTransacao) : mesTransacao;
+      if (mesCompetencia < mesInicio || mesCompetencia > mesFim) continue;
+      resultado.push({
+        data: t.dataEntrada,
+        titulo: t.titulo || t.descricao || "—",
+        valor: parseFloat(t.valor),
+        origem: t.origem ?? "inter",
+        dreDescricaoNome: nomePorId.get(t.dreDescricaoId!) ?? "",
+      });
+    }
+
+    const splits = await db.select({
+      dataEntrada: interExtratos.dataEntrada,
+      titulo: interExtratos.titulo,
+      observacao: lancamentoSplits.observacao,
+      valor: lancamentoSplits.valor,
+      origem: interExtratos.origem,
+      dreDescricaoId: lancamentoSplits.dreDescricaoId,
+    }).from(lancamentoSplits)
+      .innerJoin(interExtratos, eq(lancamentoSplits.interExtratoId, interExtratos.id))
+      .where(and(
+        eq(interExtratos.unidadeId, unidadeId),
+        gte(lancamentoSplits.mesReferencia, mesInicio),
+        lte(lancamentoSplits.mesReferencia, mesFim),
+        inArray(lancamentoSplits.dreDescricaoId, idsDescricao),
+      ));
+    for (const s of splits) {
+      resultado.push({
+        data: s.dataEntrada,
+        titulo: s.observacao || `${s.titulo || "Split"} (dividido)`,
+        valor: parseFloat(s.valor),
+        origem: s.origem ?? "inter",
+        dreDescricaoNome: nomePorId.get(s.dreDescricaoId) ?? "",
+      });
+    }
+
+    const dataFimAmpliadaHora = `${mesSeguinte(mesFim)}-31 23:59:59`;
+    const vendas = await db.select({
+      dataHora: adquirenteVendas.dataHora,
+      tipo: adquirenteVendas.tipo,
+      bandeira: adquirenteVendas.bandeira,
+      valor: adquirenteVendas.valorBruto,
+      adquirente: adquirenteVendas.adquirente,
+      dreDescricaoId: adquirenteVendas.dreDescricaoId,
+    }).from(adquirenteVendas).where(and(
+      eq(adquirenteVendas.unidadeId, unidadeId),
+      gte(adquirenteVendas.dataHora, dataInicio),
+      lte(adquirenteVendas.dataHora, dataFimAmpliadaHora),
+      inArray(adquirenteVendas.dreDescricaoId, idsDescricao),
+    ));
+    for (const v of vendas) {
+      if (v.valor === null) continue;
+      const mesVenda = v.dataHora.slice(0, 7);
+      const competencia = competenciaPorId.get(v.dreDescricaoId!) ?? "mes_lancamento";
+      const mesCompetencia = competencia === "mes_anterior" ? mesAnterior(mesVenda) : mesVenda;
+      if (mesCompetencia < mesInicio || mesCompetencia > mesFim) continue;
+      resultado.push({
+        data: v.dataHora.slice(0, 10),
+        titulo: [v.tipo, v.bandeira].filter(Boolean).join(" - ") || "Venda maquininha",
+        valor: parseFloat(v.valor),
+        origem: v.adquirente,
+        dreDescricaoNome: nomePorId.get(v.dreDescricaoId!) ?? "",
+      });
+    }
+  }
+
+  return resultado.sort((a, b) => b.data.localeCompare(a.data));
+}
+
 // ===== Transações entre Unidades =====
 
 export async function listTransacoesEntreUnidades() {
