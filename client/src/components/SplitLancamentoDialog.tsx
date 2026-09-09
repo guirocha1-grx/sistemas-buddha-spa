@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DescricaoCombobox, type DreDescricaoOption } from "@/components/DescricaoCombobox";
+import { SeletorMes } from "@/components/SeletorMes";
 import type { DreCategoriaOption } from "@/components/CategoriaCombobox";
 import { Plus, Trash2, Loader2, CalendarRange } from "lucide-react";
 import { toast } from "sonner";
@@ -246,11 +247,10 @@ export function SplitLancamentoDialog({
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[10px] text-muted-foreground">Mês competência</Label>
-                    <input
-                      type="month"
-                      className="flex h-8 w-32 rounded-md border border-input bg-background px-2 text-sm"
+                    <SeletorMes
+                      size="sm"
                       value={linha.mesReferencia}
-                      onChange={(e) => atualizarLinha(i, { mesReferencia: e.target.value })}
+                      onChange={(mes) => atualizarLinha(i, { mesReferencia: mes })}
                     />
                   </div>
                   <div className="col-span-4 space-y-1">
@@ -296,12 +296,7 @@ export function SplitLancamentoDialog({
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[10px] text-muted-foreground">A partir do mês</Label>
-                    <input
-                      type="month"
-                      className="flex h-7 w-32 rounded-md border border-input bg-background px-2 text-sm"
-                      value={mesInicialDivisao}
-                      onChange={(e) => setMesInicialDivisao(e.target.value)}
-                    />
+                    <SeletorMes size="sm" value={mesInicialDivisao} onChange={setMesInicialDivisao} />
                   </div>
                   <Button type="button" size="sm" className="h-7 text-xs" onClick={() => aplicarDivisaoEmMeses(i)}>
                     Aplicar

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
+import { SeletorMes } from "@/components/SeletorMes";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -88,13 +89,11 @@ export default function Dre() {
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <label className="text-xs text-muted-foreground">Mês início</label>
-          <input type="month" className="flex h-9 w-36 rounded-md border border-input bg-background px-3 py-1 text-sm mt-1"
-            value={mesInicio} onChange={(e) => setMesInicio(e.target.value)} />
+          <div className="mt-1"><SeletorMes value={mesInicio} onChange={setMesInicio} /></div>
         </div>
         <div>
           <label className="text-xs text-muted-foreground">Mês fim</label>
-          <input type="month" className="flex h-9 w-36 rounded-md border border-input bg-background px-3 py-1 text-sm mt-1"
-            value={mesFim} onChange={(e) => setMesFim(e.target.value)} />
+          <div className="mt-1"><SeletorMes value={mesFim} onChange={setMesFim} /></div>
         </div>
         <Tabs value={regime} onValueChange={(v) => setRegime(v as "caixa" | "competencia")}>
           <TabsList>
