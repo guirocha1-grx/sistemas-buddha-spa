@@ -281,6 +281,20 @@ export function ehTransferenciaEntreContas(
   );
 }
 
+/** "AAAA-MM" do mês anterior — cuidado com virada de ano (jan -> dez do ano anterior). */
+export function mesAnterior(mesAno: string): string {
+  const [ano, mes] = mesAno.split("-").map(Number);
+  const data = new Date(ano, mes - 1 - 1, 1); // mes-1 = índice 0-based do mês atual; -1 de novo = mês anterior
+  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** "AAAA-MM" do mês seguinte — cuidado com virada de ano (dez -> jan do ano seguinte). */
+export function mesSeguinte(mesAno: string): string {
+  const [ano, mes] = mesAno.split("-").map(Number);
+  const data = new Date(ano, mes - 1 + 1, 1);
+  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}`;
+}
+
 const MIN_TAMANHO_PADRAO_APRENDIDO = 5;
 
 /**

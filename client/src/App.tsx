@@ -21,6 +21,8 @@ import FluxoDetalhe from "./pages/FluxoDetalhe";
 import Templates from "./pages/Templates";
 import Disparos from "./pages/Disparos";
 import Financeiro from "./pages/Financeiro";
+import ReceitaDespesa from "./pages/ReceitaDespesa";
+import Dre from "./pages/Dre";
 import Extratos from "./pages/Extratos";
 import ComandaRecepcao from "./pages/ComandaRecepcao";
 import Adquirentes from "./pages/Adquirentes";
@@ -62,6 +64,8 @@ function Router() {
         <Route path="/buddha-mkt/templates" component={Templates} />
         <Route path="/buddha-mkt/disparos" component={Disparos} />
         <Route path="/financeiro" component={Financeiro} />
+        <Route path="/financeiro/receita-despesa" component={ReceitaDespesa} />
+        <Route path="/financeiro/dre" component={Dre} />
         <Route path="/financeiro/extratos" component={Extratos} />
         <Route path="/financeiro/comanda-recepcao" component={ComandaRecepcao} />
         <Route path="/financeiro/adquirentes" component={Adquirentes} />

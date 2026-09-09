@@ -2646,6 +2646,7 @@ Diretrizes:
           valor: z.number().positive(),
           unidadeId: z.number(),
           observacao: z.string().optional(),
+          mesReferencia: z.string().regex(/^\d{4}-\d{2}$/).optional(),
         })).min(1),
       })).mutation(async ({ input }) => {
         await db.salvarSplits(input.interExtratoId, input.linhas);
@@ -4185,8 +4186,9 @@ Diretrizes:
     criar: protectedProcedure.input(z.object({
       nome: z.string().min(1),
       dreCategoriaId: z.number(),
+      competencia: z.enum(["mes_lancamento", "mes_anterior"]).optional(),
     })).mutation(async ({ input }) => {
-      const id = await db.criarDreDescricao(input.nome, input.dreCategoriaId);
+      const id = await db.criarDreDescricao(input.nome, input.dreCategoriaId, input.competencia);
       return { success: true, id };
     }),
 
@@ -4194,6 +4196,7 @@ Diretrizes:
       id: z.number(),
       nome: z.string().min(1).optional(),
       dreCategoriaId: z.number().optional(),
+      competencia: z.enum(["mes_lancamento", "mes_anterior"]).optional(),
     })).mutation(async ({ input }) => {
       const { id, ...dados } = input;
       await db.atualizarDreDescricao(id, dados);
@@ -4260,6 +4263,34 @@ Diretrizes:
     excluir: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await db.excluirDreRegra(input.id);
       return { success: true };
+    }),
+  }),
+
+  /**
+   * Receita x Despesa e DRE (subseções de Financeiro, 2026-09-08) — os
+   * dois consomem a mesma agregação (db.listDreAgregado), só muda a
+   * apresentação na tela; mantidos como routers separados (não 1 só)
+   * pra cada um poder ter sua própria subseção de permissão.
+   */
+  receitaDespesa: router({
+    agregado: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      mesInicio: z.string().regex(/^\d{4}-\d{2}$/),
+      mesFim: z.string().regex(/^\d{4}-\d{2}$/),
+      regime: z.enum(["caixa", "competencia"]),
+    })).query(async ({ input }) => {
+      return db.listDreAgregado(input.unidadeId, input.mesInicio, input.mesFim, input.regime);
+    }),
+  }),
+
+  dre: router({
+    agregado: protectedProcedure.input(z.object({
+      unidadeId: z.number(),
+      mesInicio: z.string().regex(/^\d{4}-\d{2}$/),
+      mesFim: z.string().regex(/^\d{4}-\d{2}$/),
+      regime: z.enum(["caixa", "competencia"]),
+    })).query(async ({ input }) => {
+      return db.listDreAgregado(input.unidadeId, input.mesInicio, input.mesFim, input.regime);
     }),
   }),
 

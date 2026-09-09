@@ -82,6 +82,8 @@ const menuItems: { icon: typeof LayoutDashboard; label: string; path: string; mo
     icon: DollarSign, label: "Financeiro", path: "/financeiro", modulo: "financeiro",
     children: [
       { label: "Visão Geral", path: "/financeiro", subsecao: "financeiro:visao-geral" },
+      { label: "Receita x Despesa", path: "/financeiro/receita-despesa", subsecao: "financeiro:receita-despesa" },
+      { label: "DRE", path: "/financeiro/dre", subsecao: "financeiro:dre" },
       { label: "Contas", path: "/financeiro/extratos", subsecao: "financeiro:contas" },
       { label: "Conciliação PDV", path: "/financeiro/comanda-recepcao", subsecao: "financeiro:comanda-recepcao" },
       { label: "Confirmação de Pagamento", path: "/financeiro/confirmacao-pagamento", subsecao: "financeiro:confirmacao-pagamento" },

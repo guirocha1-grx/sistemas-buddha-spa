@@ -60,6 +60,8 @@ const ROUTER_MODULO: Record<string, string> = {
   dreCategorias: "financeiro",
   dreDescricoes: "financeiro",
   dreRegras: "financeiro",
+  receitaDespesa: "financeiro",
+  dre: "financeiro",
   adquirentes: "financeiro",
   confirmacaoPagamentos: "financeiro",
   chamados: "mensagens",
@@ -99,6 +101,8 @@ const ROUTER_SUBSECAO: Record<string, string> = {
   dreCategorias: "financeiro:parametros",
   dreDescricoes: "financeiro:parametros",
   dreRegras: "financeiro:parametros",
+  receitaDespesa: "financeiro:receita-despesa",
+  dre: "financeiro:dre",
 };
 
 /**

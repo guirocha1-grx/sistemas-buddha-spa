@@ -52,7 +52,7 @@ const SECOES: { value: string; label: string }[] = [
   { value: "excluido", label: "Excluído do DRE" },
 ];
 
-const DESCRICAO_FORM_VAZIO = { nome: "", dreCategoriaId: "" };
+const DESCRICAO_FORM_VAZIO = { nome: "", dreCategoriaId: "", competencia: "mes_lancamento" as "mes_lancamento" | "mes_anterior" };
 
 interface RelatorioExclusao {
   tipo: "categoria" | "descricao";
@@ -219,14 +219,14 @@ export default function Parametros() {
 
   function abrirEditarDescricao(d: typeof descricoes[number]) {
     setDescricaoEditandoId(d.id);
-    setDescricaoForm({ nome: d.nome, dreCategoriaId: String(d.dreCategoriaId) });
+    setDescricaoForm({ nome: d.nome, dreCategoriaId: String(d.dreCategoriaId), competencia: d.competencia });
     setNovoPadraoTexto("");
     setDescricaoModalOpen(true);
   }
 
   function salvarDescricao() {
     if (!descricaoForm.nome.trim() || !descricaoForm.dreCategoriaId) return;
-    const dados = { nome: descricaoForm.nome.trim(), dreCategoriaId: Number(descricaoForm.dreCategoriaId) };
+    const dados = { nome: descricaoForm.nome.trim(), dreCategoriaId: Number(descricaoForm.dreCategoriaId), competencia: descricaoForm.competencia };
     if (descricaoEditandoId) {
       atualizarDescricaoMutation.mutate({ id: descricaoEditandoId, ...dados });
     } else {
@@ -343,6 +343,23 @@ export default function Parametros() {
                       value={descricaoForm.dreCategoriaId}
                       onChange={(v) => setDescricaoForm({ ...descricaoForm, dreCategoriaId: v })}
                     />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Competência (regime de competência do DRE)</Label>
+                    <Select
+                      value={descricaoForm.competencia}
+                      onValueChange={(v) => setDescricaoForm({ ...descricaoForm, competencia: v as "mes_lancamento" | "mes_anterior" })}
+                    >
+                      <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mes_lancamento">Mês do lançamento</SelectItem>
+                        <SelectItem value="mes_anterior">Mês anterior (M−1)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Só afeta o regime Competência do DRE — o Caixa sempre usa a data real do lançamento.
+                      Ex.: conta de aluguel paga em setembro referente a agosto → "Mês anterior".
+                    </p>
                   </div>
                   <div className="flex justify-end">
                     <Button
@@ -466,7 +483,12 @@ export default function Parametros() {
                       className="text-sm cursor-pointer hover:bg-muted/40"
                       onClick={() => abrirEditarDescricao(d)}
                     >
-                      <TableCell className="text-sm min-w-[220px] whitespace-normal">{d.nome}</TableCell>
+                      <TableCell className="text-sm min-w-[220px] whitespace-normal">
+                        {d.nome}
+                        {d.competencia === "mes_anterior" && (
+                          <Badge variant="outline" className="ml-1.5 text-[10px] px-1 py-0 align-middle">M−1</Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{d.categoriaNome}</TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground truncate max-w-xs">{padroesPreview(d.id)}</TableCell>
                     </TableRow>

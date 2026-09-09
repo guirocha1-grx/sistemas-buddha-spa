@@ -1398,6 +1398,15 @@ export const dreDescricoes = mysqlTable("dre_descricoes", {
   // sem quebrar nada, porque o código nunca compara por `nome`. Null =
   // Descrição comum, sem papel especial no sistema.
   chave: varchar("chave", { length: 64 }),
+  // Regime de competência dessa categoria pro DRE: toda transação
+  // categorizada aqui, de qualquer origem (Inter, Sicredi, Caixa Físico,
+  // CSV/OFX — inter_extratos.origem já cobre todas), conta pro mês do
+  // próprio lançamento ou pro mês anterior. Fica na Descrição (não por
+  // transação) porque é uma regra de categoria, não de lançamento
+  // individual — ex.: "Aluguel" é sempre pago no mês seguinte ao de
+  // referência, então toda transação dessa categoria já nasce correta,
+  // sem precisar de toque manual (decisão do usuário 2026-09-08).
+  competencia: mysqlEnum("competencia", ["mes_lancamento", "mes_anterior"]).default("mes_lancamento").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({
   categoriaIdx: index("dre_descricoes_categoria_idx").on(table.dreCategoriaId),
@@ -1456,9 +1465,18 @@ export const lancamentoSplits = mysqlTable("lancamento_splits", {
   valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
   unidadeId: int("unidadeId").notNull(),
   observacao: varchar("observacao", { length: 256 }),
+  // Mês de competência dessa linha ("AAAA-MM") pro DRE — default é o mês
+  // do dataEntrada da transação-mãe (mesma coisa de sempre), mas pode
+  // apontar pra qualquer outro mês. É o que permite ratear uma licença
+  // anual em 12 linhas, cada uma contando pro seu próprio mês —
+  // explícito aqui sempre vence a competência padrão da Descrição
+  // (dreDescricoes.competencia), que só se aplica a lançamento sem
+  // split. Nunca afeta o regime caixa (decisão do usuário 2026-09-08).
+  mesReferencia: varchar("mesReferencia", { length: 7 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({
   extratoIdx: index("lancamento_splits_extrato_idx").on(table.interExtratoId),
+  mesReferenciaIdx: index("lancamento_splits_mes_referencia_idx").on(table.mesReferencia),
 }));
 
 export type LancamentoSplit = typeof lancamentoSplits.$inferSelect;

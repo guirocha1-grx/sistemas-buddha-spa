@@ -10,7 +10,7 @@ import { normalizarTelefone, variantesTelefone, telefoneCanonico, telefonesCorre
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
-import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, type RegraMatch } from "./dreCategorizacao";
+import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, mesAnterior, mesSeguinte, type RegraMatch, type DreSecao } from "./dreCategorizacao";
 import { storageGetSignedUrl, storageExists } from "./storage";
 import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, atendimentoTempoEventos, terapeutasLiberacoes, conciliacaoCorrespondenciasManuais, type InsertChamadoParametro } from "../drizzle/schema";
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
@@ -3841,6 +3841,7 @@ export async function listDreDescricoes() {
     dreCategoriaId: dreDescricoes.dreCategoriaId,
     categoriaNome: dreCategorias.nome,
     chave: dreDescricoes.chave,
+    competencia: dreDescricoes.competencia,
   })
     .from(dreDescricoes)
     .innerJoin(dreCategorias, eq(dreDescricoes.dreCategoriaId, dreCategorias.id))
@@ -3858,14 +3859,14 @@ export async function listDreDescricoesPorCategoria(dreCategoriaId: number) {
  * tela de Parâmetros quanto pelo modal "criar nova descrição" ao
  * categorizar um lançamento em Extratos.
  */
-export async function criarDreDescricao(nome: string, dreCategoriaId: number) {
+export async function criarDreDescricao(nome: string, dreCategoriaId: number, competencia?: "mes_lancamento" | "mes_anterior") {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.insert(dreDescricoes).values({ nome, dreCategoriaId }).$returningId();
+  const result = await db.insert(dreDescricoes).values({ nome, dreCategoriaId, competencia }).$returningId();
   return result[0]?.id;
 }
 
-export async function atualizarDreDescricao(id: number, dados: { nome?: string; dreCategoriaId?: number }) {
+export async function atualizarDreDescricao(id: number, dados: { nome?: string; dreCategoriaId?: number; competencia?: "mes_lancamento" | "mes_anterior" }) {
   const db = await getDb();
   if (!db) return;
   await db.update(dreDescricoes).set(dados).where(eq(dreDescricoes.id, id));
@@ -4359,6 +4360,8 @@ export interface LinhaSplitInput {
   valor: number;
   unidadeId: number;
   observacao?: string;
+  /** "AAAA-MM" — mês de competência dessa linha pro DRE. Omitido = mês do dataEntrada da transação-mãe (comportamento de sempre). */
+  mesReferencia?: string;
 }
 
 /**
@@ -4382,6 +4385,7 @@ export async function listSplitsPorPeriodo(unidadeId: number, dataInicio: string
     valor: lancamentoSplits.valor,
     unidadeId: lancamentoSplits.unidadeId,
     observacao: lancamentoSplits.observacao,
+    mesReferencia: lancamentoSplits.mesReferencia,
   })
     .from(lancamentoSplits)
     .innerJoin(interExtratos, eq(lancamentoSplits.interExtratoId, interExtratos.id))
@@ -4423,12 +4427,14 @@ export async function salvarSplits(interExtratoId: number, linhas: LinhaSplitInp
   }
   await db.delete(lancamentoSplits).where(eq(lancamentoSplits.interExtratoId, interExtratoId));
 
+  const mesTransacao = transacao.dataEntrada.slice(0, 7);
   const idsInseridos = await db.insert(lancamentoSplits).values(linhas.map((l) => ({
     interExtratoId,
     dreDescricaoId: l.dreDescricaoId,
     valor: l.valor.toFixed(2),
     unidadeId: l.unidadeId,
     observacao: l.observacao?.trim() || null,
+    mesReferencia: l.mesReferencia?.trim() || mesTransacao,
   }))).$returningId();
 
   const linhasCrossUnidade = linhas
@@ -4470,6 +4476,136 @@ export async function excluirSplits(interExtratoId: number): Promise<void> {
   await db.delete(lancamentoSplits).where(eq(lancamentoSplits.interExtratoId, interExtratoId));
   await db.update(interExtratos).set({ dreDescricaoId: null, categorizacaoStatus: "pendente" })
     .where(eq(interExtratos.id, interExtratoId));
+}
+
+// ===== Receita x Despesa / DRE =====
+
+export interface LinhaDreAgregada {
+  dreDescricaoId: number;
+  dreDescricaoNome: string;
+  dreCategoriaId: number;
+  dreCategoriaNome: string;
+  secao: DreSecao;
+  ordem: number;
+  valor: number;
+}
+
+/**
+ * Agregação Receita x Despesa / DRE — soma inter_extratos (sem split) +
+ * lancamento_splits (linhas de split) por Descrição, num período de
+ * meses, no regime pedido. Exclui sempre secao="excluido" (transferência
+ * entre contas/unidades — não é P&L de verdade).
+ *
+ * CAIXA: sempre pela dataEntrada da transação-mãe, split ou não — nunca
+ * olha mesReferencia nem a competência da Descrição. Uma licença anual
+ * rateada em 12 meses de competência ainda aparece inteira, num mês só,
+ * aqui.
+ *
+ * COMPETÊNCIA: transação sem split usa o mês do dataEntrada, ajustado
+ * -1 mês se a Descrição dela tiver competencia="mes_anterior"; linha de
+ * split usa seu próprio mesReferencia direto (explícito sempre vence a
+ * regra da Descrição — é uma decisão manual e pontual do usuário).
+ */
+export async function listDreAgregado(
+  unidadeId: number,
+  mesInicio: string, // "AAAA-MM"
+  mesFim: string,
+  regime: "caixa" | "competencia",
+): Promise<LinhaDreAgregada[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const dataInicio = `${mesInicio}-01`;
+  const dataFim = `${mesFim}-31`; // comparação de string "AAAA-MM-DD" — dia inválido num mês de 30 ainda ordena depois do último dia real
+
+  const somasPorDescricao = new Map<number, number>();
+  const somar = (id: number | null, valor: string) => {
+    if (id === null) return;
+    somasPorDescricao.set(id, (somasPorDescricao.get(id) ?? 0) + parseFloat(valor));
+  };
+
+  if (regime === "caixa") {
+    const semSplit = await db.select({ dreDescricaoId: interExtratos.dreDescricaoId, valor: interExtratos.valor })
+      .from(interExtratos)
+      .where(and(
+        eq(interExtratos.unidadeId, unidadeId),
+        gte(interExtratos.dataEntrada, dataInicio),
+        lte(interExtratos.dataEntrada, dataFim),
+        isNotNull(interExtratos.dreDescricaoId),
+      ));
+    for (const t of semSplit) somar(t.dreDescricaoId, t.valor);
+
+    const splits = await db.select({ dreDescricaoId: lancamentoSplits.dreDescricaoId, valor: lancamentoSplits.valor })
+      .from(lancamentoSplits)
+      .innerJoin(interExtratos, eq(lancamentoSplits.interExtratoId, interExtratos.id))
+      .where(and(
+        eq(interExtratos.unidadeId, unidadeId),
+        gte(interExtratos.dataEntrada, dataInicio),
+        lte(interExtratos.dataEntrada, dataFim),
+      ));
+    for (const s of splits) somar(s.dreDescricaoId, s.valor);
+  } else {
+    // Janela ampliada em +1 mês no fim, pra pegar transação de mesFim+1
+    // marcada "mes_anterior" que cai dentro do período de competência
+    // pedido — filtra de verdade em JS depois de calcular o mês real de
+    // cada uma.
+    const dataFimAmpliada = `${mesSeguinte(mesFim)}-31`;
+    const semSplit = await db.select({
+      dreDescricaoId: interExtratos.dreDescricaoId,
+      valor: interExtratos.valor,
+      dataEntrada: interExtratos.dataEntrada,
+      competencia: dreDescricoes.competencia,
+    })
+      .from(interExtratos)
+      .innerJoin(dreDescricoes, eq(interExtratos.dreDescricaoId, dreDescricoes.id))
+      .where(and(
+        eq(interExtratos.unidadeId, unidadeId),
+        gte(interExtratos.dataEntrada, dataInicio),
+        lte(interExtratos.dataEntrada, dataFimAmpliada),
+      ));
+    for (const t of semSplit) {
+      const mesTransacao = t.dataEntrada.slice(0, 7);
+      const mesCompetencia = t.competencia === "mes_anterior" ? mesAnterior(mesTransacao) : mesTransacao;
+      if (mesCompetencia >= mesInicio && mesCompetencia <= mesFim) somar(t.dreDescricaoId, t.valor);
+    }
+
+    const splits = await db.select({ dreDescricaoId: lancamentoSplits.dreDescricaoId, valor: lancamentoSplits.valor })
+      .from(lancamentoSplits)
+      .innerJoin(interExtratos, eq(lancamentoSplits.interExtratoId, interExtratos.id))
+      .where(and(
+        eq(interExtratos.unidadeId, unidadeId),
+        gte(lancamentoSplits.mesReferencia, mesInicio),
+        lte(lancamentoSplits.mesReferencia, mesFim),
+      ));
+    for (const s of splits) somar(s.dreDescricaoId, s.valor);
+  }
+
+  if (somasPorDescricao.size === 0) return [];
+
+  const descricoesInfo = await db.select({
+    id: dreDescricoes.id,
+    nome: dreDescricoes.nome,
+    dreCategoriaId: dreDescricoes.dreCategoriaId,
+    categoriaNome: dreCategorias.nome,
+    secao: dreCategorias.secao,
+    ordem: dreCategorias.ordem,
+  })
+    .from(dreDescricoes)
+    .innerJoin(dreCategorias, eq(dreDescricoes.dreCategoriaId, dreCategorias.id))
+    .where(inArray(dreDescricoes.id, Array.from(somasPorDescricao.keys())));
+
+  return descricoesInfo
+    .filter((d) => d.secao !== "excluido")
+    .map((d) => ({
+      dreDescricaoId: d.id,
+      dreDescricaoNome: d.nome,
+      dreCategoriaId: d.dreCategoriaId,
+      dreCategoriaNome: d.categoriaNome,
+      secao: d.secao,
+      ordem: d.ordem,
+      valor: somasPorDescricao.get(d.id) ?? 0,
+    }))
+    .sort((a, b) => a.ordem - b.ordem || a.dreCategoriaNome.localeCompare(b.dreCategoriaNome));
 }
 
 // ===== Transações entre Unidades =====
