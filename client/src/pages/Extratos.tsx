@@ -308,6 +308,20 @@ export default function Extratos() {
     onError: (err) => toast.error(err.message),
   });
 
+  // Aprovação em massa: usuário marca "selecionar todas" (só as
+  // "sugerida" visíveis, splitadas ficam de fora — não têm o botão de
+  // 1 clique), desmarca à mão os casos mais complexos, e confirma o
+  // resto de uma vez.
+  const [selecionadas, setSelecionadas] = useState<Set<number>>(new Set());
+  const confirmarEmMassaMutation = trpc.inter.confirmarSugestoesEmMassa.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.confirmadas} transação(ões) confirmada(s).`);
+      utils.inter.extratos.invalidate();
+      setSelecionadas(new Set());
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const atualizarNotaMutation = trpc.inter.atualizarNota.useMutation({
     onSuccess: () => {
       utils.inter.extratos.invalidate();
@@ -545,6 +559,26 @@ export default function Extratos() {
   const transacoesFiltradasExtrato = filtroTipoExtrato === "todos"
     ? transacoesAntesDoTipo
     : transacoesAntesDoTipo.filter((t) => t.tipoOperacao === filtroTipoExtrato);
+
+  // Só "sugerida" sem split entra na aprovação em massa — pendente não
+  // tem sugestão nenhuma pra confirmar, e split já foi decidido linha a
+  // linha, não faz sentido confirmar o lançamento inteiro de novo.
+  const idsSelecionaveisExtrato = transacoesFiltradasExtrato
+    .filter((t) => t.categorizacaoStatus === "sugerida" && !splitsPorTransacao.has(t.id))
+    .map((t) => t.id);
+  const todasSelecionadas = idsSelecionaveisExtrato.length > 0 && idsSelecionaveisExtrato.every((id) => selecionadas.has(id));
+
+  function alternarSelecaoTodas() {
+    setSelecionadas(todasSelecionadas ? new Set() : new Set(idsSelecionaveisExtrato));
+  }
+
+  function alternarSelecaoLinha(id: number) {
+    setSelecionadas((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(id)) novo.delete(id); else novo.add(id);
+      return novo;
+    });
+  }
 
   const totalCreditosExtrato = transacoesExtrato.filter((t) => t.tipoOperacao === "C").reduce((s, t) => s + parseFloat(t.valor ?? "0"), 0);
   const totalDebitosExtrato = transacoesExtrato.filter((t) => t.tipoOperacao === "D").reduce((s, t) => s + parseFloat(t.valor ?? "0"), 0);
@@ -1047,6 +1081,29 @@ export default function Extratos() {
                   </Button>
                 </div>
               )}
+
+              {selecionadas.size > 0 && (
+                <div className="flex justify-end items-center gap-2 rounded-md bg-blue-50 border border-blue-200 px-3 py-1.5">
+                  <span className="text-xs text-blue-800">{selecionadas.size} selecionada(s)</span>
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs bg-blue-700 hover:bg-blue-800"
+                    onClick={() => confirmarEmMassaMutation.mutate({ transacaoIds: Array.from(selecionadas) })}
+                    disabled={confirmarEmMassaMutation.isPending}
+                  >
+                    {confirmarEmMassaMutation.isPending ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <Check className="h-3 w-3 mr-1.5" />}
+                    Confirmar selecionadas
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    onClick={() => setSelecionadas(new Set())}
+                  >
+                    Limpar seleção
+                  </Button>
+                </div>
+              )}
               <Tabs value={filtroTipoExtrato} onValueChange={(v) => setFiltroTipoExtrato(v as "todos" | "D" | "C")}>
                 <TabsList className="h-8">
                   <TabsTrigger value="todos" className="text-xs h-7">Todos ({transacoesAntesDoTipo.length})</TabsTrigger>
@@ -1067,6 +1124,15 @@ export default function Extratos() {
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-muted/30">
+                            <TableHead className="w-8">
+                              {idsSelecionaveisExtrato.length > 0 && (
+                                <Checkbox
+                                  checked={todasSelecionadas}
+                                  onCheckedChange={alternarSelecaoTodas}
+                                  aria-label="Selecionar todas as sugestões"
+                                />
+                              )}
+                            </TableHead>
                             <TableHead className="text-xs w-24">Data</TableHead>
                             <TableHead className="text-xs">Descrição</TableHead>
                             <TableHead className="text-xs w-32">Conta</TableHead>
@@ -1078,7 +1144,16 @@ export default function Extratos() {
                         </TableHeader>
                         <TableBody>
                           {transacoesFiltradasExtrato.map((t) => (
-                            <TableRow key={t.id} className="text-sm">
+                            <TableRow key={t.id} className={`text-sm ${selecionadas.has(t.id) ? "bg-blue-50/60" : ""}`}>
+                              <TableCell>
+                                {t.categorizacaoStatus === "sugerida" && !splitsPorTransacao.has(t.id) && (
+                                  <Checkbox
+                                    checked={selecionadas.has(t.id)}
+                                    onCheckedChange={() => alternarSelecaoLinha(t.id)}
+                                    aria-label="Selecionar esta transação"
+                                  />
+                                )}
+                              </TableCell>
                               <TableCell className="text-xs text-muted-foreground">{fmtDateExtrato(t.dataEntrada)}</TableCell>
                               <TableCell>
                                 <div className="font-medium text-sm leading-tight flex items-center gap-1.5">

@@ -4371,6 +4371,31 @@ export async function confirmarSugestao(transacaoId: number) {
   await registrarTransferenciaRealSeAplicavel(db, transacao, transacao.dreDescricaoId);
 }
 
+/**
+ * confirmarSugestao em lote — usada pela seleção em massa da tela de
+ * Contas (marca várias sugestões que bateram certo e confirma todas
+ * de uma vez, sem trocar a categoria de nenhuma). Ignora silenciosamente
+ * qualquer id que não esteja mais "sugerida" (ex.: usuário confirmou à
+ * mão antes de aplicar o lote) — mesmo comportamento no-op que
+ * confirmarSugestao já tem pra 1 transação. Retorna quantas confirmou.
+ */
+export async function confirmarSugestoesEmMassa(transacaoIds: number[]): Promise<number> {
+  const db = await getDb();
+  if (!db || transacaoIds.length === 0) return 0;
+
+  const transacoes = await db.select().from(interExtratos)
+    .where(and(inArray(interExtratos.id, transacaoIds), eq(interExtratos.categorizacaoStatus, "sugerida")));
+  if (transacoes.length === 0) return 0;
+
+  await db.update(interExtratos).set({ categorizacaoStatus: "confirmada" })
+    .where(inArray(interExtratos.id, transacoes.map((t) => t.id)));
+
+  for (const transacao of transacoes) {
+    await registrarTransferenciaRealSeAplicavel(db, transacao, transacao.dreDescricaoId);
+  }
+  return transacoes.length;
+}
+
 // ===== Split de lançamento =====
 
 export interface LinhaSplitInput {

@@ -2626,6 +2626,18 @@ Diretrizes:
     }),
 
     /**
+     * Mesma coisa que confirmarSugestao, em massa — a tela seleciona
+     * as sugestões que bateram certo (por checkbox) e confirma todas
+     * de uma vez, sem trocar a categoria de nenhuma.
+     */
+    confirmarSugestoesEmMassa: protectedProcedure.input(z.object({
+      transacaoIds: z.array(z.number()).min(1),
+    })).mutation(async ({ input }) => {
+      const confirmadas = await db.confirmarSugestoesEmMassa(input.transacaoIds);
+      return { success: true, confirmadas };
+    }),
+
+    /**
      * Split de lançamento: divide uma transação em N Descrições (e,
      * opcionalmente, unidades) diferentes — pra casos como fatura de
      * cartão paga de uma vez que na real é várias categorias.
