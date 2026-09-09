@@ -197,6 +197,17 @@ export default function Adquirentes() {
     onError: (err) => toast.error(`Erro ao importar CSV: ${err.message}`),
   });
 
+  // Backfill de vendas antigas sem Descrição (bug histórico achado
+  // 2026-09-10 — ver db.reprocessarAdquirenteVendasSemClassificacao).
+  // Global, não filtra por unidade/período: corrige tudo de uma vez.
+  const reprocessarSemClassificacaoMutation = trpc.adquirentes.reprocessarSemClassificacao.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.atualizados > 0 ? `${data.atualizados} venda(s) reclassificada(s).` : "Nenhuma venda sem categoria encontrada.");
+      utils.adquirentes.vendas.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   async function handleImportarInterpag(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !unidadeId) return;
@@ -276,12 +287,25 @@ export default function Adquirentes() {
           </div>
 
           {abaAtiva === "consolidado" && vendas.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {formasOrdenadas.map(([label, valor]) => (
                 <Badge key={label} variant="outline" className={`text-xs font-normal ${formaBadgeClasse(label === "— Pendente")}`}>
                   {label}: {fmtCurrencyAdq(valor)}
                 </Badge>
               ))}
+              {formasOrdenadas.some(([label]) => label === "— Pendente") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-xs"
+                  onClick={() => reprocessarSemClassificacaoMutation.mutate()}
+                  disabled={reprocessarSemClassificacaoMutation.isPending}
+                  title="Reclassifica vendas antigas que ficaram sem categoria por um bug já corrigido — em todas as unidades"
+                >
+                  {reprocessarSemClassificacaoMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                  Reprocessar vendas sem categoria
+                </Button>
+              )}
             </div>
           )}
 

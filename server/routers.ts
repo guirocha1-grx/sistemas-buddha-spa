@@ -4627,6 +4627,17 @@ Diretrizes:
       const totalInseridos = await db.upsertAdquirenteVendas(input.unidadeId, linhas);
       return { success: true, totalInseridos, totalLinhas: input.linhas.length };
     }),
+
+    /**
+     * Reclassifica vendas de adquirente que ficaram sem Descrição (bug
+     * histórico achado 2026-09-10 — ver comentário em
+     * db.reprocessarAdquirenteVendasSemClassificacao). Sem unidadeId:
+     * corrige de uma vez em todas as unidades.
+     */
+    reprocessarSemClassificacao: protectedProcedure.mutation(async () => {
+      const atualizados = await db.reprocessarAdquirenteVendasSemClassificacao();
+      return { success: true, atualizados };
+    }),
   }),
 
   // ===== Atendentes (identidade por PIN — ver server/atendenteAuth.ts) =====

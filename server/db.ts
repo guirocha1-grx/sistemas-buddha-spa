@@ -2838,6 +2838,59 @@ export async function upsertAdquirenteVendas(
   return inseridos;
 }
 
+/**
+ * Reclassifica vendas de adquirente que ficaram sem Descrição — achado
+ * 2026-09-10 investigando por que a Conciliação PDV Fase 1 (Comanda x
+ * Caixa) e a Receita Bruta do DRE não batiam com o real: 192 vendas
+ * (jun-ago/2026, ~R$69 mil) nunca tinham `dreDescricaoId`, porque
+ * `chaveDescricaoAdquirente` só passou a reconhecer alguns `tipo`
+ * (ex.: "Pagamento Instantâneo") depois que essas linhas já tinham sido
+ * importadas — diferente de inter_extratos, adquirente_vendas não tem
+ * nenhum reprocessamento automático (`upsertAdquirenteVendas` só
+ * reclassifica no upsert de uma sincronização/importação nova da MESMA
+ * linha, não existe um "reprocessar pendentes" aqui).
+ *
+ * Só reclassifica venda de verdade, não qualquer coisa que bata o
+ * padrão de texto: valor precisa ser positivo (venda de cliente nunca é
+ * negativa) e o `tipo` não pode ser uma linha de tarifa/ajuste do
+ * Interpag (formato "NNN - <descrição>", ex.: "155 - DÉBITO COBRANÇA
+ * REFERENTE A UTILIZAÇÃO DO CHIP DE TELEFONIA" — bateria em "debit" e
+ * viraria "Receita Cartão de Débito" errado, mas é uma tarifa, não uma
+ * venda; confirmado real no CSV do Interpag, ver comentário em
+ * drizzle/schema.ts).
+ */
+export async function reprocessarAdquirenteVendasSemClassificacao(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+
+  const semClassificacao = await db.select({
+    id: adquirenteVendas.id,
+    tipo: adquirenteVendas.tipo,
+    valorBruto: adquirenteVendas.valorBruto,
+  }).from(adquirenteVendas).where(isNull(adquirenteVendas.dreDescricaoId));
+  if (semClassificacao.length === 0) return 0;
+
+  const idsPorChave = new Map<string, number[]>();
+  for (const v of semClassificacao) {
+    if (/^\d+\s*-/.test((v.tipo ?? "").trim())) continue; // linha de tarifa/ajuste do Interpag, nunca é venda
+    if (parseFloat(v.valorBruto ?? "0") <= 0) continue; // venda de cliente é sempre positiva
+    const chave = chaveDescricaoAdquirente(v.tipo);
+    if (!chave) continue;
+    if (!idsPorChave.has(chave)) idsPorChave.set(chave, []);
+    idsPorChave.get(chave)!.push(v.id);
+  }
+  if (idsPorChave.size === 0) return 0;
+
+  let atualizados = 0;
+  for (const [chave, ids] of idsPorChave) {
+    const dreDescricaoId = await resolverDescricaoIdPorChave(chave);
+    if (!dreDescricaoId) continue;
+    await db.update(adquirenteVendas).set({ dreDescricaoId }).where(inArray(adquirenteVendas.id, ids));
+    atualizados += ids.length;
+  }
+  return atualizados;
+}
+
 export async function listAdquirenteVendas(
   unidadeId: number,
   dataInicio: string,
