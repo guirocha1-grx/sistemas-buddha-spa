@@ -2851,13 +2851,22 @@ export async function upsertAdquirenteVendas(
  * linha, não existe um "reprocessar pendentes" aqui).
  *
  * Só reclassifica venda de verdade, não qualquer coisa que bata o
- * padrão de texto: valor precisa ser positivo (venda de cliente nunca é
- * negativa) e o `tipo` não pode ser uma linha de tarifa/ajuste do
- * Interpag (formato "NNN - <descrição>", ex.: "155 - DÉBITO COBRANÇA
- * REFERENTE A UTILIZAÇÃO DO CHIP DE TELEFONIA" — bateria em "debit" e
- * viraria "Receita Cartão de Débito" errado, mas é uma tarifa, não uma
- * venda; confirmado real no CSV do Interpag, ver comentário em
- * drizzle/schema.ts).
+ * padrão de texto:
+ * - valor precisa ser positivo (venda de cliente nunca é negativa);
+ * - `tipo` não pode ser uma linha de tarifa/ajuste do Interpag (formato
+ *   "NNN - <descrição>", ex.: "155 - DÉBITO COBRANÇA REFERENTE A
+ *   UTILIZAÇÃO DO CHIP DE TELEFONIA" — bateria em "debit" e viraria
+ *   "Receita Cartão de Débito" errado, mas é uma tarifa, não uma venda;
+ *   confirmado real no CSV do Interpag, ver comentário em
+ *   drizzle/schema.ts);
+ * - Pix da Interpag/Granito nunca entra aqui — mesma exclusão que
+ *   upsertAdquirenteVendas já aplica em toda venda NOVA (o depósito já
+ *   chega certinho no extrato bancário, contar os dois duplicaria a
+ *   venda). Bug real encontrado nesta 1ª versão desta função
+ *   (2026-09-10): 20 vendas Pix da Interpag (jul-ago/2026, R$6.337)
+ *   eram justamente linhas antigas que SÓ existiam sem classificação
+ *   por serem anteriores a essa exclusão existir — reclassificá-las
+ *   reativou a duplicidade que a exclusão foi criada pra evitar.
  */
 export async function reprocessarAdquirenteVendasSemClassificacao(): Promise<number> {
   const db = await getDb();
@@ -2867,6 +2876,7 @@ export async function reprocessarAdquirenteVendasSemClassificacao(): Promise<num
     id: adquirenteVendas.id,
     tipo: adquirenteVendas.tipo,
     valorBruto: adquirenteVendas.valorBruto,
+    adquirente: adquirenteVendas.adquirente,
   }).from(adquirenteVendas).where(isNull(adquirenteVendas.dreDescricaoId));
   if (semClassificacao.length === 0) return 0;
 
@@ -2876,6 +2886,7 @@ export async function reprocessarAdquirenteVendasSemClassificacao(): Promise<num
     if (parseFloat(v.valorBruto ?? "0") <= 0) continue; // venda de cliente é sempre positiva
     const chave = chaveDescricaoAdquirente(v.tipo);
     if (!chave) continue;
+    if (v.adquirente === "interpag" && chave === CHAVE_RECEITA_PIX) continue; // já conta pelo extrato bancário
     if (!idsPorChave.has(chave)) idsPorChave.set(chave, []);
     idsPorChave.get(chave)!.push(v.id);
   }
