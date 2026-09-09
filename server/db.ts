@@ -4763,6 +4763,10 @@ export interface LinhaDreLancamento {
   valor: number; // sempre positivo, igual às fontes (o sinal é decidido pela seção na tela)
   origem: string;
   dreDescricaoNome: string;
+  /** Chave estável da Descrição (null se a Descrição não tiver uma) — usada pra agrupar por forma de pagamento na tela. */
+  dreDescricaoChave: string | null;
+  /** "N/M" (ex.: "2/3") — só em venda de cartão de crédito via adquirente_vendas; null pra tudo mais, incluindo débito à vista (não tem parcela). */
+  parcela: string | null;
 }
 
 /**
@@ -4785,12 +4789,14 @@ export async function listDreLancamentosPorCategoria(
   const descricoesDaCategoria = await db.select({
     id: dreDescricoes.id,
     nome: dreDescricoes.nome,
+    chave: dreDescricoes.chave,
     competencia: dreDescricoes.competencia,
   }).from(dreDescricoes).where(eq(dreDescricoes.dreCategoriaId, dreCategoriaId));
   if (descricoesDaCategoria.length === 0) return [];
 
   const idsDescricao = descricoesDaCategoria.map((d) => d.id);
   const nomePorId = new Map(descricoesDaCategoria.map((d) => [d.id, d.nome]));
+  const chavePorId = new Map(descricoesDaCategoria.map((d) => [d.id, d.chave]));
   const competenciaPorId = new Map(descricoesDaCategoria.map((d) => [d.id, d.competencia]));
 
   const dataInicio = `${mesInicio}-01`;
@@ -4818,6 +4824,8 @@ export async function listDreLancamentosPorCategoria(
         valor: parseFloat(t.valor),
         origem: t.origem ?? "inter",
         dreDescricaoNome: nomePorId.get(t.dreDescricaoId!) ?? "",
+        dreDescricaoChave: chavePorId.get(t.dreDescricaoId!) ?? null,
+        parcela: null,
       });
     }
 
@@ -4843,6 +4851,8 @@ export async function listDreLancamentosPorCategoria(
         valor: parseFloat(s.valor),
         origem: s.origem ?? "inter",
         dreDescricaoNome: nomePorId.get(s.dreDescricaoId) ?? "",
+        dreDescricaoChave: chavePorId.get(s.dreDescricaoId) ?? null,
+        parcela: null,
       });
     }
 
@@ -4850,6 +4860,7 @@ export async function listDreLancamentosPorCategoria(
       dataHora: adquirenteVendas.dataHora,
       tipo: adquirenteVendas.tipo,
       bandeira: adquirenteVendas.bandeira,
+      parcela: adquirenteVendas.parcela,
       valor: adquirenteVendas.valorBruto,
       adquirente: adquirenteVendas.adquirente,
       dreDescricaoId: adquirenteVendas.dreDescricaoId,
@@ -4867,6 +4878,8 @@ export async function listDreLancamentosPorCategoria(
         valor: parseFloat(v.valor),
         origem: v.adquirente,
         dreDescricaoNome: nomePorId.get(v.dreDescricaoId!) ?? "",
+        dreDescricaoChave: chavePorId.get(v.dreDescricaoId!) ?? null,
+        parcela: v.parcela,
       });
     }
   } else {
@@ -4895,6 +4908,8 @@ export async function listDreLancamentosPorCategoria(
         valor: parseFloat(t.valor),
         origem: t.origem ?? "inter",
         dreDescricaoNome: nomePorId.get(t.dreDescricaoId!) ?? "",
+        dreDescricaoChave: chavePorId.get(t.dreDescricaoId!) ?? null,
+        parcela: null,
       });
     }
 
@@ -4920,6 +4935,8 @@ export async function listDreLancamentosPorCategoria(
         valor: parseFloat(s.valor),
         origem: s.origem ?? "inter",
         dreDescricaoNome: nomePorId.get(s.dreDescricaoId) ?? "",
+        dreDescricaoChave: chavePorId.get(s.dreDescricaoId) ?? null,
+        parcela: null,
       });
     }
 
@@ -4928,6 +4945,7 @@ export async function listDreLancamentosPorCategoria(
       dataHora: adquirenteVendas.dataHora,
       tipo: adquirenteVendas.tipo,
       bandeira: adquirenteVendas.bandeira,
+      parcela: adquirenteVendas.parcela,
       valor: adquirenteVendas.valorBruto,
       adquirente: adquirenteVendas.adquirente,
       dreDescricaoId: adquirenteVendas.dreDescricaoId,
@@ -4949,6 +4967,8 @@ export async function listDreLancamentosPorCategoria(
         valor: parseFloat(v.valor),
         origem: v.adquirente,
         dreDescricaoNome: nomePorId.get(v.dreDescricaoId!) ?? "",
+        dreDescricaoChave: chavePorId.get(v.dreDescricaoId!) ?? null,
+        parcela: v.parcela,
       });
     }
   }

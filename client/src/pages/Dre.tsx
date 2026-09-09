@@ -23,11 +23,37 @@ function mesAtual() {
   return new Date().toISOString().slice(0, 7);
 }
 
+// Ordem de exibição dos grupos de "Receitas de Vendas" — o resto (ex.:
+// categorias de despesa, sem forma de pagamento) cai no fallback do
+// nome da Descrição e aparece depois, em ordem alfabética.
+const ORDEM_FORMAS = ["Espécie", "Pix", "Débito", "Crédito à vista", "Crédito parcelado"];
+
+/**
+ * "Forma de pagamento" pro agrupamento do hover — só as 4 Descrições de
+ * receita têm uma forma reconhecida (chave estável, não muda se o
+ * usuário renomear a Descrição); crédito ainda se divide em à vista/
+ * parcelado pela `parcela` ("N/M", M=1 é à vista). Categoria de
+ * despesa (sem chave de receita) cai no nome da Descrição mesmo,
+ * agrupamento não faz sentido pra ela.
+ */
+function formaDoLancamento(chave: string | null, parcela: string | null, nomeFallback: string): string {
+  if (chave === "receita_especie") return "Espécie";
+  if (chave === "receita_pix") return "Pix";
+  if (chave === "receita_c_debito") return "Débito";
+  if (chave === "receita_c_credito") {
+    const totalParcelas = Number(parcela?.split("/")[1] ?? 1);
+    return totalParcelas > 1 ? "Crédito parcelado" : "Crédito à vista";
+  }
+  return nomeFallback;
+}
+
 /**
  * Categoria como trigger de hover: busca (lazy, só quando aberto) os
  * lançamentos individuais que compõem essa Categoria no período/regime
  * atual — drill-down pedido pelo usuário 2026-09-09, pra não precisar
- * sair do DRE pra saber o que tem dentro de um número.
+ * sair do DRE pra saber o que tem dentro de um número. Agrupado por
+ * forma de pagamento (2026-09-10) — bem mais fácil de ler que uma
+ * lista corrida quando a Categoria é "Receitas de Vendas".
  */
 function DetalheCategoriaHover({
   unidadeId,
@@ -52,6 +78,25 @@ function DetalheCategoriaHover({
     { enabled: aberto },
   );
 
+  const grupos = useMemo(() => {
+    const porForma = new Map<string, { itens: NonNullable<typeof query.data>; total: number }>();
+    for (const l of query.data ?? []) {
+      const forma = formaDoLancamento(l.dreDescricaoChave, l.parcela, l.dreDescricaoNome);
+      const atual = porForma.get(forma) ?? { itens: [], total: 0 };
+      atual.itens.push(l);
+      atual.total += l.valor;
+      porForma.set(forma, atual);
+    }
+    return Array.from(porForma.entries()).sort(([a], [b]) => {
+      const idxA = ORDEM_FORMAS.indexOf(a);
+      const idxB = ORDEM_FORMAS.indexOf(b);
+      if (idxA === -1 && idxB === -1) return a.localeCompare(b);
+      if (idxA === -1) return 1;
+      if (idxB === -1) return -1;
+      return idxA - idxB;
+    });
+  }, [query.data]);
+
   return (
     <HoverCard open={aberto} onOpenChange={setAberto} openDelay={150}>
       <HoverCardTrigger asChild>
@@ -60,19 +105,29 @@ function DetalheCategoriaHover({
       <HoverCardContent className="w-96 max-h-80 overflow-y-auto p-2" align="start">
         {query.isLoading ? (
           <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
-        ) : !query.data || query.data.length === 0 ? (
+        ) : grupos.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-2">Nenhum lançamento encontrado.</p>
         ) : (
-          <div className="space-y-0.5">
-            {query.data.map((l, i) => (
-              <div key={i} className="flex items-start justify-between gap-2 text-xs py-1 border-b border-border/30 last:border-0">
-                <div className="min-w-0">
-                  <div className="truncate font-medium">{l.titulo}</div>
-                  <div className="text-muted-foreground text-[10px]">{fmtDataCurta(l.data)} · {l.dreDescricaoNome}</div>
+          <div className="space-y-2">
+            {grupos.map(([forma, { itens, total }]) => (
+              <div key={forma}>
+                <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-muted-foreground pb-0.5 border-b border-border/50">
+                  <span>{forma}</span>
+                  <span>{fmtCurrency(total * sinal)}</span>
                 </div>
-                <span className={`shrink-0 font-medium ${sinal < 0 ? "text-rose-700" : "text-emerald-700"}`}>
-                  {fmtCurrency(l.valor * sinal)}
-                </span>
+                <div className="space-y-0.5 mt-0.5">
+                  {itens.map((l, i) => (
+                    <div key={i} className="flex items-start justify-between gap-2 text-xs py-0.5">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{l.titulo}</div>
+                        <div className="text-muted-foreground text-[10px]">{fmtDataCurta(l.data)}</div>
+                      </div>
+                      <span className={`shrink-0 ${sinal < 0 ? "text-rose-700" : "text-emerald-700"}`}>
+                        {fmtCurrency(l.valor * sinal)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
