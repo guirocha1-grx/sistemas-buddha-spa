@@ -10,7 +10,7 @@ import { normalizarTelefone, variantesTelefone, telefoneCanonico, telefonesCorre
 import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
-import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, CHAVE_TRANSFERENCIA_MESMO_CNPJ, mesAnterior, mesSeguinte, type RegraMatch, type DreSecao } from "./dreCategorizacao";
+import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, CHAVE_TRANSFERENCIA_MESMO_CNPJ, CHAVE_RECEITA_VOUCHER_SITE, CHAVE_RECEITA_GYMPASS_TOTALPASS, mesAnterior, mesSeguinte, type RegraMatch, type DreSecao } from "./dreCategorizacao";
 import { storageGetSignedUrl, storageExists } from "./storage";
 import { chamadosParametros, clientesPreferenciasTerapeuta, atendimentosOperacional, atendimentoTempoEventos, terapeutasLiberacoes, conciliacaoCorrespondenciasManuais, type InsertChamadoParametro } from "../drizzle/schema";
 import { cobrancasLink, cobrancasLinkModelos, confirmacaoPagamentosConsultas, type InsertCobrancaLink, type InsertCobrancaLinkModelo } from "../drizzle/schema";
@@ -4729,6 +4729,28 @@ export async function listDreAgregado(
     }
   }
 
+  // Voucher site / Gympass-Totalpass: vêm do resumo MENSAL da planilha
+  // Resumos (resumo_mensal_unidade), não de transação bancária — não
+  // tem o que ratear em caixa/competência, o mês já é o mês certo nos
+  // dois regimes (decisão do usuário 2026-09-10, ver comentário em
+  // dreCategorizacao.ts).
+  const resumosMensais = await db.select({
+    voucherSite: resumoMensalUnidade.voucherSite,
+    gympassTotalpass: resumoMensalUnidade.gympassTotalpass,
+  }).from(resumoMensalUnidade).where(and(
+    eq(resumoMensalUnidade.unidadeId, unidadeId),
+    gte(resumoMensalUnidade.mesAno, mesInicio),
+    lte(resumoMensalUnidade.mesAno, mesFim),
+  ));
+  if (resumosMensais.length > 0) {
+    const idVoucher = await resolverDescricaoIdPorChave(CHAVE_RECEITA_VOUCHER_SITE);
+    const idGympass = await resolverDescricaoIdPorChave(CHAVE_RECEITA_GYMPASS_TOTALPASS);
+    for (const r of resumosMensais) {
+      if (idVoucher) somar(idVoucher, r.voucherSite);
+      if (idGympass) somar(idGympass, r.gympassTotalpass);
+    }
+  }
+
   if (somasPorDescricao.size === 0) return [];
 
   const descricoesInfo = await db.select({
@@ -4970,6 +4992,48 @@ export async function listDreLancamentosPorCategoria(
         dreDescricaoChave: chavePorId.get(v.dreDescricaoId!) ?? null,
         parcela: v.parcela,
       });
+    }
+  }
+
+  // Voucher site / Gympass-Totalpass: sem lançamento individual (vem
+  // do resumo MENSAL da planilha Resumos), então o "detalhe" aqui é 1
+  // linha sintética por mês com o valor direto — ver mesmo comentário
+  // em listDreAgregado.
+  const idVoucher = await resolverDescricaoIdPorChave(CHAVE_RECEITA_VOUCHER_SITE);
+  const idGympass = await resolverDescricaoIdPorChave(CHAVE_RECEITA_GYMPASS_TOTALPASS);
+  if ((idVoucher && idsDescricao.includes(idVoucher)) || (idGympass && idsDescricao.includes(idGympass))) {
+    const resumosMensais = await db.select({
+      mesAno: resumoMensalUnidade.mesAno,
+      voucherSite: resumoMensalUnidade.voucherSite,
+      gympassTotalpass: resumoMensalUnidade.gympassTotalpass,
+    }).from(resumoMensalUnidade).where(and(
+      eq(resumoMensalUnidade.unidadeId, unidadeId),
+      gte(resumoMensalUnidade.mesAno, mesInicio),
+      lte(resumoMensalUnidade.mesAno, mesFim),
+    ));
+    for (const r of resumosMensais) {
+      if (idVoucher && idsDescricao.includes(idVoucher) && r.voucherSite !== null && parseFloat(r.voucherSite) !== 0) {
+        resultado.push({
+          data: `${r.mesAno}-01`,
+          titulo: "Voucher site (resumo mensal)",
+          valor: parseFloat(r.voucherSite),
+          origem: "resumo_mensal",
+          dreDescricaoNome: nomePorId.get(idVoucher) ?? "",
+          dreDescricaoChave: CHAVE_RECEITA_VOUCHER_SITE,
+          parcela: null,
+        });
+      }
+      if (idGympass && idsDescricao.includes(idGympass) && r.gympassTotalpass !== null && parseFloat(r.gympassTotalpass) !== 0) {
+        resultado.push({
+          data: `${r.mesAno}-01`,
+          titulo: "Gympass / Totalpass (resumo mensal)",
+          valor: parseFloat(r.gympassTotalpass),
+          origem: "resumo_mensal",
+          dreDescricaoNome: nomePorId.get(idGympass) ?? "",
+          dreDescricaoChave: CHAVE_RECEITA_GYMPASS_TOTALPASS,
+          parcela: null,
+        });
+      }
     }
   }
 

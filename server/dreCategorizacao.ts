@@ -26,12 +26,17 @@
  * Todas essas categorias já existem no plano de contas abaixo (pra dar
  * pra categorizar manualmente), só não têm regra de match automático.
  *
- * "Receitas de Vendas" foi decidida em 2026-08-07 (áudio): composta por
- * 4 Descrições (Receita de Pix/Espécie/C. Débito/C. Crédito), atribuídas
- * de forma determinística a partir de adquirente_vendas (débito/crédito/
- * pix de máquina) e inter_extratos (Pix direto no banco, Caixa Físico) —
- * ver categorizarTransacaoAutomaticamente e classificarDescricaoAdquirente
- * em server/db.ts. Não vem mais do Belle.
+ * "Recebido em Caixa" (nome até 2026-09-10: "Receitas de Vendas") foi
+ * decidida em 2026-08-07 (áudio): composta por 4 Descrições (Receita de
+ * Pix/Espécie/C. Débito/C. Crédito), atribuídas de forma determinística
+ * a partir de adquirente_vendas (débito/crédito/pix de máquina) e
+ * inter_extratos (Pix direto no banco, Caixa Físico) — ver
+ * categorizarTransacaoAutomaticamente e classificarDescricaoAdquirente em
+ * server/db.ts. Não vem mais do Belle. Receita Bruta = "Recebido em
+ * Caixa" + "Parcerias Comerciais" (Gympass/Totalpass) + "Receita de
+ * Vouchers" — as 2 últimas vêm mensalmente de resumo_mensal_unidade
+ * (planilha Resumos), não de transação bancária (decisão do usuário
+ * 2026-09-10, ver listDreAgregado).
  */
 
 export type DreSecao =
@@ -48,8 +53,13 @@ export type DreSecao =
 export const EXCLUIDO_NOME = "Excluído do DRE";
 
 export const DRE_CATEGORIAS_SEED: { nome: string; secao: DreSecao; ordem: number }[] = [
-  // Receitas
-  { nome: "Receitas de Vendas", secao: "receitas", ordem: 1 },
+  // Receitas — as 3 categorias somadas são a Receita Bruta (decisão do
+  // usuário 2026-09-10). "Recebido em Caixa" era "Receitas de Vendas"
+  // (renomeada — mesmas 4 Descrições de pagamento por dentro, Pix/
+  // Espécie/Débito/Crédito); as outras 2 vêm mensalmente da planilha
+  // Resumos (resumo_mensal_unidade), não de transação bancária — ver
+  // listDreAgregado.
+  { nome: "Recebido em Caixa", secao: "receitas", ordem: 1 },
   { nome: "Parcerias Comerciais", secao: "receitas", ordem: 2 },
   { nome: "Receita de Vouchers", secao: "receitas", ordem: 3 },
 
@@ -152,6 +162,16 @@ export const CHAVE_TRANSACAO_ENTRE_UNIDADES = "transacao_entre_unidades";
 // da contraparte, comparado com a unidade de destino, decide qual das
 // duas é (decisão do usuário 2026-09-09).
 export const CHAVE_TRANSFERENCIA_MESMO_CNPJ = "transferencia_mesmo_cnpj";
+// Voucher site e Gympass/Totalpass entram no DRE pelo resumo MENSAL
+// (resumo_mensal_unidade, sincronizado da planilha "Resumos" — mesmo
+// dado já usado em Financeiro > Visão mês a mês), não por transação
+// bancária individual: não passam pelo extrato nem por adquirente,
+// então não têm o que ratear em caixa/competência (listDreAgregado
+// soma o mês inteiro igual nos dois regimes). Decisão do usuário
+// 2026-09-10: essas 2 + "Recebido em Caixa" (as 4 formas de pagamento
+// de sempre) somadas são a Receita Bruta.
+export const CHAVE_RECEITA_VOUCHER_SITE = "receita_voucher_site";
+export const CHAVE_RECEITA_GYMPASS_TOTALPASS = "receita_gympass_totalpass";
 
 /**
  * Descrições semeadas — o nível intermediário entre Categoria e
@@ -185,17 +205,18 @@ export const DRE_DESCRICOES_SEED: { nome: string; categoriaNome: string; chave?:
   // migração 2026-09-08-mesclar-emprestimo-entre-unidades.sql).
   { nome: "Empréstimo entre Unidades", categoriaNome: EXCLUIDO_NOME, chave: CHAVE_TRANSACAO_ENTRE_UNIDADES },
   { nome: "Transf. contas mesmo CNPJ", categoriaNome: EXCLUIDO_NOME, chave: CHAVE_TRANSFERENCIA_MESMO_CNPJ },
-  { nome: "Parcerias Comerciais", categoriaNome: "Parcerias Comerciais" },
+  { nome: "Parcerias Comerciais", categoriaNome: "Parcerias Comerciais", chave: CHAVE_RECEITA_GYMPASS_TOTALPASS },
   { nome: "Totalpass", categoriaNome: "Parcerias Comerciais" },
   { nome: "Wellhub", categoriaNome: "Parcerias Comerciais" },
+  { nome: "Receita de Vouchers", categoriaNome: "Receita de Vouchers", chave: CHAVE_RECEITA_VOUCHER_SITE },
   { nome: "Limpeza", categoriaNome: "Limpeza" },
   { nome: "Lavanderia", categoriaNome: "Lavanderia" },
-  { nome: "Receita de Pix", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_PIX },
-  { nome: "Receita em Espécie", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_ESPECIE },
-  { nome: "Receita Cartão de Débito", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_CARTAO_DEBITO },
-  { nome: "Receita Cartão de Crédito", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_CARTAO_CREDITO },
-  { nome: "Receita Líq. Cartão de Débito", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_LIQ_CARTAO_DEBITO },
-  { nome: "Receita Líq. Cartão de Crédito", categoriaNome: "Receitas de Vendas", chave: CHAVE_RECEITA_LIQ_CARTAO_CREDITO },
+  { nome: "Receita de Pix", categoriaNome: "Recebido em Caixa", chave: CHAVE_RECEITA_PIX },
+  { nome: "Receita em Espécie", categoriaNome: "Recebido em Caixa", chave: CHAVE_RECEITA_ESPECIE },
+  { nome: "Receita Cartão de Débito", categoriaNome: "Recebido em Caixa", chave: CHAVE_RECEITA_CARTAO_DEBITO },
+  { nome: "Receita Cartão de Crédito", categoriaNome: "Recebido em Caixa", chave: CHAVE_RECEITA_CARTAO_CREDITO },
+  { nome: "Receita Líq. Cartão de Débito", categoriaNome: EXCLUIDO_NOME, chave: CHAVE_RECEITA_LIQ_CARTAO_DEBITO },
+  { nome: "Receita Líq. Cartão de Crédito", categoriaNome: EXCLUIDO_NOME, chave: CHAVE_RECEITA_LIQ_CARTAO_CREDITO },
 ];
 
 export interface DreRegraSeed {
