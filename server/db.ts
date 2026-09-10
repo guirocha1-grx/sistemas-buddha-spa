@@ -7796,6 +7796,9 @@ export async function registrarPagamentoCobrancaLink(dados: {
   paymentStatusDetail?: string | null;
   pagadorNome?: string | null;
   pagadorEmail?: string | null;
+  paymentMethodId?: string | null;
+  paymentTypeId?: string | null;
+  paymentInstallments?: number | null;
   aprovadoEm?: Date | null;
   acaoWebhook?: string | null;
   assinaturaValida: boolean;
@@ -7816,6 +7819,9 @@ export async function registrarPagamentoCobrancaLink(dados: {
     paymentStatusDetail: dados.paymentStatusDetail ?? null,
     pagadorNome: dados.pagadorNome ?? null,
     pagadorEmail: dados.pagadorEmail ?? null,
+    paymentMethodId: dados.paymentMethodId ?? null,
+    paymentTypeId: dados.paymentTypeId ?? null,
+    paymentInstallments: dados.paymentInstallments ?? null,
     paymentApprovedAt: dados.aprovadoEm ?? null,
     ultimoWebhookEm: new Date(),
     ultimoWebhookAcao: dados.acaoWebhook ?? null,
@@ -7836,6 +7842,9 @@ export async function listCobrancasLinkAprovadasRecentes(unidadeId: number) {
     clienteNome: cobrancasLink.clienteNome,
     titulo: cobrancasLink.titulo,
     valor: cobrancasLink.valor,
+    paymentMethodId: cobrancasLink.paymentMethodId,
+    paymentTypeId: cobrancasLink.paymentTypeId,
+    paymentInstallments: cobrancasLink.paymentInstallments,
     paymentApprovedAt: cobrancasLink.paymentApprovedAt,
   }).from(cobrancasLink)
     .where(and(
@@ -7865,6 +7874,9 @@ export async function listCobrancasLinkAprovadasParaConfirmacao(unidadeId: numbe
     titulo: cobrancasLink.titulo,
     valor: cobrancasLink.valor,
     formaPagamentoInformada: cobrancasLink.formaPagamentoInformada,
+    paymentMethodId: cobrancasLink.paymentMethodId,
+    paymentTypeId: cobrancasLink.paymentTypeId,
+    paymentInstallments: cobrancasLink.paymentInstallments,
     paymentId: cobrancasLink.paymentId,
     paymentApprovedAt: cobrancasLink.paymentApprovedAt,
     pagadorNome: cobrancasLink.pagadorNome,

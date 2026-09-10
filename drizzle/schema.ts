@@ -183,6 +183,15 @@ export const cobrancasLink = mysqlTable("cobrancas_link", {
   paymentStatusDetail: varchar("paymentStatusDetail", { length: 160 }),
   pagadorNome: varchar("pagadorNome", { length: 200 }),
   pagadorEmail: varchar("pagadorEmail", { length: 320 }),
+  // Forma de pagamento REAL usada no checkout (do webhook do Mercado
+  // Pago — payment_method_id/payment_type_id/installments), diferente
+  // de `formaPagamentoInformada` acima (só um palpite da recepção ao
+  // criar o Link). Pedido do usuário 2026-09-10: mostrar Pix/Débito/
+  // Crédito à vista ou parcelado Nx no alerta e na tela de confirmação
+  // de pagamento, pra recepção não precisar adivinhar.
+  paymentMethodId: varchar("paymentMethodId", { length: 40 }),
+  paymentTypeId: varchar("paymentTypeId", { length: 40 }),
+  paymentInstallments: int("paymentInstallments"),
   paymentApprovedAt: timestamp("paymentApprovedAt"),
   criadaEm: timestamp("criadaEm"),
   enviadaEm: timestamp("enviadaEm"),

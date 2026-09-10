@@ -60,15 +60,39 @@ describe("confirmação de pagamento", () => {
       titulo: "Relaxante MenCare",
       valor: "259.00",
       formaPagamentoInformada: null,
+      paymentMethodId: "pix",
+      paymentTypeId: "pix",
+      paymentInstallments: null,
       paymentId: "176022256588",
       paymentApprovedAt: new Date("2026-08-28T13:39:16.000Z"),
       pagadorNome: "Robinson Gomes",
     }]);
+    // Achado real (pedido do usuário 2026-09-10): a forma de pagamento
+    // real já vem certa na linha do Webhook, sem precisar esperar a
+    // próxima consulta na API do Mercado Pago pra saber que foi Pix.
+    expect(local[0]).toMatchObject({ formaPagamento: "pix", parcelas: null });
     const combinados = combinarLinksConfirmacao([{
       ...local[0],
       formaPagamento: "pix",
     }], local);
     expect(combinados).toHaveLength(1);
     expect(combinados[0]).toMatchObject({ idPagamento: "176022256588", formaPagamento: "pix", valorBruto: "259.00" });
+  });
+
+  it("mostra o número de parcelas quando o Link foi pago em cartão de crédito parcelado", () => {
+    const local = listarLinksConfirmadosLocalmente([{
+      id: 3,
+      clienteNome: "Ana Paula",
+      titulo: "Day Spa Casal",
+      valor: "480.00",
+      formaPagamentoInformada: null,
+      paymentMethodId: "master",
+      paymentTypeId: "credit_card",
+      paymentInstallments: 3,
+      paymentId: "176022256599",
+      paymentApprovedAt: new Date("2026-08-28T14:00:00.000Z"),
+      pagadorNome: "Ana Paula",
+    }]);
+    expect(local[0]).toMatchObject({ formaPagamento: "master", parcelas: 3 });
   });
 });

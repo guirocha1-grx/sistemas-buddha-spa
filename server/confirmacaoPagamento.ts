@@ -29,6 +29,9 @@ export type CobrancaLinkConfirmadaLocal = {
   titulo: string;
   valor: string | number;
   formaPagamentoInformada: string | null;
+  paymentMethodId: string | null;
+  paymentTypeId: string | null;
+  paymentInstallments: number | null;
   paymentId: string | null;
   paymentApprovedAt: Date | null;
   pagadorNome: string | null;
@@ -118,7 +121,16 @@ export function listarLinksMercadoPagoRecentes(pagamentos: MpPagamento[], inicio
     .sort((a, b) => b.dataHora.localeCompare(a.dataHora));
 }
 
-/** O Webhook confirmado aparece imediatamente, mesmo antes de uma nova busca na API Mercado Pago. */
+/**
+ * O Webhook confirmado aparece imediatamente, mesmo antes de uma nova
+ * busca na API Mercado Pago. `paymentMethodId`/`paymentTypeId`/
+ * `paymentInstallments` vêm do próprio webhook (forma de pagamento
+ * REAL usada no checkout) — mesma prioridade de `listarLinksMercadoPagoRecentes`
+ * acima (`payment_method_id` antes de `payment_type_id`), pra bater
+ * igual quando a próxima consulta na API substituir esta linha.
+ * `formaPagamentoInformada` (palpite da recepção ao criar o Link) só
+ * entra como último fallback, pra registro anterior a esse campo.
+ */
 export function listarLinksConfirmadosLocalmente(cobrancas: CobrancaLinkConfirmadaLocal[]): ConfirmacaoLinkMercadoPago[] {
   return cobrancas
     .filter((cobranca) => cobranca.paymentId && cobranca.paymentApprovedAt)
@@ -127,8 +139,8 @@ export function listarLinksConfirmadosLocalmente(cobrancas: CobrancaLinkConfirma
       dataHora: cobranca.paymentApprovedAt!.toISOString(),
       valorBruto: Number(cobranca.valor).toFixed(2),
       valorLiquido: null,
-      parcelas: null,
-      formaPagamento: cobranca.formaPagamentoInformada ?? "link_pagamento",
+      parcelas: cobranca.paymentInstallments,
+      formaPagamento: cobranca.paymentMethodId ?? cobranca.paymentTypeId ?? cobranca.formaPagamentoInformada ?? "link_pagamento",
       pagador: cobranca.pagadorNome ?? cobranca.clienteNome,
       identificacaoPagador: null,
       descricao: cobranca.titulo,
