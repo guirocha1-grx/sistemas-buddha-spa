@@ -2432,6 +2432,48 @@ Diretrizes:
     }),
   }),
 
+  // ===== Funil de Reativação (2026-09-10) — extensão da tela Clientes com os
+  // mesmos filtros de Segmentação (acima) + uma etapa por cliente/unidade.
+  // protectedProcedure (não admin): é ferramenta de uso diário da recepção. =====
+  funilReativacao: router({
+    listFunis: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input, ctx }) => {
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      return db.listFunisReativacao(input.unidadeId);
+    }),
+
+    criarFunil: protectedProcedure.input(z.object({
+      unidadeId: z.number(), nome: z.string().trim().min(1), filtros: z.array(filtroSegmentoSchema).min(1),
+    })).mutation(async ({ input, ctx }) => {
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      await db.criarFunilReativacao(input);
+      return { success: true };
+    }),
+
+    excluirFunil: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+      const funil = await db.obterFunilReativacaoPorId(input.id);
+      if (!funil) return { success: true };
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, funil.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      await db.excluirFunilReativacao(input.id);
+      return { success: true };
+    }),
+
+    listClientes: protectedProcedure.input(z.object({
+      unidadeId: z.number(), filtros: z.array(filtroSegmentoSchema),
+    })).query(async ({ input, ctx }) => {
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      return db.listClientesFunilReativacao(input.unidadeId, input.filtros);
+    }),
+
+    definirStatus: protectedProcedure.input(z.object({
+      clienteId: z.number(), unidadeId: z.number(),
+      status: z.enum(["inativo", "mensagem_enviada", "qualificado", "agendado", "atendido"]),
+    })).mutation(async ({ input, ctx }) => {
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      await db.definirStatusReativacao(input.clienteId, input.unidadeId, input.status);
+      return { success: true };
+    }),
+  }),
+
   // ===== Buddha Mkt: Disparos (campanhas de marketing) =====
   disparos: router({
     list: adminProcedure.query(async () => db.listDisparos()),

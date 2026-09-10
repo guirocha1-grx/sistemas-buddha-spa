@@ -18,6 +18,7 @@ import { resumoMensalUnidade, type InsertResumoMensalUnidade, type ResumoMensalU
 import { etiquetas, clienteEtiquetas, type Etiqueta } from "../drizzle/schema";
 import { camposPersonalizados, clienteCamposValores, type CampoPersonalizado } from "../drizzle/schema";
 import { listaEspera } from "../drizzle/schema";
+import { funisReativacao, reativacaoStatus, type FunilReativacao } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda, calcularEvolucaoFidelizacao, type GranularidadeEvolucao } from "./terapeutasRelatorios";
 import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, nomesCorrespondem, identificarTerapeuta, nomesClienteCorrespondem, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
@@ -6885,7 +6886,7 @@ async function condicaoFiltroSegmento(db: DbConectado, filtro: FiltroSegmento) {
   }
 }
 
-async function condicoesSegmento(db: DbConectado, filtros: FiltroSegmento[]) {
+export async function condicoesSegmento(db: DbConectado, filtros: FiltroSegmento[]) {
   const condicoes = [];
   for (const filtro of filtros) condicoes.push(await condicaoFiltroSegmento(db, filtro));
   return condicoes;
@@ -6921,6 +6922,77 @@ export async function opcoesTerapias(limite = 300): Promise<string[]> {
     .orderBy(belleAtendimentos.servicoNome)
     .limit(limite);
   return linhas.map((l) => l.servicoNome as string).filter(Boolean);
+}
+
+// ===== Funil de Reativação (2026-09-10) — extensão da base de clientes com
+// os mesmos filtros da Segmentação de Disparos, mais uma etapa (status) por
+// cliente/unidade que a recepção avança conforme liga/manda mensagem. Sem
+// depender do Belle: pensado especificamente para o período em que a API do
+// Belle está com acesso negado (ver listClientesLocalPorUnidade acima). =====
+
+export type StatusReativacao = "inativo" | "mensagem_enviada" | "qualificado" | "agendado" | "atendido";
+
+export async function listFunisReativacao(unidadeId: number): Promise<FunilReativacao[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(funisReativacao).where(eq(funisReativacao.unidadeId, unidadeId)).orderBy(funisReativacao.nome);
+}
+
+export async function criarFunilReativacao(input: { unidadeId: number; nome: string; filtros: FiltroSegmento[] }): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(funisReativacao).values({ unidadeId: input.unidadeId, nome: input.nome, filtros: JSON.stringify(input.filtros) });
+}
+
+export async function obterFunilReativacaoPorId(id: number): Promise<FunilReativacao | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const linhas = await db.select().from(funisReativacao).where(eq(funisReativacao.id, id)).limit(1);
+  return linhas[0];
+}
+
+export async function excluirFunilReativacao(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(funisReativacao).where(eq(funisReativacao.id, id));
+}
+
+/**
+ * Clientes de um funil: mesmos filtros da Segmentação de Disparos, restritos
+ * à unidade selecionada (como a tela Clientes), com a etapa de reativação já
+ * resolvida (padrão "inativo" quando o cliente nunca foi movido). Ordenado
+ * por potencial — quem mais visitou antes de sumir primeiro, e entre
+ * empates, quem está parado há mais tempo — para a recepção ligar pelos de
+ * maior potencial primeiro.
+ */
+export async function listClientesFunilReativacao(unidadeId: number, filtros: FiltroSegmento[]) {
+  const db = await getDb();
+  if (!db) return [];
+  const condicoesFiltro = await condicoesSegmento(db, filtros);
+  const pertenceAUnidade = unidadeId === 1 ? eq(clientes.clienteSsu, true) : eq(clientes.clienteRbs, true);
+  return db.select({
+    id: clientes.id,
+    nome: clientes.nome,
+    celular: clientes.celular,
+    email: clientes.email,
+    dataNascimento: clientes.dataNascimento,
+    ultimoAtendimento: clientes.ultimoAtendimento,
+    qtdAtendimentosFinalizados: clientes.qtdAtendimentosFinalizados,
+    status: sql<StatusReativacao>`COALESCE(${reativacaoStatus.status}, 'inativo')`,
+    statusAtualizadoEm: reativacaoStatus.updatedAt,
+  })
+    .from(clientes)
+    .leftJoin(reativacaoStatus, and(eq(reativacaoStatus.clienteId, clientes.id), eq(reativacaoStatus.unidadeId, unidadeId)))
+    .where(and(pertenceAUnidade, ...condicoesFiltro))
+    .orderBy(desc(clientes.qtdAtendimentosFinalizados), asc(clientes.ultimoAtendimento))
+    .limit(2000);
+}
+
+export async function definirStatusReativacao(clienteId: number, unidadeId: number, status: StatusReativacao): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(reativacaoStatus).values({ clienteId, unidadeId, status })
+    .onDuplicateKeyUpdate({ set: { status, updatedAt: new Date() } });
 }
 
 // ===== Comanda virtual (item a item — auditoria da Comanda Recepção) =====

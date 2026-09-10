@@ -623,6 +623,44 @@ export type InsertClienteCampoValor = typeof clienteCamposValores.$inferInsert;
 export type InsertClienteEtiqueta = typeof clienteEtiquetas.$inferInsert;
 
 /**
+ * Funil de Reativação (2026-09-10) — versão simplificada do "CRM/Funil"
+ * do Belle: em vez de um pipeline separado, é um preset salvo do mesmo
+ * construtor de filtros da Segmentação de Disparos (ver SegmentoFiltros,
+ * FiltroSegmento em server/db.ts), pra recepção reabrir sem recriar os
+ * critérios toda vez (ex.: "5+ atendimentos, última visita +60 dias").
+ */
+export const funisReativacao = mysqlTable("funis_reativacao", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  nome: varchar("nome", { length: 120 }).notNull(),
+  filtros: text("filtros").notNull(), // JSON: FiltroSegmento[]
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  unidadeIdx: index("funis_reativacao_unidade_idx").on(table.unidadeId),
+}));
+export type FunilReativacao = typeof funisReativacao.$inferSelect;
+export type InsertFunilReativacao = typeof funisReativacao.$inferInsert;
+
+/**
+ * Etapa de reativação de um cliente, por unidade — a "extensão da tabela
+ * clientes" que a recepção avança conforme liga/manda mensagem, sem
+ * depender de nenhum funil específico (o mesmo cliente pode aparecer em
+ * mais de um funil, mas tem uma etapa só por unidade). Ausência de linha
+ * = "inativo" (ainda não trabalhado).
+ */
+export const reativacaoStatus = mysqlTable("reativacao_status", {
+  id: int("id").autoincrement().primaryKey(),
+  clienteId: int("clienteId").notNull(),
+  unidadeId: int("unidadeId").notNull(),
+  status: mysqlEnum("status", ["inativo", "mensagem_enviada", "qualificado", "agendado", "atendido"]).default("inativo").notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  clienteUnidadeUnico: uniqueIndex("reativacao_status_cliente_unidade_idx").on(table.clienteId, table.unidadeId),
+}));
+export type ReativacaoStatus = typeof reativacaoStatus.$inferSelect;
+export type InsertReativacaoStatus = typeof reativacaoStatus.$inferInsert;
+
+/**
  * Lista de espera por dia (2026-09-04) — sessão do dia lotado: cliente pede
  * pra entrar, recepção coleta no Inbox (dia, período/horário desejado,
  * terapia) e manda pra cá. Quem tem plano ativo (Belle, calculado na hora —
