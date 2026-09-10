@@ -4318,6 +4318,39 @@ Diretrizes:
     })).query(async ({ input }) => {
       return db.listDreLancamentosPorCategoria(input.unidadeId, input.mesInicio, input.mesFim, input.regime, input.dreCategoriaId);
     }),
+
+    /**
+     * Lançamento manual — valor que afeta o resultado sem transação
+     * bancária por trás (ex.: encontro de contas com franqueador). Só
+     * conta no regime competência (ver drizzle/schema.ts).
+     */
+    lancamentosManuais: router({
+      list: protectedProcedure.input(z.object({
+        unidadeId: z.number(),
+        mesInicio: z.string().regex(/^\d{4}-\d{2}$/),
+        mesFim: z.string().regex(/^\d{4}-\d{2}$/),
+      })).query(async ({ input }) => {
+        return db.listLancamentosManuaisDre(input.unidadeId, input.mesInicio, input.mesFim);
+      }),
+
+      criar: protectedProcedure.input(z.object({
+        unidadeId: z.number(),
+        dreDescricaoId: z.number(),
+        mesReferencia: z.string().regex(/^\d{4}-\d{2}$/),
+        valor: z.number().positive(),
+        observacao: z.string().optional(),
+      })).mutation(async ({ input, ctx }) => {
+        const id = await db.criarLancamentoManualDre({ ...input, criadoPor: ctx.user.name ?? undefined });
+        return { success: true, id };
+      }),
+
+      excluir: protectedProcedure.input(z.object({
+        id: z.number(),
+      })).mutation(async ({ input }) => {
+        await db.excluirLancamentoManualDre(input.id);
+        return { success: true };
+      }),
+    }),
   }),
 
   // ===== Confirmação de Pagamento (recepção — últimos 48h) =====

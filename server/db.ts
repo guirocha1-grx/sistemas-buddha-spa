@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { eq, asc, desc, and, or, gt, gte, lte, isNull, isNotNull, like, ne, inArray, notInArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, belleRegistrosFinanceiros, bellePlanosClientes, bellePlanosServicos, lidMapping, atendentes, atendenteSessoes, terapeutas, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertBelleRegistroFinanceiro, type InsertBellePlanoCliente, type InsertBellePlanoServico, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, belleRegistrosFinanceiros, bellePlanosClientes, bellePlanosServicos, lidMapping, atendentes, atendenteSessoes, terapeutas, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, lancamentosManuaisDre, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertBelleRegistroFinanceiro, type InsertBellePlanoCliente, type InsertBellePlanoServico, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import type { LinhaAtendimentoBelleImportada } from "./atendimentosBelleXlsxParser";
 import type { LinhaRegistroFinanceiroBelleImportada } from "./registrosFinanceirosBelleXlsxParser";
@@ -4587,6 +4587,64 @@ export async function excluirSplits(interExtratoId: number): Promise<void> {
 
 // ===== Receita x Despesa / DRE =====
 
+export interface DadosLancamentoManualDre {
+  unidadeId: number;
+  dreDescricaoId: number;
+  mesReferencia: string; // "AAAA-MM"
+  valor: number;
+  observacao?: string;
+  criadoPor?: string;
+}
+
+/**
+ * Lançamento manual no DRE (só competência, ver comentário em
+ * drizzle/schema.ts) — pra valor que afeta o resultado sem transação
+ * bancária por trás, ex.: encontro de contas com franqueador (royalties
+ * abatidos contra vouchers a receber).
+ */
+export async function criarLancamentoManualDre(dados: DadosLancamentoManualDre) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.insert(lancamentosManuaisDre).values({
+    unidadeId: dados.unidadeId,
+    dreDescricaoId: dados.dreDescricaoId,
+    mesReferencia: dados.mesReferencia,
+    valor: dados.valor.toFixed(2),
+    observacao: dados.observacao?.trim() || null,
+    criadoPor: dados.criadoPor ?? null,
+  }).$returningId();
+  return result[0]?.id;
+}
+
+export async function listLancamentosManuaisDre(unidadeId: number, mesInicio: string, mesFim: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: lancamentosManuaisDre.id,
+    dreDescricaoId: lancamentosManuaisDre.dreDescricaoId,
+    dreDescricaoNome: dreDescricoes.nome,
+    mesReferencia: lancamentosManuaisDre.mesReferencia,
+    valor: lancamentosManuaisDre.valor,
+    observacao: lancamentosManuaisDre.observacao,
+    criadoPor: lancamentosManuaisDre.criadoPor,
+    createdAt: lancamentosManuaisDre.createdAt,
+  })
+    .from(lancamentosManuaisDre)
+    .innerJoin(dreDescricoes, eq(lancamentosManuaisDre.dreDescricaoId, dreDescricoes.id))
+    .where(and(
+      eq(lancamentosManuaisDre.unidadeId, unidadeId),
+      gte(lancamentosManuaisDre.mesReferencia, mesInicio),
+      lte(lancamentosManuaisDre.mesReferencia, mesFim),
+    ))
+    .orderBy(desc(lancamentosManuaisDre.mesReferencia), desc(lancamentosManuaisDre.id));
+}
+
+export async function excluirLancamentoManualDre(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(lancamentosManuaisDre).where(eq(lancamentosManuaisDre.id, id));
+}
+
 export interface LinhaDreAgregada {
   dreDescricaoId: number;
   dreDescricaoNome: string;
@@ -4727,6 +4785,18 @@ export async function listDreAgregado(
       const mesCompetencia = v.competencia === "mes_anterior" ? mesAnterior(mesVenda) : mesVenda;
       if (mesCompetencia >= mesInicio && mesCompetencia <= mesFim) somar(v.dreDescricaoId, v.valor);
     }
+
+    // Lançamento manual (ver drizzle/schema.ts) — só existe em
+    // competência, por definição não circulou dinheiro real (caixa
+    // nunca inclui isso).
+    const manuais = await db.select({ dreDescricaoId: lancamentosManuaisDre.dreDescricaoId, valor: lancamentosManuaisDre.valor })
+      .from(lancamentosManuaisDre)
+      .where(and(
+        eq(lancamentosManuaisDre.unidadeId, unidadeId),
+        gte(lancamentosManuaisDre.mesReferencia, mesInicio),
+        lte(lancamentosManuaisDre.mesReferencia, mesFim),
+      ));
+    for (const m of manuais) somar(m.dreDescricaoId, m.valor);
   }
 
   // Voucher site / Gympass-Totalpass: vêm do resumo MENSAL da planilha
@@ -4789,6 +4859,8 @@ export interface LinhaDreLancamento {
   dreDescricaoChave: string | null;
   /** "N/M" (ex.: "2/3") — só em venda de cartão de crédito via adquirente_vendas; null pra tudo mais, incluindo débito à vista (não tem parcela). */
   parcela: string | null;
+  /** id em lancamentos_manuais_dre — só presente quando origem="manual" (permite excluir da tela); null pra tudo mais. */
+  lancamentoManualId: number | null;
 }
 
 /**
@@ -4848,6 +4920,7 @@ export async function listDreLancamentosPorCategoria(
         dreDescricaoNome: nomePorId.get(t.dreDescricaoId!) ?? "",
         dreDescricaoChave: chavePorId.get(t.dreDescricaoId!) ?? null,
         parcela: null,
+        lancamentoManualId: null,
       });
     }
 
@@ -4875,6 +4948,7 @@ export async function listDreLancamentosPorCategoria(
         dreDescricaoNome: nomePorId.get(s.dreDescricaoId) ?? "",
         dreDescricaoChave: chavePorId.get(s.dreDescricaoId) ?? null,
         parcela: null,
+        lancamentoManualId: null,
       });
     }
 
@@ -4902,6 +4976,7 @@ export async function listDreLancamentosPorCategoria(
         dreDescricaoNome: nomePorId.get(v.dreDescricaoId!) ?? "",
         dreDescricaoChave: chavePorId.get(v.dreDescricaoId!) ?? null,
         parcela: v.parcela,
+        lancamentoManualId: null,
       });
     }
   } else {
@@ -4932,6 +5007,7 @@ export async function listDreLancamentosPorCategoria(
         dreDescricaoNome: nomePorId.get(t.dreDescricaoId!) ?? "",
         dreDescricaoChave: chavePorId.get(t.dreDescricaoId!) ?? null,
         parcela: null,
+        lancamentoManualId: null,
       });
     }
 
@@ -4959,6 +5035,7 @@ export async function listDreLancamentosPorCategoria(
         dreDescricaoNome: nomePorId.get(s.dreDescricaoId) ?? "",
         dreDescricaoChave: chavePorId.get(s.dreDescricaoId) ?? null,
         parcela: null,
+        lancamentoManualId: null,
       });
     }
 
@@ -4991,6 +5068,34 @@ export async function listDreLancamentosPorCategoria(
         dreDescricaoNome: nomePorId.get(v.dreDescricaoId!) ?? "",
         dreDescricaoChave: chavePorId.get(v.dreDescricaoId!) ?? null,
         parcela: v.parcela,
+        lancamentoManualId: null,
+      });
+    }
+
+    // Lançamento manual (ver drizzle/schema.ts) — só existe em
+    // competência, mesma regra de listDreAgregado.
+    const manuais = await db.select({
+      id: lancamentosManuaisDre.id,
+      mesReferencia: lancamentosManuaisDre.mesReferencia,
+      valor: lancamentosManuaisDre.valor,
+      observacao: lancamentosManuaisDre.observacao,
+      dreDescricaoId: lancamentosManuaisDre.dreDescricaoId,
+    }).from(lancamentosManuaisDre).where(and(
+      eq(lancamentosManuaisDre.unidadeId, unidadeId),
+      gte(lancamentosManuaisDre.mesReferencia, mesInicio),
+      lte(lancamentosManuaisDre.mesReferencia, mesFim),
+      inArray(lancamentosManuaisDre.dreDescricaoId, idsDescricao),
+    ));
+    for (const m of manuais) {
+      resultado.push({
+        data: `${m.mesReferencia}-01`,
+        titulo: m.observacao || "Lançamento manual",
+        valor: parseFloat(m.valor),
+        origem: "manual",
+        dreDescricaoNome: nomePorId.get(m.dreDescricaoId) ?? "",
+        dreDescricaoChave: chavePorId.get(m.dreDescricaoId) ?? null,
+        parcela: null,
+        lancamentoManualId: m.id,
       });
     }
   }
@@ -5021,6 +5126,7 @@ export async function listDreLancamentosPorCategoria(
           dreDescricaoNome: nomePorId.get(idVoucher) ?? "",
           dreDescricaoChave: CHAVE_RECEITA_VOUCHER_SITE,
           parcela: null,
+          lancamentoManualId: null,
         });
       }
       if (idGympass && idsDescricao.includes(idGympass) && r.gympassTotalpass !== null && parseFloat(r.gympassTotalpass) !== 0) {
@@ -5032,6 +5138,7 @@ export async function listDreLancamentosPorCategoria(
           dreDescricaoNome: nomePorId.get(idGympass) ?? "",
           dreDescricaoChave: CHAVE_RECEITA_GYMPASS_TOTALPASS,
           parcela: null,
+          lancamentoManualId: null,
         });
       }
     }

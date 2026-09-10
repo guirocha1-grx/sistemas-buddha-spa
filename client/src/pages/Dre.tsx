@@ -7,7 +7,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
-import { Loader2, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DescricaoCombobox } from "@/components/DescricaoCombobox";
+import { Loader2, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 function fmtCurrency(value: number) {
   const texto = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Math.abs(value));
@@ -119,6 +126,176 @@ function DetalheCategoriaHover({
         )}
       </HoverCardContent>
     </HoverCard>
+  );
+}
+
+function fmtMesAno(mesAno: string) {
+  const [ano, mes] = mesAno.split("-");
+  const nomes = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  return `${nomes[Number(mes) - 1]}/${ano.slice(2)}`;
+}
+
+/**
+ * Lançamento manual no DRE — valor que afeta o resultado sem transação
+ * bancária por trás (ex.: encontro de contas com franqueador, royalties
+ * abatidos contra vouchers a receber). Só conta no regime Competência
+ * (decisão do usuário 2026-09-10 — caixa é dinheiro que realmente
+ * circulou, aqui não circulou nenhum). Botão + diálogo de criação, com
+ * a lista dos já lançados no período visível logo abaixo (com opção de
+ * excluir) — mantido separado do hover de detalhe (que só mostra total
+ * por forma de pagamento, sem lançamento a lançamento).
+ */
+function LancamentoManualDialog({
+  unidadeId,
+  mesInicio,
+  mesFim,
+}: {
+  unidadeId: number;
+  mesInicio: string;
+  mesFim: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [descricaoId, setDescricaoId] = useState<number | null>(null);
+  const [mesReferencia, setMesReferencia] = useState(mesFim);
+  const [valor, setValor] = useState("");
+  const [observacao, setObservacao] = useState("");
+  const utils = trpc.useUtils();
+
+  const descricoesQuery = trpc.dreDescricoes.list.useQuery();
+  const categoriasQuery = trpc.dreCategorias.list.useQuery();
+  const descricoes = descricoesQuery.data ?? [];
+  const categorias = categoriasQuery.data ?? [];
+
+  const listQuery = trpc.dre.lancamentosManuais.list.useQuery(
+    { unidadeId, mesInicio, mesFim },
+    { enabled: open },
+  );
+
+  function parseValor(raw: string): number {
+    const n = parseFloat(raw.replace(",", "."));
+    return Number.isNaN(n) ? 0 : n;
+  }
+
+  function limpar() {
+    setDescricaoId(null);
+    setMesReferencia(mesFim);
+    setValor("");
+    setObservacao("");
+  }
+
+  const criarMutation = trpc.dre.lancamentosManuais.criar.useMutation({
+    onSuccess: () => {
+      toast.success("Lançamento manual criado.");
+      utils.dre.agregado.invalidate();
+      utils.dre.lancamentosPorCategoria.invalidate();
+      utils.dre.lancamentosManuais.list.invalidate();
+      limpar();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const excluirMutation = trpc.dre.lancamentosManuais.excluir.useMutation({
+    onSuccess: () => {
+      toast.success("Lançamento manual removido.");
+      utils.dre.agregado.invalidate();
+      utils.dre.lancamentosPorCategoria.invalidate();
+      utils.dre.lancamentosManuais.list.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const podeSalvar = descricaoId !== null && /^\d{4}-\d{2}$/.test(mesReferencia) && parseValor(valor) > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Plus className="h-3.5 w-3.5 mr-1.5" /> Lançamento manual
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Lançamento manual</DialogTitle>
+          <DialogDescription>
+            Pra valor que afeta o resultado sem transação bancária por trás — ex.: encontro de contas com o
+            franqueador (royalties abatidos contra vouchers a receber). Só conta no regime Competência.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Descrição</Label>
+            <DescricaoCombobox
+              descricoes={descricoes}
+              categorias={categorias}
+              value={descricaoId}
+              onChange={setDescricaoId}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Mês de competência</Label>
+              <SeletorMes value={mesReferencia} onChange={setMesReferencia} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Valor</Label>
+              <Input placeholder="0,00" value={valor} onChange={(e) => setValor(e.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Observação</Label>
+            <Textarea
+              placeholder='Ex.: "Encontro de contas com franqueador — royalties x vouchers, agosto/2026"'
+              rows={2}
+              value={observacao}
+              onChange={(e) => setObservacao(e.target.value)}
+            />
+          </div>
+          <Button
+            size="sm"
+            onClick={() => criarMutation.mutate({ unidadeId, dreDescricaoId: descricaoId!, mesReferencia, valor: parseValor(valor), observacao: observacao.trim() || undefined })}
+            disabled={!podeSalvar || criarMutation.isPending}
+          >
+            {criarMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1.5" />}
+            Lançar
+          </Button>
+        </div>
+
+        <div className="border-t pt-3 space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Lançados no período visível ({fmtMesAno(mesInicio)} – {fmtMesAno(mesFim)})</Label>
+          {listQuery.isLoading ? (
+            <div className="flex justify-center py-3"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+          ) : !listQuery.data || listQuery.data.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2">Nenhum lançamento manual nesse período.</p>
+          ) : (
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {listQuery.data.map((l) => (
+                <div key={l.id} className="flex items-start justify-between gap-2 text-xs py-1 border-b border-border/30 last:border-0">
+                  <div className="min-w-0">
+                    <div className="font-medium">{l.dreDescricaoNome} · {fmtMesAno(l.mesReferencia)}</div>
+                    {l.observacao && <div className="text-muted-foreground truncate">{l.observacao}</div>}
+                    {l.criadoPor && <div className="text-muted-foreground text-[10px]">por {l.criadoPor}</div>}
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="font-medium">{fmtCurrency(parseFloat(l.valor))}</span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => excluirMutation.mutate({ id: l.id })}
+                      disabled={excluirMutation.isPending}
+                      title="Excluir"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -237,6 +414,7 @@ export default function Dre() {
             <TabsTrigger value="competencia">Competência</TabsTrigger>
           </TabsList>
         </Tabs>
+        {unidadeId && <LancamentoManualDialog unidadeId={unidadeId} mesInicio={mesInicio} mesFim={mesFim} />}
       </div>
 
       <Card className="border-border/50 shadow-sm">

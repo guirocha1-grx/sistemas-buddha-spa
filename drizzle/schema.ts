@@ -1483,6 +1483,33 @@ export type LancamentoSplit = typeof lancamentoSplits.$inferSelect;
 export type InsertLancamentoSplit = typeof lancamentoSplits.$inferInsert;
 
 /**
+ * Lançamento manual no DRE — pra valor que afeta o resultado mas nunca
+ * passa pelo extrato bancário (nem por adquirente_vendas), tipo um
+ * encontro de contas com o franqueador (royalties abatidos contra
+ * vouchers a receber, sem trocar dinheiro de verdade). Só entra no
+ * regime COMPETÊNCIA (listDreAgregado) — decisão do usuário 2026-09-10:
+ * caixa reflete dinheiro que realmente circulou, e aqui não circulou
+ * nenhum. `mesReferencia` é o mês de competência direto (sem "mês do
+ * lançamento vs mês anterior" da Descrição — o usuário já escolhe o mês
+ * certo na hora de lançar).
+ */
+export const lancamentosManuaisDre = mysqlTable("lancamentos_manuais_dre", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  dreDescricaoId: int("dreDescricaoId").notNull(),
+  mesReferencia: varchar("mesReferencia", { length: 7 }).notNull(), // "AAAA-MM"
+  valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
+  observacao: varchar("observacao", { length: 256 }),
+  criadoPor: varchar("criadoPor", { length: 256 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  unidadeMesIdx: index("lancamentos_manuais_dre_unidade_mes_idx").on(table.unidadeId, table.mesReferencia),
+}));
+
+export type LancamentoManualDre = typeof lancamentosManuaisDre.$inferSelect;
+export type InsertLancamentoManualDre = typeof lancamentosManuaisDre.$inferInsert;
+
+/**
  * "Conta corrente" entre as 2 unidades (RBS/Satori e SSU/Agama) —
  * junta 2 eventos diferentes na mesma tabela: rateio de despesa
  * (nasce de uma linha de `lancamentoSplits` com unidade diferente da
