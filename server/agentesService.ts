@@ -62,10 +62,17 @@ const ANTECEDENCIA_MINIMA_AGENDAMENTO_MINUTOS = 90;
  * conversacional: consultar/confirmar agenda ou emitir o voucher. "failure"
  * já é um estado final protegido contra envio automático; com mensagem vazia,
  * ele representa uma não intervenção deliberada, nunca uma falha técnica.
+ *
+ * Aceita "in_process" como sinônimo de "failure" aqui (achado real
+ * 2026-09-10, ver comentário em `interpretarRespostaEspecialista`) — o
+ * modelo usa os dois pro mesmo cenário de saída silenciosa; sem isso, uma
+ * resposta que já passou a ser aceita como válida (mensagem vazia +
+ * in_process) cairia no caminho normal e viraria uma sugestão VISÍVEL
+ * vazia no Inbox pra recepção, pior que o erro técnico que existia antes.
  */
 function naoIntervencaoPermitida(especialista: AgenteConfigurado, resposta: Pick<RespostaEspecialista, "status" | "message" | "summary" | "action">) {
   return AGENTES_COM_NAO_INTERVENCAO.includes(especialista.agente.chave as typeof AGENTES_COM_NAO_INTERVENCAO[number])
-    && resposta.status === "failure"
+    && (resposta.status === "failure" || resposta.status === "in_process")
     && !resposta.message.trim()
     && Boolean(resposta.summary.trim())
     && !resposta.action;
@@ -184,7 +191,19 @@ export function aplicarSaudacaoInicialEspecialista(params: {
 }) {
   const saudacao = saudacaoInicialEspecialista(params.contexto, params.chaveAgente, params.agora);
   if (!saudacao || !params.mensagem.trim()) return params.mensagem;
-  const mensagemSemSaudacao = removerSaudacaoDoInicio(params.mensagem);
+  const mensagemTrim = params.mensagem.trim();
+  // O prompt manda o modelo já começar a mensagem com a saudação exata
+  // (instrucaoAcolhimentoInicialEspecialista) — quando ele obedece à
+  // risca, `removerSaudacaoDoInicio` (regex genérico, não conhece o texto
+  // atual da saudação) só tirava um pedaço dela e sobrava o resto no meio
+  // do texto; a linha de baixo prendia a saudação completa de novo na
+  // frente, duplicando (achado real 2026-09-10, rejeição 2070100: "Boa
+  // tarde! Que bom ter você aqui 😊\n\nQue bom ter você aqui 😊...").
+  // Tenta primeiro remover a saudação exata e atual como prefixo; só cai
+  // no regex genérico (fallback) se o modelo tiver improvisado outra.
+  const mensagemSemSaudacao = mensagemTrim.toLowerCase().startsWith(saudacao.toLowerCase())
+    ? mensagemTrim.slice(saudacao.length).trim()
+    : removerSaudacaoDoInicio(mensagemTrim);
   return mensagemSemSaudacao ? `${saudacao}\n\n${mensagemSemSaudacao}` : saudacao;
 }
 
@@ -202,7 +221,16 @@ function textoContexto(contexto: ContextoConversa) {
   ].join("\n");
   const historico = contexto.mensagens.map((mensagem) => {
     const autor = mensagem.direcao === "recebida" ? "Cliente" : "Equipe";
-    const conteudo = mensagem.transcricao || mensagem.conteudo || "[mensagem sem texto]";
+    // Achado real (analise_evolucao_agentes_2026-09-10.md, seção 4):
+    // imagem (ex.: foto de voucher) não tem transcrição (isso só existe
+    // pra áudio) nem conteúdo de texto — virava "[mensagem sem texto]"
+    // pro modelo, que não tinha como saber que algo foi enviado e pedia
+    // de novo. Placeholder específico por tipo evita isso sem precisar
+    // ler o conteúdo real da imagem.
+    const conteudo = mensagem.transcricao || mensagem.conteudo
+      || (mensagem.tipo === "imagem" ? "[cliente enviou uma imagem — provavelmente comprovante ou voucher; considere que algo foi enviado antes de pedir de novo]"
+        : mensagem.tipo === "documento" ? "[cliente enviou um documento/arquivo]"
+          : "[mensagem sem texto]");
     return `${autor}: ${conteudo}`;
   }).join("\n");
   const dadosBelle = contexto.contextoBelleCliente;
@@ -268,7 +296,19 @@ function serializarRecursos(recursos: Awaited<ReturnType<typeof agentesDb.listar
   ].filter(Boolean).join("\n")).join("\n\n").slice(0, 12000);
 }
 
-function interpretarRespostaEspecialista(valor: unknown): RespostaEspecialista | null {
+/**
+ * Achado real (analise_evolucao_agentes_2026-09-10.md, seção 2-3): Carol
+ * e Diana têm uma saída silenciosa documentada em `instrucaoNaoIntervencao`
+ * ({"message":"","status":"failure",...}) pra quando só falta a recepção
+ * agir — mas na prática o modelo devolve `status:"in_process"` nesse
+ * mesmo cenário (mensagem vazia, summary preenchido) em vez de "failure".
+ * Antes disso rejeitava o JSON inteiro como contrato inválido — ~23% das
+ * tentativas da Carol viravam erro técnico por causa disso. Aceita
+ * mensagem vazia também com "in_process" pra esses 2 agentes (mesma
+ * lista de `naoIntervencaoPermitida`, que decide o que fazer com isso
+ * logo em seguida).
+ */
+function interpretarRespostaEspecialista(chaveAgente: string, valor: unknown): RespostaEspecialista | null {
   if (!valor || typeof valor !== "object" || Array.isArray(valor)) return null;
   const resposta = valor as Record<string, unknown>;
   const status = statusAgenteValido(resposta.status);
@@ -279,7 +319,9 @@ function interpretarRespostaEspecialista(valor: unknown): RespostaEspecialista |
     : status === "enviar_resumo_dayspa" ? "enviar_resumo_dayspa" : null;
   // A mensagem vazia só é admitida posteriormente no caminho de não
   // intervenção de Carol/Diana. Toda outra saída vazia continua inválida.
-  if (!message && status !== "failure") return null;
+  const podeSerVazia = AGENTES_COM_NAO_INTERVENCAO.includes(chaveAgente as typeof AGENTES_COM_NAO_INTERVENCAO[number])
+    && (status === "failure" || status === "in_process");
+  if (!message && !podeSerVazia) return null;
   return {
     message,
     status,
@@ -652,7 +694,7 @@ async function obterRespostaEspecialista(params: {
     ],
   });
   const conteudo = extrairConteudoRespostaLLM(resposta);
-  const interpretado = interpretarRespostaEspecialista(jsonSeguro(conteudo));
+  const interpretado = interpretarRespostaEspecialista(params.especialista.agente.chave, jsonSeguro(conteudo));
   if (!interpretado) {
     // Sem isso, "contrato JSON esperado" não diz se o modelo mandou prosa,
     // JSON truncado ou um campo fora do formato — cada falha nova virava

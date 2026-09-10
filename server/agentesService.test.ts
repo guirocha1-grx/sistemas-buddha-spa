@@ -143,6 +143,24 @@ describe("orquestrador de agentes", () => {
     })).toBe("Boa tarde! Que bom ter você aqui 😊\n\nPosso verificar a disponibilidade.");
   });
 
+  // Achado real (analise_evolucao_agentes_2026-09-10.md, seção 4,
+  // rejeição 2070100): o prompt manda o modelo já começar a mensagem com
+  // a saudação exata — quando ele obedece à risca, o regex genérico de
+  // limpeza só reconhecia "Boa tarde!"/"tudo bem?" e deixava "Que bom ter
+  // você aqui 😊" sobrando, daí a saudação completa era colada de novo na
+  // frente, duplicando.
+  it("não duplica a saudação quando o especialista já respondeu com ela por completo", () => {
+    const primeiraMensagem = contexto("Queria fazer uma massagem com a minha irmã");
+    const agora = new Date("2026-08-28T16:00:00.000Z");
+
+    expect(aplicarSaudacaoInicialEspecialista({
+      contexto: primeiraMensagem,
+      chaveAgente: "carol",
+      mensagem: "Boa tarde! Que bom ter você aqui 😊\n\nVocê tem preferência por algum(a) terapeuta?",
+      agora,
+    })).toBe("Boa tarde! Que bom ter você aqui 😊\n\nVocê tem preferência por algum(a) terapeuta?");
+  });
+
   it("não repete a saudação quando a equipe respondeu há menos de 7 dias", () => {
     const agora = new Date("2026-08-28T16:00:00.000Z");
     const conversaRecente = contexto("Vocês têm horário para amanhã?");
@@ -326,6 +344,26 @@ describe("orquestrador de agentes", () => {
       erroMsg: null,
     }));
     expect(invokeLLM.mock.calls[0]?.[0].messages[0].content).toContain("REGRA DE NÃO INTERVENÇÃO");
+  });
+
+  // Achado real (analise_evolucao_agentes_2026-09-10.md, seções 2-3): o
+  // prompt pede status "failure" pra saída silenciosa, mas na prática o
+  // modelo devolvia "in_process" no mesmo cenário (mensagem vazia, summary
+  // preenchido) — ~23% das tentativas da Carol viravam erro técnico por
+  // causa disso, em vez de reconhecidas como a saída silenciosa que
+  // sempre foram.
+  it.each([
+    ["Carol", carolAssistida],
+    ["Diana", dianaAssistida],
+  ])("encerra sem sugestão quando %s devolve status in_process com mensagem vazia", async (_nome, especialista) => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quero agendar para sexta à tarde"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [especialista]);
+    invokeLLM.mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("", "in_process") } }] });
+
+    await expect(processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: especialista.agente.id === 5 ? 480 : 481 })).resolves.toEqual({ status: "ignorada" });
+
+    expect(agentesDb.criarSugestao).not.toHaveBeenCalled();
+    expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({ status: "ignorada", erroMsg: null }));
   });
 
   it("não cria sugestão quando o especialista devolve mensagem vazia", async () => {

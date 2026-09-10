@@ -1030,7 +1030,7 @@ export async function obterContextoConversa(conversaId: number, ateDataHora?: Da
     condicoesMensagens.push(gte(inboxMensagens.createdAt, conversa[0].conversa.automacaoAgentesContextoAPartirDe));
   }
   if (ateDataHora) condicoesMensagens.push(lte(inboxMensagens.createdAt, ateDataHora));
-  const mensagens = await db.select({ direcao: inboxMensagens.direcao, conteudo: inboxMensagens.conteudo, transcricao: inboxMensagens.transcricao, createdAt: inboxMensagens.createdAt })
+  const mensagens = await db.select({ direcao: inboxMensagens.direcao, tipo: inboxMensagens.tipo, conteudo: inboxMensagens.conteudo, transcricao: inboxMensagens.transcricao, createdAt: inboxMensagens.createdAt })
     .from(inboxMensagens).where(and(...condicoesMensagens))
     .orderBy(desc(inboxMensagens.createdAt)).limit(12);
   const contextoBelleCliente = await obterContextoBelleCliente(conversa[0].conversa.unidadeId, conversa[0].conversa.clienteId);
