@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Users2, Plus, Loader2, KeyRound } from "lucide-react";
+import { Users2, Plus, Loader2, KeyRound, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 /**
@@ -18,8 +18,27 @@ export function AtendentesSection({ unidadeId }: { unidadeId: number }) {
 
   const [novoNome, setNovoNome] = useState("");
   const [novoPin, setNovoPin] = useState("");
-  const [editandoId, setEditandoId] = useState<number | null>(null);
+  // Um único modo de edição por vez (PIN ou nome) — evita mostrar os
+  // dois formulários abertos ao mesmo tempo na mesma linha.
+  const [editando, setEditando] = useState<{ id: number; tipo: "pin" | "nome" } | null>(null);
   const [pinEdicao, setPinEdicao] = useState("");
+  const [nomeEdicao, setNomeEdicao] = useState("");
+
+  function fecharEdicao() {
+    setEditando(null);
+    setPinEdicao("");
+    setNomeEdicao("");
+  }
+
+  function abrirEdicaoPin(id: number) {
+    setEditando({ id, tipo: "pin" });
+    setPinEdicao("");
+  }
+
+  function abrirEdicaoNome(id: number, nomeAtual: string) {
+    setEditando({ id, tipo: "nome" });
+    setNomeEdicao(nomeAtual);
+  }
 
   const criarMutation = trpc.atendentes.criar.useMutation({
     onSuccess: () => {
@@ -33,8 +52,7 @@ export function AtendentesSection({ unidadeId }: { unidadeId: number }) {
 
   const atualizarMutation = trpc.atendentes.atualizar.useMutation({
     onSuccess: () => {
-      setEditandoId(null);
-      setPinEdicao("");
+      fecharEdicao();
       utils.atendentes.listAdmin.invalidate({ unidadeId });
     },
     onError: (e) => toast.error(e.message),
@@ -48,6 +66,11 @@ export function AtendentesSection({ unidadeId }: { unidadeId: number }) {
   function handleRedefinirPin(id: number) {
     if (pinEdicao.length !== 4) return;
     atualizarMutation.mutate({ id, pin: pinEdicao });
+  }
+
+  function handleRenomear(id: number) {
+    if (!nomeEdicao.trim()) return;
+    atualizarMutation.mutate({ id, nome: nomeEdicao.trim() });
   }
 
   return (
@@ -65,64 +88,97 @@ export function AtendentesSection({ unidadeId }: { unidadeId: number }) {
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
       ) : (
         <div className="space-y-1.5">
-          {(atendentes ?? []).map((a) => (
-            <div key={a.id} className="flex items-center gap-2 text-sm border rounded-lg px-3 py-2">
-              <span className="flex-1 truncate">{a.nome}</span>
-              {!a.ativo && <Badge variant="secondary">Inativo</Badge>}
-              {editandoId === a.id ? (
-                <>
+          {(atendentes ?? []).map((a) => {
+            const editandoPin = editando?.id === a.id && editando.tipo === "pin";
+            const editandoNome = editando?.id === a.id && editando.tipo === "nome";
+            return (
+              <div key={a.id} className="flex items-center gap-2 text-sm border rounded-lg px-3 py-2">
+                {editandoNome ? (
                   <Input
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={4}
-                    placeholder="Novo PIN"
-                    value={pinEdicao}
-                    onChange={(e) => setPinEdicao(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                    className="w-24 h-8 text-center"
+                    value={nomeEdicao}
+                    onChange={(e) => setNomeEdicao(e.target.value)}
+                    className="flex-1 h-8"
                     autoFocus
+                    onKeyDown={(e) => e.key === "Enter" && handleRenomear(a.id)}
                   />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8"
-                    onClick={() => handleRedefinirPin(a.id)}
-                    disabled={pinEdicao.length !== 4 || atualizarMutation.isPending}
-                  >
-                    Salvar
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8"
-                    onClick={() => { setEditandoId(null); setPinEdicao(""); }}
-                  >
-                    Cancelar
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 px-2"
-                    onClick={() => setEditandoId(a.id)}
-                    title="Redefinir PIN"
-                  >
-                    <KeyRound className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 px-2 text-xs"
-                    onClick={() => atualizarMutation.mutate({ id: a.id, ativo: !a.ativo })}
-                    disabled={atualizarMutation.isPending}
-                  >
-                    {a.ativo ? "Desativar" : "Ativar"}
-                  </Button>
-                </>
-              )}
-            </div>
-          ))}
+                ) : (
+                  <span className="flex-1 truncate">{a.nome}</span>
+                )}
+                {!a.ativo && <Badge variant="secondary">Inativo</Badge>}
+                {editandoPin ? (
+                  <>
+                    <Input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={4}
+                      placeholder="Novo PIN"
+                      value={pinEdicao}
+                      onChange={(e) => setPinEdicao(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                      className="w-24 h-8 text-center"
+                      autoFocus
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8"
+                      onClick={() => handleRedefinirPin(a.id)}
+                      disabled={pinEdicao.length !== 4 || atualizarMutation.isPending}
+                    >
+                      Salvar
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8" onClick={fecharEdicao}>
+                      Cancelar
+                    </Button>
+                  </>
+                ) : editandoNome ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8"
+                      onClick={() => handleRenomear(a.id)}
+                      disabled={!nomeEdicao.trim() || atualizarMutation.isPending}
+                    >
+                      Salvar
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8" onClick={fecharEdicao}>
+                      Cancelar
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 px-2"
+                      onClick={() => abrirEdicaoNome(a.id, a.nome)}
+                      title="Editar nome"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 px-2"
+                      onClick={() => abrirEdicaoPin(a.id)}
+                      title="Redefinir PIN"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 px-2 text-xs"
+                      onClick={() => atualizarMutation.mutate({ id: a.id, ativo: !a.ativo })}
+                      disabled={atualizarMutation.isPending}
+                    >
+                      {a.ativo ? "Desativar" : "Ativar"}
+                    </Button>
+                  </>
+                )}
+              </div>
+            );
+          })}
           {(atendentes ?? []).length === 0 && (
             <p className="text-xs text-muted-foreground">Nenhum atendente cadastrado ainda.</p>
           )}
