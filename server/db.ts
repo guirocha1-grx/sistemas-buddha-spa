@@ -7107,29 +7107,49 @@ export function funisVirtuaisPorData(): FunilVirtual[] {
 }
 
 /** Serviços distintos já atendidos NA UNIDADE (opcoesTerapias, mais acima, é base inteira — usada em outro contexto, sem mexer nela). */
-async function listServicosDistintosPorUnidade(unidadeId: number, limite = 200): Promise<string[]> {
+/**
+ * Nomes de serviço "avulsos" (2026-09-11) — o relatório de atendimentos do
+ * Belle grava reserva com mais de 1 terapia como uma linha só, valores
+ * separados por vírgula (ex.: "Alongamento 30 ,1784-Esfoliacao Corporal
+ * 60"), e o 2º+ item da combinação vem com um código numérico na frente
+ * ("1784-"). Descarta toda linha com vírgula (é combinação, não terapia
+ * avulsa) e tira o prefixo de código das que sobram, pra achado real do
+ * usuário: a lista "por terapia" tava um mostruário de combinações e
+ * código em vez do nome limpo do serviço.
+ */
+async function listServicosAvulsosPorUnidade(unidadeId: number, limite = 150): Promise<string[]> {
   const db = await getDb();
   if (!db) return [];
   const linhas = await db.selectDistinct({ servicoNome: belleAtendimentos.servicoNome }).from(belleAtendimentos)
     .where(and(eq(belleAtendimentos.unidadeId, unidadeId), sql`${belleAtendimentos.servicoNome} IS NOT NULL AND ${belleAtendimentos.servicoNome} != ''`))
-    .orderBy(belleAtendimentos.servicoNome)
-    .limit(limite);
-  return linhas.map((l) => l.servicoNome as string).filter(Boolean);
+    .limit(2000);
+  const nomes = new Set<string>();
+  for (const linha of linhas) {
+    const bruto = (linha.servicoNome as string) ?? "";
+    if (bruto.includes(",")) continue;
+    const semCodigo = bruto.replace(/^\d+-\s*/, "").trim();
+    if (semCodigo) nomes.add(semCodigo);
+  }
+  return [...nomes].sort((a, b) => a.localeCompare(b, "pt-BR")).slice(0, limite);
 }
 
 /**
- * Grupo "por terapia" (2026-09-11) — 1 funil por serviço distinto já
- * atendido na unidade, pra campanhas específicas (ex.: "todo mundo que já
- * fez Drenagem"). Mesmo padrão dos outros 2 grupos virtuais: sem
- * atendimento/contato há 30+ dias, fora da etiqueta "Não reativar".
+ * Grupo "por terapia" (2026-09-11) — 1 funil por terapia avulsa (sem
+ * combinação, sem código) já atendida na unidade, pra campanhas
+ * específicas (ex.: "todo mundo que já fez Drenagem"). O filtro usa
+ * "contém" (não "igual") de propósito: pega tanto quem fez a terapia
+ * sozinha quanto quem fez como parte de uma combinação — só a LISTA de
+ * funis exclui combinação, pra não virar um mostruário de permutações.
+ * Mesmo padrão dos outros 2 grupos virtuais: sem atendimento/contato há
+ * 30+ dias, fora da etiqueta "Não reativar".
  */
 export async function funisVirtuaisPorTerapia(unidadeId: number): Promise<FunilVirtual[]> {
-  const servicos = await listServicosDistintosPorUnidade(unidadeId);
+  const servicos = await listServicosAvulsosPorUnidade(unidadeId);
   return servicos.map((nome) => ({
     id: `terapia-${nome}`,
     nome: `Já fez ${nome} · ${DIAS_SEM_ATENDIMENTO_PADRAO}d+`,
     filtros: [
-      { campo: "terapiaFeita", operador: "igual", valor: nome },
+      { campo: "terapiaFeita", operador: "contem", valor: nome },
       { campo: "diasDesdeUltimoAtendimento", operador: "maior_igual", valor: DIAS_SEM_ATENDIMENTO_PADRAO },
       { campo: "diasDesdeUltimoContato", operador: "maior_igual", valor: DIAS_SEM_ATENDIMENTO_PADRAO },
       { campo: "etiqueta", operador: "diferente", valor: ETIQUETA_NAO_REATIVAR },
