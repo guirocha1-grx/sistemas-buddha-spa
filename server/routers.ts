@@ -2464,6 +2464,16 @@ Diretrizes:
       return { success: true };
     }),
 
+    atualizarFunil: protectedProcedure.input(z.object({
+      id: z.number(), nome: z.string().trim().min(1), filtros: z.array(filtroSegmentoSchema).min(1),
+    })).mutation(async ({ input, ctx }) => {
+      const funil = await db.obterFunilReativacaoPorId(input.id);
+      if (!funil) throw new Error("Funil não encontrado.");
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, funil.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      await db.atualizarFunilReativacao(input.id, { nome: input.nome, filtros: input.filtros });
+      return { success: true };
+    }),
+
     excluirFunil: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
       const funil = await db.obterFunilReativacaoPorId(input.id);
       if (!funil) return { success: true };
@@ -2479,12 +2489,32 @@ Diretrizes:
       return db.listClientesFunilReativacao(input.unidadeId, input.filtros);
     }),
 
+    // Alimenta a "caixinha" de cada funil no cabeçalho — nome + contagem,
+    // sem carregar a lista de clientes de cada um.
+    listComResumo: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input, ctx }) => {
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      const funis = await db.listFunisReativacao(input.unidadeId);
+      return Promise.all(funis.map(async (funil) => ({
+        ...funil,
+        resumo: await db.resumoFunilReativacao(input.unidadeId, JSON.parse(funil.filtros)),
+      })));
+    }),
+
     definirStatus: protectedProcedure.input(z.object({
       clienteId: z.number(), unidadeId: z.number(),
       status: z.enum(["inativo", "mensagem_enviada", "qualificado", "agendado", "atendido"]),
     })).mutation(async ({ input, ctx }) => {
       if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
       await db.definirStatusReativacao(input.clienteId, input.unidadeId, input.status);
+      return { success: true };
+    }),
+
+    // Reaproveita etiquetas (get-or-create "Não reativar") pra continuar
+    // filtrável pelo construtor de segmentação — ver marcarClienteNaoReativar.
+    marcarNaoReativar: protectedProcedure.input(z.object({
+      clienteId: z.number(), motivo: z.string().trim().min(1),
+    })).mutation(async ({ input }) => {
+      await db.marcarClienteNaoReativar(input.clienteId, input.motivo);
       return { success: true };
     }),
   }),

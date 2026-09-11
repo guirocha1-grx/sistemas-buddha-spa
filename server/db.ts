@@ -7007,6 +7007,8 @@ export async function opcoesTerapias(limite = 300): Promise<string[]> {
 
 export type StatusReativacao = "inativo" | "mensagem_enviada" | "qualificado" | "agendado" | "atendido";
 
+const ETIQUETA_NAO_REATIVAR = "Não reativar";
+
 export async function listFunisReativacao(unidadeId: number): Promise<FunilReativacao[]> {
   const db = await getDb();
   if (!db) return [];
@@ -7026,10 +7028,39 @@ export async function obterFunilReativacaoPorId(id: number): Promise<FunilReativ
   return linhas[0];
 }
 
+export async function atualizarFunilReativacao(id: number, input: { nome: string; filtros: FiltroSegmento[] }): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(funisReativacao).set({ nome: input.nome, filtros: JSON.stringify(input.filtros) }).where(eq(funisReativacao.id, id));
+}
+
 export async function excluirFunilReativacao(id: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.delete(funisReativacao).where(eq(funisReativacao.id, id));
+}
+
+/**
+ * Contagem por etapa de um funil, sem carregar a lista de clientes — é o
+ * que alimenta a "caixinha" de cada funil no cabeçalho (e, mais pra
+ * frente, o resumo no dashboard da recepção). Mesma condição de
+ * listClientesFunilReativacao, só que agregada em vez de linha a linha.
+ */
+export async function resumoFunilReativacao(unidadeId: number, filtros: FiltroSegmento[]): Promise<{ total: number; porEtapa: Record<StatusReativacao, number> }> {
+  const db = await getDb();
+  const vazio = { total: 0, porEtapa: {} as Record<StatusReativacao, number> };
+  if (!db) return vazio;
+  const condicoesFiltro = await condicoesSegmento(db, filtros, unidadeId);
+  const pertenceAUnidade = unidadeId === 1 ? eq(clientes.clienteSsu, true) : eq(clientes.clienteRbs, true);
+  const statusExpressao = sql<StatusReativacao>`COALESCE(${reativacaoStatus.status}, 'inativo')`;
+  const linhas = await db.select({ status: statusExpressao, total: sql<number>`COUNT(*)` })
+    .from(clientes)
+    .leftJoin(reativacaoStatus, and(eq(reativacaoStatus.clienteId, clientes.id), eq(reativacaoStatus.unidadeId, unidadeId)))
+    .where(and(pertenceAUnidade, ...condicoesFiltro))
+    .groupBy(statusExpressao);
+  const porEtapa = Object.fromEntries(linhas.map((l) => [l.status, Number(l.total)])) as Record<StatusReativacao, number>;
+  const total = linhas.reduce((soma, l) => soma + Number(l.total), 0);
+  return { total, porEtapa };
 }
 
 /**
@@ -7045,6 +7076,16 @@ export async function listClientesFunilReativacao(unidadeId: number, filtros: Fi
   if (!db) return [];
   const condicoesFiltro = await condicoesSegmento(db, filtros, unidadeId);
   const pertenceAUnidade = unidadeId === 1 ? eq(clientes.clienteSsu, true) : eq(clientes.clienteRbs, true);
+  // Mesmo cálculo de listClientesLocalPorUnidade (Clientes.tsx): só conta
+  // conversas já vinculadas ao cliente, isoladas por unidade.
+  const ultimosContatos = db.select({
+    clienteId: inboxConversas.clienteId,
+    ultimoContato: sql<Date>`MAX(${inboxConversas.ultimaMensagemEm})`.as("ultimoContato"),
+  })
+    .from(inboxConversas)
+    .where(and(eq(inboxConversas.unidadeId, unidadeId), sql`${inboxConversas.clienteId} IS NOT NULL`))
+    .groupBy(inboxConversas.clienteId)
+    .as("ultimos_contatos_funil");
   return db.select({
     id: clientes.id,
     nome: clientes.nome,
@@ -7053,14 +7094,32 @@ export async function listClientesFunilReativacao(unidadeId: number, filtros: Fi
     dataNascimento: clientes.dataNascimento,
     ultimoAtendimento: clientes.ultimoAtendimento,
     qtdAtendimentosFinalizados: clientes.qtdAtendimentosFinalizados,
+    ultimoContato: ultimosContatos.ultimoContato,
     status: sql<StatusReativacao>`COALESCE(${reativacaoStatus.status}, 'inativo')`,
     statusAtualizadoEm: reativacaoStatus.updatedAt,
+    // Não-nulo = cliente já marcado; o texto é o motivo salvo no clique do botão.
+    naoReativarMotivo: sql<string | null>`(SELECT ce.motivo FROM ${clienteEtiquetas} ce INNER JOIN ${etiquetas} et ON et.id = ce.etiquetaId WHERE ce.clienteId = ${clientes.id} AND et.nome = ${ETIQUETA_NAO_REATIVAR} LIMIT 1)`,
   })
     .from(clientes)
     .leftJoin(reativacaoStatus, and(eq(reativacaoStatus.clienteId, clientes.id), eq(reativacaoStatus.unidadeId, unidadeId)))
+    .leftJoin(ultimosContatos, eq(ultimosContatos.clienteId, clientes.id))
     .where(and(pertenceAUnidade, ...condicoesFiltro))
     .orderBy(desc(clientes.qtdAtendimentosFinalizados), asc(clientes.ultimoAtendimento))
     .limit(2000);
+}
+
+/**
+ * Marca (ou atualiza o motivo d)o cliente que pediu pra não receber mais
+ * contato de reativação — reaproveita o sistema de etiquetas já existente
+ * (get-or-create pelo nome) em vez de um campo à parte, pra continuar
+ * filtrável pelo construtor de segmentação (campo "etiqueta", diferente).
+ */
+export async function marcarClienteNaoReativar(clienteId: number, motivo: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const etiqueta = await criarEtiqueta(ETIQUETA_NAO_REATIVAR, null, "manual");
+  await db.insert(clienteEtiquetas).values({ clienteId, etiquetaId: etiqueta.id, motivo })
+    .onDuplicateKeyUpdate({ set: { motivo } });
 }
 
 export async function definirStatusReativacao(clienteId: number, unidadeId: number, status: StatusReativacao): Promise<void> {

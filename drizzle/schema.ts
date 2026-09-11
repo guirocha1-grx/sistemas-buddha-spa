@@ -585,6 +585,10 @@ export const clienteEtiquetas = mysqlTable("cliente_etiquetas", {
   id: int("id").autoincrement().primaryKey(),
   clienteId: int("clienteId").notNull(),
   etiquetaId: int("etiquetaId").notNull(),
+  // Preenchido só por fluxos que precisam justificar a marcação (ex.:
+  // "Não reativar" — cliente pediu pra não receber contato de
+  // reativação). Null pra atribuição comum, sem motivo formal.
+  motivo: text("motivo"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({
   clienteEtiquetaUnica: uniqueIndex("cliente_etiquetas_cliente_etiqueta_idx").on(table.clienteId, table.etiquetaId),
