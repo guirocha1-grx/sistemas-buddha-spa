@@ -230,7 +230,7 @@ async function resolverEPromoverLids(unidade: NonNullable<Awaited<ReturnType<typ
 
 const filtroSegmentoSchema = z.object({
   campo: z.enum(["unidade", "sexo", "diasDesdeUltimoAtendimento", "diasDesdeCadastro", "qtdAtendimentos", "terapiaFeita", "etiqueta", "campoPersonalizado",
-    "terapeutaPreferencial", "diasDesdeUltimoContato", "diasAteAniversario", "diaSemanaUltimaVisita"]),
+    "terapeutaPreferencial", "diasDesdeUltimoContato", "diasAteAniversario", "diaSemanaUltimaVisita", "diaSemanaUltimos180Dias"]),
   operador: z.enum(["igual", "diferente", "maior", "menor", "maior_igual", "menor_igual", "contem"]),
   valor: z.string(),
   campoPersonalizadoId: z.number().optional(),

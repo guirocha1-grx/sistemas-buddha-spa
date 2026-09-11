@@ -8,7 +8,7 @@ import { Loader2, Plus, Trash2, Users } from "lucide-react";
 
 export type CampoSegmento =
   | "unidade" | "sexo" | "diasDesdeUltimoAtendimento" | "diasDesdeCadastro" | "qtdAtendimentos" | "terapiaFeita" | "etiqueta" | "campoPersonalizado"
-  | "terapeutaPreferencial" | "diasDesdeUltimoContato" | "diasAteAniversario" | "diaSemanaUltimaVisita";
+  | "terapeutaPreferencial" | "diasDesdeUltimoContato" | "diasAteAniversario" | "diaSemanaUltimaVisita" | "diaSemanaUltimos180Dias";
 export type OperadorSegmento = "igual" | "diferente" | "maior" | "menor" | "maior_igual" | "menor_igual" | "contem";
 export interface FiltroSegmento {
   campo: CampoSegmento;
@@ -71,8 +71,11 @@ const CAMPOS_POR_UNIDADE: Array<{ valor: CampoSegmento; label: string; tipoValor
     { valor: "menor", label: "menor que" }, { valor: "menor_igual", label: "menor ou igual a" },
     { valor: "maior", label: "maior que" }, { valor: "igual", label: "igual a" },
   ] },
-  { valor: "diaSemanaUltimaVisita", label: "Dia da semana da última visita", tipoValor: "diaSemana", operadores: [
+  { valor: "diaSemanaUltimaVisita", label: "Dia da semana na última visita", tipoValor: "diaSemana", operadores: [
     { valor: "igual", label: "é" }, { valor: "diferente", label: "não é" },
+  ] },
+  { valor: "diaSemanaUltimos180Dias", label: "Dia semana 180 dias", tipoValor: "diaSemana", operadores: [
+    { valor: "igual", label: "esteve em" }, { valor: "diferente", label: "nunca esteve em" },
   ] },
 ];
 

@@ -6792,7 +6792,7 @@ type DbConectado = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 export type OperadorSegmento = "igual" | "diferente" | "maior" | "menor" | "maior_igual" | "menor_igual" | "contem";
 export type CampoSegmento = "unidade" | "sexo" | "diasDesdeUltimoAtendimento" | "diasDesdeCadastro" | "qtdAtendimentos" | "terapiaFeita" | "etiqueta" | "campoPersonalizado"
-  | "terapeutaPreferencial" | "diasDesdeUltimoContato" | "diasAteAniversario" | "diaSemanaUltimaVisita";
+  | "terapeutaPreferencial" | "diasDesdeUltimoContato" | "diasAteAniversario" | "diaSemanaUltimaVisita" | "diaSemanaUltimos180Dias";
 
 export interface FiltroSegmento {
   campo: CampoSegmento;
@@ -6932,6 +6932,28 @@ async function condicaoFiltroSegmento(db: DbConectado, filtro: FiltroSegmento, u
       // DAYOFWEEK do MySQL: 1 = domingo ... 7 = sábado (mesma convenção usada no seletor do front).
       const expressao = sql`DAYOFWEEK(STR_TO_DATE(${clientes.ultimoAtendimento}, '%Y-%m-%d'))`;
       return filtro.operador === "igual" ? sql`${expressao} = ${dia}` : sql`${expressao} != ${dia}`;
+    }
+    case "diaSemanaUltimos180Dias": {
+      if (filtro.operador !== "igual" && filtro.operador !== "diferente") {
+        throw new Error('Campo "Dia semana 180 dias" só aceita operador igual/diferente.');
+      }
+      const dia = Number(filtro.valor);
+      if (!Number.isInteger(dia) || dia < 1 || dia > 7) throw new Error('Valor de "Dia semana 180 dias" inválido.');
+      if (!unidadeId) throw new Error('Campo "Dia semana 180 dias" só está disponível dentro de um funil de reativação.');
+      // Não é só o último atendimento: qualquer atendimento "Atendido" (de
+      // fato compareceu) nos últimos 180 dias cujo dia da semana bata conta —
+      // um cliente de sábado que também veio 1x numa segunda tem disponibilidade
+      // demonstrada de segunda, e precisa aparecer ao preencher agenda de segunda.
+      const subquery = db.select({ clienteId: belleAtendimentos.clienteId })
+        .from(belleAtendimentos)
+        .where(and(
+          eq(belleAtendimentos.unidadeId, unidadeId),
+          eq(belleAtendimentos.status, "Atendido"),
+          isNotNull(belleAtendimentos.clienteId),
+          sql`${belleAtendimentos.dataAtendimento} >= DATE_SUB(CURDATE(), INTERVAL 180 DAY)`,
+          sql`DAYOFWEEK(STR_TO_DATE(${belleAtendimentos.dataAtendimento}, '%Y-%m-%d')) = ${dia}`,
+        ));
+      return filtro.operador === "igual" ? inArray(clientes.id, subquery) : notInArray(clientes.id, subquery);
     }
     default:
       throw new Error("Campo de segmentação desconhecido.");
