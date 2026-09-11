@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, Trash2, Users } from "lucide-react";
 
 export type CampoSegmento =
-  | "unidade" | "sexo" | "diasDesdeUltimoAtendimento" | "diasDesdeCadastro" | "qtdAtendimentos" | "terapiaFeita" | "etiqueta" | "campoPersonalizado";
+  | "unidade" | "sexo" | "diasDesdeUltimoAtendimento" | "diasDesdeCadastro" | "qtdAtendimentos" | "terapiaFeita" | "etiqueta" | "campoPersonalizado"
+  | "terapeutaPreferencial" | "diasDesdeUltimoContato" | "diasAteAniversario" | "diaSemanaUltimaVisita";
 export type OperadorSegmento = "igual" | "diferente" | "maior" | "menor" | "maior_igual" | "menor_igual" | "contem";
 export interface FiltroSegmento {
   campo: CampoSegmento;
@@ -17,9 +18,15 @@ export interface FiltroSegmento {
   campoPersonalizadoId?: number;
 }
 
-type TipoValor = "unidade" | "sexo" | "numero" | "texto_livre" | "etiqueta" | "campoPersonalizado";
+type TipoValor = "unidade" | "sexo" | "numero" | "texto_livre" | "etiqueta" | "terapeuta" | "diaSemana";
 
-const CAMPOS: Array<{ valor: CampoSegmento; label: string; tipoValor: TipoValor; operadores: Array<{ valor: OperadorSegmento; label: string }> }> = [
+/** DAYOFWEEK do MySQL: 1 = domingo ... 7 = sábado — mesma convenção usada em db.ts. */
+const DIAS_SEMANA = [
+  { valor: "1", label: "Domingo" }, { valor: "2", label: "Segunda" }, { valor: "3", label: "Terça" },
+  { valor: "4", label: "Quarta" }, { valor: "5", label: "Quinta" }, { valor: "6", label: "Sexta" }, { valor: "7", label: "Sábado" },
+];
+
+const CAMPOS_BASE: Array<{ valor: CampoSegmento; label: string; tipoValor: TipoValor; operadores: Array<{ valor: OperadorSegmento; label: string }> }> = [
   { valor: "unidade", label: "Unidade", tipoValor: "unidade", operadores: [
     { valor: "igual", label: "é" }, { valor: "diferente", label: "não é" },
   ] },
@@ -44,14 +51,37 @@ const CAMPOS: Array<{ valor: CampoSegmento; label: string; tipoValor: TipoValor;
   { valor: "etiqueta", label: "Etiqueta", tipoValor: "etiqueta", operadores: [
     { valor: "igual", label: "tem" }, { valor: "diferente", label: "não tem" },
   ] },
-  { valor: "campoPersonalizado", label: "Campo personalizado", tipoValor: "campoPersonalizado", operadores: [
+];
+
+/**
+ * Campos que dependem de uma única unidade (terapeuta preferencial e
+ * último contato são por unidade — ver db.ts) — só aparecem quando o
+ * construtor é usado dentro de um contexto de unidade só (o Funil de
+ * Reativação); a Segmentação de Disparos, base inteira, não os oferece.
+ */
+const CAMPOS_POR_UNIDADE: Array<{ valor: CampoSegmento; label: string; tipoValor: TipoValor; operadores: Array<{ valor: OperadorSegmento; label: string }> }> = [
+  { valor: "terapeutaPreferencial", label: "Terapeuta preferencial", tipoValor: "terapeuta", operadores: [
+    { valor: "igual", label: "é" }, { valor: "diferente", label: "não é" },
+  ] },
+  { valor: "diasDesdeUltimoContato", label: "Dias desde o último contato", tipoValor: "numero", operadores: [
     { valor: "maior", label: "maior que" }, { valor: "menor", label: "menor que" }, { valor: "igual", label: "igual a" },
     { valor: "maior_igual", label: "maior ou igual a" }, { valor: "menor_igual", label: "menor ou igual a" },
   ] },
+  { valor: "diasAteAniversario", label: "Dias até o aniversário", tipoValor: "numero", operadores: [
+    { valor: "menor", label: "menor que" }, { valor: "menor_igual", label: "menor ou igual a" },
+    { valor: "maior", label: "maior que" }, { valor: "igual", label: "igual a" },
+  ] },
+  { valor: "diaSemanaUltimaVisita", label: "Dia da semana da última visita", tipoValor: "diaSemana", operadores: [
+    { valor: "igual", label: "é" }, { valor: "diferente", label: "não é" },
+  ] },
 ];
 
-function campoInfo(campo: CampoSegmento) {
-  return CAMPOS.find((c) => c.valor === campo) ?? CAMPOS[0];
+function campos(unidadeId?: number) {
+  return unidadeId ? [...CAMPOS_BASE, ...CAMPOS_POR_UNIDADE] : CAMPOS_BASE;
+}
+
+function campoInfo(campo: CampoSegmento, unidadeId?: number) {
+  return campos(unidadeId).find((c) => c.valor === campo) ?? CAMPOS_BASE[0];
 }
 
 export function filtroSegmentoVazio(): FiltroSegmento {
@@ -64,10 +94,10 @@ export function filtroSegmentoVazio(): FiltroSegmento {
  * combinados por E, com contagem ao vivo. Ver server/db.ts
  * (contarClientesSegmento) pros campos suportados.
  */
-export function SegmentoFiltros({ filtros, onChange }: { filtros: FiltroSegmento[]; onChange: (f: FiltroSegmento[]) => void }) {
+export function SegmentoFiltros({ filtros, onChange, unidadeId }: { filtros: FiltroSegmento[]; onChange: (f: FiltroSegmento[]) => void; unidadeId?: number }) {
   const terapiasQuery = trpc.segmentos.opcoesTerapias.useQuery();
   const etiquetasQuery = trpc.etiquetas.list.useQuery();
-  const camposPersonalizadosQuery = trpc.camposPersonalizados.list.useQuery();
+  const terapeutasQuery = trpc.segmentos.opcoesTerapeutas.useQuery({ unidadeId: unidadeId ?? 0 }, { enabled: !!unidadeId });
 
   // Debounce evita 1 request por tecla digitada nos campos numéricos/texto.
   const [filtrosDebounced, setFiltrosDebounced] = useState(filtros);
@@ -78,19 +108,18 @@ export function SegmentoFiltros({ filtros, onChange }: { filtros: FiltroSegmento
 
   const filtrosValidos = useMemo(() => filtrosDebounced.filter((f) => {
     if (!f.valor.trim()) return false;
-    const tipoValor = campoInfo(f.campo).tipoValor;
+    const tipoValor = campoInfo(f.campo, unidadeId).tipoValor;
     if (tipoValor === "numero") return Number.isFinite(Number(f.valor));
-    if (tipoValor === "campoPersonalizado") return Number.isFinite(Number(f.valor)) && !!f.campoPersonalizadoId;
     return true;
-  }), [filtrosDebounced]);
+  }), [filtrosDebounced, unidadeId]);
 
-  const contagemQuery = trpc.segmentos.contar.useQuery(filtrosValidos, { enabled: filtrosValidos.length > 0 });
+  const contagemQuery = trpc.segmentos.contar.useQuery({ filtros: filtrosValidos, unidadeId }, { enabled: filtrosValidos.length > 0 });
 
   function atualizarFiltro(i: number, patch: Partial<FiltroSegmento>) {
     onChange(filtros.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
   }
   function trocarCampo(i: number, campo: CampoSegmento) {
-    onChange(filtros.map((f, idx) => (idx === i ? { campo, operador: campoInfo(campo).operadores[0].valor, valor: "" } : f)));
+    onChange(filtros.map((f, idx) => (idx === i ? { campo, operador: campoInfo(campo, unidadeId).operadores[0].valor, valor: "" } : f)));
   }
   function remover(i: number) {
     onChange(filtros.filter((_, idx) => idx !== i));
@@ -102,13 +131,13 @@ export function SegmentoFiltros({ filtros, onChange }: { filtros: FiltroSegmento
   return (
     <div className="space-y-2">
       {filtros.map((filtro, i) => {
-        const info = campoInfo(filtro.campo);
+        const info = campoInfo(filtro.campo, unidadeId);
         return (
           <div key={i} className="flex items-center gap-2 flex-wrap">
             <Select value={filtro.campo} onValueChange={(v) => trocarCampo(i, v as CampoSegmento)}>
               <SelectTrigger className="h-8 w-52 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {CAMPOS.map((c) => <SelectItem key={c.valor} value={c.valor}>{c.label}</SelectItem>)}
+                {campos(unidadeId).map((c) => <SelectItem key={c.valor} value={c.valor}>{c.label}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={filtro.operador} onValueChange={(v) => atualizarFiltro(i, { operador: v as OperadorSegmento })}>
@@ -149,22 +178,20 @@ export function SegmentoFiltros({ filtros, onChange }: { filtros: FiltroSegmento
                   {(etiquetasQuery.data ?? []).map((e) => <SelectItem key={e.id} value={e.nome}>{e.nome}</SelectItem>)}
                 </SelectContent>
               </Select>
-            ) : info.tipoValor === "campoPersonalizado" ? (
-              <>
-                <Select value={filtro.campoPersonalizadoId?.toString() ?? ""} onValueChange={(v) => atualizarFiltro(i, { campoPersonalizadoId: Number(v) })}>
-                  <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="Qual campo" /></SelectTrigger>
-                  <SelectContent>
-                    {(camposPersonalizadosQuery.data ?? []).map((c) => <SelectItem key={c.id} value={c.id.toString()}>{c.nome}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                <Input
-                  type="number"
-                  className="h-8 w-20 text-xs"
-                  value={filtro.valor}
-                  onChange={(e) => atualizarFiltro(i, { valor: e.target.value })}
-                  placeholder="0"
-                />
-              </>
+            ) : info.tipoValor === "terapeuta" ? (
+              <Select value={filtro.valor} onValueChange={(v) => atualizarFiltro(i, { valor: v })}>
+                <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="Escolha o terapeuta" /></SelectTrigger>
+                <SelectContent>
+                  {(terapeutasQuery.data ?? []).map((t) => <SelectItem key={t.id} value={t.nomeAbreviado}>{t.nomeAbreviado}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            ) : info.tipoValor === "diaSemana" ? (
+              <Select value={filtro.valor} onValueChange={(v) => atualizarFiltro(i, { valor: v })}>
+                <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="Escolha o dia" /></SelectTrigger>
+                <SelectContent>
+                  {DIAS_SEMANA.map((d) => <SelectItem key={d.valor} value={d.valor}>{d.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
             ) : (
               <Input
                 className="h-8 w-52 text-xs"

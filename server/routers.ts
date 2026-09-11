@@ -229,7 +229,8 @@ async function resolverEPromoverLids(unidade: NonNullable<Awaited<ReturnType<typ
 }
 
 const filtroSegmentoSchema = z.object({
-  campo: z.enum(["unidade", "sexo", "diasDesdeUltimoAtendimento", "diasDesdeCadastro", "qtdAtendimentos", "terapiaFeita", "etiqueta", "campoPersonalizado"]),
+  campo: z.enum(["unidade", "sexo", "diasDesdeUltimoAtendimento", "diasDesdeCadastro", "qtdAtendimentos", "terapiaFeita", "etiqueta", "campoPersonalizado",
+    "terapeutaPreferencial", "diasDesdeUltimoContato", "diasAteAniversario", "diaSemanaUltimaVisita"]),
   operador: z.enum(["igual", "diferente", "maior", "menor", "maior_igual", "menor_igual", "contem"]),
   valor: z.string(),
   campoPersonalizadoId: z.number().optional(),
@@ -2420,13 +2421,27 @@ Diretrizes:
   // usuário: cobre os casos reais sem a complexidade de grupos com OU). Ver
   // db.ts (contarClientesSegmento/listarClientesSegmento) pros campos aceitos. =====
   segmentos: router({
-    opcoesTerapias: adminProcedure.query(async () => db.opcoesTerapias()),
+    // protectedProcedure (não admin) nestes 3: o construtor de filtro (ver
+    // SegmentoFiltros) também roda dentro do Funil de Reativação, tela de
+    // uso diário da recepção — só a contagem/autocomplete, sem PII.
+    opcoesTerapias: protectedProcedure.query(async () => db.opcoesTerapias()),
 
-    contar: adminProcedure.input(z.array(filtroSegmentoSchema)).query(async ({ input }) => {
-      const total = await db.contarClientesSegmento(input);
+    opcoesTerapeutas: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input, ctx }) => {
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      return db.listTerapeutasAtivos(input.unidadeId);
+    }),
+
+    // unidadeId opcional: só é exigido pelos campos por unidade (terapeuta
+    // preferencial, dias desde o último contato) — ver condicaoFiltroSegmento.
+    contar: protectedProcedure.input(z.object({
+      filtros: z.array(filtroSegmentoSchema), unidadeId: z.number().optional(),
+    })).query(async ({ input }) => {
+      const total = await db.contarClientesSegmento(input.filtros, input.unidadeId);
       return { total };
     }),
 
+    // Lista clientes (com celular) da base inteira, sem recorte de unidade —
+    // fica admin, diferente dos dois campos acima (só número/autocomplete).
     clientes: adminProcedure.input(z.array(filtroSegmentoSchema)).query(async ({ input }) => {
       return db.listarClientesSegmento(input);
     }),

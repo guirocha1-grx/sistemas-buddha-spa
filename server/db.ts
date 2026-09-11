@@ -6791,7 +6791,8 @@ export async function removerEtiquetaDoCliente(clienteId: number, etiquetaId: nu
 type DbConectado = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 export type OperadorSegmento = "igual" | "diferente" | "maior" | "menor" | "maior_igual" | "menor_igual" | "contem";
-export type CampoSegmento = "unidade" | "sexo" | "diasDesdeUltimoAtendimento" | "diasDesdeCadastro" | "qtdAtendimentos" | "terapiaFeita" | "etiqueta" | "campoPersonalizado";
+export type CampoSegmento = "unidade" | "sexo" | "diasDesdeUltimoAtendimento" | "diasDesdeCadastro" | "qtdAtendimentos" | "terapiaFeita" | "etiqueta" | "campoPersonalizado"
+  | "terapeutaPreferencial" | "diasDesdeUltimoContato" | "diasAteAniversario" | "diaSemanaUltimaVisita";
 
 export interface FiltroSegmento {
   campo: CampoSegmento;
@@ -6813,7 +6814,14 @@ function condicaoNumericaSql(expressao: ReturnType<typeof sql>, operador: Operad
   }
 }
 
-async function condicaoFiltroSegmento(db: DbConectado, filtro: FiltroSegmento) {
+/**
+ * `unidadeId` só é conhecido dentro de um Funil de Reativação (a
+ * Segmentação de Disparos, base inteira, não tem uma unidade única) —
+ * por isso os 3 campos abaixo que dependem dele (terapeuta preferencial,
+ * dias desde o último contato) travam com erro claro se usados fora
+ * desse contexto, em vez de silenciosamente ignorar a unidade.
+ */
+async function condicaoFiltroSegmento(db: DbConectado, filtro: FiltroSegmento, unidadeId?: number) {
   switch (filtro.campo) {
     case "unidade": {
       if (filtro.operador !== "igual" && filtro.operador !== "diferente") {
@@ -6881,21 +6889,66 @@ async function condicaoFiltroSegmento(db: DbConectado, filtro: FiltroSegmento) {
         .where(and(eq(clienteCamposValores.campoId, filtro.campoPersonalizadoId), condicaoValor));
       return inArray(clientes.id, subquery);
     }
+    case "terapeutaPreferencial": {
+      if (!filtro.valor.trim()) throw new Error('Valor de "Terapeuta preferencial" é obrigatório.');
+      if (filtro.operador !== "igual" && filtro.operador !== "diferente") {
+        throw new Error('Campo "Terapeuta preferencial" só aceita operador igual/diferente.');
+      }
+      if (!unidadeId) throw new Error('Campo "Terapeuta preferencial" só está disponível dentro de um funil de reativação.');
+      const subquery = db.select({ clienteId: clientesPreferenciasTerapeuta.clienteId })
+        .from(clientesPreferenciasTerapeuta)
+        .where(and(eq(clientesPreferenciasTerapeuta.unidadeId, unidadeId), eq(clientesPreferenciasTerapeuta.terapeutaNome, filtro.valor)));
+      return filtro.operador === "igual" ? inArray(clientes.id, subquery) : notInArray(clientes.id, subquery);
+    }
+    case "diasDesdeUltimoContato": {
+      const valorNumero = Number(filtro.valor);
+      if (!Number.isFinite(valorNumero)) throw new Error('Valor de "Dias desde o último contato" precisa ser um número.');
+      if (!unidadeId) throw new Error('Campo "Dias desde o último contato" só está disponível dentro de um funil de reativação.');
+      // Correlacionado por cliente — mesma lógica de listClientesLocalPorUnidade,
+      // só que como subquery escalar em vez de LEFT JOIN agregado.
+      const subqueryUltimoContato = sql`(SELECT MAX(${inboxConversas.ultimaMensagemEm}) FROM ${inboxConversas} WHERE ${inboxConversas.clienteId} = ${clientes.id} AND ${inboxConversas.unidadeId} = ${unidadeId})`;
+      return condicaoNumericaSql(sql`DATEDIFF(CURDATE(), ${subqueryUltimoContato})`, filtro.operador, valorNumero);
+    }
+    case "diasAteAniversario": {
+      const valorNumero = Number(filtro.valor);
+      if (!Number.isFinite(valorNumero)) throw new Error('Valor de "Dias até o aniversário" precisa ser um número.');
+      // dataNascimento é "AAAA-MM-DD" em varchar — compara "MM-DD" como texto
+      // (funciona porque os dois lados vêm zero-padded) pra decidir se o
+      // aniversário desse ano já passou; se já passou, soma 1 ano antes do DATEDIFF.
+      const mesDia = sql`SUBSTRING(${clientes.dataNascimento}, 6, 5)`;
+      const hojeMesDia = sql`DATE_FORMAT(CURDATE(), '%m-%d')`;
+      const proximoAniversario = sql`DATE_ADD(STR_TO_DATE(CONCAT(YEAR(CURDATE()), '-', ${mesDia}), '%Y-%m-%d'), INTERVAL IF(${mesDia} < ${hojeMesDia}, 1, 0) YEAR)`;
+      return and(
+        sql`${clientes.dataNascimento} IS NOT NULL AND ${clientes.dataNascimento} != ''`,
+        condicaoNumericaSql(sql`DATEDIFF(${proximoAniversario}, CURDATE())`, filtro.operador, valorNumero),
+      );
+    }
+    case "diaSemanaUltimaVisita": {
+      if (filtro.operador !== "igual" && filtro.operador !== "diferente") {
+        throw new Error('Campo "Dia da semana da última visita" só aceita operador igual/diferente.');
+      }
+      const dia = Number(filtro.valor);
+      if (!Number.isInteger(dia) || dia < 1 || dia > 7) throw new Error('Valor de "Dia da semana da última visita" inválido.');
+      // DAYOFWEEK do MySQL: 1 = domingo ... 7 = sábado (mesma convenção usada no seletor do front).
+      const expressao = sql`DAYOFWEEK(STR_TO_DATE(${clientes.ultimoAtendimento}, '%Y-%m-%d'))`;
+      return filtro.operador === "igual" ? sql`${expressao} = ${dia}` : sql`${expressao} != ${dia}`;
+    }
     default:
       throw new Error("Campo de segmentação desconhecido.");
   }
 }
 
-export async function condicoesSegmento(db: DbConectado, filtros: FiltroSegmento[]) {
+export async function condicoesSegmento(db: DbConectado, filtros: FiltroSegmento[], unidadeId?: number) {
   const condicoes = [];
-  for (const filtro of filtros) condicoes.push(await condicaoFiltroSegmento(db, filtro));
+  for (const filtro of filtros) condicoes.push(await condicaoFiltroSegmento(db, filtro, unidadeId));
   return condicoes;
 }
 
-export async function contarClientesSegmento(filtros: FiltroSegmento[]): Promise<number> {
+/** `unidadeId` só é necessário quando os filtros incluem campos por unidade (ver condicaoFiltroSegmento) — pré-visualização do Funil de Reativação. */
+export async function contarClientesSegmento(filtros: FiltroSegmento[], unidadeId?: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
-  const condicoes = await condicoesSegmento(db, filtros);
+  const condicoes = await condicoesSegmento(db, filtros, unidadeId);
   const resultado = await db.select({ total: sql<number>`COUNT(*)` }).from(clientes)
     .where(condicoes.length > 0 ? and(...condicoes) : undefined);
   return Number(resultado[0]?.total ?? 0);
@@ -6968,7 +7021,7 @@ export async function excluirFunilReativacao(id: number): Promise<void> {
 export async function listClientesFunilReativacao(unidadeId: number, filtros: FiltroSegmento[]) {
   const db = await getDb();
   if (!db) return [];
-  const condicoesFiltro = await condicoesSegmento(db, filtros);
+  const condicoesFiltro = await condicoesSegmento(db, filtros, unidadeId);
   const pertenceAUnidade = unidadeId === 1 ? eq(clientes.clienteSsu, true) : eq(clientes.clienteRbs, true);
   return db.select({
     id: clientes.id,

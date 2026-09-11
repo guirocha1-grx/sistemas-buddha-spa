@@ -75,7 +75,7 @@ function NovoFunilDialog({ unidadeId, open, onOpenChange, onCriado }: {
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Critérios (todos precisam bater)</label>
-            <SegmentoFiltros filtros={filtros} onChange={setFiltros} />
+            <SegmentoFiltros filtros={filtros} onChange={setFiltros} unidadeId={unidadeId} />
           </div>
         </div>
         <DialogFooter>
