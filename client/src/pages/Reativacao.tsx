@@ -24,9 +24,9 @@ type FunilBase = { id?: number; nome: string; filtros: string };
 type FunilListado = { id: string; nome: string; filtros: string; virtual: boolean; resumo: { total: number } };
 
 const GRUPOS: Array<{ valor: Grupo; label: string }> = [
-  { valor: "estrategica", label: "Reativações Estratégicas" },
+  { valor: "estrategica", label: "Reativações Personalizadas" },
   { valor: "por_terapeuta", label: "Reativação por Terapeuta" },
-  { valor: "por_data", label: "Reativação por Data" },
+  { valor: "por_data", label: "Reativação por Dia da Semana" },
 ];
 
 function fmtDataBr(iso: string | null): string {

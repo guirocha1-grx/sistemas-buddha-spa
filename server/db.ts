@@ -7037,30 +7037,39 @@ const DIAS_SEMANA_LABELS: Array<{ valor: number; label: string }> = [
 /** Sem atendimento nos últimos 30 dias — mesmo limiar do primeiro funil "estratégico" criado manualmente (referência pro grupo virtual). */
 const DIAS_SEM_ATENDIMENTO_PADRAO = "30";
 
+/** "Terapeuta" sintético (id 60001/60002) usado quando a preferência ainda depende de sorteio — não é uma pessoa, não tem funil próprio. */
+const TERAPEUTA_PENDENTE_SORTEIO = "Pendente de sorteio";
+
 /**
  * Grupo "por terapeuta" (2026-09-11) — 1 funil por terapeuta ativo da
- * unidade, sempre em sincronia com o cadastro (sem gravar nada, sem
- * precisar "regenerar" quando um terapeuta entra/sai). Cada um: prefere
- * esse terapeuta + sem atendimento há 30+ dias + fora da etiqueta "Não
- * reativar".
+ * unidade (exceto o placeholder "Pendente de sorteio", que não é uma
+ * pessoa de verdade), sempre em sincronia com o cadastro (sem gravar
+ * nada, sem precisar "regenerar" quando um terapeuta entra/sai). Cada
+ * um: prefere esse terapeuta + sem atendimento há 30+ dias + sem contato
+ * há 30+ dias (evita repetir quem a recepção já está no meio de agendar)
+ * + fora da etiqueta "Não reativar".
  */
 export async function funisVirtuaisPorTerapeuta(unidadeId: number): Promise<FunilVirtual[]> {
   const terapeutasAtivos = await listTerapeutasAtivos(unidadeId);
-  return terapeutasAtivos.map((t) => ({
-    id: `terapeuta-${t.id}`,
-    nome: `Prefere ${t.nomeAbreviado} · ${DIAS_SEM_ATENDIMENTO_PADRAO}d+`,
-    filtros: [
-      { campo: "terapeutaPreferencial", operador: "igual", valor: t.nomeAbreviado },
-      { campo: "diasDesdeUltimoAtendimento", operador: "maior_igual", valor: DIAS_SEM_ATENDIMENTO_PADRAO },
-      { campo: "etiqueta", operador: "diferente", valor: ETIQUETA_NAO_REATIVAR },
-    ] as FiltroSegmento[],
-  }));
+  return terapeutasAtivos
+    .filter((t) => t.nomeAbreviado !== TERAPEUTA_PENDENTE_SORTEIO)
+    .map((t) => ({
+      id: `terapeuta-${t.id}`,
+      nome: `Pref. ${t.nomeAbreviado} · ${DIAS_SEM_ATENDIMENTO_PADRAO}d+`,
+      filtros: [
+        { campo: "terapeutaPreferencial", operador: "igual", valor: t.nomeAbreviado },
+        { campo: "diasDesdeUltimoAtendimento", operador: "maior_igual", valor: DIAS_SEM_ATENDIMENTO_PADRAO },
+        { campo: "diasDesdeUltimoContato", operador: "maior_igual", valor: DIAS_SEM_ATENDIMENTO_PADRAO },
+        { campo: "etiqueta", operador: "diferente", valor: ETIQUETA_NAO_REATIVAR },
+      ] as FiltroSegmento[],
+    }));
 }
 
 /**
  * Grupo "por data" (2026-09-11) — 1 funil por dia da semana, pra encher a
  * agenda de um dia específico com quem já demonstrou disponibilidade
- * nele (ver campo "diaSemanaUltimos180Dias") e está parado há 30+ dias.
+ * nele (ver campo "diaSemanaUltimos180Dias"), está parado há 30+ dias e
+ * sem contato recente (mesmo raciocínio do grupo "por terapeuta" acima).
  */
 export function funisVirtuaisPorData(): FunilVirtual[] {
   return DIAS_SEMANA_LABELS.map((d) => ({
@@ -7069,6 +7078,7 @@ export function funisVirtuaisPorData(): FunilVirtual[] {
     filtros: [
       { campo: "diaSemanaUltimos180Dias", operador: "igual", valor: String(d.valor) },
       { campo: "diasDesdeUltimoAtendimento", operador: "maior_igual", valor: DIAS_SEM_ATENDIMENTO_PADRAO },
+      { campo: "diasDesdeUltimoContato", operador: "maior_igual", valor: DIAS_SEM_ATENDIMENTO_PADRAO },
       { campo: "etiqueta", operador: "diferente", valor: ETIQUETA_NAO_REATIVAR },
     ] as FiltroSegmento[],
   }));
