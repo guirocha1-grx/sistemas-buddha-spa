@@ -87,6 +87,23 @@ function campoInfo(campo: CampoSegmento, unidadeId?: number) {
   return campos(unidadeId).find((c) => c.valor === campo) ?? CAMPOS_BASE[0];
 }
 
+const UNIDADE_LABELS: Record<string, string> = { ssu: "Shopping Santa Úrsula", rbs: "Ribeirão Shopping" };
+
+/** Texto legível de 1 filtro (ex.: "Dias desde a última visita maior ou igual a 30") — usado no tooltip do nome do funil. */
+export function descreverFiltro(filtro: FiltroSegmento, unidadeId?: number): string {
+  const info = campoInfo(filtro.campo, unidadeId);
+  const operadorLabel = info.operadores.find((o) => o.valor === filtro.operador)?.label ?? filtro.operador;
+  const valorLabel = info.tipoValor === "unidade" ? (UNIDADE_LABELS[filtro.valor] ?? filtro.valor)
+    : info.tipoValor === "diaSemana" ? (DIAS_SEMANA.find((d) => d.valor === filtro.valor)?.label ?? filtro.valor)
+    : filtro.valor;
+  return `${info.label} ${operadorLabel} ${valorLabel}`;
+}
+
+/** Todos os filtros de um funil, um por linha — pro tooltip (title) do nome. */
+export function descreverFiltros(filtros: FiltroSegmento[], unidadeId?: number): string {
+  return filtros.map((f) => descreverFiltro(f, unidadeId)).join("\n");
+}
+
 export function filtroSegmentoVazio(): FiltroSegmento {
   return { campo: "unidade", operador: "igual", valor: "ssu" };
 }

@@ -9,15 +9,25 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, Trash2, Pencil, Users, Phone, Mail, BellOff, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, Copy, Users, Phone, Mail, BellOff, ArrowUp, ArrowDown, ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { rotaInboxConversa } from "@shared/inboxNavigation";
 import { ClienteWhatsAppButton } from "@/components/ClienteWhatsAppButton";
 import { diasDesde } from "@/lib/utils";
-import { SegmentoFiltros, filtroSegmentoVazio, type FiltroSegmento } from "@/components/SegmentoFiltros";
+import { SegmentoFiltros, filtroSegmentoVazio, descreverFiltros, type FiltroSegmento } from "@/components/SegmentoFiltros";
 
-type FunilReativacao = { id: number; unidadeId: number; nome: string; filtros: string; createdAt: string | Date };
 type OrderCol = "nome" | "qtdAtendimentosFinalizados" | "ultimoAtendimento" | "ultimoContato" | "dataNascimento";
+type Grupo = "estrategica" | "por_terapeuta" | "por_data";
+/** Base pra criar/editar/duplicar — id só existe em edição (funil real, do banco). */
+type FunilBase = { id?: number; nome: string; filtros: string };
+/** Formato retornado por listComResumo — id sempre string (virtual usa "terapeuta-5"/"dia-2"). */
+type FunilListado = { id: string; nome: string; filtros: string; virtual: boolean; resumo: { total: number } };
+
+const GRUPOS: Array<{ valor: Grupo; label: string }> = [
+  { valor: "estrategica", label: "Reativações Estratégicas" },
+  { valor: "por_terapeuta", label: "Reativação por Terapeuta" },
+  { valor: "por_data", label: "Reativação por Data" },
+];
 
 function fmtDataBr(iso: string | null): string {
   if (!iso) return "—";
@@ -70,29 +80,32 @@ function SortTh({ col, label, orderBy, orderDir, onSort, className }: {
   );
 }
 
-/** Cria ou edita um funil — mesmo construtor de filtros da Segmentação de Disparos, salvo com nome para reabrir depois. */
-function FunilDialog({ unidadeId, open, onOpenChange, onSalvo, funilParaEditar }: {
-  unidadeId: number; open: boolean; onOpenChange: (open: boolean) => void; onSalvo: (id: number) => void;
-  funilParaEditar?: FunilReativacao | null;
+/**
+ * Cria, edita ou duplica um funil — mesmo construtor de filtros da
+ * Segmentação de Disparos. "editar" grava em cima do funil (funilBase.id
+ * obrigatório); "criar" sempre grava um funil novo — com funilBase
+ * preenchido, é a duplicação (nome/critérios pré-carregados prontos pra
+ * ajustar e salvar como outro funil).
+ */
+function FunilDialog({ unidadeId, open, onOpenChange, onSalvo, modo, funilBase }: {
+  unidadeId: number; open: boolean; onOpenChange: (open: boolean) => void; onSalvo: (id: string) => void;
+  modo: "criar" | "editar"; funilBase?: FunilBase | null;
 }) {
   const utils = trpc.useUtils();
-  const editando = !!funilParaEditar;
   const [nome, setNome] = useState("");
   const [filtros, setFiltros] = useState<FiltroSegmento[]>([filtroSegmentoVazio()]);
 
   useEffect(() => {
     if (!open) return;
-    if (funilParaEditar) { setNome(funilParaEditar.nome); setFiltros(JSON.parse(funilParaEditar.filtros)); }
+    if (funilBase) { setNome(funilBase.nome); setFiltros(JSON.parse(funilBase.filtros)); }
     else { setNome(""); setFiltros([filtroSegmentoVazio()]); }
-  }, [open, funilParaEditar]);
+  }, [open, funilBase]);
 
   const criarMutation = trpc.funilReativacao.criarFunil.useMutation({
-    onSuccess: async () => {
+    onSuccess: (resultado) => {
       toast.success("Funil criado.");
-      const lista = await utils.funilReativacao.listFunis.fetch({ unidadeId });
-      const criado = lista.find((f) => f.nome === nome.trim());
       onOpenChange(false);
-      if (criado) onSalvo(criado.id);
+      onSalvo(String(resultado.id));
       utils.funilReativacao.listComResumo.invalidate({ unidadeId });
     },
     onError: (e) => toast.error(e.message),
@@ -102,8 +115,7 @@ function FunilDialog({ unidadeId, open, onOpenChange, onSalvo, funilParaEditar }
     onSuccess: () => {
       toast.success("Funil atualizado.");
       onOpenChange(false);
-      if (funilParaEditar) onSalvo(funilParaEditar.id);
-      utils.funilReativacao.listFunis.invalidate({ unidadeId });
+      if (funilBase?.id) onSalvo(String(funilBase.id));
       utils.funilReativacao.listComResumo.invalidate({ unidadeId });
     },
     onError: (e) => toast.error(e.message),
@@ -113,17 +125,17 @@ function FunilDialog({ unidadeId, open, onOpenChange, onSalvo, funilParaEditar }
   const salvando = criarMutation.isPending || atualizarMutation.isPending;
 
   function salvar() {
-    if (editando && funilParaEditar) atualizarMutation.mutate({ id: funilParaEditar.id, nome: nome.trim(), filtros: filtrosValidos });
+    if (modo === "editar" && funilBase?.id) atualizarMutation.mutate({ id: funilBase.id, nome: nome.trim(), filtros: filtrosValidos });
     else criarMutation.mutate({ unidadeId, nome: nome.trim(), filtros: filtrosValidos });
   }
+
+  const titulo = modo === "editar" ? "Editar funil de reativação" : funilBase ? "Duplicar funil de reativação" : "Novo funil de reativação";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-            {editando ? "Editar funil de reativação" : "Novo funil de reativação"}
-          </DialogTitle>
+          <DialogTitle style={{ fontFamily: "'Cormorant Garamond', serif" }}>{titulo}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -141,8 +153,8 @@ function FunilDialog({ unidadeId, open, onOpenChange, onSalvo, funilParaEditar }
         </div>
         <DialogFooter>
           <Button onClick={salvar} disabled={!nome.trim() || filtrosValidos.length === 0 || salvando}>
-            {salvando ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : editando ? <Pencil className="h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-            {editando ? "Salvar alterações" : "Criar funil"}
+            {salvando ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : modo === "editar" ? <Pencil className="h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
+            {modo === "editar" ? "Salvar alterações" : "Criar funil"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -188,15 +200,17 @@ function NaoReativarDialog({ open, onOpenChange, clienteNome, onConfirmar, salva
 }
 
 /**
- * Linha de um funil salvo (2026-09-11) — era um card quadrado, mas com
- * mais funis o texto/critério não cabia; em linha o nome tem o espaço
- * inteiro. Ainda é um formato provisório — reorganizar/agrupar quando
- * tiver muitos funis fica pra depois.
+ * Linha de um funil (2026-09-11) — nome com o hover mostrando todos os
+ * critérios (ver descreverFiltros); duplicar funciona pra funil virtual
+ * também (por terapeuta/por data) — é assim que dá pra pegar um pronto e
+ * só trocar 1 critério, salvando como um novo funil estratégico. Editar e
+ * excluir só existem pro funil real (virtual não tem linha no banco).
  */
-function FunilLinha({ funil, selecionado, onSelecionar, onEditar, onExcluir }: {
-  funil: { id: number; nome: string; resumo: { total: number } };
-  selecionado: boolean; onSelecionar: () => void; onEditar: () => void; onExcluir: () => void;
+function FunilLinha({ funil, unidadeId, selecionado, onSelecionar, onEditar, onDuplicar, onExcluir }: {
+  funil: FunilListado; unidadeId: number;
+  selecionado: boolean; onSelecionar: () => void; onEditar: () => void; onDuplicar: () => void; onExcluir: () => void;
 }) {
+  const tooltip = useMemo(() => descreverFiltros(JSON.parse(funil.filtros), unidadeId), [funil.filtros, unidadeId]);
   return (
     <div
       role="button"
@@ -205,16 +219,23 @@ function FunilLinha({ funil, selecionado, onSelecionar, onEditar, onExcluir }: {
         selecionado ? "border-primary bg-primary/5" : "border-border/50 hover:bg-muted/30"
       }`}
     >
-      <span className="text-sm font-medium truncate">{funil.nome}</span>
+      <span className="text-sm font-medium truncate" title={tooltip}>{funil.nome}</span>
       <div className="flex items-center gap-3 shrink-0">
         <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{funil.resumo.total} cliente(s)</span>
         <div className="flex items-center gap-0.5">
-          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); onEditar(); }} title="Editar funil">
-            <Pencil className="h-3.5 w-3.5" />
+          {!funil.virtual && (
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); onEditar(); }} title="Editar funil">
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); onDuplicar(); }} title="Duplicar funil">
+            <Copy className="h-3.5 w-3.5" />
           </Button>
-          <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-destructive" onClick={(e) => { e.stopPropagation(); onExcluir(); }} title="Excluir funil">
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          {!funil.virtual && (
+            <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-destructive" onClick={(e) => { e.stopPropagation(); onExcluir(); }} title="Excluir funil">
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -227,18 +248,18 @@ export default function Reativacao() {
   const unidadeId = unidadeSelecionada?.id ?? 0;
   const utils = trpc.useUtils();
 
-  const [funilId, setFunilId] = useState<number | null>(null);
+  const [grupo, setGrupo] = useState<Grupo>("estrategica");
+  const [listaAberta, setListaAberta] = useState(true);
+  const [funilId, setFunilId] = useState<string | null>(null);
   const [dialogAberto, setDialogAberto] = useState(false);
-  const [funilEmEdicao, setFunilEmEdicao] = useState<FunilReativacao | null>(null);
+  const [dialogModo, setDialogModo] = useState<"criar" | "editar">("criar");
+  const [dialogFunilBase, setDialogFunilBase] = useState<FunilBase | null>(null);
   const [naoReativarAlvo, setNaoReativarAlvo] = useState<{ id: number; nome: string } | null>(null);
   const [orderBy, setOrderBy] = useState<OrderCol>("qtdAtendimentosFinalizados");
   const [orderDir, setOrderDir] = useState<"asc" | "desc">("desc");
 
-  const funisQuery = trpc.funilReativacao.listComResumo.useQuery({ unidadeId }, { enabled: !!unidadeSelecionada });
-  useEffect(() => {
-    if (funilId === null && (funisQuery.data?.length ?? 0) > 0) setFunilId(funisQuery.data![0].id);
-  }, [funisQuery.data, funilId]);
-  useEffect(() => { setFunilId(null); }, [unidadeId]);
+  const funisQuery = trpc.funilReativacao.listComResumo.useQuery({ unidadeId, grupo }, { enabled: !!unidadeSelecionada });
+  useEffect(() => { setFunilId(null); setGrupo("estrategica"); setListaAberta(true); }, [unidadeId]);
 
   const funilSelecionado = funisQuery.data?.find((f) => f.id === funilId) ?? null;
   const filtrosDoFunil = useMemo<FiltroSegmento[]>(
@@ -290,8 +311,21 @@ export default function Reativacao() {
     else { setOrderBy(col); setOrderDir("asc"); }
   }
 
-  function abrirNovoFunil() { setFunilEmEdicao(null); setDialogAberto(true); }
-  function abrirEdicaoFunil(funil: FunilReativacao) { setFunilEmEdicao(funil); setDialogAberto(true); }
+  function trocarGrupo(g: Grupo) {
+    if (g === grupo) return;
+    setGrupo(g);
+    setFunilId(null);
+    setListaAberta(true);
+  }
+
+  function selecionarFunil(id: string) {
+    setFunilId(id);
+    setListaAberta(false);
+  }
+
+  function abrirNovoFunil() { setDialogModo("criar"); setDialogFunilBase(null); setDialogAberto(true); }
+  function abrirEdicaoFunil(funil: FunilListado) { setDialogModo("editar"); setDialogFunilBase({ id: Number(funil.id), nome: funil.nome, filtros: funil.filtros }); setDialogAberto(true); }
+  function abrirDuplicacaoFunil(funil: FunilListado) { setDialogModo("criar"); setDialogFunilBase({ nome: `Cópia de ${funil.nome}`, filtros: funil.filtros }); setDialogAberto(true); }
 
   return (
     <div className="space-y-6">
@@ -311,34 +345,73 @@ export default function Reativacao() {
         <Card><CardContent className="pt-6 text-center text-sm text-muted-foreground">Selecione uma unidade.</CardContent></Card>
       ) : (
         <>
-          <div className="space-y-1.5">
-            {(funisQuery.data ?? []).map((funil) => (
-              <FunilLinha
-                key={funil.id}
-                funil={funil}
-                selecionado={funil.id === funilId}
-                onSelecionar={() => setFunilId(funil.id)}
-                onEditar={() => abrirEdicaoFunil(funil)}
-                onExcluir={() => excluirFunilMutation.mutate({ id: funil.id })}
-              />
+          <div className="flex flex-wrap gap-2">
+            {GRUPOS.map((g) => (
+              <Button
+                key={g.valor}
+                size="sm"
+                variant={grupo === g.valor ? "default" : "outline"}
+                onClick={() => trocarGrupo(g.valor)}
+              >
+                {g.label}
+              </Button>
             ))}
+          </div>
+
+          <Card className="overflow-hidden">
             <button
               type="button"
-              onClick={abrirNovoFunil}
-              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-border/60 text-muted-foreground hover:bg-muted/30 hover:text-foreground transition-colors"
+              onClick={() => setListaAberta((a) => !a)}
+              className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-sm hover:bg-muted/20 transition-colors"
             >
-              <Plus className="h-4 w-4" />
-              <span className="text-sm font-medium">Novo funil</span>
+              <span className="font-medium truncate">
+                {funilSelecionado ? funilSelecionado.nome : "Escolha um funil"}
+              </span>
+              <span className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+                {funisQuery.isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `${funisQuery.data?.length ?? 0} funil(is)`}
+                {listaAberta ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </span>
             </button>
-          </div>
+            {listaAberta && (
+              <CardContent className="pt-0 space-y-1.5 border-t border-border/50">
+                <div className="pt-3 space-y-1.5">
+                  {(funisQuery.data ?? []).map((funil) => (
+                    <FunilLinha
+                      key={funil.id}
+                      funil={funil}
+                      unidadeId={unidadeId}
+                      selecionado={funil.id === funilId}
+                      onSelecionar={() => selecionarFunil(funil.id)}
+                      onEditar={() => abrirEdicaoFunil(funil)}
+                      onDuplicar={() => abrirDuplicacaoFunil(funil)}
+                      onExcluir={() => excluirFunilMutation.mutate({ id: Number(funil.id) })}
+                    />
+                  ))}
+                  {!funisQuery.isLoading && (funisQuery.data?.length ?? 0) === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      {grupo === "por_terapeuta" ? "Nenhum terapeuta ativo nessa unidade." : "Nenhum funil aqui ainda."}
+                    </p>
+                  )}
+                  {grupo === "estrategica" && (
+                    <button
+                      type="button"
+                      onClick={abrirNovoFunil}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-border/60 text-muted-foreground hover:bg-muted/30 hover:text-foreground transition-colors"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span className="text-sm font-medium">Novo funil</span>
+                    </button>
+                  )}
+                </div>
+              </CardContent>
+            )}
+          </Card>
 
           {!funilSelecionado ? (
             <Card>
               <CardContent className="pt-6 flex flex-col items-center gap-3 text-center py-12">
                 <Users className="h-12 w-12 text-muted-foreground/50" />
-                <p className="text-sm text-muted-foreground">
-                  {funisQuery.isLoading ? "Carregando funis..." : "Nenhum funil ainda — crie um para começar a trabalhar a reativação."}
-                </p>
+                <p className="text-sm text-muted-foreground">Selecione um funil acima para ver os clientes.</p>
               </CardContent>
             </Card>
           ) : clientesQuery.isLoading ? (
@@ -423,8 +496,9 @@ export default function Reativacao() {
         unidadeId={unidadeId}
         open={dialogAberto}
         onOpenChange={setDialogAberto}
-        onSalvo={(id) => setFunilId(id)}
-        funilParaEditar={funilEmEdicao}
+        onSalvo={(id) => selecionarFunil(id)}
+        modo={dialogModo}
+        funilBase={dialogFunilBase}
       />
 
       <NaoReativarDialog

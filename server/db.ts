@@ -6845,7 +6845,13 @@ async function condicaoFiltroSegmento(db: DbConectado, filtro: FiltroSegmento, u
     case "diasDesdeUltimoAtendimento": {
       const valorNumero = Number(filtro.valor);
       if (!Number.isFinite(valorNumero)) throw new Error('Valor de "Dias desde a última visita" precisa ser um número.');
-      return condicaoNumericaSql(sql`DATEDIFF(CURDATE(), ${clientes.ultimoAtendimento})`, filtro.operador, valorNumero);
+      const condicaoNumerica = condicaoNumericaSql(sql`DATEDIFF(CURDATE(), ${clientes.ultimoAtendimento})`, filtro.operador, valorNumero);
+      // "maior"/"maior_igual": quem nunca teve atendimento (NULL) já conta
+      // como "faz mais de X dias" — sem isso o DATEDIFF(CURDATE(), NULL) =
+      // NULL derruba a linha da condição inteira (achado real do usuário,
+      // mesmo problema em "diasDesdeUltimoContato" logo abaixo).
+      const nuncaContaComoSempre = filtro.operador === "maior" || filtro.operador === "maior_igual";
+      return nuncaContaComoSempre ? or(condicaoNumerica, isNull(clientes.ultimoAtendimento)) : condicaoNumerica;
     }
     case "diasDesdeCadastro": {
       const valorNumero = Number(filtro.valor);
@@ -6907,7 +6913,11 @@ async function condicaoFiltroSegmento(db: DbConectado, filtro: FiltroSegmento, u
       // Correlacionado por cliente — mesma lógica de listClientesLocalPorUnidade,
       // só que como subquery escalar em vez de LEFT JOIN agregado.
       const subqueryUltimoContato = sql`(SELECT MAX(${inboxConversas.ultimaMensagemEm}) FROM ${inboxConversas} WHERE ${inboxConversas.clienteId} = ${clientes.id} AND ${inboxConversas.unidadeId} = ${unidadeId})`;
-      return condicaoNumericaSql(sql`DATEDIFF(CURDATE(), ${subqueryUltimoContato})`, filtro.operador, valorNumero);
+      const condicaoNumerica = condicaoNumericaSql(sql`DATEDIFF(CURDATE(), ${subqueryUltimoContato})`, filtro.operador, valorNumero);
+      // Mesmo ajuste do campo acima: quem nunca foi contatado (subquery
+      // NULL) precisa contar como "faz mais de X dias" no "maior"/"maior_igual".
+      const nuncaContaComoSempre = filtro.operador === "maior" || filtro.operador === "maior_igual";
+      return nuncaContaComoSempre ? or(condicaoNumerica, sql`${subqueryUltimoContato} IS NULL`) : condicaoNumerica;
     }
     case "diasAteAniversario": {
       const valorNumero = Number(filtro.valor);
@@ -7012,13 +7022,63 @@ const ETIQUETA_NAO_REATIVAR = "Não reativar";
 export async function listFunisReativacao(unidadeId: number): Promise<FunilReativacao[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(funisReativacao).where(eq(funisReativacao.unidadeId, unidadeId)).orderBy(funisReativacao.nome);
+  return db.select().from(funisReativacao)
+    .where(and(eq(funisReativacao.unidadeId, unidadeId), eq(funisReativacao.grupo, "estrategica")))
+    .orderBy(funisReativacao.nome);
 }
 
-export async function criarFunilReativacao(input: { unidadeId: number; nome: string; filtros: FiltroSegmento[] }): Promise<void> {
+export type FunilVirtual = { id: string; nome: string; filtros: FiltroSegmento[] };
+
+const DIAS_SEMANA_LABELS: Array<{ valor: number; label: string }> = [
+  { valor: 1, label: "Domingo" }, { valor: 2, label: "Segunda" }, { valor: 3, label: "Terça" },
+  { valor: 4, label: "Quarta" }, { valor: 5, label: "Quinta" }, { valor: 6, label: "Sexta" }, { valor: 7, label: "Sábado" },
+];
+
+/** Sem atendimento nos últimos 30 dias — mesmo limiar do primeiro funil "estratégico" criado manualmente (referência pro grupo virtual). */
+const DIAS_SEM_ATENDIMENTO_PADRAO = "30";
+
+/**
+ * Grupo "por terapeuta" (2026-09-11) — 1 funil por terapeuta ativo da
+ * unidade, sempre em sincronia com o cadastro (sem gravar nada, sem
+ * precisar "regenerar" quando um terapeuta entra/sai). Cada um: prefere
+ * esse terapeuta + sem atendimento há 30+ dias + fora da etiqueta "Não
+ * reativar".
+ */
+export async function funisVirtuaisPorTerapeuta(unidadeId: number): Promise<FunilVirtual[]> {
+  const terapeutasAtivos = await listTerapeutasAtivos(unidadeId);
+  return terapeutasAtivos.map((t) => ({
+    id: `terapeuta-${t.id}`,
+    nome: `Prefere ${t.nomeAbreviado} · ${DIAS_SEM_ATENDIMENTO_PADRAO}d+`,
+    filtros: [
+      { campo: "terapeutaPreferencial", operador: "igual", valor: t.nomeAbreviado },
+      { campo: "diasDesdeUltimoAtendimento", operador: "maior_igual", valor: DIAS_SEM_ATENDIMENTO_PADRAO },
+      { campo: "etiqueta", operador: "diferente", valor: ETIQUETA_NAO_REATIVAR },
+    ] as FiltroSegmento[],
+  }));
+}
+
+/**
+ * Grupo "por data" (2026-09-11) — 1 funil por dia da semana, pra encher a
+ * agenda de um dia específico com quem já demonstrou disponibilidade
+ * nele (ver campo "diaSemanaUltimos180Dias") e está parado há 30+ dias.
+ */
+export function funisVirtuaisPorData(): FunilVirtual[] {
+  return DIAS_SEMANA_LABELS.map((d) => ({
+    id: `dia-${d.valor}`,
+    nome: `Costuma vir ${d.label} · ${DIAS_SEM_ATENDIMENTO_PADRAO}d+`,
+    filtros: [
+      { campo: "diaSemanaUltimos180Dias", operador: "igual", valor: String(d.valor) },
+      { campo: "diasDesdeUltimoAtendimento", operador: "maior_igual", valor: DIAS_SEM_ATENDIMENTO_PADRAO },
+      { campo: "etiqueta", operador: "diferente", valor: ETIQUETA_NAO_REATIVAR },
+    ] as FiltroSegmento[],
+  }));
+}
+
+export async function criarFunilReativacao(input: { unidadeId: number; nome: string; filtros: FiltroSegmento[] }): Promise<number> {
   const db = await getDb();
-  if (!db) return;
-  await db.insert(funisReativacao).values({ unidadeId: input.unidadeId, nome: input.nome, filtros: JSON.stringify(input.filtros) });
+  if (!db) throw new Error("Banco de dados indisponível.");
+  const resultado = await db.insert(funisReativacao).values({ unidadeId: input.unidadeId, nome: input.nome, filtros: JSON.stringify(input.filtros) });
+  return Number(resultado[0].insertId);
 }
 
 export async function obterFunilReativacaoPorId(id: number): Promise<FunilReativacao | undefined> {

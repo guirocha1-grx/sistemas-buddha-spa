@@ -637,6 +637,11 @@ export const funisReativacao = mysqlTable("funis_reativacao", {
   id: int("id").autoincrement().primaryKey(),
   unidadeId: int("unidadeId").notNull(),
   nome: varchar("nome", { length: 120 }).notNull(),
+  // "estrategica" = criado manualmente pela recepção (único grupo com CRUD
+  // de verdade); "por_terapeuta"/"por_data" são calculados on-the-fly (ver
+  // funisVirtuaisPorTerapeuta/funisVirtuaisPorData em server/db.ts) e nunca
+  // gravam linha aqui — a coluna existe só pra filtrar os "estratégicos".
+  grupo: mysqlEnum("grupo", ["estrategica", "por_terapeuta", "por_data"]).default("estrategica").notNull(),
   filtros: text("filtros").notNull(), // JSON: FiltroSegmento[]
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({

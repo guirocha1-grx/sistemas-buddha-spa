@@ -2460,8 +2460,8 @@ Diretrizes:
       unidadeId: z.number(), nome: z.string().trim().min(1), filtros: z.array(filtroSegmentoSchema).min(1),
     })).mutation(async ({ input, ctx }) => {
       if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
-      await db.criarFunilReativacao(input);
-      return { success: true };
+      const id = await db.criarFunilReativacao(input);
+      return { success: true, id };
     }),
 
     atualizarFunil: protectedProcedure.input(z.object({
@@ -2489,14 +2489,30 @@ Diretrizes:
       return db.listClientesFunilReativacao(input.unidadeId, input.filtros);
     }),
 
-    // Alimenta a "caixinha" de cada funil no cabeçalho — nome + contagem,
-    // sem carregar a lista de clientes de cada um.
-    listComResumo: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input, ctx }) => {
+    // Alimenta a fileira de funis do grupo selecionado — nome + contagem,
+    // sem carregar a lista de clientes de cada um. "estrategica" vem do
+    // banco (só esse grupo tem CRUD de verdade); "por_terapeuta"/"por_data"
+    // são calculados on-the-fly (ver funisVirtuaisPorTerapeuta/Data),
+    // sempre em sincronia com o cadastro de terapeutas — não precisa
+    // "regenerar" quando alguém entra ou sai. id sempre vira string, pra
+    // não confundir um funil real (editável/excluível) com um virtual.
+    listComResumo: protectedProcedure.input(z.object({
+      unidadeId: z.number(), grupo: z.enum(["estrategica", "por_terapeuta", "por_data"]),
+    })).query(async ({ input, ctx }) => {
       if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
-      const funis = await db.listFunisReativacao(input.unidadeId);
-      return Promise.all(funis.map(async (funil) => ({
-        ...funil,
-        resumo: await db.resumoFunilReativacao(input.unidadeId, JSON.parse(funil.filtros)),
+      if (input.grupo === "estrategica") {
+        const funis = await db.listFunisReativacao(input.unidadeId);
+        return Promise.all(funis.map(async (funil) => ({
+          id: String(funil.id), nome: funil.nome, filtros: funil.filtros, virtual: false,
+          resumo: await db.resumoFunilReativacao(input.unidadeId, JSON.parse(funil.filtros)),
+        })));
+      }
+      const virtuais = input.grupo === "por_terapeuta"
+        ? await db.funisVirtuaisPorTerapeuta(input.unidadeId)
+        : db.funisVirtuaisPorData();
+      return Promise.all(virtuais.map(async (funil) => ({
+        id: funil.id, nome: funil.nome, filtros: JSON.stringify(funil.filtros), virtual: true,
+        resumo: await db.resumoFunilReativacao(input.unidadeId, funil.filtros),
       })));
     }),
 
