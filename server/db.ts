@@ -18,7 +18,7 @@ import { resumoMensalUnidade, type InsertResumoMensalUnidade, type ResumoMensalU
 import { etiquetas, clienteEtiquetas, type Etiqueta } from "../drizzle/schema";
 import { camposPersonalizados, clienteCamposValores, type CampoPersonalizado } from "../drizzle/schema";
 import { listaEspera } from "../drizzle/schema";
-import { funisReativacao, reativacaoStatus, type FunilReativacao } from "../drizzle/schema";
+import { funisReativacao, reativacaoStatus, funisReativacaoOcultos, type FunilReativacao } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda, calcularEvolucaoFidelizacao, type GranularidadeEvolucao } from "./terapeutasRelatorios";
 import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, nomesCorrespondem, identificarTerapeuta, nomesClienteCorrespondem, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
@@ -6792,7 +6792,7 @@ type DbConectado = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 export type OperadorSegmento = "igual" | "diferente" | "maior" | "menor" | "maior_igual" | "menor_igual" | "contem";
 export type CampoSegmento = "unidade" | "sexo" | "diasDesdeUltimoAtendimento" | "diasDesdeCadastro" | "qtdAtendimentos" | "terapiaFeita" | "etiqueta" | "campoPersonalizado"
-  | "terapeutaPreferencial" | "diasDesdeUltimoContato" | "diasAteAniversario" | "diaSemanaUltimaVisita" | "diaSemanaUltimos180Dias";
+  | "terapeutaPreferencial" | "diasDesdeUltimoContato" | "diasAteAniversario" | "diaSemanaUltimaVisita" | "diaSemanaUltimos180Dias" | "statusPlano";
 
 export interface FiltroSegmento {
   campo: CampoSegmento;
@@ -6965,6 +6965,28 @@ async function condicaoFiltroSegmento(db: DbConectado, filtro: FiltroSegmento, u
         ));
       return filtro.operador === "igual" ? inArray(clientes.id, subquery) : notInArray(clientes.id, subquery);
     }
+    case "statusPlano": {
+      if (filtro.operador !== "igual" && filtro.operador !== "diferente") {
+        throw new Error('Campo "Status do plano" só aceita operador igual/diferente.');
+      }
+      if (filtro.valor !== "ativo" && filtro.valor !== "inativo") throw new Error('Valor de "Status do plano" deve ser "ativo" ou "inativo".');
+      if (!unidadeId) throw new Error('Campo "Status do plano" só está disponível dentro de um funil de reativação.');
+      // Ativo = tem pelo menos 1 plano espelhado do Belle com validade em
+      // aberto (ou sem validade cadastrada) E saldo de sessão > 0 em algum
+      // serviço — mesmo critério de classificarPlanosRelacionamento, só que
+      // como condição SQL em vez de calculado sobre os planos já carregados.
+      const temPlanoAtivo = sql`EXISTS (
+        SELECT 1 FROM ${bellePlanosClientes} bpc
+        WHERE bpc.clienteId = ${clientes.id} AND bpc.unidadeId = ${unidadeId}
+          AND (bpc.validade IS NULL OR bpc.validade >= CURDATE())
+          AND EXISTS (
+            SELECT 1 FROM ${bellePlanosServicos} bps
+            WHERE bps.unidadeId = bpc.unidadeId AND bps.planoBelleId = bpc.planoBelleId AND bps.restantes > 0
+          )
+      )`;
+      const querQuemTemAtivo = (filtro.operador === "igual") === (filtro.valor === "ativo");
+      return querQuemTemAtivo ? temPlanoAtivo : sql`NOT ${temPlanoAtivo}`;
+    }
     default:
       throw new Error("Campo de segmentação desconhecido.");
   }
@@ -7082,6 +7104,62 @@ export function funisVirtuaisPorData(): FunilVirtual[] {
       { campo: "etiqueta", operador: "diferente", valor: ETIQUETA_NAO_REATIVAR },
     ] as FiltroSegmento[],
   }));
+}
+
+/** Serviços distintos já atendidos NA UNIDADE (opcoesTerapias, mais acima, é base inteira — usada em outro contexto, sem mexer nela). */
+async function listServicosDistintosPorUnidade(unidadeId: number, limite = 200): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const linhas = await db.selectDistinct({ servicoNome: belleAtendimentos.servicoNome }).from(belleAtendimentos)
+    .where(and(eq(belleAtendimentos.unidadeId, unidadeId), sql`${belleAtendimentos.servicoNome} IS NOT NULL AND ${belleAtendimentos.servicoNome} != ''`))
+    .orderBy(belleAtendimentos.servicoNome)
+    .limit(limite);
+  return linhas.map((l) => l.servicoNome as string).filter(Boolean);
+}
+
+/**
+ * Grupo "por terapia" (2026-09-11) — 1 funil por serviço distinto já
+ * atendido na unidade, pra campanhas específicas (ex.: "todo mundo que já
+ * fez Drenagem"). Mesmo padrão dos outros 2 grupos virtuais: sem
+ * atendimento/contato há 30+ dias, fora da etiqueta "Não reativar".
+ */
+export async function funisVirtuaisPorTerapia(unidadeId: number): Promise<FunilVirtual[]> {
+  const servicos = await listServicosDistintosPorUnidade(unidadeId);
+  return servicos.map((nome) => ({
+    id: `terapia-${nome}`,
+    nome: `Já fez ${nome} · ${DIAS_SEM_ATENDIMENTO_PADRAO}d+`,
+    filtros: [
+      { campo: "terapiaFeita", operador: "igual", valor: nome },
+      { campo: "diasDesdeUltimoAtendimento", operador: "maior_igual", valor: DIAS_SEM_ATENDIMENTO_PADRAO },
+      { campo: "diasDesdeUltimoContato", operador: "maior_igual", valor: DIAS_SEM_ATENDIMENTO_PADRAO },
+      { campo: "etiqueta", operador: "diferente", valor: ETIQUETA_NAO_REATIVAR },
+    ] as FiltroSegmento[],
+  }));
+}
+
+export type GrupoVirtualReativacao = "por_terapeuta" | "por_data" | "por_terapia";
+
+/** ids ocultados de um grupo virtual — devolvido como Set pra checagem O(1) contra a lista calculada na hora. */
+export async function listItensOcultosReativacao(unidadeId: number, grupo: GrupoVirtualReativacao): Promise<Set<string>> {
+  const db = await getDb();
+  if (!db) return new Set();
+  const linhas = await db.select({ itemId: funisReativacaoOcultos.itemId }).from(funisReativacaoOcultos)
+    .where(and(eq(funisReativacaoOcultos.unidadeId, unidadeId), eq(funisReativacaoOcultos.grupo, grupo)));
+  return new Set(linhas.map((l) => l.itemId));
+}
+
+export async function ocultarItemGrupoReativacao(unidadeId: number, grupo: GrupoVirtualReativacao, itemId: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(funisReativacaoOcultos).values({ unidadeId, grupo, itemId })
+    .onDuplicateKeyUpdate({ set: { itemId: sql`${funisReativacaoOcultos.itemId}` } });
+}
+
+export async function reexibirItemGrupoReativacao(unidadeId: number, grupo: GrupoVirtualReativacao, itemId: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(funisReativacaoOcultos)
+    .where(and(eq(funisReativacaoOcultos.unidadeId, unidadeId), eq(funisReativacaoOcultos.grupo, grupo), eq(funisReativacaoOcultos.itemId, itemId)));
 }
 
 export async function criarFunilReativacao(input: { unidadeId: number; nome: string; filtros: FiltroSegmento[] }): Promise<number> {

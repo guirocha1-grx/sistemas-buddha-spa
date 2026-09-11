@@ -638,10 +638,10 @@ export const funisReativacao = mysqlTable("funis_reativacao", {
   unidadeId: int("unidadeId").notNull(),
   nome: varchar("nome", { length: 120 }).notNull(),
   // "estrategica" = criado manualmente pela recepção (único grupo com CRUD
-  // de verdade); "por_terapeuta"/"por_data" são calculados on-the-fly (ver
-  // funisVirtuaisPorTerapeuta/funisVirtuaisPorData em server/db.ts) e nunca
-  // gravam linha aqui — a coluna existe só pra filtrar os "estratégicos".
-  grupo: mysqlEnum("grupo", ["estrategica", "por_terapeuta", "por_data"]).default("estrategica").notNull(),
+  // de verdade); "por_terapeuta"/"por_data"/"por_terapia" são calculados
+  // on-the-fly (ver funisVirtuaisPorTerapeuta/Data/Terapia em server/db.ts)
+  // e nunca gravam linha aqui — a coluna existe só pra filtrar os "estratégicos".
+  grupo: mysqlEnum("grupo", ["estrategica", "por_terapeuta", "por_data", "por_terapia"]).default("estrategica").notNull(),
   filtros: text("filtros").notNull(), // JSON: FiltroSegmento[]
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({
@@ -649,6 +649,26 @@ export const funisReativacao = mysqlTable("funis_reativacao", {
 }));
 export type FunilReativacao = typeof funisReativacao.$inferSelect;
 export type InsertFunilReativacao = typeof funisReativacao.$inferInsert;
+
+/**
+ * Item ocultado de um grupo virtual (2026-09-11) — "por_terapeuta"/
+ * "por_data"/"por_terapia" não gravam funil nenhum (calculados na hora),
+ * mas o usuário pode não querer ver um item específico (ex.: 1 terapeuta,
+ * 1 dia, 1 terapia) — essa tabela só guarda o id calculado (ex.:
+ * "terapeuta-5", "dia-3", "terapia-Drenagem") que deve ficar fora da
+ * lista, sem apagar nada de verdade.
+ */
+export const funisReativacaoOcultos = mysqlTable("funis_reativacao_ocultos", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  grupo: mysqlEnum("grupo", ["por_terapeuta", "por_data", "por_terapia"]).notNull(),
+  itemId: varchar("itemId", { length: 255 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  unico: uniqueIndex("funis_reativacao_ocultos_unico_idx").on(table.unidadeId, table.grupo, table.itemId),
+}));
+export type FunilReativacaoOculto = typeof funisReativacaoOcultos.$inferSelect;
+export type InsertFunilReativacaoOculto = typeof funisReativacaoOcultos.$inferInsert;
 
 /**
  * Etapa de reativação de um cliente, por unidade — a "extensão da tabela

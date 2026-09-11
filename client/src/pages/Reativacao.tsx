@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, Trash2, Pencil, Copy, Users, Phone, Mail, BellOff, ArrowUp, ArrowDown, ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, Copy, Users, Phone, Mail, BellOff, Eye, EyeOff, ArrowUp, ArrowDown, ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { rotaInboxConversa } from "@shared/inboxNavigation";
 import { ClienteWhatsAppButton } from "@/components/ClienteWhatsAppButton";
@@ -17,16 +17,18 @@ import { diasDesde } from "@/lib/utils";
 import { SegmentoFiltros, filtroSegmentoVazio, descreverFiltros, type FiltroSegmento } from "@/components/SegmentoFiltros";
 
 type OrderCol = "nome" | "qtdAtendimentosFinalizados" | "ultimoAtendimento" | "ultimoContato" | "dataNascimento";
-type Grupo = "estrategica" | "por_terapeuta" | "por_data";
+type Grupo = "estrategica" | "por_terapeuta" | "por_data" | "por_terapia";
+type GrupoVirtual = Exclude<Grupo, "estrategica">;
 /** Base pra criar/editar/duplicar — id só existe em edição (funil real, do banco). */
 type FunilBase = { id?: number; nome: string; filtros: string };
-/** Formato retornado por listComResumo — id sempre string (virtual usa "terapeuta-5"/"dia-2"). */
-type FunilListado = { id: string; nome: string; filtros: string; virtual: boolean; resumo: { total: number } };
+/** Formato retornado por listComResumo — id sempre string (virtual usa "terapeuta-5"/"dia-2"/"terapia-Drenagem"). */
+type FunilListado = { id: string; nome: string; filtros: string; virtual: boolean; oculto: boolean; resumo: { total: number } };
 
 const GRUPOS: Array<{ valor: Grupo; label: string }> = [
   { valor: "estrategica", label: "Reativações Personalizadas" },
   { valor: "por_terapeuta", label: "Reativação por Terapeuta" },
   { valor: "por_data", label: "Reativação por Dia da Semana" },
+  { valor: "por_terapia", label: "Reativação por Terapia" },
 ];
 
 function fmtDataBr(iso: string | null): string {
@@ -202,15 +204,30 @@ function NaoReativarDialog({ open, onOpenChange, clienteNome, onConfirmar, salva
 /**
  * Linha de um funil (2026-09-11) — nome com o hover mostrando todos os
  * critérios (ver descreverFiltros); duplicar funciona pra funil virtual
- * também (por terapeuta/por data) — é assim que dá pra pegar um pronto e
- * só trocar 1 critério, salvando como um novo funil estratégico. Editar e
- * excluir só existem pro funil real (virtual não tem linha no banco).
+ * também (por terapeuta/data/terapia) — é assim que dá pra pegar um
+ * pronto e só trocar 1 critério, salvando como um novo funil estratégico.
+ * Editar e excluir só existem pro funil real (virtual não tem linha no
+ * banco — em vez de excluir, dá pra ocultar, ver onOcultar/onReexibir).
+ * Item oculto vira uma linha reduzida, só com o botão de reexibir.
  */
-function FunilLinha({ funil, unidadeId, selecionado, onSelecionar, onEditar, onDuplicar, onExcluir }: {
+function FunilLinha({ funil, unidadeId, selecionado, onSelecionar, onEditar, onDuplicar, onExcluir, onOcultar, onReexibir }: {
   funil: FunilListado; unidadeId: number;
   selecionado: boolean; onSelecionar: () => void; onEditar: () => void; onDuplicar: () => void; onExcluir: () => void;
+  onOcultar: () => void; onReexibir: () => void;
 }) {
   const tooltip = useMemo(() => descreverFiltros(JSON.parse(funil.filtros), unidadeId), [funil.filtros, unidadeId]);
+
+  if (funil.oculto) {
+    return (
+      <div className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-lg border border-dashed border-border/40 opacity-60">
+        <span className="text-sm truncate" title={tooltip}>{funil.nome}</span>
+        <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs shrink-0" onClick={onReexibir}>
+          <Eye className="h-3.5 w-3.5" /> Reexibir
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div
       role="button"
@@ -231,6 +248,11 @@ function FunilLinha({ funil, unidadeId, selecionado, onSelecionar, onEditar, onD
           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); onDuplicar(); }} title="Duplicar funil">
             <Copy className="h-3.5 w-3.5" />
           </Button>
+          {funil.virtual && (
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); onOcultar(); }} title="Ocultar">
+              <EyeOff className="h-3.5 w-3.5" />
+            </Button>
+          )}
           {!funil.virtual && (
             <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-destructive" onClick={(e) => { e.stopPropagation(); onExcluir(); }} title="Excluir funil">
               <Trash2 className="h-3.5 w-3.5" />
@@ -250,6 +272,7 @@ export default function Reativacao() {
 
   const [grupo, setGrupo] = useState<Grupo>("estrategica");
   const [listaAberta, setListaAberta] = useState(true);
+  const [mostrarOcultos, setMostrarOcultos] = useState(false);
   const [funilId, setFunilId] = useState<string | null>(null);
   const [dialogAberto, setDialogAberto] = useState(false);
   const [dialogModo, setDialogModo] = useState<"criar" | "editar">("criar");
@@ -259,7 +282,7 @@ export default function Reativacao() {
   const [orderDir, setOrderDir] = useState<"asc" | "desc">("desc");
 
   const funisQuery = trpc.funilReativacao.listComResumo.useQuery({ unidadeId, grupo }, { enabled: !!unidadeSelecionada });
-  useEffect(() => { setFunilId(null); setGrupo("estrategica"); setListaAberta(true); }, [unidadeId]);
+  useEffect(() => { setFunilId(null); setGrupo("estrategica"); setListaAberta(true); setMostrarOcultos(false); }, [unidadeId]);
 
   const funilSelecionado = funisQuery.data?.find((f) => f.id === funilId) ?? null;
   const filtrosDoFunil = useMemo<FiltroSegmento[]>(
@@ -274,6 +297,16 @@ export default function Reativacao() {
 
   const excluirFunilMutation = trpc.funilReativacao.excluirFunil.useMutation({
     onSuccess: () => { setFunilId(null); utils.funilReativacao.listComResumo.invalidate({ unidadeId }); toast.success("Funil excluído."); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const ocultarItemMutation = trpc.funilReativacao.ocultarItem.useMutation({
+    onSuccess: () => utils.funilReativacao.listComResumo.invalidate({ unidadeId }),
+    onError: (e) => toast.error(e.message),
+  });
+
+  const reexibirItemMutation = trpc.funilReativacao.reexibirItem.useMutation({
+    onSuccess: () => utils.funilReativacao.listComResumo.invalidate({ unidadeId }),
     onError: (e) => toast.error(e.message),
   });
 
@@ -316,6 +349,7 @@ export default function Reativacao() {
     setGrupo(g);
     setFunilId(null);
     setListaAberta(true);
+    setMostrarOcultos(false);
   }
 
   function selecionarFunil(id: string) {
@@ -372,39 +406,58 @@ export default function Reativacao() {
                 {listaAberta ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </span>
             </button>
-            {listaAberta && (
-              <CardContent className="pt-0 space-y-1.5 border-t border-border/50">
-                <div className="pt-3 space-y-1.5">
-                  {(funisQuery.data ?? []).map((funil) => (
-                    <FunilLinha
-                      key={funil.id}
-                      funil={funil}
-                      unidadeId={unidadeId}
-                      selecionado={funil.id === funilId}
-                      onSelecionar={() => selecionarFunil(funil.id)}
-                      onEditar={() => abrirEdicaoFunil(funil)}
-                      onDuplicar={() => abrirDuplicacaoFunil(funil)}
-                      onExcluir={() => excluirFunilMutation.mutate({ id: Number(funil.id) })}
-                    />
-                  ))}
-                  {!funisQuery.isLoading && (funisQuery.data?.length ?? 0) === 0 && (
-                    <p className="text-sm text-muted-foreground text-center py-4">
-                      {grupo === "por_terapeuta" ? "Nenhum terapeuta ativo nessa unidade." : "Nenhum funil aqui ainda."}
-                    </p>
-                  )}
-                  {grupo === "estrategica" && (
-                    <button
-                      type="button"
-                      onClick={abrirNovoFunil}
-                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-border/60 text-muted-foreground hover:bg-muted/30 hover:text-foreground transition-colors"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span className="text-sm font-medium">Novo funil</span>
-                    </button>
-                  )}
-                </div>
-              </CardContent>
-            )}
+            {listaAberta && (() => {
+              const todos = funisQuery.data ?? [];
+              const ocultosCount = todos.filter((f) => f.oculto).length;
+              const visiveis = todos.filter((f) => !f.oculto || mostrarOcultos);
+              return (
+                <CardContent className="pt-0 space-y-1.5 border-t border-border/50">
+                  <div className="pt-3 space-y-1.5">
+                    {visiveis.map((funil) => (
+                      <FunilLinha
+                        key={funil.id}
+                        funil={funil}
+                        unidadeId={unidadeId}
+                        selecionado={funil.id === funilId}
+                        onSelecionar={() => selecionarFunil(funil.id)}
+                        onEditar={() => abrirEdicaoFunil(funil)}
+                        onDuplicar={() => abrirDuplicacaoFunil(funil)}
+                        onExcluir={() => excluirFunilMutation.mutate({ id: Number(funil.id) })}
+                        onOcultar={() => ocultarItemMutation.mutate({ unidadeId, grupo: grupo as GrupoVirtual, itemId: funil.id })}
+                        onReexibir={() => reexibirItemMutation.mutate({ unidadeId, grupo: grupo as GrupoVirtual, itemId: funil.id })}
+                      />
+                    ))}
+                    {!funisQuery.isLoading && todos.length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        {grupo === "por_terapeuta" ? "Nenhum terapeuta ativo nessa unidade."
+                          : grupo === "por_terapia" ? "Nenhuma terapia registrada nessa unidade ainda."
+                          : "Nenhum funil aqui ainda."}
+                      </p>
+                    )}
+                    {grupo === "estrategica" && (
+                      <button
+                        type="button"
+                        onClick={abrirNovoFunil}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-border/60 text-muted-foreground hover:bg-muted/30 hover:text-foreground transition-colors"
+                      >
+                        <Plus className="h-4 w-4" />
+                        <span className="text-sm font-medium">Novo funil</span>
+                      </button>
+                    )}
+                    {ocultosCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setMostrarOcultos((m) => !m)}
+                        className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {mostrarOcultos ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        {mostrarOcultos ? "Esconder ocultos" : `Mostrar ocultos (${ocultosCount})`}
+                      </button>
+                    )}
+                  </div>
+                </CardContent>
+              );
+            })()}
           </Card>
 
           {!funilSelecionado ? (

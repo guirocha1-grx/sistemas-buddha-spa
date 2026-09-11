@@ -8,7 +8,7 @@ import { Loader2, Plus, Trash2, Users } from "lucide-react";
 
 export type CampoSegmento =
   | "unidade" | "sexo" | "diasDesdeUltimoAtendimento" | "diasDesdeCadastro" | "qtdAtendimentos" | "terapiaFeita" | "etiqueta" | "campoPersonalizado"
-  | "terapeutaPreferencial" | "diasDesdeUltimoContato" | "diasAteAniversario" | "diaSemanaUltimaVisita" | "diaSemanaUltimos180Dias";
+  | "terapeutaPreferencial" | "diasDesdeUltimoContato" | "diasAteAniversario" | "diaSemanaUltimaVisita" | "diaSemanaUltimos180Dias" | "statusPlano";
 export type OperadorSegmento = "igual" | "diferente" | "maior" | "menor" | "maior_igual" | "menor_igual" | "contem";
 export interface FiltroSegmento {
   campo: CampoSegmento;
@@ -18,7 +18,7 @@ export interface FiltroSegmento {
   campoPersonalizadoId?: number;
 }
 
-type TipoValor = "unidade" | "sexo" | "numero" | "texto_livre" | "etiqueta" | "terapeuta" | "diaSemana";
+type TipoValor = "unidade" | "sexo" | "numero" | "texto_livre" | "etiqueta" | "terapeuta" | "diaSemana" | "statusPlano";
 
 /** DAYOFWEEK do MySQL: 1 = domingo ... 7 = sábado — mesma convenção usada em db.ts. */
 const DIAS_SEMANA = [
@@ -77,6 +77,9 @@ const CAMPOS_POR_UNIDADE: Array<{ valor: CampoSegmento; label: string; tipoValor
   { valor: "diaSemanaUltimos180Dias", label: "Dia semana 180 dias", tipoValor: "diaSemana", operadores: [
     { valor: "igual", label: "esteve em" }, { valor: "diferente", label: "nunca esteve em" },
   ] },
+  { valor: "statusPlano", label: "Status do plano", tipoValor: "statusPlano", operadores: [
+    { valor: "igual", label: "é" }, { valor: "diferente", label: "não é" },
+  ] },
 ];
 
 function campos(unidadeId?: number) {
@@ -95,6 +98,7 @@ export function descreverFiltro(filtro: FiltroSegmento, unidadeId?: number): str
   const operadorLabel = info.operadores.find((o) => o.valor === filtro.operador)?.label ?? filtro.operador;
   const valorLabel = info.tipoValor === "unidade" ? (UNIDADE_LABELS[filtro.valor] ?? filtro.valor)
     : info.tipoValor === "diaSemana" ? (DIAS_SEMANA.find((d) => d.valor === filtro.valor)?.label ?? filtro.valor)
+    : info.tipoValor === "statusPlano" ? (filtro.valor === "ativo" ? "Ativo" : filtro.valor === "inativo" ? "Inativo" : filtro.valor)
     : filtro.valor;
   return `${info.label} ${operadorLabel} ${valorLabel}`;
 }
@@ -210,6 +214,14 @@ export function SegmentoFiltros({ filtros, onChange, unidadeId }: { filtros: Fil
                 <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="Escolha o dia" /></SelectTrigger>
                 <SelectContent>
                   {DIAS_SEMANA.map((d) => <SelectItem key={d.valor} value={d.valor}>{d.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            ) : info.tipoValor === "statusPlano" ? (
+              <Select value={filtro.valor} onValueChange={(v) => atualizarFiltro(i, { valor: v })}>
+                <SelectTrigger className="h-8 w-32 text-xs"><SelectValue placeholder="Escolha" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ativo">Ativo</SelectItem>
+                  <SelectItem value="inativo">Inativo</SelectItem>
                 </SelectContent>
               </Select>
             ) : (

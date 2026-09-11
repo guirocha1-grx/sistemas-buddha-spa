@@ -230,7 +230,7 @@ async function resolverEPromoverLids(unidade: NonNullable<Awaited<ReturnType<typ
 
 const filtroSegmentoSchema = z.object({
   campo: z.enum(["unidade", "sexo", "diasDesdeUltimoAtendimento", "diasDesdeCadastro", "qtdAtendimentos", "terapiaFeita", "etiqueta", "campoPersonalizado",
-    "terapeutaPreferencial", "diasDesdeUltimoContato", "diasAteAniversario", "diaSemanaUltimaVisita", "diaSemanaUltimos180Dias"]),
+    "terapeutaPreferencial", "diasDesdeUltimoContato", "diasAteAniversario", "diaSemanaUltimaVisita", "diaSemanaUltimos180Dias", "statusPlano"]),
   operador: z.enum(["igual", "diferente", "maior", "menor", "maior_igual", "menor_igual", "contem"]),
   valor: z.string(),
   campoPersonalizadoId: z.number().optional(),
@@ -2491,29 +2491,48 @@ Diretrizes:
 
     // Alimenta a fileira de funis do grupo selecionado — nome + contagem,
     // sem carregar a lista de clientes de cada um. "estrategica" vem do
-    // banco (só esse grupo tem CRUD de verdade); "por_terapeuta"/"por_data"
-    // são calculados on-the-fly (ver funisVirtuaisPorTerapeuta/Data),
-    // sempre em sincronia com o cadastro de terapeutas — não precisa
-    // "regenerar" quando alguém entra ou sai. id sempre vira string, pra
-    // não confundir um funil real (editável/excluível) com um virtual.
+    // banco (só esse grupo tem CRUD de verdade); "por_terapeuta"/"por_data"/
+    // "por_terapia" são calculados on-the-fly (ver funisVirtuaisPor*),
+    // sempre em sincronia com o cadastro — não precisa "regenerar" quando
+    // algo muda. id sempre vira string, pra não confundir um funil real
+    // (editável/excluível) com um virtual (só ocultável). "oculto" reflete
+    // funisReativacaoOcultos — sempre false pra "estrategica", que tem
+    // exclusão de verdade.
     listComResumo: protectedProcedure.input(z.object({
-      unidadeId: z.number(), grupo: z.enum(["estrategica", "por_terapeuta", "por_data"]),
+      unidadeId: z.number(), grupo: z.enum(["estrategica", "por_terapeuta", "por_data", "por_terapia"]),
     })).query(async ({ input, ctx }) => {
       if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
       if (input.grupo === "estrategica") {
         const funis = await db.listFunisReativacao(input.unidadeId);
         return Promise.all(funis.map(async (funil) => ({
-          id: String(funil.id), nome: funil.nome, filtros: funil.filtros, virtual: false,
+          id: String(funil.id), nome: funil.nome, filtros: funil.filtros, virtual: false, oculto: false,
           resumo: await db.resumoFunilReativacao(input.unidadeId, JSON.parse(funil.filtros)),
         })));
       }
-      const virtuais = input.grupo === "por_terapeuta"
-        ? await db.funisVirtuaisPorTerapeuta(input.unidadeId)
+      const virtuais = input.grupo === "por_terapeuta" ? await db.funisVirtuaisPorTerapeuta(input.unidadeId)
+        : input.grupo === "por_terapia" ? await db.funisVirtuaisPorTerapia(input.unidadeId)
         : db.funisVirtuaisPorData();
+      const ocultos = await db.listItensOcultosReativacao(input.unidadeId, input.grupo);
       return Promise.all(virtuais.map(async (funil) => ({
-        id: funil.id, nome: funil.nome, filtros: JSON.stringify(funil.filtros), virtual: true,
+        id: funil.id, nome: funil.nome, filtros: JSON.stringify(funil.filtros), virtual: true, oculto: ocultos.has(funil.id),
         resumo: await db.resumoFunilReativacao(input.unidadeId, funil.filtros),
       })));
+    }),
+
+    ocultarItem: protectedProcedure.input(z.object({
+      unidadeId: z.number(), grupo: z.enum(["por_terapeuta", "por_data", "por_terapia"]), itemId: z.string(),
+    })).mutation(async ({ input, ctx }) => {
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      await db.ocultarItemGrupoReativacao(input.unidadeId, input.grupo, input.itemId);
+      return { success: true };
+    }),
+
+    reexibirItem: protectedProcedure.input(z.object({
+      unidadeId: z.number(), grupo: z.enum(["por_terapeuta", "por_data", "por_terapia"]), itemId: z.string(),
+    })).mutation(async ({ input, ctx }) => {
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      await db.reexibirItemGrupoReativacao(input.unidadeId, input.grupo, input.itemId);
+      return { success: true };
     }),
 
     definirStatus: protectedProcedure.input(z.object({
