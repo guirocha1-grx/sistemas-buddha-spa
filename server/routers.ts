@@ -2591,6 +2591,12 @@ Diretrizes:
       return db.composicaoMetaReativacao(input.unidadeId);
     }),
 
+    // Pontos diários (acumulado x meta esperada) pro gráfico de evolução do mês.
+    evolucaoDiaria: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input, ctx }) => {
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      return db.evolucaoDiariaReceitaReativacao(input.unidadeId);
+    }),
+
     definirMetaMensal: adminProcedure.input(z.object({
       unidadeId: z.number(), valorFaturamento: z.number().min(0),
     })).mutation(async ({ input }) => {

@@ -7401,29 +7401,69 @@ export interface ComposicaoMetaReativacao {
   clientesPorDia: number;
   taxaConversao: number | null;
   contatosNecessariosPorDia: number | null;
+  // "Desempenho mensal" (2026-09-12) — mesmo painel/fórmula de premiação
+  // já usado pela unidade na planilha "Informe de vendas", confirmado
+  // pelo usuário com print real (Acumulado, Meta Esperada até Hoje,
+  // Atingimento, Premiação por faixa, atendimentos com/sem plano).
+  diaAtual: number;
+  diasNoMes: number;
+  metaEsperadaAteHoje: number;
+  atingimentoMeta: number | null; // fração (0.9296 = 92,96%), não em %
+  premiacao: string;
+  totalAtendimentos: number;
+  atendComPlano: number;
+  atendSemPlano: number;
+  planosVendidos: number;
+}
+
+/**
+ * Faixa de premiação (2026-09-12) — fórmula exata informada pelo usuário,
+ * já em uso na planilha "Informe de vendas": abaixo de 90% de
+ * atingimento não premia; cada faixa de 10 pontos acima de 90% sobe um
+ * degrau (250/500/750/1.000). `atingimentoMeta` é a fração (acumulado /
+ * meta esperada até hoje), não a meta final do mês.
+ */
+function faixaPremiacaoReativacao(atingimentoMeta: number | null): string {
+  if (atingimentoMeta === null || atingimentoMeta < 0.9) return "Sem premiação";
+  if (atingimentoMeta < 1.0) return "Faixa 1: 250,00";
+  if (atingimentoMeta < 1.1) return "Faixa 2: 500,00";
+  if (atingimentoMeta < 1.2) return "Faixa 3: 750,00";
+  return "Faixa 4: 1.000,00";
 }
 
 /**
  * "Quantos contatos a recepção precisa fazer amanhã, em média, pra não
- * perder a meta do mês" — cruza a meta de faturamento (tabela metas) com
- * a Receita Bruta já realizada no mês (mesma agregação do DRE, seção
- * "receitas", regime caixa — não reinventa o cálculo) e a conversão real
- * do próprio funil de reativação. Sem meta de faturamento cadastrada,
- * devolve os valores como 0 (a tela pede pra configurar).
+ * perder a meta do mês" + o painel "Desempenho mensal" (acumulado, meta
+ * esperada até hoje, atingimento, premiação, atendimentos com/sem
+ * plano) — cruza a meta de faturamento (tabela metas) com a Receita
+ * Bruta já realizada no mês (mesma agregação do DRE, seção "receitas",
+ * regime caixa — não reinventa o cálculo), atendimentos do Belle e a
+ * conversão real do próprio funil de reativação. Sem meta de
+ * faturamento cadastrada, os campos derivados dela vêm como 0/null (a
+ * tela pede pra configurar).
  */
 export async function composicaoMetaReativacao(unidadeId: number): Promise<ComposicaoMetaReativacao> {
+  const db = await getDb();
   const hoje = hojeSaoPaulo();
   const mesStr = hoje.slice(0, 7);
   const diaAtual = Number(hoje.slice(8, 10));
   const [ano, mes] = hoje.split("-").map(Number);
-  const ultimoDiaDoMes = new Date(ano, mes, 0).getDate();
-  const diasRestantesNoMes = Math.max(1, ultimoDiaDoMes - diaAtual + 1); // inclui hoje
+  const diasNoMes = new Date(ano, mes, 0).getDate();
+  const diasRestantesNoMes = Math.max(1, diasNoMes - diaAtual + 1); // inclui hoje
+  const inicioMes = `${mesStr}-01`;
+  const fimMes = `${mesStr}-31`;
 
-  const [metaLinha, agregado, ticketMedio, conversao] = await Promise.all([
+  const [metaLinha, agregado, ticketMedio, conversao, atendimentosLinhas, planosVendidosLinhas] = await Promise.all([
     getMetaMensalAtual(unidadeId),
     listDreAgregado(unidadeId, mesStr, mesStr, "caixa"),
     getTicketMedioReativacao(unidadeId),
     conversaoContatosReativacao(unidadeId, 30),
+    db ? db.select({ planoBelleId: belleAtendimentos.planoBelleId }).from(belleAtendimentos)
+      .where(and(eq(belleAtendimentos.unidadeId, unidadeId), eq(belleAtendimentos.status, "Atendido"), gte(belleAtendimentos.dataAtendimento, inicioMes), lte(belleAtendimentos.dataAtendimento, fimMes)))
+      : Promise.resolve([]),
+    db ? db.select({ id: bellePlanosClientes.id }).from(bellePlanosClientes)
+      .where(and(eq(bellePlanosClientes.unidadeId, unidadeId), gte(bellePlanosClientes.dataVenda, inicioMes), lte(bellePlanosClientes.dataVenda, fimMes)))
+      : Promise.resolve([]),
   ]);
 
   const metaFaturamento = metaLinha?.valorFaturamento ? Number(metaLinha.valorFaturamento) : 0;
@@ -7434,7 +7474,86 @@ export async function composicaoMetaReativacao(unidadeId: number): Promise<Compo
   const taxaConversao = conversao.contatados > 0 ? conversao.convertidos / conversao.contatados : null;
   const contatosNecessariosPorDia = taxaConversao && taxaConversao > 0 ? clientesPorDia / taxaConversao : null;
 
-  return { metaFaturamento, faturamentoAtual, faltam, diasRestantesNoMes, ticketMedio, clientesNecessarios, clientesPorDia, taxaConversao, contatosNecessariosPorDia };
+  const metaEsperadaAteHoje = metaFaturamento * (diaAtual / diasNoMes);
+  const atingimentoMeta = metaEsperadaAteHoje > 0 ? faturamentoAtual / metaEsperadaAteHoje : null;
+  const premiacao = faixaPremiacaoReativacao(atingimentoMeta);
+  const totalAtendimentos = atendimentosLinhas.length;
+  const atendComPlano = atendimentosLinhas.filter((a) => a.planoBelleId != null).length;
+  const atendSemPlano = totalAtendimentos - atendComPlano;
+  const planosVendidos = planosVendidosLinhas.length;
+
+  return {
+    metaFaturamento, faturamentoAtual, faltam, diasRestantesNoMes, ticketMedio, clientesNecessarios, clientesPorDia, taxaConversao, contatosNecessariosPorDia,
+    diaAtual, diasNoMes, metaEsperadaAteHoje, atingimentoMeta, premiacao, totalAtendimentos, atendComPlano, atendSemPlano, planosVendidos,
+  };
+}
+
+export interface PontoEvolucaoMensal {
+  dia: number;
+  acumulado: number;
+  metaEsperada: number;
+}
+
+/**
+ * Evolução dia a dia do faturamento acumulado no mês atual, contra a
+ * linha de meta esperada (linear: meta final ÷ dias do mês × dia) — os
+ * dois números que alimentam o gráfico de linha pedido pelo usuário.
+ * Mesmas 3 fontes de listDreAgregado (extrato sem split + splits +
+ * vendas de adquirente), só que por dia em vez de somado no mês inteiro
+ * — listDreAgregado não expõe granularidade diária, por isso a consulta
+ * é repetida aqui em vez de reaproveitada.
+ */
+export async function evolucaoDiariaReceitaReativacao(unidadeId: number): Promise<PontoEvolucaoMensal[]> {
+  const db = await getDb();
+  const hoje = hojeSaoPaulo();
+  const mesStr = hoje.slice(0, 7);
+  const [ano, mes] = hoje.split("-").map(Number);
+  const diasNoMes = new Date(ano, mes, 0).getDate();
+  const inicioMes = `${mesStr}-01`;
+  const fimMes = `${mesStr}-31`;
+  if (!db) return [];
+
+  const idsReceita = new Set(
+    (await db.select({ id: dreDescricoes.id })
+      .from(dreDescricoes)
+      .innerJoin(dreCategorias, eq(dreCategorias.id, dreDescricoes.dreCategoriaId))
+      .where(eq(dreCategorias.secao, "receitas"))
+    ).map((l) => l.id),
+  );
+
+  const porDia = new Map<string, number>();
+  const soma = (dataIso: string, dreDescricaoId: number | null, valor: string | null) => {
+    if (dreDescricaoId === null || valor === null || !idsReceita.has(dreDescricaoId)) return;
+    porDia.set(dataIso, (porDia.get(dataIso) ?? 0) + parseFloat(valor));
+  };
+
+  const [semSplit, splits, vendas, metaLinha] = await Promise.all([
+    db.select({ dataEntrada: interExtratos.dataEntrada, dreDescricaoId: interExtratos.dreDescricaoId, valor: interExtratos.valor })
+      .from(interExtratos)
+      .where(and(eq(interExtratos.unidadeId, unidadeId), gte(interExtratos.dataEntrada, inicioMes), lte(interExtratos.dataEntrada, fimMes), isNotNull(interExtratos.dreDescricaoId))),
+    db.select({ dataEntrada: interExtratos.dataEntrada, dreDescricaoId: lancamentoSplits.dreDescricaoId, valor: lancamentoSplits.valor })
+      .from(lancamentoSplits)
+      .innerJoin(interExtratos, eq(lancamentoSplits.interExtratoId, interExtratos.id))
+      .where(and(eq(interExtratos.unidadeId, unidadeId), gte(interExtratos.dataEntrada, inicioMes), lte(interExtratos.dataEntrada, fimMes))),
+    db.select({ dataHora: adquirenteVendas.dataHora, dreDescricaoId: adquirenteVendas.dreDescricaoId, valor: adquirenteVendas.valorBruto })
+      .from(adquirenteVendas)
+      .where(and(eq(adquirenteVendas.unidadeId, unidadeId), gte(adquirenteVendas.dataHora, inicioMes), lte(adquirenteVendas.dataHora, `${fimMes} 23:59:59`), isNotNull(adquirenteVendas.dreDescricaoId))),
+    getMetaMensalAtual(unidadeId),
+  ]);
+  for (const l of semSplit) soma(l.dataEntrada, l.dreDescricaoId, l.valor);
+  for (const s of splits) soma(s.dataEntrada, s.dreDescricaoId, s.valor);
+  for (const v of vendas) soma(v.dataHora.slice(0, 10), v.dreDescricaoId, v.valor);
+
+  const metaFinal = metaLinha?.valorFaturamento ? Number(metaLinha.valorFaturamento) : 0;
+  const metaPorDia = diasNoMes > 0 ? metaFinal / diasNoMes : 0;
+
+  const pontos: PontoEvolucaoMensal[] = [];
+  let acumulado = 0;
+  for (let dia = 1; dia <= diasNoMes; dia++) {
+    acumulado += porDia.get(`${mesStr}-${String(dia).padStart(2, "0")}`) ?? 0;
+    pontos.push({ dia, acumulado: Math.round(acumulado * 100) / 100, metaEsperada: Math.round(metaPorDia * dia * 100) / 100 });
+  }
+  return pontos;
 }
 
 // ===== Comanda virtual (item a item — auditoria da Comanda Recepção) =====

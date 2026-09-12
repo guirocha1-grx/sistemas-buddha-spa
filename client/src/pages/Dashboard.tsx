@@ -1,6 +1,7 @@
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
+import { DesempenhoReativacaoCard } from "@/components/DesempenhoReativacaoCard";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,6 +99,11 @@ export default function Dashboard() {
         </div>
         <UnidadeSelector />
       </div>
+
+      {/* Reativação — sempre a unidade selecionada (números muito diferentes
+          entre RBS e SSU pra fazer sentido consolidado), sempre mês atual,
+          independente do período escolhido abaixo pros outros cards. */}
+      {unidadeSelecionada && <DesempenhoReativacaoCard unidadeId={unidadeSelecionada.id} />}
 
       {/* Seletor de Período */}
       <Card className="border-border/50 shadow-sm">
