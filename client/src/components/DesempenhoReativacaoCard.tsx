@@ -57,6 +57,7 @@ export function DesempenhoReativacaoCard({ unidadeId }: { unidadeId: number }) {
   const percentualConversao = conversao && conversao.contatados > 0 ? Math.round((conversao.convertidos / conversao.contatados) * 100) : null;
   const composicao = composicaoQuery.data;
   const evolucao = evolucaoQuery.data ?? [];
+  const projecaoFechamento = [...evolucao].reverse().find((p) => p.tendencia !== null)?.tendencia ?? null;
 
   return (
     <Card className="border-border/50 shadow-sm">
@@ -161,9 +162,19 @@ export function DesempenhoReativacaoCard({ unidadeId }: { unidadeId: number }) {
                     <Legend wrapperStyle={{ fontSize: "12px" }} />
                     <Line type="monotone" dataKey="metaEsperada" name="Meta" stroke="#eab308" dot={false} strokeWidth={2} />
                     <Line type="monotone" dataKey="superMeta" name="SuperMeta" stroke="#dc2626" dot={false} strokeWidth={2} />
-                    <Line type="monotone" dataKey="acumulado" name="Realizado" stroke="#2563eb" dot={false} strokeWidth={2.5} />
+                    <Line type="monotone" dataKey="acumuladoGrafico" name="Realizado" stroke="#2563eb" dot={false} strokeWidth={2.5} connectNulls={false} />
+                    <Line type="monotone" dataKey="tendencia" name="Tendência" stroke="#16a34a" strokeDasharray="5 5" dot={false} strokeWidth={2} connectNulls={false} />
                   </LineChart>
                 </ResponsiveContainer>
+              )}
+
+              {projecaoFechamento !== null && (
+                <p className="text-sm text-muted-foreground">
+                  No ritmo dos últimos dias (média das 2 últimas ocorrências de cada dia da semana), a unidade fecha o mês em <strong className="text-foreground">~{fmtMoeda(projecaoFechamento)}</strong>
+                  {composicao && composicao.metaFaturamento > 0 && (
+                    <> — {fmtPercentual(projecaoFechamento / composicao.metaFaturamento)} da meta.</>
+                  )}
+                </p>
               )}
 
               <p className="text-sm text-muted-foreground">

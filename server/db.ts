@@ -7315,6 +7315,11 @@ function hojeSaoPaulo(): string {
   return `${valor("year")}-${valor("month")}-${valor("day")}`;
 }
 
+function horaSaoPaulo(): number {
+  const partes = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", hour12: false }).formatToParts(new Date());
+  return Number(partes.find((p) => p.type === "hour")?.value ?? "0");
+}
+
 export async function registrarContatoReativacao(input: { unidadeId: number; atendenteId: number; clienteId: number; funilOrigem?: string | null }): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -7485,9 +7490,40 @@ async function mediaReceitaPorDiaSemana(unidadeId: number, diasHistorico = 90): 
   return medias;
 }
 
+/**
+ * Média de receita das ÚLTIMAS DUAS ocorrências de cada dia da semana
+ * até (e incluindo) `dataFimInclusive` — usada só pra linha de
+ * Tendência (2026-09-12): diferente de mediaReceitaPorDiaSemana (média
+ * de 90 dias, estável, usada pra distribuir a meta do mês), aqui o
+ * usuário quer algo que reaja rápido ao ritmo recente pra projetar "se
+ * mantiver o pace, fecha quanto" — só as 2 últimas terças, os 2 últimos
+ * sábados etc. Olha 8 semanas pra trás pra garantir pelo menos essas 2
+ * ocorrências mesmo com algum dia sem dado; dia da semana sem nenhuma
+ * ocorrência no período vira 0 (sem base pra projetar).
+ */
+async function mediaReceitaUltimasDuasOcorrenciasPorDiaSemana(unidadeId: number, dataFimInclusive: string, semanasHistorico = 8): Promise<Record<number, number>> {
+  const inicio = somarDiasIso(dataFimInclusive, -semanasHistorico * 7);
+  const porDia = await receitaPorDiaNoIntervalo(unidadeId, inicio, dataFimInclusive);
+  const porDiaSemana: Record<number, number[]> = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
+  for (const dataIso of Array.from(porDia.keys()).sort()) {
+    porDiaSemana[diaSemanaMySQL(dataIso)].push(porDia.get(dataIso)!);
+  }
+  const medias: Record<number, number> = {};
+  for (let dia = 1; dia <= 7; dia++) {
+    const ultimasDuas = porDiaSemana[dia].slice(-2);
+    medias[dia] = ultimasDuas.length > 0 ? ultimasDuas.reduce((a, b) => a + b, 0) / ultimasDuas.length : 0;
+  }
+  return medias;
+}
+
 export interface PontoEvolucaoMensal {
   dia: number;
+  /** Acumulado real até esse dia — sempre atualizado, usado pros números da composição (não é filtrado pelo corte das 20h). */
   acumulado: number;
+  /** Igual a `acumulado` até o dia de corte do gráfico (ontem, ou hoje só a partir das 20h); null depois — é o que a linha "Realizado" deve plotar, pra não mostrar hoje pela metade como se fosse um tombo. */
+  acumuladoGrafico: number | null;
+  /** Projeção (linha "Tendência", verde): null antes do dia de corte; no dia de corte é igual ao acumulado real (conecta com a linha Realizado); depois soma, dia a dia, a média das 2 últimas ocorrências daquele dia da semana — "se mantiver o pace". */
+  tendencia: number | null;
   metaEsperada: number;
   superMeta: number;
 }
@@ -7497,8 +7533,13 @@ export interface PontoEvolucaoMensal {
  * meta esperada (não-linear — distribuída pela força real de cada dia
  * da semana, ver mediaReceitaPorDiaSemana) e a SuperMeta (Faixa 4 da
  * premiação: meta × 1,2, mesmo múltiplo confirmado na planilha "Informe
- * de vendas") — as 3 linhas do gráfico pedido pelo usuário (Meta,
- * SuperMeta, Realizado).
+ * de vendas") — as linhas do gráfico pedido pelo usuário (Meta,
+ * SuperMeta, Realizado, Tendência).
+ *
+ * O dia de hoje só entra no "Realizado" do gráfico a partir das 20h
+ * (achado do usuário: antes disso o dia está incompleto e aparece como
+ * um patamar/queda enganosa comparado às linhas de meta, que são
+ * acumuladas o mês inteiro) — antes das 20h o gráfico encerra ontem.
  */
 export async function evolucaoDiariaReceitaReativacao(unidadeId: number): Promise<PontoEvolucaoMensal[]> {
   const hoje = hojeSaoPaulo();
@@ -7507,11 +7548,16 @@ export async function evolucaoDiariaReceitaReativacao(unidadeId: number): Promis
   const diasNoMes = new Date(ano, mes, 0).getDate();
   const inicioMes = `${mesStr}-01`;
   const fimMes = `${mesStr}-31`;
+  const diaAtual = Number(hoje.slice(8, 10));
+  const corteIncluiHoje = horaSaoPaulo() >= 20;
+  const diaCorte = corteIncluiHoje ? diaAtual : diaAtual - 1;
+  const dataCorte = corteIncluiHoje ? hoje : somarDiasIso(hoje, -1);
 
-  const [porDia, pesos, metaLinha] = await Promise.all([
+  const [porDia, pesos, metaLinha, mediaUltimasDuas] = await Promise.all([
     receitaPorDiaNoIntervalo(unidadeId, inicioMes, fimMes),
     mediaReceitaPorDiaSemana(unidadeId),
     getMetaMensalAtual(unidadeId),
+    mediaReceitaUltimasDuasOcorrenciasPorDiaSemana(unidadeId, dataCorte),
   ]);
   const metaFinal = metaLinha?.valorFaturamento ? Number(metaLinha.valorFaturamento) : 0;
 
@@ -7521,13 +7567,28 @@ export async function evolucaoDiariaReceitaReativacao(unidadeId: number): Promis
   const pontos: PontoEvolucaoMensal[] = [];
   let acumulado = 0;
   let metaAcumulada = 0;
+  let tendenciaAcumulada = 0;
   for (const dataIso of datasDoMes) {
     acumulado += porDia.get(dataIso) ?? 0;
     const metaDoDia = pesoTotal > 0 ? metaFinal * (pesos[diaSemanaMySQL(dataIso)] / pesoTotal) : 0;
     metaAcumulada += metaDoDia;
+    const dia = Number(dataIso.slice(8, 10));
+    const acumuladoArredondado = Math.round(acumulado * 100) / 100;
+
+    let tendencia: number | null = null;
+    if (dia === diaCorte) {
+      tendenciaAcumulada = acumulado;
+      tendencia = acumuladoArredondado;
+    } else if (dia > diaCorte) {
+      tendenciaAcumulada += mediaUltimasDuas[diaSemanaMySQL(dataIso)] ?? 0;
+      tendencia = Math.round(tendenciaAcumulada * 100) / 100;
+    }
+
     pontos.push({
-      dia: Number(dataIso.slice(8, 10)),
-      acumulado: Math.round(acumulado * 100) / 100,
+      dia,
+      acumulado: acumuladoArredondado,
+      acumuladoGrafico: dia <= diaCorte ? acumuladoArredondado : null,
+      tendencia,
       metaEsperada: Math.round(metaAcumulada * 100) / 100,
       superMeta: Math.round(metaAcumulada * 1.2 * 100) / 100,
     });
