@@ -1,12 +1,16 @@
 import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
-import { DesempenhoReativacaoCard } from "@/components/DesempenhoReativacaoCard";
+import {
+  EvolucaoMensalReativacaoCard,
+  ResumoMensalReativacaoCard,
+  AcoesConversaoReativacaoCard,
+} from "@/components/DesempenhoReativacaoCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DollarSign, Calendar, Users, TrendingUp, Loader2 } from "lucide-react";
+import { DollarSign, Calendar, Users, Wallet, Loader2 } from "lucide-react";
 import { useState } from "react";
 
 function dataLocalParaInput(data: Date): string {
@@ -32,11 +36,13 @@ function calcularPeriodo(periodo: PeriodoRapido): { inicio: string; fim: string 
 const PERIODO_INICIAL = calcularPeriodo("mes_atual");
 
 /**
- * Dashboard por unidade (2026-09-12) — era uma visão consolidada
- * (SSU+RBS somados), mas os números das duas unidades são muito
- * diferentes pra fazer sentido misturado (achado do usuário). Os 4 KPIs
- * e o card de Reativação são sempre da unidade selecionada no seletor
- * do topo; não existe mais comparativo entre as duas nessa tela.
+ * Dashboard por unidade (reorganizado em 2026-09-12 a pedido do
+ * usuário): seletor de período primeiro, depois a evolução do mês
+ * (gráfico + quadro-resumo lado a lado), depois os números de HOJE
+ * (independentes do período escolhido), depois as ações de conversão da
+ * Reativação (dia e mês), e por fim um único número financeiro pro
+ * período escolhido — o que de fato entrou nas contas (recebimentos),
+ * não o faturado (que pode não ter sido recebido ainda).
  */
 export default function Dashboard() {
   const { unidadeSelecionada } = useUnidade();
@@ -72,8 +78,8 @@ export default function Dashboard() {
     return `${dia}/${mes}/${ano}`;
   };
 
-  const totalFaturamento = dashboardData?.faturamentoMes ?? 0;
   const totalRecebimentos = dashboardData?.recebimentosMes ?? 0;
+  const faturamentoHoje = dashboardData?.faturamentoHoje ?? 0;
   const totalAgendamentosHoje = dashboardData?.agendamentosHoje ?? 0;
   const totalClientes = kanbanData?.total ?? 0;
 
@@ -92,11 +98,7 @@ export default function Dashboard() {
         <UnidadeSelector />
       </div>
 
-      {/* Reativação — sempre a unidade selecionada, sempre mês atual,
-          independente do período escolhido abaixo pros outros cards. */}
-      {unidadeSelecionada && <DesempenhoReativacaoCard unidadeId={unidadeSelecionada.id} />}
-
-      {/* Seletor de Período */}
+      {/* 1. Seletor de Período */}
       <Card className="border-border/50 shadow-sm">
         <CardContent className="flex flex-wrap items-end gap-3 p-4">
           <div className="space-y-1">
@@ -124,100 +126,96 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* KPI Cards da unidade selecionada */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {periodoEhMesAtual ? "Faturamento Total do Mês" : "Faturamento no Período"}
-            </CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            ) : (
-              <>
-                <div className="text-2xl font-bold">{fmtCurrency(totalFaturamento)}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {unidadeSelecionada?.nome ?? "Unidade"}{!periodoEhMesAtual && ` · ${fmtDataBr(dataInicio)} a ${fmtDataBr(dataFim)}`}
-                </p>
-              </>
-            )}
-          </CardContent>
-        </Card>
+      {/* 2. Evolução do mês (gráfico) + quadro-resumo lado a lado — sempre
+          a unidade selecionada, sempre mês atual, independente do
+          período escolhido acima. */}
+      {unidadeSelecionada && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <EvolucaoMensalReativacaoCard unidadeId={unidadeSelecionada.id} />
+          <ResumoMensalReativacaoCard unidadeId={unidadeSelecionada.id} />
+        </div>
+      )}
 
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Recebimentos Totais
-            </CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            ) : (
-              <>
-                <div className="text-2xl font-bold">{fmtCurrency(totalRecebimentos)}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {periodoEhMesAtual ? "Total recebido no mês" : `Total recebido de ${fmtDataBr(dataInicio)} a ${fmtDataBr(dataFim)}`}
-                </p>
-              </>
-            )}
-          </CardContent>
-        </Card>
+      {/* 3. Hoje — sempre o dia de hoje, independente do período escolhido acima */}
+      <div>
+        <h2 className="text-sm font-medium text-muted-foreground mb-2">Hoje</h2>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="border-border/50 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Agendamentos Hoje</CardTitle>
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{totalAgendamentosHoje}</div>
+                  <p className="text-xs text-muted-foreground mt-1">{unidadeSelecionada?.nome ?? "Unidade"}</p>
+                </>
+              )}
+            </CardContent>
+          </Card>
 
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Agendamentos Hoje
-            </CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            ) : (
-              <>
-                <div className="text-2xl font-bold">{totalAgendamentosHoje}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {unidadeSelecionada?.nome ?? "Unidade"}
-                </p>
-              </>
-            )}
-          </CardContent>
-        </Card>
+          <Card className="border-border/50 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Faturamento Hoje</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{fmtCurrency(faturamentoHoje)}</div>
+                  <p className="text-xs text-muted-foreground mt-1">{unidadeSelecionada?.nome ?? "Unidade"}</p>
+                </>
+              )}
+            </CardContent>
+          </Card>
 
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Clientes Ativos
-            </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            ) : (
-              <>
-                <div className="text-2xl font-bold">{totalClientes}</div>
-                <div className="flex gap-3 mt-1">
-                  <span className="text-xs text-orange-600">
-                    {kanbanData?.quente?.length ?? 0} quentes
-                  </span>
-                  <span className="text-xs text-yellow-600">
-                    {kanbanData?.morno?.length ?? 0} mornos
-                  </span>
-                  <span className="text-xs text-blue-600">
-                    {kanbanData?.frio?.length ?? 0} frios
-                  </span>
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
+          <Card className="border-border/50 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Clientes Ativos</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{totalClientes}</div>
+              <div className="flex gap-3 mt-1">
+                <span className="text-xs text-orange-600">{kanbanData?.quente?.length ?? 0} quentes</span>
+                <span className="text-xs text-yellow-600">{kanbanData?.morno?.length ?? 0} mornos</span>
+                <span className="text-xs text-blue-600">{kanbanData?.frio?.length ?? 0} frios</span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
+
+      {/* 4. Ações de conversão — dia e mês */}
+      {unidadeSelecionada && <AcoesConversaoReativacaoCard unidadeId={unidadeSelecionada.id} />}
+
+      {/* 5. Um único número financeiro pro período escolhido — o que
+          realmente entrou nas contas (recebimentos), não o faturado. */}
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            {periodoEhMesAtual ? "Recebido no Mês" : "Recebido no Período"}
+          </CardTitle>
+          <Wallet className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          ) : (
+            <>
+              <div className="text-2xl font-bold">{fmtCurrency(totalRecebimentos)}</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                O que realmente entrou nas contas{!periodoEhMesAtual && ` · ${fmtDataBr(dataInicio)} a ${fmtDataBr(dataFim)}`}
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

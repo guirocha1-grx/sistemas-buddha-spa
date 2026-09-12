@@ -739,19 +739,25 @@ export const appRouter = router({
       const dataInicioIso = input.dataInicio ?? fmtDateIso(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
       const dataFimIso = input.dataFim ?? hojeIso;
 
-      const [comandaDias, totalVendasMes, recebimentosMes, agendamentosPeriodo, agendamentosHojeLista] = await Promise.all([
+      const [comandaDias, totalVendasMes, recebimentosMes, agendamentosPeriodo, agendamentosHojeLista, comandaHoje] = await Promise.all([
         db.listComandaDiaria(input.unidadeId, dataInicioIso, dataFimIso),
         db.contarVendasComandaPeriodo(input.unidadeId, dataInicioIso, dataFimIso),
         totalContasBancariasNoPeriodo(input.unidadeId, dataInicioIso, dataFimIso).catch(() => 0),
         db.listarAgendaPeriodo(input.unidadeId, dataInicioIso, dataFimIso),
         db.listarAgendaPeriodo(input.unidadeId, hojeIso, hojeIso),
+        // Faturamento de HOJE em específico — pro bloco "Hoje" do Dashboard,
+        // independente do período escolhido pro resto da tela.
+        db.listComandaDiaria(input.unidadeId, hojeIso, hojeIso),
       ]);
 
       const faturamentoMes = comandaDias.reduce((acc, d) =>
         acc + Number(d.dinheiro) + Number(d.cartaoDebito) + Number(d.cartaoCredito) + Number(d.pix), 0);
+      const faturamentoHoje = comandaHoje.reduce((acc, d) =>
+        acc + Number(d.dinheiro) + Number(d.cartaoDebito) + Number(d.cartaoCredito) + Number(d.pix), 0);
 
       return {
         faturamentoMes,
+        faturamentoHoje,
         totalVendasMes,
         recebimentosMes,
         agendamentosHoje: agendamentosHojeLista.length,
