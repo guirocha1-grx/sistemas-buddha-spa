@@ -2553,10 +2553,13 @@ Diretrizes:
       return { success: true };
     }),
 
-    // Meta diária + conversão (2026-09-11) — incentivo pra recepção usar o
-    // funil todo dia. Contato é atribuído ao atendente logado via PIN
-    // (ctx.atendente, mesmo mecanismo do Inbox) — sem PIN ativo, não sabe
-    // pra quem creditar, então recusa em vez de gravar sem dono.
+    // Contatos + composição da meta (2026-09-11) — incentivo pra recepção
+    // usar o funil todo dia. Meta e prêmio são sempre da EQUIPE (achado do
+    // usuário: uma pessoa inicia o atendimento, outra termina — meta
+    // individual não funciona), então todo progresso/conversão abaixo é
+    // por unidade, nunca por atendente. O contato ainda grava quem
+    // registrou (ctx.atendente, mesmo mecanismo do Inbox) só pra
+    // auditoria — sem PIN ativo, recusa em vez de gravar sem dono.
     registrarContato: protectedProcedure.input(z.object({
       unidadeId: z.number(), clienteId: z.number(), funilOrigem: z.string().trim().optional(),
     })).mutation(async ({ input, ctx }) => {
@@ -2571,24 +2574,35 @@ Diretrizes:
 
     progressoHoje: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input, ctx }) => {
       if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
-      if (!ctx.atendente) return { hoje: 0, meta: 0, semAtendente: true };
-      const progresso = await db.progressoContatosReativacaoHoje(input.unidadeId, ctx.atendente.id);
-      return { ...progresso, semAtendente: false };
+      const hoje = await db.contatosReativacaoHoje(input.unidadeId);
+      return { hoje };
     }),
 
-    definirMeta: adminProcedure.input(z.object({
-      unidadeId: z.number(), metaDiaria: z.number().int().min(0),
+    conversao: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input, ctx }) => {
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      return db.conversaoContatosReativacao(input.unidadeId);
+    }),
+
+    // "Quantos contatos precisamos fazer amanhã pra não perder a meta do
+    // mês" — cruza a meta de faturamento com a Receita Bruta já realizada
+    // (mesma agregação do DRE) e a conversão real do funil.
+    composicaoMeta: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input, ctx }) => {
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      return db.composicaoMetaReativacao(input.unidadeId);
+    }),
+
+    definirMetaMensal: adminProcedure.input(z.object({
+      unidadeId: z.number(), valorFaturamento: z.number().min(0),
     })).mutation(async ({ input }) => {
-      await db.definirMetaDiariaReativacao(input.unidadeId, input.metaDiaria);
+      await db.definirMetaMensalAtual(input.unidadeId, input.valorFaturamento);
       return { success: true };
     }),
 
-    conversao: protectedProcedure.input(z.object({
-      unidadeId: z.number(), somenteEu: z.boolean().optional(),
-    })).query(async ({ input, ctx }) => {
-      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
-      const atendenteId = input.somenteEu ? ctx.atendente?.id ?? null : null;
-      return db.conversaoContatosReativacao(input.unidadeId, atendenteId);
+    definirTicketMedio: adminProcedure.input(z.object({
+      unidadeId: z.number(), valor: z.number().min(1),
+    })).mutation(async ({ input }) => {
+      await db.definirTicketMedioReativacao(input.unidadeId, input.valor);
+      return { success: true };
     }),
   }),
 

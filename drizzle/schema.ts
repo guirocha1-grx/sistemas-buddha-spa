@@ -308,7 +308,11 @@ export const metas = mysqlTable("metas", {
   numNovosClientes: int("numNovosClientes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  // Faltava — upsertMeta usa onDuplicateKeyUpdate contra isso; sem o
+  // índice único, cada "atualização" de meta virava linha nova (2026-09-11).
+  unidadeAnoMesUnico: uniqueIndex("metas_unidade_ano_mes_idx").on(table.unidadeId, table.ano, table.mes),
+}));
 
 export type Meta = typeof metas.$inferSelect;
 export type InsertMeta = typeof metas.$inferInsert;

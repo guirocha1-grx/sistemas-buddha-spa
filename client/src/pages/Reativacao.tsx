@@ -4,14 +4,13 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import UnidadeSelector from "@/components/UnidadeSelector";
-import { useAtendenteAtual } from "@/components/AtendenteGate";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, Trash2, Pencil, Copy, Users, Phone, Mail, BellOff, Eye, EyeOff, ArrowUp, ArrowDown, ArrowUpDown, ChevronUp, ChevronDown, Target, TrendingUp, Check } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, Copy, Users, Phone, Mail, BellOff, Eye, EyeOff, ArrowUp, ArrowDown, ArrowUpDown, ChevronUp, ChevronDown, Target, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { rotaInboxConversa } from "@shared/inboxNavigation";
 import { ClienteWhatsAppButton } from "@/components/ClienteWhatsAppButton";
@@ -43,6 +42,10 @@ function fmtNascimentoSemAno(iso: string | null): string {
   if (!iso) return "—";
   const [, m, d] = iso.split("-");
   return `${d}/${m}`;
+}
+
+function fmtMoeda(valor: number): string {
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 function fmtDataHoraBr(data: Date | string | null | undefined): string {
@@ -272,95 +275,140 @@ function FunilLinha({ funil, unidadeId, selecionado, onSelecionar, onEditar, onD
  * o WhatsApp (ver onOpenInbox mais abaixo); aqui só mostra o progresso e,
  * pro admin, um jeito de ajustar a meta da unidade.
  */
+/**
+ * Meta e conversão são sempre da recepção como equipe (achado do usuário:
+ * é comum uma pessoa iniciar o atendimento e outra terminar — meta
+ * individual não funciona), nunca por atendente. A composição abaixo
+ * ("quantos contatos precisamos fazer amanhã") cruza a meta de
+ * faturamento do mês com a Receita Bruta já realizada (mesma agregação
+ * do DRE) e a conversão real do próprio funil — vira o número da meta
+ * diária de contatos sozinha, sem precisar de um valor arbitrário.
+ */
 function MetaDiariaCard({ unidadeId }: { unidadeId: number }) {
   const { user } = useAuth();
-  const { atendente } = useAtendenteAtual();
+  const isAdmin = user?.role === "admin";
   const utils = trpc.useUtils();
   const progressoQuery = trpc.funilReativacao.progressoHoje.useQuery({ unidadeId });
-  const conversaoQuery = trpc.funilReativacao.conversao.useQuery({ unidadeId, somenteEu: true });
-  const [editandoMeta, setEditandoMeta] = useState(false);
-  const [novaMeta, setNovaMeta] = useState("");
+  const conversaoQuery = trpc.funilReativacao.conversao.useQuery({ unidadeId });
+  const composicaoQuery = trpc.funilReativacao.composicaoMeta.useQuery({ unidadeId });
+  const [editando, setEditando] = useState<"meta" | "ticket" | null>(null);
+  const [valorInput, setValorInput] = useState("");
 
-  const definirMetaMutation = trpc.funilReativacao.definirMeta.useMutation({
-    onSuccess: () => {
-      setEditandoMeta(false);
-      utils.funilReativacao.progressoHoje.invalidate({ unidadeId });
-      toast.success("Meta atualizada.");
-    },
+  const invalidarComposicao = () => utils.funilReativacao.composicaoMeta.invalidate({ unidadeId });
+  const definirMetaMutation = trpc.funilReativacao.definirMetaMensal.useMutation({
+    onSuccess: () => { setEditando(null); invalidarComposicao(); toast.success("Meta do mês atualizada."); },
+    onError: (e) => toast.error(e.message),
+  });
+  const definirTicketMutation = trpc.funilReativacao.definirTicketMedio.useMutation({
+    onSuccess: () => { setEditando(null); invalidarComposicao(); toast.success("Ticket médio atualizado."); },
     onError: (e) => toast.error(e.message),
   });
 
-  const progresso = progressoQuery.data;
-  const conversao = conversaoQuery.data;
-  const percentualConversao = conversao && conversao.contatados > 0 ? Math.round((conversao.convertidos / conversao.contatados) * 100) : null;
-
-  if (progresso?.semAtendente) {
-    return (
-      <Card className="border-amber-300 bg-amber-50/50">
-        <CardContent className="pt-4 text-sm text-amber-800">
-          Identifique-se com o PIN de atendente pra acompanhar sua meta de contatos de hoje.
-        </CardContent>
-      </Card>
-    );
+  function salvarEdicao() {
+    const numero = Number(valorInput);
+    if (!Number.isFinite(numero) || numero <= 0) return;
+    if (editando === "meta") definirMetaMutation.mutate({ unidadeId, valorFaturamento: numero });
+    else if (editando === "ticket") definirTicketMutation.mutate({ unidadeId, valor: numero });
   }
 
-  const meta = progresso?.meta ?? 0;
-  const hoje = progresso?.hoje ?? 0;
-  const percentualMeta = meta > 0 ? Math.min(100, Math.round((hoje / meta) * 100)) : null;
+  const hoje = progressoQuery.data?.hoje ?? 0;
+  const conversao = conversaoQuery.data;
+  const percentualConversao = conversao && conversao.contatados > 0 ? Math.round((conversao.convertidos / conversao.contatados) * 100) : null;
+  const composicao = composicaoQuery.data;
 
   return (
     <Card className="border-border/50 shadow-sm">
-      <CardContent className="pt-4 flex flex-wrap items-center gap-6">
-        <div className="flex items-center gap-3 min-w-[220px]">
-          <Target className="h-5 w-5 text-primary shrink-0" />
-          <div className="flex-1">
-            <p className="text-xs text-muted-foreground">Contatos hoje{atendente ? ` — ${atendente.nome}` : ""}</p>
-            {meta > 0 ? (
-              <>
-                <p className="text-sm font-medium tabular-nums">
-                  {hoje} / {meta} {hoje >= meta && <Check className="inline h-3.5 w-3.5 text-emerald-600 ml-1" />}
+      <CardContent className="pt-4 space-y-4">
+        <div className="flex flex-wrap items-center gap-6">
+          <div className="flex items-center gap-3 min-w-[180px]">
+            <Target className="h-5 w-5 text-primary shrink-0" />
+            <div>
+              <p className="text-xs text-muted-foreground">Contatos hoje (recepção)</p>
+              <p className="text-lg font-semibold tabular-nums">{hoje}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <TrendingUp className="h-5 w-5 text-muted-foreground shrink-0" />
+            <div>
+              <p className="text-xs text-muted-foreground">Conversão (30 dias)</p>
+              <p className="text-sm font-medium tabular-nums">
+                {percentualConversao !== null ? `${percentualConversao}% (${conversao!.convertidos} de ${conversao!.contatados})` : "—"}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {composicao && (
+          <div className="pt-3 border-t border-border/50 space-y-1.5">
+            {composicao.metaFaturamento === 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Sem meta de faturamento do mês cadastrada — sem ela não dá pra calcular quantos contatos são necessários por dia.
                 </p>
-                <div className="h-1.5 w-40 rounded-full bg-muted mt-1 overflow-hidden">
-                  <div className="h-full bg-primary transition-all" style={{ width: `${percentualMeta}%` }} />
-                </div>
-              </>
+                {isAdmin && (
+                  editando === "meta" ? (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Input type="number" className="h-8 w-28 text-xs" placeholder="R$ meta" value={valorInput} onChange={(e) => setValorInput(e.target.value)} autoFocus />
+                      <Button size="sm" className="h-8" disabled={!valorInput.trim() || definirMetaMutation.isPending} onClick={salvarEdicao}>Salvar</Button>
+                      <Button size="sm" variant="ghost" className="h-8" onClick={() => setEditando(null)}>Cancelar</Button>
+                    </div>
+                  ) : (
+                    <Button size="sm" variant="outline" className="h-8 text-xs shrink-0" onClick={() => { setValorInput(""); setEditando("meta"); }}>
+                      Definir meta do mês
+                    </Button>
+                  )
+                )}
+              </div>
             ) : (
-              <p className="text-sm font-medium tabular-nums">{hoje} contato(s)</p>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <TrendingUp className="h-5 w-5 text-muted-foreground shrink-0" />
-          <div>
-            <p className="text-xs text-muted-foreground">Conversão (30 dias)</p>
-            <p className="text-sm font-medium tabular-nums">
-              {percentualConversao !== null ? `${percentualConversao}% (${conversao!.convertidos} de ${conversao!.contatados})` : "—"}
-            </p>
-          </div>
-        </div>
-        {user?.role === "admin" && (
-          <div className="ml-auto flex items-center gap-2">
-            {editandoMeta ? (
               <>
-                <Input
-                  type="number" className="h-8 w-20 text-xs" value={novaMeta}
-                  onChange={(e) => setNovaMeta(e.target.value)} placeholder="Meta" autoFocus
-                />
-                <Button
-                  size="sm" className="h-8" disabled={!novaMeta.trim() || definirMetaMutation.isPending}
-                  onClick={() => definirMetaMutation.mutate({ unidadeId, metaDiaria: Number(novaMeta) })}
-                >
-                  Salvar
-                </Button>
-                <Button size="sm" variant="ghost" className="h-8" onClick={() => setEditandoMeta(false)}>Cancelar</Button>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm">
+                    Faltam <strong>{fmtMoeda(composicao.faltam)}</strong> pra bater a meta do mês
+                    <span className="text-muted-foreground"> ({fmtMoeda(composicao.faturamentoAtual)} de {fmtMoeda(composicao.metaFaturamento)})</span>
+                  </p>
+                  {isAdmin && (
+                    editando === "meta" ? (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Input type="number" className="h-8 w-28 text-xs" placeholder="R$ meta" value={valorInput} onChange={(e) => setValorInput(e.target.value)} autoFocus />
+                        <Button size="sm" className="h-8" disabled={!valorInput.trim() || definirMetaMutation.isPending} onClick={salvarEdicao}>Salvar</Button>
+                        <Button size="sm" variant="ghost" className="h-8" onClick={() => setEditando(null)}>Cancelar</Button>
+                      </div>
+                    ) : (
+                      <Button size="sm" variant="ghost" className="h-7 text-xs shrink-0" onClick={() => { setValorInput(String(composicao.metaFaturamento)); setEditando("meta"); }}>
+                        Editar meta
+                      </Button>
+                    )
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Com ticket médio de {fmtMoeda(composicao.ticketMedio)}
+                  {isAdmin && (
+                    editando === "ticket" ? (
+                      <span className="inline-flex items-center gap-1.5 ml-1.5 align-middle">
+                        <Input type="number" className="h-6 w-20 text-xs" value={valorInput} onChange={(e) => setValorInput(e.target.value)} autoFocus />
+                        <Button size="sm" className="h-6 text-xs px-2" disabled={!valorInput.trim() || definirTicketMutation.isPending} onClick={salvarEdicao}>Salvar</Button>
+                        <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setEditando(null)}>Cancelar</Button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="ml-1.5 underline decoration-dotted underline-offset-2 hover:text-foreground"
+                        onClick={() => { setValorInput(String(composicao.ticketMedio)); setEditando("ticket"); }}
+                      >
+                        (editar)
+                      </button>
+                    )
+                  )}
+                  , precisamos de <strong className="text-foreground">~{Math.ceil(composicao.clientesPorDia)} cliente(s)/dia</strong> nos próximos {composicao.diasRestantesNoMes} dias.
+                </p>
+                <p className="text-sm">
+                  {composicao.contatosNecessariosPorDia !== null ? (
+                    <>Na conversão atual, isso é <strong className="text-primary">~{Math.ceil(composicao.contatosNecessariosPorDia)} contatos por dia</strong>.</>
+                  ) : (
+                    <span className="text-muted-foreground">Ainda sem contatos suficientes pra estimar a conversão — o número de contatos por dia aparece aqui assim que a recepção começar a registrar.</span>
+                  )}
+                </p>
               </>
-            ) : (
-              <Button
-                size="sm" variant="outline" className="h-8 text-xs"
-                onClick={() => { setNovaMeta(String(meta)); setEditandoMeta(true); }}
-              >
-                Definir meta diária
-              </Button>
             )}
           </div>
         )}
