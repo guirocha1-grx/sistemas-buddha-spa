@@ -107,7 +107,7 @@ export function nomeAbaParaData(nomeAba: string): string | null {
 // (grande o bastante pra nunca colidir com o maior ID real de uma
 // seção, e estável entre sincronizações — mesma linha sempre cai no
 // mesmo idLinha final).
-const SECAO_OFFSET = 100_000;
+export const SECAO_OFFSET = 100_000;
 
 /**
  * Extrai os lançamentos de uma aba já lida (array de linhas cruas) —

@@ -7,7 +7,7 @@ import type { LinhaAtendimentoBelleImportada } from "./atendimentosBelleXlsxPars
 import type { LinhaRegistroFinanceiroBelleImportada } from "./registrosFinanceirosBelleXlsxParser";
 import type { RelatorioPlanosBelleImportado, VinculoPlanoBelleImportado } from "./planosBelleXlsParser";
 import { normalizarTelefone, variantesTelefone, telefoneCanonico, telefonesCorrespondem } from "@shared/telefone";
-import type { LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
+import { SECAO_OFFSET, type LinhaComandaItemImportada } from "./comandaVirtualXlsxParser";
 import { ENV } from './_core/env';
 import { gerarTextoConciliacao, type ItemConciliacao } from "@shared/conciliacao";
 import { DRE_CATEGORIAS_SEED, DRE_DESCRICOES_SEED, DRE_REGRAS_SEED, sugerirDescricaoNome, CHAVE_RECEITA_PIX, CHAVE_RECEITA_ESPECIE, CHAVE_RECEITA_CARTAO_DEBITO, CHAVE_RECEITA_CARTAO_CREDITO, CHAVE_TRANSACAO_ENTRE_UNIDADES, CHAVE_TRANSFERENCIA_MESMO_CNPJ, CHAVE_RECEITA_VOUCHER_SITE, CHAVE_RECEITA_GYMPASS_TOTALPASS, mesAnterior, mesSeguinte, type RegraMatch, type DreSecao } from "./dreCategorizacao";
@@ -7669,11 +7669,24 @@ export async function composicaoMetaReativacao(unidadeId: number): Promise<Compo
     evolucaoDiariaReceitaReativacao(unidadeId),
     getTicketMedioReativacao(unidadeId),
     conversaoContatosReativacao(unidadeId, 30),
-    db ? db.select({ planoBelleId: belleAtendimentos.planoBelleId }).from(belleAtendimentos)
-      .where(and(eq(belleAtendimentos.unidadeId, unidadeId), eq(belleAtendimentos.status, "Atendido"), gte(belleAtendimentos.dataAtendimento, inicioMes), lte(belleAtendimentos.dataAtendimento, fimMes)))
+    // "Total de atendimentos"/"Atend. com/sem plano"/"Planos vendidos"
+    // (2026-09-12) vêm da Comanda (comanda_itens, mesma fonte da aba
+    // "Fechamento diário" que a unidade já confere todo dia) — não de
+    // belle_atendimentos/bellePlanosClientes como antes. Achado real: o
+    // Belle só tinha 93 atendimentos pro período em que a Comanda real
+    // tinha 191 (confirmado célula a célula contra o "Fechamento diário"
+    // impresso) — o import do Belle está incompleto. A Comanda empilha 2
+    // seções na mesma aba ("Serviços" = atendimentos de verdade, e
+    // "Venda de Plano, Produtos e Voucher's" — SECAO_OFFSET as separa por
+    // idLinha, ver comandaVirtualXlsxParser.ts); "com plano" é
+    // motivoDesconto = "Plano" dentro da 1ª seção (bate exatamente:
+    // 9 de 26 num dia real, 69 de 191 no mês), "Planos vendidos" é
+    // terapiaProduto contendo "plano" na 2ª seção (bate exatamente: 10 no mês).
+    db ? db.select({ motivoDesconto: comandaItens.motivoDesconto }).from(comandaItens)
+      .where(and(eq(comandaItens.unidadeId, unidadeId), gte(comandaItens.data, inicioMes), lte(comandaItens.data, fimMes), lt(comandaItens.idLinha, SECAO_OFFSET)))
       : Promise.resolve([]),
-    db ? db.select({ id: bellePlanosClientes.id }).from(bellePlanosClientes)
-      .where(and(eq(bellePlanosClientes.unidadeId, unidadeId), gte(bellePlanosClientes.dataVenda, inicioMes), lte(bellePlanosClientes.dataVenda, fimMes)))
+    db ? db.select({ id: comandaItens.id }).from(comandaItens)
+      .where(and(eq(comandaItens.unidadeId, unidadeId), gte(comandaItens.data, inicioMes), lte(comandaItens.data, fimMes), gte(comandaItens.idLinha, SECAO_OFFSET), like(comandaItens.terapiaProduto, "%plano%")))
       : Promise.resolve([]),
   ]);
 
@@ -7690,7 +7703,7 @@ export async function composicaoMetaReativacao(unidadeId: number): Promise<Compo
   const atingimentoMeta = metaEsperadaAteHoje > 0 ? faturamentoAtual / metaEsperadaAteHoje : null;
   const premiacao = faixaPremiacaoReativacao(atingimentoMeta);
   const totalAtendimentos = atendimentosLinhas.length;
-  const atendComPlano = atendimentosLinhas.filter((a) => a.planoBelleId != null).length;
+  const atendComPlano = atendimentosLinhas.filter((a) => a.motivoDesconto === "Plano").length;
   const atendSemPlano = totalAtendimentos - atendComPlano;
   const planosVendidos = planosVendidosLinhas.length;
 
