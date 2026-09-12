@@ -7391,6 +7391,146 @@ export async function definirTicketMedioReativacao(unidadeId: number, valor: num
   await db.insert(configuracoes).values({ chave, valor: String(valor) }).onDuplicateKeyUpdate({ set: { valor: String(valor) } });
 }
 
+/**
+ * Soma de "receitas" (DRE) por dia num intervalo — mesmas 3 fontes de
+ * listDreAgregado (extrato sem split + splits + vendas de adquirente),
+ * só que por dia em vez de somado no intervalo inteiro; listDreAgregado
+ * não expõe granularidade diária, por isso essa versão existe à parte
+ * (usada tanto pela evolução do mês corrente quanto pela média
+ * histórica por dia da semana, abaixo).
+ */
+async function receitaPorDiaNoIntervalo(unidadeId: number, dataInicio: string, dataFim: string): Promise<Map<string, number>> {
+  const db = await getDb();
+  const porDia = new Map<string, number>();
+  if (!db) return porDia;
+
+  const idsReceita = new Set(
+    (await db.select({ id: dreDescricoes.id })
+      .from(dreDescricoes)
+      .innerJoin(dreCategorias, eq(dreCategorias.id, dreDescricoes.dreCategoriaId))
+      .where(eq(dreCategorias.secao, "receitas"))
+    ).map((l) => l.id),
+  );
+  const soma = (dataIso: string, dreDescricaoId: number | null, valor: string | null) => {
+    if (dreDescricaoId === null || valor === null || !idsReceita.has(dreDescricaoId)) return;
+    porDia.set(dataIso, (porDia.get(dataIso) ?? 0) + parseFloat(valor));
+  };
+
+  const [semSplit, splits, vendas] = await Promise.all([
+    db.select({ dataEntrada: interExtratos.dataEntrada, dreDescricaoId: interExtratos.dreDescricaoId, valor: interExtratos.valor })
+      .from(interExtratos)
+      .where(and(eq(interExtratos.unidadeId, unidadeId), gte(interExtratos.dataEntrada, dataInicio), lte(interExtratos.dataEntrada, dataFim), isNotNull(interExtratos.dreDescricaoId))),
+    db.select({ dataEntrada: interExtratos.dataEntrada, dreDescricaoId: lancamentoSplits.dreDescricaoId, valor: lancamentoSplits.valor })
+      .from(lancamentoSplits)
+      .innerJoin(interExtratos, eq(lancamentoSplits.interExtratoId, interExtratos.id))
+      .where(and(eq(interExtratos.unidadeId, unidadeId), gte(interExtratos.dataEntrada, dataInicio), lte(interExtratos.dataEntrada, dataFim))),
+    db.select({ dataHora: adquirenteVendas.dataHora, dreDescricaoId: adquirenteVendas.dreDescricaoId, valor: adquirenteVendas.valorBruto })
+      .from(adquirenteVendas)
+      .where(and(eq(adquirenteVendas.unidadeId, unidadeId), gte(adquirenteVendas.dataHora, dataInicio), lte(adquirenteVendas.dataHora, `${dataFim} 23:59:59`), isNotNull(adquirenteVendas.dreDescricaoId))),
+  ]);
+  for (const l of semSplit) soma(l.dataEntrada, l.dreDescricaoId, l.valor);
+  for (const s of splits) soma(s.dataEntrada, s.dreDescricaoId, s.valor);
+  for (const v of vendas) soma(v.dataHora.slice(0, 10), v.dreDescricaoId, v.valor);
+  return porDia;
+}
+
+function somarDiasIso(dataIso: string, dias: number): string {
+  const d = new Date(`${dataIso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+/** DAYOFWEEK do MySQL: 1 = domingo ... 7 = sábado — mesma convenção de diaSemanaUltimaVisita/diaSemanaUltimos180Dias. */
+function diaSemanaMySQL(dataIso: string): number {
+  return new Date(`${dataIso}T00:00:00Z`).getUTCDay() + 1;
+}
+
+/**
+ * Peso relativo de cada dia da semana (2026-09-12) — a unidade já faz
+ * essa distribuição não-linear na planilha "Informe de vendas" (linha
+ * 23: um sábado carrega mais meta que uma segunda), só que lá o peso de
+ * cada dia é digitado à mão. Aqui é calculado sozinho a partir da média
+ * real de receita de cada dia da semana nos últimos `diasHistorico`
+ * dias — se o padrão da unidade mudar (ex.: nova campanha muda a
+ * segunda), a distribuição se ajusta sozinha, sem precisar editar
+ * planilha nenhuma. Índice 1 (domingo) a 7 (sábado); sem histórico
+ * nenhum, todos os pesos saem iguais (equivale à distribuição linear).
+ */
+async function mediaReceitaPorDiaSemana(unidadeId: number, diasHistorico = 90): Promise<Record<number, number>> {
+  const uniforme: Record<number, number> = { 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1 };
+  const fim = somarDiasIso(hojeSaoPaulo(), -1); // até ontem — hoje ainda está incompleto
+  const inicio = somarDiasIso(fim, -diasHistorico);
+  const porDia = await receitaPorDiaNoIntervalo(unidadeId, inicio, fim);
+  if (porDia.size === 0) return uniforme;
+
+  const somaPorDia: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
+  const contagemPorDia: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
+  let somaGeral = 0;
+  for (const [dataIso, valor] of porDia) {
+    const dia = diaSemanaMySQL(dataIso);
+    somaPorDia[dia] += valor;
+    contagemPorDia[dia] += 1;
+    somaGeral += valor;
+  }
+  const mediaGeral = somaGeral / porDia.size;
+
+  const medias: Record<number, number> = {};
+  for (let dia = 1; dia <= 7; dia++) {
+    medias[dia] = contagemPorDia[dia] > 0 ? somaPorDia[dia] / contagemPorDia[dia] : mediaGeral;
+  }
+  return medias;
+}
+
+export interface PontoEvolucaoMensal {
+  dia: number;
+  acumulado: number;
+  metaEsperada: number;
+  superMeta: number;
+}
+
+/**
+ * Evolução dia a dia do faturamento acumulado no mês atual, contra a
+ * meta esperada (não-linear — distribuída pela força real de cada dia
+ * da semana, ver mediaReceitaPorDiaSemana) e a SuperMeta (Faixa 4 da
+ * premiação: meta × 1,2, mesmo múltiplo confirmado na planilha "Informe
+ * de vendas") — as 3 linhas do gráfico pedido pelo usuário (Meta,
+ * SuperMeta, Realizado).
+ */
+export async function evolucaoDiariaReceitaReativacao(unidadeId: number): Promise<PontoEvolucaoMensal[]> {
+  const hoje = hojeSaoPaulo();
+  const mesStr = hoje.slice(0, 7);
+  const [ano, mes] = hoje.split("-").map(Number);
+  const diasNoMes = new Date(ano, mes, 0).getDate();
+  const inicioMes = `${mesStr}-01`;
+  const fimMes = `${mesStr}-31`;
+
+  const [porDia, pesos, metaLinha] = await Promise.all([
+    receitaPorDiaNoIntervalo(unidadeId, inicioMes, fimMes),
+    mediaReceitaPorDiaSemana(unidadeId),
+    getMetaMensalAtual(unidadeId),
+  ]);
+  const metaFinal = metaLinha?.valorFaturamento ? Number(metaLinha.valorFaturamento) : 0;
+
+  const datasDoMes = Array.from({ length: diasNoMes }, (_, i) => `${mesStr}-${String(i + 1).padStart(2, "0")}`);
+  const pesoTotal = datasDoMes.reduce((soma, dataIso) => soma + pesos[diaSemanaMySQL(dataIso)], 0);
+
+  const pontos: PontoEvolucaoMensal[] = [];
+  let acumulado = 0;
+  let metaAcumulada = 0;
+  for (const dataIso of datasDoMes) {
+    acumulado += porDia.get(dataIso) ?? 0;
+    const metaDoDia = pesoTotal > 0 ? metaFinal * (pesos[diaSemanaMySQL(dataIso)] / pesoTotal) : 0;
+    metaAcumulada += metaDoDia;
+    pontos.push({
+      dia: Number(dataIso.slice(8, 10)),
+      acumulado: Math.round(acumulado * 100) / 100,
+      metaEsperada: Math.round(metaAcumulada * 100) / 100,
+      superMeta: Math.round(metaAcumulada * 1.2 * 100) / 100,
+    });
+  }
+  return pontos;
+}
+
 export interface ComposicaoMetaReativacao {
   metaFaturamento: number;
   faturamentoAtual: number;
@@ -7421,7 +7561,8 @@ export interface ComposicaoMetaReativacao {
  * já em uso na planilha "Informe de vendas": abaixo de 90% de
  * atingimento não premia; cada faixa de 10 pontos acima de 90% sobe um
  * degrau (250/500/750/1.000). `atingimentoMeta` é a fração (acumulado /
- * meta esperada até hoje), não a meta final do mês.
+ * meta esperada até hoje — já não-linear, ver evolucaoDiariaReceitaReativacao),
+ * não a meta final do mês.
  */
 function faixaPremiacaoReativacao(atingimentoMeta: number | null): string {
   if (atingimentoMeta === null || atingimentoMeta < 0.9) return "Sem premiação";
@@ -7435,12 +7576,11 @@ function faixaPremiacaoReativacao(atingimentoMeta: number | null): string {
  * "Quantos contatos a recepção precisa fazer amanhã, em média, pra não
  * perder a meta do mês" + o painel "Desempenho mensal" (acumulado, meta
  * esperada até hoje, atingimento, premiação, atendimentos com/sem
- * plano) — cruza a meta de faturamento (tabela metas) com a Receita
- * Bruta já realizada no mês (mesma agregação do DRE, seção "receitas",
- * regime caixa — não reinventa o cálculo), atendimentos do Belle e a
- * conversão real do próprio funil de reativação. Sem meta de
- * faturamento cadastrada, os campos derivados dela vêm como 0/null (a
- * tela pede pra configurar).
+ * plano) — cruza a meta de faturamento (tabela metas, a mesma editável
+ * em Financeiro > Visão Geral > Metas) com a evolução diária não-linear
+ * acima, atendimentos do Belle e a conversão real do funil de
+ * reativação. Sem meta de faturamento cadastrada, os campos derivados
+ * dela vêm como 0/null (a tela pede pra configurar).
  */
 export async function composicaoMetaReativacao(unidadeId: number): Promise<ComposicaoMetaReativacao> {
   const db = await getDb();
@@ -7453,9 +7593,9 @@ export async function composicaoMetaReativacao(unidadeId: number): Promise<Compo
   const inicioMes = `${mesStr}-01`;
   const fimMes = `${mesStr}-31`;
 
-  const [metaLinha, agregado, ticketMedio, conversao, atendimentosLinhas, planosVendidosLinhas] = await Promise.all([
+  const [metaLinha, evolucao, ticketMedio, conversao, atendimentosLinhas, planosVendidosLinhas] = await Promise.all([
     getMetaMensalAtual(unidadeId),
-    listDreAgregado(unidadeId, mesStr, mesStr, "caixa"),
+    evolucaoDiariaReceitaReativacao(unidadeId),
     getTicketMedioReativacao(unidadeId),
     conversaoContatosReativacao(unidadeId, 30),
     db ? db.select({ planoBelleId: belleAtendimentos.planoBelleId }).from(belleAtendimentos)
@@ -7467,14 +7607,15 @@ export async function composicaoMetaReativacao(unidadeId: number): Promise<Compo
   ]);
 
   const metaFaturamento = metaLinha?.valorFaturamento ? Number(metaLinha.valorFaturamento) : 0;
-  const faturamentoAtual = agregado.filter((l) => l.secao === "receitas").reduce((soma, l) => soma + l.valor, 0);
+  const pontoHoje = evolucao[diaAtual - 1] ?? evolucao[evolucao.length - 1];
+  const faturamentoAtual = pontoHoje?.acumulado ?? 0;
+  const metaEsperadaAteHoje = pontoHoje?.metaEsperada ?? 0;
   const faltam = Math.max(0, metaFaturamento - faturamentoAtual);
   const clientesNecessarios = ticketMedio > 0 ? faltam / ticketMedio : 0;
   const clientesPorDia = clientesNecessarios / diasRestantesNoMes;
   const taxaConversao = conversao.contatados > 0 ? conversao.convertidos / conversao.contatados : null;
   const contatosNecessariosPorDia = taxaConversao && taxaConversao > 0 ? clientesPorDia / taxaConversao : null;
 
-  const metaEsperadaAteHoje = metaFaturamento * (diaAtual / diasNoMes);
   const atingimentoMeta = metaEsperadaAteHoje > 0 ? faturamentoAtual / metaEsperadaAteHoje : null;
   const premiacao = faixaPremiacaoReativacao(atingimentoMeta);
   const totalAtendimentos = atendimentosLinhas.length;
@@ -7486,74 +7627,6 @@ export async function composicaoMetaReativacao(unidadeId: number): Promise<Compo
     metaFaturamento, faturamentoAtual, faltam, diasRestantesNoMes, ticketMedio, clientesNecessarios, clientesPorDia, taxaConversao, contatosNecessariosPorDia,
     diaAtual, diasNoMes, metaEsperadaAteHoje, atingimentoMeta, premiacao, totalAtendimentos, atendComPlano, atendSemPlano, planosVendidos,
   };
-}
-
-export interface PontoEvolucaoMensal {
-  dia: number;
-  acumulado: number;
-  metaEsperada: number;
-}
-
-/**
- * Evolução dia a dia do faturamento acumulado no mês atual, contra a
- * linha de meta esperada (linear: meta final ÷ dias do mês × dia) — os
- * dois números que alimentam o gráfico de linha pedido pelo usuário.
- * Mesmas 3 fontes de listDreAgregado (extrato sem split + splits +
- * vendas de adquirente), só que por dia em vez de somado no mês inteiro
- * — listDreAgregado não expõe granularidade diária, por isso a consulta
- * é repetida aqui em vez de reaproveitada.
- */
-export async function evolucaoDiariaReceitaReativacao(unidadeId: number): Promise<PontoEvolucaoMensal[]> {
-  const db = await getDb();
-  const hoje = hojeSaoPaulo();
-  const mesStr = hoje.slice(0, 7);
-  const [ano, mes] = hoje.split("-").map(Number);
-  const diasNoMes = new Date(ano, mes, 0).getDate();
-  const inicioMes = `${mesStr}-01`;
-  const fimMes = `${mesStr}-31`;
-  if (!db) return [];
-
-  const idsReceita = new Set(
-    (await db.select({ id: dreDescricoes.id })
-      .from(dreDescricoes)
-      .innerJoin(dreCategorias, eq(dreCategorias.id, dreDescricoes.dreCategoriaId))
-      .where(eq(dreCategorias.secao, "receitas"))
-    ).map((l) => l.id),
-  );
-
-  const porDia = new Map<string, number>();
-  const soma = (dataIso: string, dreDescricaoId: number | null, valor: string | null) => {
-    if (dreDescricaoId === null || valor === null || !idsReceita.has(dreDescricaoId)) return;
-    porDia.set(dataIso, (porDia.get(dataIso) ?? 0) + parseFloat(valor));
-  };
-
-  const [semSplit, splits, vendas, metaLinha] = await Promise.all([
-    db.select({ dataEntrada: interExtratos.dataEntrada, dreDescricaoId: interExtratos.dreDescricaoId, valor: interExtratos.valor })
-      .from(interExtratos)
-      .where(and(eq(interExtratos.unidadeId, unidadeId), gte(interExtratos.dataEntrada, inicioMes), lte(interExtratos.dataEntrada, fimMes), isNotNull(interExtratos.dreDescricaoId))),
-    db.select({ dataEntrada: interExtratos.dataEntrada, dreDescricaoId: lancamentoSplits.dreDescricaoId, valor: lancamentoSplits.valor })
-      .from(lancamentoSplits)
-      .innerJoin(interExtratos, eq(lancamentoSplits.interExtratoId, interExtratos.id))
-      .where(and(eq(interExtratos.unidadeId, unidadeId), gte(interExtratos.dataEntrada, inicioMes), lte(interExtratos.dataEntrada, fimMes))),
-    db.select({ dataHora: adquirenteVendas.dataHora, dreDescricaoId: adquirenteVendas.dreDescricaoId, valor: adquirenteVendas.valorBruto })
-      .from(adquirenteVendas)
-      .where(and(eq(adquirenteVendas.unidadeId, unidadeId), gte(adquirenteVendas.dataHora, inicioMes), lte(adquirenteVendas.dataHora, `${fimMes} 23:59:59`), isNotNull(adquirenteVendas.dreDescricaoId))),
-    getMetaMensalAtual(unidadeId),
-  ]);
-  for (const l of semSplit) soma(l.dataEntrada, l.dreDescricaoId, l.valor);
-  for (const s of splits) soma(s.dataEntrada, s.dreDescricaoId, s.valor);
-  for (const v of vendas) soma(v.dataHora.slice(0, 10), v.dreDescricaoId, v.valor);
-
-  const metaFinal = metaLinha?.valorFaturamento ? Number(metaLinha.valorFaturamento) : 0;
-  const metaPorDia = diasNoMes > 0 ? metaFinal / diasNoMes : 0;
-
-  const pontos: PontoEvolucaoMensal[] = [];
-  let acumulado = 0;
-  for (let dia = 1; dia <= diasNoMes; dia++) {
-    acumulado += porDia.get(`${mesStr}-${String(dia).padStart(2, "0")}`) ?? 0;
-    pontos.push({ dia, acumulado: Math.round(acumulado * 100) / 100, metaEsperada: Math.round(metaPorDia * dia * 100) / 100 });
-  }
-  return pontos;
 }
 
 // ===== Comanda virtual (item a item — auditoria da Comanda Recepção) =====

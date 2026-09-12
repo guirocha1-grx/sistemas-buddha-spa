@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Target, TrendingUp, Award } from "lucide-react";
 import { toast } from "sonner";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 function fmtMoeda(valor: number): string {
   return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -103,7 +103,7 @@ export function DesempenhoReativacaoCard({ unidadeId }: { unidadeId: number }) {
           composicao.metaFaturamento === 0 ? (
             <div className="pt-3 border-t border-border/50 flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">
-                Sem meta de faturamento do mês cadastrada — defina pra liberar o painel completo (atingimento, premiação e o gráfico de evolução).
+                Sem meta de faturamento do mês cadastrada — defina aqui ou em Financeiro &gt; Visão Geral &gt; Metas (é a mesma) pra liberar o painel completo.
               </p>
               {isAdmin && (
                 editando === "meta" ? (
@@ -180,7 +180,7 @@ export function DesempenhoReativacaoCard({ unidadeId }: { unidadeId: number }) {
               </div>
 
               {evolucao.length > 0 && (
-                <ResponsiveContainer width="100%" height={220}>
+                <ResponsiveContainer width="100%" height={240}>
                   <LineChart data={evolucao} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.91 0.005 70)" />
                     <XAxis dataKey="dia" tick={{ fontSize: 11 }} stroke="oklch(0.55 0.01 60)" />
@@ -190,8 +190,10 @@ export function DesempenhoReativacaoCard({ unidadeId }: { unidadeId: number }) {
                       labelFormatter={(dia) => `Dia ${dia}`}
                       contentStyle={{ backgroundColor: "oklch(1 0 0)", border: "1px solid oklch(0.91 0.005 70)", borderRadius: "0.5rem", fontSize: "12px" }}
                     />
-                    <Line type="monotone" dataKey="metaEsperada" name="Meta esperada" stroke="oklch(0.7 0.01 60)" strokeDasharray="4 3" dot={false} strokeWidth={2} />
-                    <Line type="monotone" dataKey="acumulado" name="Acumulado" stroke="oklch(0.50 0.12 30)" dot={false} strokeWidth={2.5} />
+                    <Legend wrapperStyle={{ fontSize: "12px" }} />
+                    <Line type="monotone" dataKey="metaEsperada" name="Meta" stroke="#eab308" dot={false} strokeWidth={2} />
+                    <Line type="monotone" dataKey="superMeta" name="SuperMeta" stroke="#dc2626" dot={false} strokeWidth={2} />
+                    <Line type="monotone" dataKey="acumulado" name="Realizado" stroke="#2563eb" dot={false} strokeWidth={2.5} />
                   </LineChart>
                 </ResponsiveContainer>
               )}
