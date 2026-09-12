@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useUnidade } from "@/contexts/UnidadeContext";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import UnidadeSelector from "@/components/UnidadeSelector";
+import { useAtendenteAtual } from "@/components/AtendenteGate";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, Trash2, Pencil, Copy, Users, Phone, Mail, BellOff, Eye, EyeOff, ArrowUp, ArrowDown, ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, Copy, Users, Phone, Mail, BellOff, Eye, EyeOff, ArrowUp, ArrowDown, ArrowUpDown, ChevronUp, ChevronDown, Target, TrendingUp, Check } from "lucide-react";
 import { toast } from "sonner";
 import { rotaInboxConversa } from "@shared/inboxNavigation";
 import { ClienteWhatsAppButton } from "@/components/ClienteWhatsAppButton";
@@ -264,6 +266,109 @@ function FunilLinha({ funil, unidadeId, selecionado, onSelecionar, onEditar, onD
   );
 }
 
+/**
+ * Meta diária + conversão (2026-09-11) — o incentivo pedido pelo usuário
+ * pra recepção usar o funil todo dia. Contato é gravado sozinho ao abrir
+ * o WhatsApp (ver onOpenInbox mais abaixo); aqui só mostra o progresso e,
+ * pro admin, um jeito de ajustar a meta da unidade.
+ */
+function MetaDiariaCard({ unidadeId }: { unidadeId: number }) {
+  const { user } = useAuth();
+  const { atendente } = useAtendenteAtual();
+  const utils = trpc.useUtils();
+  const progressoQuery = trpc.funilReativacao.progressoHoje.useQuery({ unidadeId });
+  const conversaoQuery = trpc.funilReativacao.conversao.useQuery({ unidadeId, somenteEu: true });
+  const [editandoMeta, setEditandoMeta] = useState(false);
+  const [novaMeta, setNovaMeta] = useState("");
+
+  const definirMetaMutation = trpc.funilReativacao.definirMeta.useMutation({
+    onSuccess: () => {
+      setEditandoMeta(false);
+      utils.funilReativacao.progressoHoje.invalidate({ unidadeId });
+      toast.success("Meta atualizada.");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const progresso = progressoQuery.data;
+  const conversao = conversaoQuery.data;
+  const percentualConversao = conversao && conversao.contatados > 0 ? Math.round((conversao.convertidos / conversao.contatados) * 100) : null;
+
+  if (progresso?.semAtendente) {
+    return (
+      <Card className="border-amber-300 bg-amber-50/50">
+        <CardContent className="pt-4 text-sm text-amber-800">
+          Identifique-se com o PIN de atendente pra acompanhar sua meta de contatos de hoje.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const meta = progresso?.meta ?? 0;
+  const hoje = progresso?.hoje ?? 0;
+  const percentualMeta = meta > 0 ? Math.min(100, Math.round((hoje / meta) * 100)) : null;
+
+  return (
+    <Card className="border-border/50 shadow-sm">
+      <CardContent className="pt-4 flex flex-wrap items-center gap-6">
+        <div className="flex items-center gap-3 min-w-[220px]">
+          <Target className="h-5 w-5 text-primary shrink-0" />
+          <div className="flex-1">
+            <p className="text-xs text-muted-foreground">Contatos hoje{atendente ? ` — ${atendente.nome}` : ""}</p>
+            {meta > 0 ? (
+              <>
+                <p className="text-sm font-medium tabular-nums">
+                  {hoje} / {meta} {hoje >= meta && <Check className="inline h-3.5 w-3.5 text-emerald-600 ml-1" />}
+                </p>
+                <div className="h-1.5 w-40 rounded-full bg-muted mt-1 overflow-hidden">
+                  <div className="h-full bg-primary transition-all" style={{ width: `${percentualMeta}%` }} />
+                </div>
+              </>
+            ) : (
+              <p className="text-sm font-medium tabular-nums">{hoje} contato(s)</p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <TrendingUp className="h-5 w-5 text-muted-foreground shrink-0" />
+          <div>
+            <p className="text-xs text-muted-foreground">Conversão (30 dias)</p>
+            <p className="text-sm font-medium tabular-nums">
+              {percentualConversao !== null ? `${percentualConversao}% (${conversao!.convertidos} de ${conversao!.contatados})` : "—"}
+            </p>
+          </div>
+        </div>
+        {user?.role === "admin" && (
+          <div className="ml-auto flex items-center gap-2">
+            {editandoMeta ? (
+              <>
+                <Input
+                  type="number" className="h-8 w-20 text-xs" value={novaMeta}
+                  onChange={(e) => setNovaMeta(e.target.value)} placeholder="Meta" autoFocus
+                />
+                <Button
+                  size="sm" className="h-8" disabled={!novaMeta.trim() || definirMetaMutation.isPending}
+                  onClick={() => definirMetaMutation.mutate({ unidadeId, metaDiaria: Number(novaMeta) })}
+                >
+                  Salvar
+                </Button>
+                <Button size="sm" variant="ghost" className="h-8" onClick={() => setEditandoMeta(false)}>Cancelar</Button>
+              </>
+            ) : (
+              <Button
+                size="sm" variant="outline" className="h-8 text-xs"
+                onClick={() => { setNovaMeta(String(meta)); setEditandoMeta(true); }}
+              >
+                Definir meta diária
+              </Button>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Reativacao() {
   const [, setLocation] = useLocation();
   const { unidadeSelecionada } = useUnidade();
@@ -317,6 +422,13 @@ export default function Reativacao() {
       utils.funilReativacao.listClientes.invalidate({ unidadeId, filtros: filtrosDoFunil });
     },
     onError: (e) => toast.error(e.message),
+  });
+
+  // Gravado automaticamente ao abrir o WhatsApp de um cliente do funil —
+  // silencioso de propósito (sem toast), pra não interromper o fluxo de
+  // quem só quer mandar a mensagem; falha aqui não deveria travar a ação.
+  const registrarContatoMutation = trpc.funilReativacao.registrarContato.useMutation({
+    onSuccess: () => utils.funilReativacao.progressoHoje.invalidate({ unidadeId }),
   });
 
   const clientes = clientesQuery.data ?? [];
@@ -379,6 +491,8 @@ export default function Reativacao() {
         <Card><CardContent className="pt-6 text-center text-sm text-muted-foreground">Selecione uma unidade.</CardContent></Card>
       ) : (
         <>
+          <MetaDiariaCard unidadeId={unidadeId} />
+
           <div className="flex flex-wrap gap-2">
             {GRUPOS.map((g) => (
               <Button
@@ -518,7 +632,10 @@ export default function Reativacao() {
                             <ClienteWhatsAppButton
                               cliente={cliente}
                               unidadeId={unidadeId}
-                              onOpenInbox={(conversaId) => setLocation(rotaInboxConversa(conversaId))}
+                              onOpenInbox={(conversaId) => {
+                                registrarContatoMutation.mutate({ unidadeId, clienteId: cliente.id, funilOrigem: funilSelecionado?.nome });
+                                setLocation(rotaInboxConversa(conversaId));
+                              }}
                             />
                             {cliente.naoReativarMotivo != null ? (
                               <span title={`Não reativar — ${cliente.naoReativarMotivo}`}>

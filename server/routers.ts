@@ -2552,6 +2552,44 @@ Diretrizes:
       await db.marcarClienteNaoReativar(input.clienteId, input.motivo);
       return { success: true };
     }),
+
+    // Meta diária + conversão (2026-09-11) — incentivo pra recepção usar o
+    // funil todo dia. Contato é atribuído ao atendente logado via PIN
+    // (ctx.atendente, mesmo mecanismo do Inbox) — sem PIN ativo, não sabe
+    // pra quem creditar, então recusa em vez de gravar sem dono.
+    registrarContato: protectedProcedure.input(z.object({
+      unidadeId: z.number(), clienteId: z.number(), funilOrigem: z.string().trim().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      if (!ctx.atendente) throw new Error("Identifique-se com o PIN de atendente antes de registrar um contato.");
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      await db.registrarContatoReativacao({
+        unidadeId: input.unidadeId, atendenteId: ctx.atendente.id, clienteId: input.clienteId,
+        funilOrigem: input.funilOrigem ?? null,
+      });
+      return { success: true };
+    }),
+
+    progressoHoje: protectedProcedure.input(z.object({ unidadeId: z.number() })).query(async ({ input, ctx }) => {
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      if (!ctx.atendente) return { hoje: 0, meta: 0, semAtendente: true };
+      const progresso = await db.progressoContatosReativacaoHoje(input.unidadeId, ctx.atendente.id);
+      return { ...progresso, semAtendente: false };
+    }),
+
+    definirMeta: adminProcedure.input(z.object({
+      unidadeId: z.number(), metaDiaria: z.number().int().min(0),
+    })).mutation(async ({ input }) => {
+      await db.definirMetaDiariaReativacao(input.unidadeId, input.metaDiaria);
+      return { success: true };
+    }),
+
+    conversao: protectedProcedure.input(z.object({
+      unidadeId: z.number(), somenteEu: z.boolean().optional(),
+    })).query(async ({ input, ctx }) => {
+      if (!await usuarioPodeOperarNaUnidade(ctx.user, input.unidadeId)) throw new Error("Sem acesso à unidade selecionada.");
+      const atendenteId = input.somenteEu ? ctx.atendente?.id ?? null : null;
+      return db.conversaoContatosReativacao(input.unidadeId, atendenteId);
+    }),
   }),
 
   // ===== Buddha Mkt: Disparos (campanhas de marketing) =====

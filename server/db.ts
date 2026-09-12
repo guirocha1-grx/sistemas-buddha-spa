@@ -18,7 +18,7 @@ import { resumoMensalUnidade, type InsertResumoMensalUnidade, type ResumoMensalU
 import { etiquetas, clienteEtiquetas, type Etiqueta } from "../drizzle/schema";
 import { camposPersonalizados, clienteCamposValores, type CampoPersonalizado } from "../drizzle/schema";
 import { listaEspera } from "../drizzle/schema";
-import { funisReativacao, reativacaoStatus, funisReativacaoOcultos, type FunilReativacao } from "../drizzle/schema";
+import { funisReativacao, reativacaoStatus, funisReativacaoOcultos, reativacaoContatos, reativacaoMetas, type FunilReativacao } from "../drizzle/schema";
 import { deduplicarProximosAtendimentos } from "./proximosAtendimentos";
 import { calcularFidelizacao, calcularPreferenciaisPorAtendimento, calcularFechamentoAgenda, calcularEvolucaoFidelizacao, type GranularidadeEvolucao } from "./terapeutasRelatorios";
 import { calcularRelatorioTempoAtendimento, escolherAtendimentoPorEvento, identificarEventoTempoAtendimento, nomesCorrespondem, identificarTerapeuta, nomesClienteCorrespondem, type EventoTempoAtendimento, type LinhaTempoAtendimento } from "./tempoAtendimento";
@@ -7295,6 +7295,71 @@ export async function definirStatusReativacao(clienteId: number, unidadeId: numb
   if (!db) return;
   await db.insert(reativacaoStatus).values({ clienteId, unidadeId, status })
     .onDuplicateKeyUpdate({ set: { status, updatedAt: new Date() } });
+}
+
+// ===== Meta diária e conversão de contatos do Funil de Reativação
+// (2026-09-11) — o "incentivo pra fazer isso todo dia" pedido pelo
+// usuário. Um contato é gravado automaticamente quando a recepção abre o
+// WhatsApp de um cliente dentro do funil (ver routers.ts); único por
+// atendente+cliente+dia, pra clicar de novo no mesmo cliente não inflar a
+// meta. Conversão = desses contatos, quantos clientes voltaram a ser
+// atendidos depois (ultimoAtendimento na data do contato ou depois).
+
+function hojeSaoPaulo(): string {
+  const partes = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const valor = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "";
+  return `${valor("year")}-${valor("month")}-${valor("day")}`;
+}
+
+export async function registrarContatoReativacao(input: { unidadeId: number; atendenteId: number; clienteId: number; funilOrigem?: string | null }): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const funilOrigem = input.funilOrigem ?? null;
+  await db.insert(reativacaoContatos).values({
+    unidadeId: input.unidadeId, atendenteId: input.atendenteId, clienteId: input.clienteId,
+    funilOrigem, data: hojeSaoPaulo(),
+  }).onDuplicateKeyUpdate({ set: { funilOrigem } });
+}
+
+export async function progressoContatosReativacaoHoje(unidadeId: number, atendenteId: number): Promise<{ hoje: number; meta: number }> {
+  const db = await getDb();
+  if (!db) return { hoje: 0, meta: 0 };
+  const hoje = hojeSaoPaulo();
+  const [contagem, metaLinha] = await Promise.all([
+    db.select({ total: sql<number>`COUNT(*)` }).from(reativacaoContatos)
+      .where(and(eq(reativacaoContatos.unidadeId, unidadeId), eq(reativacaoContatos.atendenteId, atendenteId), eq(reativacaoContatos.data, hoje))),
+    db.select().from(reativacaoMetas).where(eq(reativacaoMetas.unidadeId, unidadeId)).limit(1),
+  ]);
+  return { hoje: Number(contagem[0]?.total ?? 0), meta: metaLinha[0]?.metaDiaria ?? 0 };
+}
+
+export async function definirMetaDiariaReativacao(unidadeId: number, metaDiaria: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(reativacaoMetas).values({ unidadeId, metaDiaria }).onDuplicateKeyUpdate({ set: { metaDiaria } });
+}
+
+/**
+ * Contatados x convertidos numa janela de dias — `atendenteId` null olha a
+ * unidade inteira. "Convertido" = ultimoAtendimento do cliente é na data do
+ * contato ou depois (voltou depois de ser contatado); é derivado, não
+ * exige marcar nada manualmente.
+ */
+export async function conversaoContatosReativacao(unidadeId: number, atendenteId: number | null, janelaDias = 30): Promise<{ contatados: number; convertidos: number }> {
+  const db = await getDb();
+  if (!db) return { contatados: 0, convertidos: 0 };
+  const condicoes = [
+    eq(reativacaoContatos.unidadeId, unidadeId),
+    sql`${reativacaoContatos.data} >= DATE_SUB(CURDATE(), INTERVAL ${janelaDias} DAY)`,
+  ];
+  if (atendenteId) condicoes.push(eq(reativacaoContatos.atendenteId, atendenteId));
+  const linhas = await db.select({ data: reativacaoContatos.data, ultimoAtendimento: clientes.ultimoAtendimento })
+    .from(reativacaoContatos)
+    .innerJoin(clientes, eq(clientes.id, reativacaoContatos.clienteId))
+    .where(and(...condicoes));
+  const contatados = linhas.length;
+  const convertidos = linhas.filter((l) => l.ultimoAtendimento && l.ultimoAtendimento >= l.data).length;
+  return { contatados, convertidos };
 }
 
 // ===== Comanda virtual (item a item — auditoria da Comanda Recepção) =====

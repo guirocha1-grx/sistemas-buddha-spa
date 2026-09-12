@@ -671,6 +671,37 @@ export type FunilReativacaoOculto = typeof funisReativacaoOcultos.$inferSelect;
 export type InsertFunilReativacaoOculto = typeof funisReativacaoOcultos.$inferInsert;
 
 /**
+ * Contato de reativação registrado (2026-09-11) — 1 linha por
+ * atendente+cliente+dia (repetir no mesmo dia não conta de novo, evita
+ * inflar a meta clicando várias vezes no mesmo cliente). Gravado
+ * automaticamente ao abrir o WhatsApp de um cliente dentro do Funil de
+ * Reativação — vira a base tanto da meta diária quanto da conversão
+ * (cliente contatado que depois voltou a ser atendido).
+ */
+export const reativacaoContatos = mysqlTable("reativacao_contatos", {
+  id: int("id").autoincrement().primaryKey(),
+  unidadeId: int("unidadeId").notNull(),
+  atendenteId: int("atendenteId").notNull(),
+  clienteId: int("clienteId").notNull(),
+  funilOrigem: varchar("funilOrigem", { length: 200 }),
+  data: varchar("data", { length: 10 }).notNull(), // AAAA-MM-DD, fuso America/Sao_Paulo
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  unico: uniqueIndex("reativacao_contatos_unico_idx").on(table.atendenteId, table.clienteId, table.data),
+  unidadeDataIdx: index("reativacao_contatos_unidade_data_idx").on(table.unidadeId, table.data),
+}));
+export type ReativacaoContato = typeof reativacaoContatos.$inferSelect;
+export type InsertReativacaoContato = typeof reativacaoContatos.$inferInsert;
+
+/** Meta diária de contatos de reativação — 1 valor por unidade, configurável pelo admin. */
+export const reativacaoMetas = mysqlTable("reativacao_metas", {
+  unidadeId: int("unidadeId").primaryKey(),
+  metaDiaria: int("metaDiaria").default(0).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ReativacaoMeta = typeof reativacaoMetas.$inferSelect;
+
+/**
  * Etapa de reativação de um cliente, por unidade — a "extensão da tabela
  * clientes" que a recepção avança conforme liga/manda mensagem, sem
  * depender de nenhum funil específico (o mesmo cliente pode aparecer em
