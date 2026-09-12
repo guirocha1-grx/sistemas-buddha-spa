@@ -38,7 +38,7 @@ export function EvolucaoMensalReativacaoCard({ unidadeId }: { unidadeId: number 
     <Card className="border-border/50 shadow-sm">
       <CardHeader>
         <CardTitle className="text-lg" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-          Evolução do mês — Reativação
+          Evolução do faturamento
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -106,7 +106,7 @@ export function ResumoMensalReativacaoCard({ unidadeId }: { unidadeId: number })
     <Card className="border-border/50 shadow-sm">
       <CardHeader>
         <CardTitle className="text-lg" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-          Desempenho mensal — Reativação
+          Desempenho mensal
         </CardTitle>
       </CardHeader>
       <CardContent>
