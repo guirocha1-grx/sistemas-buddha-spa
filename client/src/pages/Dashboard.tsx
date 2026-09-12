@@ -2,12 +2,11 @@ import { useUnidade } from "@/contexts/UnidadeContext";
 import { trpc } from "@/lib/trpc";
 import UnidadeSelector from "@/components/UnidadeSelector";
 import { DesempenhoReativacaoCard } from "@/components/DesempenhoReativacaoCard";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DollarSign, Calendar, Users, TrendingUp, Loader2 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { useState } from "react";
 
 function dataLocalParaInput(data: Date): string {
@@ -32,11 +31,15 @@ function calcularPeriodo(periodo: PeriodoRapido): { inicio: string; fim: string 
 
 const PERIODO_INICIAL = calcularPeriodo("mes_atual");
 
+/**
+ * Dashboard por unidade (2026-09-12) — era uma visão consolidada
+ * (SSU+RBS somados), mas os números das duas unidades são muito
+ * diferentes pra fazer sentido misturado (achado do usuário). Os 4 KPIs
+ * e o card de Reativação são sempre da unidade selecionada no seletor
+ * do topo; não existe mais comparativo entre as duas nessa tela.
+ */
 export default function Dashboard() {
-  const { unidadeSelecionada, unidades: todasUnidades } = useUnidade();
-  // Buddha Mkt é uma unidade sintética (canal de WhatsApp de marketing, sem
-  // Comanda/contas bancárias reais) — não entra em comparativo financeiro.
-  const unidades = todasUnidades.filter((u) => u.slug !== "buddha-mkt");
+  const { unidadeSelecionada } = useUnidade();
 
   const [dataInicio, setDataInicio] = useState(PERIODO_INICIAL.inicio);
   const [dataFim, setDataFim] = useState(PERIODO_INICIAL.fim);
@@ -61,11 +64,6 @@ export default function Dashboard() {
     { enabled: !!unidadeSelecionada }
   );
 
-  const { data: consolidado } = trpc.financeiro.dashboardConsolidado.useQuery(
-    { dataInicio, dataFim },
-    { enabled: periodoValido }
-  );
-
   const fmtCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -74,16 +72,6 @@ export default function Dashboard() {
     return `${dia}/${mes}/${ano}`;
   };
 
-  const chartData = (consolidado || []).map((u: any) => ({
-    nome: u.nome?.replace("Shopping ", "") || `Unid ${u.unidadeId}`,
-    Faturamento: u.faturamentoMes ?? 0,
-    Recebimentos: u.recebimentosMes ?? 0,
-  }));
-
-  // Os 4 KPIs principais são sempre da unidade selecionada, não a soma das
-  // duas — RBS e SSU têm números muito diferentes, somar/misturar não
-  // representa nenhuma das duas de verdade (achado do usuário, 2026-09-12).
-  // O comparativo lado a lado mais abaixo continua consolidado de propósito.
   const totalFaturamento = dashboardData?.faturamentoMes ?? 0;
   const totalRecebimentos = dashboardData?.recebimentosMes ?? 0;
   const totalAgendamentosHoje = dashboardData?.agendamentosHoje ?? 0;
@@ -98,14 +86,13 @@ export default function Dashboard() {
             Dashboard
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Visão consolidada das operações — Buddha Spa
+            {unidadeSelecionada ? `${unidadeSelecionada.nome} — Buddha Spa` : "Selecione uma unidade — Buddha Spa"}
           </p>
         </div>
         <UnidadeSelector />
       </div>
 
-      {/* Reativação — sempre a unidade selecionada (números muito diferentes
-          entre RBS e SSU pra fazer sentido consolidado), sempre mês atual,
+      {/* Reativação — sempre a unidade selecionada, sempre mês atual,
           independente do período escolhido abaixo pros outros cards. */}
       {unidadeSelecionada && <DesempenhoReativacaoCard unidadeId={unidadeSelecionada.id} />}
 
@@ -137,7 +124,7 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* KPI Cards Consolidados */}
+      {/* KPI Cards da unidade selecionada */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-border/50 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -231,97 +218,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Gráfico de Comparativo */}
-      {chartData.length > 0 && (
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-              Comparativo de Faturamento por Unidade
-            </CardTitle>
-            <CardDescription>
-              {periodoEhMesAtual ? "Faturamento e recebimentos do mês atual lado a lado" : `Faturamento e recebimentos de ${fmtDataBr(dataInicio)} a ${fmtDataBr(dataFim)}`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.91 0.005 70)" />
-                <XAxis dataKey="nome" tick={{ fontSize: 12 }} stroke="oklch(0.55 0.01 60)" />
-                <YAxis tick={{ fontSize: 12 }} stroke="oklch(0.55 0.01 60)" tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`} />
-                <Tooltip
-                  formatter={(value: number) => fmtCurrency(value)}
-                  contentStyle={{
-                    backgroundColor: "oklch(1 0 0)",
-                    border: "1px solid oklch(0.91 0.005 70)",
-                    borderRadius: "0.5rem",
-                    fontSize: "12px",
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: "12px" }} />
-                <Bar dataKey="Faturamento" fill="oklch(0.50 0.12 30)" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Recebimentos" fill="oklch(0.65 0.10 40)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Comparativo Detalhado por Unidade */}
-      <Card className="border-border/50 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-lg" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-            Comparativo de Unidades
-          </CardTitle>
-          <CardDescription>
-            Métricas detalhadas de cada unidade
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            {(consolidado || unidades).map((unidade: any) => (
-              <div
-                key={unidade.unidadeId || unidade.id}
-                className="rounded-lg border border-border/50 p-4 space-y-3"
-                style={{
-                  borderColor: unidade.corTema ? `${unidade.corTema}30` : undefined,
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <div
-                    className="h-3 w-3 rounded-full"
-                    style={{ backgroundColor: unidade.corTema || "#B8935A" }}
-                  />
-                  <span className="font-medium">{unidade.nome}</span>
-                </div>
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Faturamento:</span>
-                    <span className="font-medium">{fmtCurrency(unidade.faturamentoMes ?? 0)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Recebimentos:</span>
-                    <span className="font-medium">{fmtCurrency(unidade.recebimentosMes ?? 0)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">{periodoEhMesAtual ? "Vendas no mês:" : "Vendas no período:"}</span>
-                    <span className="font-medium">{unidade.totalVendasMes ?? 0}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Agendamentos hoje:</span>
-                    <span className="font-medium">{unidade.agendamentosHoje ?? 0}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">{periodoEhMesAtual ? "Total agendamentos:" : "Agendamentos no período:"}</span>
-                    <span className="font-medium">{unidade.totalAgendamentos ?? 0}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
     </div>
   );
 }

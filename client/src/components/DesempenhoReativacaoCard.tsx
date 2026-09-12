@@ -34,27 +34,22 @@ export function DesempenhoReativacaoCard({ unidadeId }: { unidadeId: number }) {
   const conversaoQuery = trpc.funilReativacao.conversao.useQuery({ unidadeId });
   const composicaoQuery = trpc.funilReativacao.composicaoMeta.useQuery({ unidadeId });
   const evolucaoQuery = trpc.funilReativacao.evolucaoDiaria.useQuery({ unidadeId });
-  const [editando, setEditando] = useState<"meta" | "ticket" | null>(null);
+  const [editandoTicket, setEditandoTicket] = useState(false);
   const [valorInput, setValorInput] = useState("");
 
-  const invalidarComposicao = () => {
-    utils.funilReativacao.composicaoMeta.invalidate({ unidadeId });
-    utils.funilReativacao.evolucaoDiaria.invalidate({ unidadeId });
-  };
-  const definirMetaMutation = trpc.funilReativacao.definirMetaMensal.useMutation({
-    onSuccess: () => { setEditando(null); invalidarComposicao(); toast.success("Meta do mês atualizada."); },
-    onError: (e) => toast.error(e.message),
-  });
   const definirTicketMutation = trpc.funilReativacao.definirTicketMedio.useMutation({
-    onSuccess: () => { setEditando(null); invalidarComposicao(); toast.success("Ticket médio atualizado."); },
+    onSuccess: () => {
+      setEditandoTicket(false);
+      utils.funilReativacao.composicaoMeta.invalidate({ unidadeId });
+      toast.success("Ticket médio atualizado.");
+    },
     onError: (e) => toast.error(e.message),
   });
 
-  function salvarEdicao() {
+  function salvarTicket() {
     const numero = Number(valorInput);
     if (!Number.isFinite(numero) || numero <= 0) return;
-    if (editando === "meta") definirMetaMutation.mutate({ unidadeId, valorFaturamento: numero });
-    else if (editando === "ticket") definirTicketMutation.mutate({ unidadeId, valor: numero });
+    definirTicketMutation.mutate({ unidadeId, valor: numero });
   }
 
   const hoje = progressoQuery.data?.hoje ?? 0;
@@ -101,23 +96,10 @@ export function DesempenhoReativacaoCard({ unidadeId }: { unidadeId: number }) {
 
         {composicao && (
           composicao.metaFaturamento === 0 ? (
-            <div className="pt-3 border-t border-border/50 flex flex-wrap items-center justify-between gap-3">
+            <div className="pt-3 border-t border-border/50">
               <p className="text-sm text-muted-foreground">
-                Sem meta de faturamento do mês cadastrada — defina aqui ou em Financeiro &gt; Visão Geral &gt; Metas (é a mesma) pra liberar o painel completo.
+                Sem meta de faturamento do mês pra essa unidade — cadastre na aba "Metas" da planilha "Contabilidade SSU e RBS" e sincronize (mesmo lugar que já alimenta Financeiro &gt; Visão Geral) pra liberar o painel completo.
               </p>
-              {isAdmin && (
-                editando === "meta" ? (
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Input type="number" className="h-8 w-28 text-xs" placeholder="R$ meta" value={valorInput} onChange={(e) => setValorInput(e.target.value)} autoFocus />
-                    <Button size="sm" className="h-8" disabled={!valorInput.trim() || definirMetaMutation.isPending} onClick={salvarEdicao}>Salvar</Button>
-                    <Button size="sm" variant="ghost" className="h-8" onClick={() => setEditando(null)}>Cancelar</Button>
-                  </div>
-                ) : (
-                  <Button size="sm" variant="outline" className="h-8 text-xs shrink-0" onClick={() => { setValorInput(""); setEditando("meta"); }}>
-                    Definir meta do mês
-                  </Button>
-                )
-              )}
             </div>
           ) : (
             <div className="pt-3 border-t border-border/50 space-y-4">
@@ -134,23 +116,9 @@ export function DesempenhoReativacaoCard({ unidadeId }: { unidadeId: number }) {
                   <p className="text-xs text-muted-foreground">Atingimento da meta</p>
                   <p className="font-medium tabular-nums">{fmtPercentual(composicao.atingimentoMeta)}</p>
                 </div>
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Obj. final do mês</p>
-                    <p className="font-medium tabular-nums">{fmtMoeda(composicao.metaFaturamento)}</p>
-                  </div>
-                  {isAdmin && (
-                    editando === "meta" ? (
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Input type="number" className="h-7 w-20 text-xs" placeholder="R$" value={valorInput} onChange={(e) => setValorInput(e.target.value)} autoFocus />
-                        <Button size="sm" className="h-7 px-2 text-xs" disabled={!valorInput.trim() || definirMetaMutation.isPending} onClick={salvarEdicao}>OK</Button>
-                      </div>
-                    ) : (
-                      <button type="button" className="text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground shrink-0" onClick={() => { setValorInput(String(composicao.metaFaturamento)); setEditando("meta"); }}>
-                        editar
-                      </button>
-                    )
-                  )}
+                <div>
+                  <p className="text-xs text-muted-foreground">Obj. final do mês</p>
+                  <p className="font-medium tabular-nums">{fmtMoeda(composicao.metaFaturamento)}</p>
                 </div>
               </div>
 
@@ -201,14 +169,14 @@ export function DesempenhoReativacaoCard({ unidadeId }: { unidadeId: number }) {
               <p className="text-sm text-muted-foreground">
                 Com ticket médio de {fmtMoeda(composicao.ticketMedio)}
                 {isAdmin && (
-                  editando === "ticket" ? (
+                  editandoTicket ? (
                     <span className="inline-flex items-center gap-1.5 ml-1.5 align-middle">
                       <Input type="number" className="h-6 w-20 text-xs" value={valorInput} onChange={(e) => setValorInput(e.target.value)} autoFocus />
-                      <Button size="sm" className="h-6 text-xs px-2" disabled={!valorInput.trim() || definirTicketMutation.isPending} onClick={salvarEdicao}>Salvar</Button>
-                      <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setEditando(null)}>Cancelar</Button>
+                      <Button size="sm" className="h-6 text-xs px-2" disabled={!valorInput.trim() || definirTicketMutation.isPending} onClick={salvarTicket}>Salvar</Button>
+                      <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setEditandoTicket(false)}>Cancelar</Button>
                     </span>
                   ) : (
-                    <button type="button" className="ml-1.5 underline decoration-dotted underline-offset-2 hover:text-foreground" onClick={() => { setValorInput(String(composicao.ticketMedio)); setEditando("ticket"); }}>
+                    <button type="button" className="ml-1.5 underline decoration-dotted underline-offset-2 hover:text-foreground" onClick={() => { setValorInput(String(composicao.ticketMedio)); setEditandoTicket(true); }}>
                       (editar)
                     </button>
                   )

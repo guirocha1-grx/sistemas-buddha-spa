@@ -2597,13 +2597,6 @@ Diretrizes:
       return db.evolucaoDiariaReceitaReativacao(input.unidadeId);
     }),
 
-    definirMetaMensal: adminProcedure.input(z.object({
-      unidadeId: z.number(), valorFaturamento: z.number().min(0),
-    })).mutation(async ({ input }) => {
-      await db.definirMetaMensalAtual(input.unidadeId, input.valorFaturamento);
-      return { success: true };
-    }),
-
     definirTicketMedio: adminProcedure.input(z.object({
       unidadeId: z.number(), valor: z.number().min(1),
     })).mutation(async ({ input }) => {

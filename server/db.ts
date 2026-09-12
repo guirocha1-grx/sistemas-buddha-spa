@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { eq, asc, desc, and, or, gt, gte, lte, isNull, isNotNull, like, ne, inArray, notInArray, lt, sql, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, belleRegistrosFinanceiros, bellePlanosClientes, bellePlanosServicos, lidMapping, atendentes, atendenteSessoes, terapeutas, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, lancamentosManuaisDre, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type Meta, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertBelleRegistroFinanceiro, type InsertBellePlanoCliente, type InsertBellePlanoServico, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
+import { InsertUser, users, unidades, leads, metas, laminas, syncLogs, copilotConversas, configuracoes, inboxConversas, inboxMensagens, interExtratos, contas, dreCategorias, dreDescricoes, dreRegras, adquirenteVendas, comandaDiaria, comandaItens, auditLog, webhookDebugLog, clientes, clienteTelefones, belleAtendimentos, belleRegistrosFinanceiros, bellePlanosClientes, bellePlanosServicos, lidMapping, atendentes, atendenteSessoes, terapeutas, permissoesModulo, permissoesSubsecao, permissoesUnidade, scripts, scriptsUso, lancamentoSplits, lancamentosManuaisDre, transacoesEntreUnidades, fluxos, fluxoNos, fluxoExecucoes, fluxoNoOpcaoCliques, buddhaMktTemplates, disparos, disparoDestinatarios, type Unidade, type InsertUnidade, type Lead, type InsertLead, type InsertMeta, type Lamina, type InsertLamina, type SyncLog, type InsertSyncLog, type CopilotConversa, type InsertCopilotConversa, type Configuracao, type InsertInboxConversa, type InsertInboxMensagem, type InsertInterExtrato, type InsertConta, type InsertAdquirenteVenda, type InsertCliente, type InsertClienteTelefone, type InsertBelleAtendimento, type InsertBelleRegistroFinanceiro, type InsertBellePlanoCliente, type InsertBellePlanoServico, type InsertLidMapping, type InsertComandaItem, type InsertScript, type InsertFluxo, type InsertFluxoNo, type InsertFluxoExecucao, type FluxoNoConfig, type FluxoGatilhoConfig, type InsertBuddhaMktTemplate, type InsertDisparo, type InsertDisparoDestinatario } from "../drizzle/schema";
 import type { LinhaClienteImportada } from "./clientesXlsxParser";
 import type { LinhaAtendimentoBelleImportada } from "./atendimentosBelleXlsxParser";
 import type { LinhaRegistroFinanceiroBelleImportada } from "./registrosFinanceirosBelleXlsxParser";
@@ -7355,20 +7355,24 @@ export async function conversaoContatosReativacao(unidadeId: number, janelaDias 
   return { contatados, convertidos };
 }
 
-export async function getMetaMensalAtual(unidadeId: number): Promise<Meta | undefined> {
-  const [ano, mes] = hojeSaoPaulo().split("-").map(Number);
+/**
+ * A meta mensal de faturamento (2026-09-12) mora em `resumo_mensal_unidade`
+ * (coluna metaFaturamento), sincronizada da aba "Metas" da planilha
+ * "Contabilidade SSU e RBS" — achado real do usuário: a tabela `metas`
+ * (mes/ano soltos, editável por Financeiro > Visão Geral > Metas) nunca
+ * teve linha nenhuma gravada; a de verdade, que a unidade já usa e
+ * mantém pela planilha, é essa. Sem edição local aqui de propósito — um
+ * valor digitado no app seria sobrescrito no próximo "Sincronizar tudo".
+ */
+export async function getMetaMensalAtual(unidadeId: number): Promise<{ valorFaturamento: string | null } | undefined> {
+  const mesAno = hojeSaoPaulo().slice(0, 7);
   const db = await getDb();
   if (!db) return undefined;
-  const linhas = await db.select().from(metas).where(and(eq(metas.unidadeId, unidadeId), eq(metas.ano, ano), eq(metas.mes, mes))).limit(1);
+  const linhas = await db.select({ valorFaturamento: resumoMensalUnidade.metaFaturamento })
+    .from(resumoMensalUnidade)
+    .where(and(eq(resumoMensalUnidade.unidadeId, unidadeId), eq(resumoMensalUnidade.mesAno, mesAno)))
+    .limit(1);
   return linhas[0];
-}
-
-export async function definirMetaMensalAtual(unidadeId: number, valorFaturamento: number): Promise<void> {
-  const [ano, mes] = hojeSaoPaulo().split("-").map(Number);
-  const db = await getDb();
-  if (!db) return;
-  await db.insert(metas).values({ unidadeId, ano, mes, valorFaturamento: String(valorFaturamento) })
-    .onDuplicateKeyUpdate({ set: { valorFaturamento: String(valorFaturamento) } });
 }
 
 const TICKET_MEDIO_PADRAO = 230; // meio do intervalo informado pelo usuário (R$200–260)
