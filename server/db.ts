@@ -7580,7 +7580,13 @@ export async function evolucaoDiariaReceitaReativacao(unidadeId: number): Promis
       tendenciaAcumulada = acumulado;
       tendencia = acumuladoArredondado;
     } else if (dia > diaCorte) {
-      tendenciaAcumulada += mediaUltimasDuas[diaSemanaMySQL(dataIso)] ?? 0;
+      // Sem 2 ocorrências recentes desse dia da semana (mês muito novo, ou
+      // um dia da semana raro no histórico), cai pra média histórica de 90
+      // dias (`pesos`, já calculada acima) em vez de somar 0 — equivalente
+      // ao fallback da planilha original pra quando a estimativa ainda não
+      // tem base recente o suficiente.
+      const diaSemana = diaSemanaMySQL(dataIso);
+      tendenciaAcumulada += mediaUltimasDuas[diaSemana] || pesos[diaSemana] || 0;
       tendencia = Math.round(tendenciaAcumulada * 100) / 100;
     }
 
