@@ -102,7 +102,9 @@ export function DesempenhoReativacaoCard({ unidadeId }: { unidadeId: number }) {
         {composicao && (
           composicao.metaFaturamento === 0 ? (
             <div className="pt-3 border-t border-border/50 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-muted-foreground">Sem meta de faturamento do mês cadastrada.</p>
+              <p className="text-sm text-muted-foreground">
+                Sem meta de faturamento do mês cadastrada — defina pra liberar o painel completo (atingimento, premiação e o gráfico de evolução).
+              </p>
               {isAdmin && (
                 editando === "meta" ? (
                   <div className="flex items-center gap-2 shrink-0">

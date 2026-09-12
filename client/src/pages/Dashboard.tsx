@@ -80,9 +80,13 @@ export default function Dashboard() {
     Recebimentos: u.recebimentosMes ?? 0,
   }));
 
-  const totalFaturamento = (consolidado || []).reduce((sum: number, u: any) => sum + (u.faturamentoMes ?? 0), 0);
-  const totalRecebimentos = (consolidado || []).reduce((sum: number, u: any) => sum + (u.recebimentosMes ?? 0), 0);
-  const totalAgendamentosHoje = (consolidado || []).reduce((sum: number, u: any) => sum + (u.agendamentosHoje ?? 0), 0);
+  // Os 4 KPIs principais são sempre da unidade selecionada, não a soma das
+  // duas — RBS e SSU têm números muito diferentes, somar/misturar não
+  // representa nenhuma das duas de verdade (achado do usuário, 2026-09-12).
+  // O comparativo lado a lado mais abaixo continua consolidado de propósito.
+  const totalFaturamento = dashboardData?.faturamentoMes ?? 0;
+  const totalRecebimentos = dashboardData?.recebimentosMes ?? 0;
+  const totalAgendamentosHoje = dashboardData?.agendamentosHoje ?? 0;
   const totalClientes = kanbanData?.total ?? 0;
 
   return (
@@ -149,7 +153,7 @@ export default function Dashboard() {
               <>
                 <div className="text-2xl font-bold">{fmtCurrency(totalFaturamento)}</div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Soma das {unidades.length} unidades{!periodoEhMesAtual && ` · ${fmtDataBr(dataInicio)} a ${fmtDataBr(dataFim)}`}
+                  {unidadeSelecionada?.nome ?? "Unidade"}{!periodoEhMesAtual && ` · ${fmtDataBr(dataInicio)} a ${fmtDataBr(dataFim)}`}
                 </p>
               </>
             )}
@@ -191,7 +195,7 @@ export default function Dashboard() {
               <>
                 <div className="text-2xl font-bold">{totalAgendamentosHoje}</div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Total nas {unidades.length} unidades
+                  {unidadeSelecionada?.nome ?? "Unidade"}
                 </p>
               </>
             )}
