@@ -17,6 +17,30 @@ function fmtPercentual(fracao: number | null): string {
 }
 
 /**
+ * Rótulo "Atualização DD/MM HHh" (2026-09-12) — os números de hoje
+ * (Acumulado do mês etc.) só passam a incluir o dia atual a partir das
+ * 20h (ver evolucaoDiariaReceitaReativacao no servidor); esse rótulo só
+ * comunica esse checkpoint pro usuário, sem esconder/congelar nada — às
+ * 20h e 22h porque a unidade costuma fechar por volta das 22h, e um
+ * check antes disso já dá um sinal de como o dia está indo.
+ */
+function ultimaAtualizacaoReativacao(): string {
+  const partes = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false,
+  }).formatToParts(new Date());
+  const valor = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "";
+  const dataIso = `${valor("year")}-${valor("month")}-${valor("day")}`;
+  const hora = Number(valor("hour"));
+  const fmtDataBr = (iso: string) => { const [, mes, dia] = iso.split("-"); return `${dia}/${mes}`; };
+
+  if (hora >= 22) return `${fmtDataBr(dataIso)} 22h`;
+  if (hora >= 20) return `${fmtDataBr(dataIso)} 20h`;
+  const ontem = new Date(`${dataIso}T00:00:00Z`);
+  ontem.setUTCDate(ontem.getUTCDate() - 1);
+  return `${fmtDataBr(ontem.toISOString().slice(0, 10))} 22h`;
+}
+
+/**
  * Desempenho mensal da reativação (2026-09-12, reorganizado em
  * 2026-09-12) — dividido em 3 cards a pedido do usuário pra caber na
  * nova ordem do Dashboard (gráfico e quadro-resumo lado a lado, ações de
@@ -113,9 +137,12 @@ export function ResumoMensalReativacaoCard({ unidadeId }: { unidadeId: number })
         {!composicao ? (
           <p className="text-sm text-muted-foreground">Carregando…</p>
         ) : composicao.metaFaturamento === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Sem meta de faturamento do mês pra essa unidade — cadastre na aba "Metas" da planilha "Contabilidade SSU e RBS" e sincronize (mesmo lugar que já alimenta Financeiro &gt; Visão Geral) pra liberar o painel completo.
-          </p>
+          <>
+            <p className="text-sm text-muted-foreground">
+              Sem meta de faturamento do mês pra essa unidade — cadastre na aba "Metas" da planilha "Contabilidade SSU e RBS" e sincronize (mesmo lugar que já alimenta Financeiro &gt; Visão Geral) pra liberar o painel completo.
+            </p>
+            <p className="text-xs text-muted-foreground/70 pt-3">Atualização {ultimaAtualizacaoReativacao()}</p>
+          </>
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 text-sm">
@@ -189,6 +216,8 @@ export function ResumoMensalReativacaoCard({ unidadeId }: { unidadeId: number })
                 <> — na conversão atual, isso é <strong className="text-primary">~{Math.ceil(composicao.contatosNecessariosPorDia)} contatos por dia</strong>.</>
               ) : "."}
             </p>
+
+            <p className="text-xs text-muted-foreground/70">Atualização {ultimaAtualizacaoReativacao()}</p>
           </div>
         )}
       </CardContent>
