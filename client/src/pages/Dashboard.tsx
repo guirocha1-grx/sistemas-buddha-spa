@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DollarSign, Calendar, Users, Wallet, Loader2 } from "lucide-react";
+import { DollarSign, Calendar, Wallet, Loader2 } from "lucide-react";
 import { useState } from "react";
 
 function dataLocalParaInput(data: Date): string {
@@ -65,11 +65,6 @@ export default function Dashboard() {
     { enabled: !!unidadeSelecionada && periodoValido }
   );
 
-  const { data: kanbanData } = trpc.kanban.list.useQuery(
-    { unidadeId: unidadeSelecionada?.id ?? 0 },
-    { enabled: !!unidadeSelecionada }
-  );
-
   const fmtCurrency = (val: number) =>
     val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -81,7 +76,6 @@ export default function Dashboard() {
   const totalRecebimentos = dashboardData?.recebimentosMes ?? 0;
   const faturamentoHoje = dashboardData?.faturamentoHoje ?? 0;
   const totalAgendamentosHoje = dashboardData?.agendamentosHoje ?? 0;
-  const totalClientes = kanbanData?.total ?? 0;
 
   return (
     <div className="space-y-6">
@@ -139,7 +133,7 @@ export default function Dashboard() {
       {/* 3. Hoje — sempre o dia de hoje, independente do período escolhido acima */}
       <div>
         <h2 className="text-sm font-medium text-muted-foreground mb-2">Hoje</h2>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2">
           <Card className="border-border/50 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Agendamentos Hoje</CardTitle>
@@ -171,21 +165,6 @@ export default function Dashboard() {
                   <p className="text-xs text-muted-foreground mt-1">{unidadeSelecionada?.nome ?? "Unidade"}</p>
                 </>
               )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/50 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Clientes Ativos</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{totalClientes}</div>
-              <div className="flex gap-3 mt-1">
-                <span className="text-xs text-orange-600">{kanbanData?.quente?.length ?? 0} quentes</span>
-                <span className="text-xs text-yellow-600">{kanbanData?.morno?.length ?? 0} mornos</span>
-                <span className="text-xs text-blue-600">{kanbanData?.frio?.length ?? 0} frios</span>
-              </div>
             </CardContent>
           </Card>
         </div>

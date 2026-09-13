@@ -734,9 +734,13 @@ export const appRouter = router({
       dataInicio: z.string().optional(),
       dataFim: z.string().optional(),
     })).query(async ({ input }) => {
-      const hoje = new Date();
-      const hojeIso = fmtDateIso(hoje);
-      const dataInicioIso = input.dataInicio ?? fmtDateIso(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
+      // hojeIso precisa ser o dia em São Paulo, não no fuso do servidor
+      // (Railway roda em UTC) — achado real (2026-09-12): à noite, com
+      // SP ainda no dia D mas UTC já em D+1, "Faturamento Hoje"/
+      // "Agendamentos Hoje" buscavam um dia sem dado nenhum e vinham
+      // zerados.
+      const hojeIso = db.hojeSaoPaulo();
+      const dataInicioIso = input.dataInicio ?? `${hojeIso.slice(0, 7)}-01`;
       const dataFimIso = input.dataFim ?? hojeIso;
 
       const [comandaDias, totalVendasMes, recebimentosMes, agendamentosPeriodo, agendamentosHojeLista, comandaHoje] = await Promise.all([
@@ -773,9 +777,8 @@ export const appRouter = router({
       // Buddha Mkt é uma unidade sintética (canal de WhatsApp de marketing,
       // sem Comanda/contas bancárias reais) — não entra em comparativo financeiro.
       const unidades = (await db.getUnidades()).filter((u) => u.canal !== "buddha_mkt");
-      const hoje = new Date();
-      const hojeIso = fmtDateIso(hoje);
-      const dataInicioIso = input?.dataInicio ?? fmtDateIso(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
+      const hojeIso = db.hojeSaoPaulo(); // dia em SP, não no fuso do servidor (Railway roda em UTC)
+      const dataInicioIso = input?.dataInicio ?? `${hojeIso.slice(0, 7)}-01`;
       const dataFimIso = input?.dataFim ?? hojeIso;
 
       const resultados = await Promise.all(

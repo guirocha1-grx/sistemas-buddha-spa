@@ -7309,7 +7309,7 @@ export async function definirStatusReativacao(clienteId: number, unidadeId: numb
 // routers.ts); único por atendente+cliente+dia, pra clicar de novo no
 // mesmo cliente não inflar a contagem.
 
-function hojeSaoPaulo(): string {
+export function hojeSaoPaulo(): string {
   const partes = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const valor = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "";
   return `${valor("year")}-${valor("month")}-${valor("day")}`;
