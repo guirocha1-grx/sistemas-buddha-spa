@@ -28,9 +28,15 @@ function fmtPercentual(fracao: number | null): string {
  */
 function fmtUltimaSincronizacao(data: Date | null): string {
   if (!data) return "sem sincronização registrada ainda";
+  // Defesa extra: se por algum motivo chegar algo que não é uma Date
+  // válida (viu-se um caso real de string crua escapando da tipagem do
+  // servidor), formatToParts() estoura RangeError em vez de só não
+  // mostrar a data — nunca deixar isso derrubar a tela inteira.
+  const instante = data instanceof Date ? data : new Date(data);
+  if (Number.isNaN(instante.getTime())) return "sem sincronização registrada ainda";
   const partes = new Intl.DateTimeFormat("pt-BR", {
     timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
-  }).formatToParts(data);
+  }).formatToParts(instante);
   const valor = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "";
   return `${valor("day")}/${valor("month")} ${valor("hour")}h${valor("minute")}`;
 }

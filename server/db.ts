@@ -7620,10 +7620,18 @@ const TIPOS_SYNC_DESEMPENHO_MENSAL = ["comanda_itens"] as const;
 async function ultimaSincronizacaoDesempenhoMensal(unidadeId: number): Promise<Date | null> {
   const db = await getDb();
   if (!db) return null;
-  const [linha] = await db.select({ data: sql<Date | null>`max(${syncLogs.createdAt})` })
+  // sql<Date | null> aqui é só o tipo declarado pro TypeScript — o driver
+  // devolve MAX() de raw SQL como string crua do MySQL, não uma instância
+  // de Date de verdade. Sem normalizar, essa string cru passava disfarçada
+  // de Date pelo superjson até o cliente, e formatToParts() estourava
+  // "RangeError: Invalid time value" ao tentar formatá-la (achado real,
+  // 2026-09-13, erro em produção).
+  const [linha] = await db.select({ data: sql<string | Date | null>`max(${syncLogs.createdAt})` })
     .from(syncLogs)
     .where(and(eq(syncLogs.unidadeId, unidadeId), inArray(syncLogs.tipo, [...TIPOS_SYNC_DESEMPENHO_MENSAL]), eq(syncLogs.status, "sucesso")));
-  return linha?.data ?? null;
+  if (!linha?.data) return null;
+  const data = linha.data instanceof Date ? linha.data : new Date(linha.data);
+  return Number.isNaN(data.getTime()) ? null : data;
 }
 
 /**
