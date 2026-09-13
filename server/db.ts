@@ -7625,14 +7625,18 @@ export interface ComposicaoMetaReativacao {
   atendComPlano: number;
   atendSemPlano: number;
   planosVendidos: number;
-  // Timestamp real da última sincronização (Comanda/Caixa/Mercado Pago)
-  // — pro rótulo "Atualização" no card refletir a hora de verdade em vez
-  // de um checkpoint estimado (achado real, 2026-09-13: o Dashboard
-  // "chutava" 20h/22h mesmo quando o dado só tinha vindo às 7h da manhã).
+  // Timestamp real da última sincronização de Comanda itens — pro
+  // rótulo "Atualização" no card refletir a hora de verdade em vez de um
+  // checkpoint estimado (achado real, 2026-09-13: o Dashboard "chutava"
+  // 20h/22h mesmo quando o dado só tinha vindo às 7h da manhã). Só
+  // Comanda (não Caixa/Mercado Pago, que ficaram só na sincronização
+  // geral das 7h — decisão do usuário) porque é a fonte de quase tudo
+  // que esse card mostra (Total de atendimentos, Atend. com/sem plano,
+  // Planos vendidos) e a única que reexecuta ao longo do dia.
   ultimaSincronizacao: Date | null;
 }
 
-const TIPOS_SYNC_DESEMPENHO_MENSAL = ["comanda_itens", "caixa_fisico", "mercadopago_extrato", "mercadopago_vendas"] as const;
+const TIPOS_SYNC_DESEMPENHO_MENSAL = ["comanda_itens"] as const;
 
 async function ultimaSincronizacaoDesempenhoMensal(unidadeId: number): Promise<Date | null> {
   const db = await getDb();

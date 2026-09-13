@@ -67,10 +67,11 @@ export function registerScheduledJobs() {
     schedule(`sync-diaria-${chave}`, `0 ${minuto} 10 * * *`, () => executarEtapaSincronizacaoDiaria(chave));
   }
   schedule("relatorio-sincronizacao-diaria", "0 20 10 * * *", enviarRelatorioDiario);
-  // 11h/15h/19h/23h UTC = 8h/12h/16h/20h BRT — reexecução de Caixa
-  // Físico/Mercado Pago/Comanda itens ao longo do dia (ver comentário em
-  // ETAPAS_REEXECUCAO), pro Dashboard não depender de alguém lembrar de
-  // clicar "Sincronizar tudo" pra ver o faturamento/atendimentos de hoje.
+  // 11h/15h/19h/23h UTC = 8h/12h/16h/20h BRT — reexecução de Comanda itens
+  // ao longo do dia (ver comentário em ETAPAS_REEXECUCAO; a sincronização
+  // geral de Caixa/Mercado Pago/etc. continua só às 7h), pro Dashboard
+  // não depender de alguém lembrar de clicar "Sincronizar tudo" pra ver
+  // o faturamento/atendimentos de hoje.
   for (const horaUtc of HORAS_REEXECUCAO_UTC) {
     for (const { chave, minuto } of ETAPAS_REEXECUCAO) {
       schedule(`sync-${horaUtc}h-${chave}`, `0 ${minuto} ${horaUtc} * * *`, () => executarEtapaSincronizacaoDiaria(chave));

@@ -123,8 +123,8 @@ export async function executarEtapaSincronizacaoDiaria(chave: ChaveEtapa): Promi
  * "Sincronizar agora" (2026-09-13) — botão do administrador no card
  * Desempenho mensal, pra não depender do próximo horário automático
  * (ETAPAS_REEXECUCAO) quando alguém precisa ver o dado de agora mesmo.
- * Roda as mesmas 4 etapas (Caixa, Mercado Pago conta/adquirente, Comanda
- * itens) só da unidade pedida, em paralelo.
+ * Roda as mesmas etapas de ETAPAS_REEXECUCAO (hoje, só Comanda itens) da
+ * unidade pedida.
  */
 export async function sincronizarAgoraUnidade(unidadeId: number): Promise<void> {
   const unidades = await getUnidades();
@@ -194,22 +194,21 @@ export const ETAPAS_AGENDADAS: Array<{ chave: ChaveEtapa; minuto: number }> = [
 ];
 
 /**
- * Reexecução ao longo do dia (8h, 12h, 16h e 20h BRT) de 4 etapas por
- * unidade — Caixa Físico, Mercado Pago (conta + adquirente) e Comanda
- * itens. Achados reais: (2026-09-03, Conciliação PDV de Santa Úrsula) a
- * sincronização das 7h roda cedo demais em relação à fonte (planilha de
- * Caixa Físico, liquidação MP), que às vezes só fica pronta depois;
- * (2026-09-12, Dashboard/Desempenho mensal) a única sincronização de
- * Comanda itens do dia era a das 7h, cedo demais pra pegar qualquer
- * lançamento (a recepção só começa a preencher depois que a unidade
- * abre) — "Faturamento Hoje"/"Total de atendimentos" ficavam zerados a
- * tarde/noite inteira sem alguém lembrar de clicar "Sincronizar tudo".
- * Reusa a mesma executarEtapaSincronizacaoDiaria (idempotente, mês
- * inteiro de novo a cada chamada), só que 4x ao longo do dia em vez de
- * 1x. HORAS_REEXECUCAO_UTC abaixo tem os horários (já em UTC).
+ * Reexecução ao longo do dia (8h, 12h, 16h e 20h BRT) — só Comanda
+ * itens, por decisão do usuário (2026-09-13): das fontes da sincronização
+ * diária, é a que muda mais rápido (a recepção preenche em tempo real,
+ * diferente de Caixa Físico/Mercado Pago, que fica pra sincronização
+ * geral das 7h). Achado real (2026-09-12, Dashboard/Desempenho mensal):
+ * a única sincronização de Comanda itens do dia era a das 7h, cedo
+ * demais pra pegar qualquer lançamento (a recepção só começa a
+ * preencher depois que a unidade abre) — "Faturamento Hoje"/"Total de
+ * atendimentos" ficavam zerados a tarde/noite inteira sem alguém
+ * lembrar de clicar "Sincronizar tudo". Reusa a mesma
+ * executarEtapaSincronizacaoDiaria (idempotente, mês inteiro de novo a
+ * cada chamada), só que 4x ao longo do dia em vez de 1x.
+ * HORAS_REEXECUCAO_UTC abaixo tem os horários (já em UTC).
  */
-export const ETAPAS_REEXECUCAO = ETAPAS_AGENDADAS.filter(({ chave }) =>
-  chave.endsWith("-caixa") || chave.endsWith("-mercadopago-conta") || chave.endsWith("-mercadopago-adquirente") || chave.endsWith("-comanda-itens"));
+export const ETAPAS_REEXECUCAO = ETAPAS_AGENDADAS.filter(({ chave }) => chave.endsWith("-comanda-itens"));
 
 /** 8h, 12h, 16h, 20h BRT — BRT = UTC-3. */
 export const HORAS_REEXECUCAO_UTC = [11, 15, 19, 23];
