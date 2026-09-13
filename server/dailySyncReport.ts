@@ -187,6 +187,19 @@ export const ETAPAS_AGENDADAS: Array<{ chave: ChaveEtapa; minuto: number }> = [
 export const ETAPAS_REEXECUCAO_MEIODIA = ETAPAS_AGENDADAS.filter(({ chave }) =>
   chave.endsWith("-caixa") || chave.endsWith("-mercadopago-conta") || chave.endsWith("-mercadopago-adquirente"));
 
+/**
+ * Reexecução da noite (20h e 22h BRT) das mesmas 3 etapas do meio-dia +
+ * Comanda itens — achado real (2026-09-12): o Dashboard (Desempenho
+ * mensal/Acumulado do mês, que lê Comanda) mostrava o dia sem nenhum
+ * atendimento/faturamento de hoje porque a única sincronização de
+ * Comanda itens do dia é a das 7h, cedo demais pra pegar qualquer
+ * lançamento (a recepção só começa a preencher depois que a unidade
+ * abre). Sem isso, os números de "hoje" só ficam certos se alguém
+ * lembrar de clicar "Sincronizar tudo" à noite.
+ */
+export const ETAPAS_REEXECUCAO_NOITE = ETAPAS_AGENDADAS.filter(({ chave }) =>
+  chave.endsWith("-caixa") || chave.endsWith("-mercadopago-conta") || chave.endsWith("-mercadopago-adquirente") || chave.endsWith("-comanda-itens"));
+
 export function listarHeartbeatsSincronizacaoDiaria(): AgendamentoDiario[] {
   const etapas = ETAPAS_AGENDADAS.map(({ chave, minuto }) => ({
     name: `cron-sync-diaria-${chave}`,
