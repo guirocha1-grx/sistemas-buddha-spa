@@ -7401,45 +7401,24 @@ export async function definirTicketMedioReativacao(unidadeId: number, valor: num
 }
 
 /**
- * Soma de "receitas" (DRE) por dia num intervalo — mesmas 3 fontes de
- * listDreAgregado (extrato sem split + splits + vendas de adquirente),
- * só que por dia em vez de somado no intervalo inteiro; listDreAgregado
- * não expõe granularidade diária, por isso essa versão existe à parte
- * (usada tanto pela evolução do mês corrente quanto pela média
- * histórica por dia da semana, abaixo).
+ * Soma de faturamento por dia num intervalo, pra evolução do mês/meta da
+ * Reativação (usada pela evolução do mês corrente e pela média histórica
+ * por dia da semana, abaixo). Fonte: Comanda (comanda_itens, com
+ * comanda_diaria de fallback — mesma prioridade de listComandaDiaria),
+ * não o DRE (Caixa Físico/Mercado Pago) — troca decidida com o usuário
+ * (2026-09-13): a Comanda é a mesma fonte que já alimenta Faturamento
+ * Hoje/Total de atendimentos nesse card, e é a que a recepção preenche
+ * em tempo real (reexecuta 4x/dia, o DRE só às 7h) — o número fica um
+ * pouco menos conciliado (sem ajuste de estorno/taxa bancária) que o
+ * "oficial" de Financeiro > Visão Geral (que continua no DRE), mas a
+ * diferença é pequena e a unidade já concilia isso diariamente.
  */
 async function receitaPorDiaNoIntervalo(unidadeId: number, dataInicio: string, dataFim: string): Promise<Map<string, number>> {
-  const db = await getDb();
   const porDia = new Map<string, number>();
-  if (!db) return porDia;
-
-  const idsReceita = new Set(
-    (await db.select({ id: dreDescricoes.id })
-      .from(dreDescricoes)
-      .innerJoin(dreCategorias, eq(dreCategorias.id, dreDescricoes.dreCategoriaId))
-      .where(eq(dreCategorias.secao, "receitas"))
-    ).map((l) => l.id),
-  );
-  const soma = (dataIso: string, dreDescricaoId: number | null, valor: string | null) => {
-    if (dreDescricaoId === null || valor === null || !idsReceita.has(dreDescricaoId)) return;
-    porDia.set(dataIso, (porDia.get(dataIso) ?? 0) + parseFloat(valor));
-  };
-
-  const [semSplit, splits, vendas] = await Promise.all([
-    db.select({ dataEntrada: interExtratos.dataEntrada, dreDescricaoId: interExtratos.dreDescricaoId, valor: interExtratos.valor })
-      .from(interExtratos)
-      .where(and(eq(interExtratos.unidadeId, unidadeId), gte(interExtratos.dataEntrada, dataInicio), lte(interExtratos.dataEntrada, dataFim), isNotNull(interExtratos.dreDescricaoId))),
-    db.select({ dataEntrada: interExtratos.dataEntrada, dreDescricaoId: lancamentoSplits.dreDescricaoId, valor: lancamentoSplits.valor })
-      .from(lancamentoSplits)
-      .innerJoin(interExtratos, eq(lancamentoSplits.interExtratoId, interExtratos.id))
-      .where(and(eq(interExtratos.unidadeId, unidadeId), gte(interExtratos.dataEntrada, dataInicio), lte(interExtratos.dataEntrada, dataFim))),
-    db.select({ dataHora: adquirenteVendas.dataHora, dreDescricaoId: adquirenteVendas.dreDescricaoId, valor: adquirenteVendas.valorBruto })
-      .from(adquirenteVendas)
-      .where(and(eq(adquirenteVendas.unidadeId, unidadeId), gte(adquirenteVendas.dataHora, dataInicio), lte(adquirenteVendas.dataHora, `${dataFim} 23:59:59`), isNotNull(adquirenteVendas.dreDescricaoId))),
-  ]);
-  for (const l of semSplit) soma(l.dataEntrada, l.dreDescricaoId, l.valor);
-  for (const s of splits) soma(s.dataEntrada, s.dreDescricaoId, s.valor);
-  for (const v of vendas) soma(v.dataHora.slice(0, 10), v.dreDescricaoId, v.valor);
+  const dias = await listComandaDiaria(unidadeId, dataInicio, dataFim);
+  for (const d of dias) {
+    porDia.set(d.data, d.dinheiro + d.cartaoDebito + d.cartaoCredito + d.pix);
+  }
   return porDia;
 }
 
