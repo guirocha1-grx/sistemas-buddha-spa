@@ -5,7 +5,7 @@
 // registradas antes no Heartbeat (6 campos com segundos, UTC).
 import cron from "node-cron";
 import { retomarFluxosPendentes, dispararFluxosAgendados, alertarBuddhaMktSemRetorno } from "../fluxosScheduled";
-import { executarEtapaSincronizacaoDiaria, enviarRelatorioDiario, ETAPAS_AGENDADAS, ETAPAS_REEXECUCAO_MEIODIA, ETAPAS_REEXECUCAO_NOITE, executarSincronizacaoResumoMensal } from "../dailySyncReport";
+import { executarEtapaSincronizacaoDiaria, enviarRelatorioDiario, ETAPAS_AGENDADAS, ETAPAS_REEXECUCAO, HORAS_REEXECUCAO_UTC, executarSincronizacaoResumoMensal } from "../dailySyncReport";
 import { processarAgrupamentosProntos } from "../agentesAgrupamento";
 import { verificarQualidadeAgentes } from "../agentesQualidadeAlerta";
 import { expirarSugestoesPendentesAntigas } from "../agentesDb";
@@ -67,22 +67,18 @@ export function registerScheduledJobs() {
     schedule(`sync-diaria-${chave}`, `0 ${minuto} 10 * * *`, () => executarEtapaSincronizacaoDiaria(chave));
   }
   schedule("relatorio-sincronizacao-diaria", "0 20 10 * * *", enviarRelatorioDiario);
-  // 15h UTC = 12h BRT — reexecução de Caixa Físico/Mercado Pago (ver
-  // comentário em ETAPAS_REEXECUCAO_MEIODIA).
-  for (const { chave, minuto } of ETAPAS_REEXECUCAO_MEIODIA) {
-    schedule(`sync-meiodia-${chave}`, `0 ${minuto} 15 * * *`, () => executarEtapaSincronizacaoDiaria(chave));
-  }
-  // 23h UTC = 20h BRT e 1h UTC = 22h BRT — reexecução da noite (Comanda +
-  // Caixa/Mercado Pago, ver comentário em ETAPAS_REEXECUCAO_NOITE), pro
-  // Dashboard não depender de alguém clicar "Sincronizar tudo" à noite
-  // pra ver o faturamento/atendimentos de hoje.
-  for (const { chave, minuto } of ETAPAS_REEXECUCAO_NOITE) {
-    schedule(`sync-20h-${chave}`, `0 ${minuto} 23 * * *`, () => executarEtapaSincronizacaoDiaria(chave));
-    schedule(`sync-22h-${chave}`, `0 ${minuto} 1 * * *`, () => executarEtapaSincronizacaoDiaria(chave));
+  // 11h/15h/19h/23h UTC = 8h/12h/16h/20h BRT — reexecução de Caixa
+  // Físico/Mercado Pago/Comanda itens ao longo do dia (ver comentário em
+  // ETAPAS_REEXECUCAO), pro Dashboard não depender de alguém lembrar de
+  // clicar "Sincronizar tudo" pra ver o faturamento/atendimentos de hoje.
+  for (const horaUtc of HORAS_REEXECUCAO_UTC) {
+    for (const { chave, minuto } of ETAPAS_REEXECUCAO) {
+      schedule(`sync-${horaUtc}h-${chave}`, `0 ${minuto} ${horaUtc} * * *`, () => executarEtapaSincronizacaoDiaria(chave));
+    }
   }
   // Segunda-feira 7h BRT (10h UTC) — planilha "Contabilidade SSU e RBS"
   // é atualizada manualmente, semana a semana, não todo dia.
   schedule("sync-resumo-mensal-semanal", "0 0 10 * * 1", executarSincronizacaoResumoMensal);
 
-  console.log(`[Scheduler] ${6 + ETAPAS_AGENDADAS.length + ETAPAS_REEXECUCAO_MEIODIA.length + ETAPAS_REEXECUCAO_NOITE.length * 2 + 2} tarefas agendadas em processo.`);
+  console.log(`[Scheduler] ${6 + ETAPAS_AGENDADAS.length + ETAPAS_REEXECUCAO.length * HORAS_REEXECUCAO_UTC.length + 2} tarefas agendadas em processo.`);
 }

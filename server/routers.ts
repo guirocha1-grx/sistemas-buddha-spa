@@ -2612,6 +2612,17 @@ Diretrizes:
       await db.definirTicketMedioReativacao(input.unidadeId, input.valor);
       return { success: true };
     }),
+
+    // "Sincronizar agora" (2026-09-13) — botão do admin no card Desempenho
+    // mensal, pra não esperar o próximo horário automático (8h/12h/16h/20h
+    // BRT, ver ETAPAS_REEXECUCAO em dailySyncReport.ts) quando alguém
+    // precisa ver o dado de agora mesmo. Import dinâmico só pra não criar
+    // import circular com dailySyncReport.ts (que importa appRouter daqui).
+    sincronizarAgora: adminProcedure.input(z.object({ unidadeId: z.number() })).mutation(async ({ input }) => {
+      const { sincronizarAgoraUnidade } = await import("./dailySyncReport");
+      await sincronizarAgoraUnidade(input.unidadeId);
+      return { success: true };
+    }),
   }),
 
   // ===== Buddha Mkt: Disparos (campanhas de marketing) =====

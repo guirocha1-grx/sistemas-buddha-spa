@@ -77,7 +77,7 @@ function dataIsoBrt(offsetDias: number): string {
   return `${agoraBrt.getUTCFullYear()}-${String(agoraBrt.getUTCMonth() + 1).padStart(2, "0")}-${String(agoraBrt.getUTCDate()).padStart(2, "0")}`;
 }
 
-function chaveUnidade(slug: string): "ssu" | "rbs" | null {
+export function chaveUnidade(slug: string): "ssu" | "rbs" | null {
   if (slug.includes("ribeirao") || slug.includes("rbs")) return "rbs";
   if (slug.includes("ssu") || slug.includes("santa")) return "ssu";
   return null;
@@ -117,6 +117,26 @@ export async function executarEtapaSincronizacaoDiaria(chave: ChaveEtapa): Promi
   if (!tarefa) throw new Error(`Etapa diária não encontrada: ${chave}`);
   await tarefa.executar();
   return { unidade: tarefa.unidadeNome, etapa: tarefa.etapa };
+}
+
+/**
+ * "Sincronizar agora" (2026-09-13) — botão do administrador no card
+ * Desempenho mensal, pra não depender do próximo horário automático
+ * (ETAPAS_REEXECUCAO) quando alguém precisa ver o dado de agora mesmo.
+ * Roda as mesmas 4 etapas (Caixa, Mercado Pago conta/adquirente, Comanda
+ * itens) só da unidade pedida, em paralelo.
+ */
+export async function sincronizarAgoraUnidade(unidadeId: number): Promise<void> {
+  const unidades = await getUnidades();
+  const unidade = unidades.find((u) => u.id === unidadeId);
+  if (!unidade) throw new Error("Unidade não encontrada.");
+  const chave = chaveUnidade(unidade.slug);
+  if (!chave) throw new Error(`Sincronização automática não configurada pra unidade "${unidade.nome}".`);
+
+  const chavesEtapa = ETAPAS_REEXECUCAO
+    .map((e) => e.chave)
+    .filter((c) => c.startsWith(`${chave}-`));
+  await Promise.all(chavesEtapa.map((c) => executarEtapaSincronizacaoDiaria(c)));
 }
 
 /**
@@ -174,31 +194,25 @@ export const ETAPAS_AGENDADAS: Array<{ chave: ChaveEtapa; minuto: number }> = [
 ];
 
 /**
- * Reexecução ao meio-dia (12h BRT) de só 3 etapas por unidade — Caixa
- * Físico e Mercado Pago (conta + adquirente). Achado real (2026-09-03,
- * Conciliação PDV de Santa Úrsula): a sincronização das 7h roda cedo
- * demais em relação à fonte (planilha de Caixa Físico, liquidação MP),
- * que às vezes só fica pronta depois — o mês inteiro só era
- * reconciliado de fato quando alguém lembrava de clicar em
- * "Sincronizar" manualmente horas depois. Reusa a mesma
- * executarEtapaSincronizacaoDiaria (idempotente, mês inteiro de novo),
- * só numa hora mais tarde.
- */
-export const ETAPAS_REEXECUCAO_MEIODIA = ETAPAS_AGENDADAS.filter(({ chave }) =>
-  chave.endsWith("-caixa") || chave.endsWith("-mercadopago-conta") || chave.endsWith("-mercadopago-adquirente"));
-
-/**
- * Reexecução da noite (20h e 22h BRT) das mesmas 3 etapas do meio-dia +
- * Comanda itens — achado real (2026-09-12): o Dashboard (Desempenho
- * mensal/Acumulado do mês, que lê Comanda) mostrava o dia sem nenhum
- * atendimento/faturamento de hoje porque a única sincronização de
- * Comanda itens do dia é a das 7h, cedo demais pra pegar qualquer
+ * Reexecução ao longo do dia (8h, 12h, 16h e 20h BRT) de 4 etapas por
+ * unidade — Caixa Físico, Mercado Pago (conta + adquirente) e Comanda
+ * itens. Achados reais: (2026-09-03, Conciliação PDV de Santa Úrsula) a
+ * sincronização das 7h roda cedo demais em relação à fonte (planilha de
+ * Caixa Físico, liquidação MP), que às vezes só fica pronta depois;
+ * (2026-09-12, Dashboard/Desempenho mensal) a única sincronização de
+ * Comanda itens do dia era a das 7h, cedo demais pra pegar qualquer
  * lançamento (a recepção só começa a preencher depois que a unidade
- * abre). Sem isso, os números de "hoje" só ficam certos se alguém
- * lembrar de clicar "Sincronizar tudo" à noite.
+ * abre) — "Faturamento Hoje"/"Total de atendimentos" ficavam zerados a
+ * tarde/noite inteira sem alguém lembrar de clicar "Sincronizar tudo".
+ * Reusa a mesma executarEtapaSincronizacaoDiaria (idempotente, mês
+ * inteiro de novo a cada chamada), só que 4x ao longo do dia em vez de
+ * 1x. HORAS_REEXECUCAO_UTC abaixo tem os horários (já em UTC).
  */
-export const ETAPAS_REEXECUCAO_NOITE = ETAPAS_AGENDADAS.filter(({ chave }) =>
+export const ETAPAS_REEXECUCAO = ETAPAS_AGENDADAS.filter(({ chave }) =>
   chave.endsWith("-caixa") || chave.endsWith("-mercadopago-conta") || chave.endsWith("-mercadopago-adquirente") || chave.endsWith("-comanda-itens"));
+
+/** 8h, 12h, 16h, 20h BRT — BRT = UTC-3. */
+export const HORAS_REEXECUCAO_UTC = [11, 15, 19, 23];
 
 export function listarHeartbeatsSincronizacaoDiaria(): AgendamentoDiario[] {
   const etapas = ETAPAS_AGENDADAS.map(({ chave, minuto }) => ({

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Target, TrendingUp, Award } from "lucide-react";
+import { Target, TrendingUp, Award, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
@@ -17,27 +18,21 @@ function fmtPercentual(fracao: number | null): string {
 }
 
 /**
- * Rótulo "Atualização DD/MM HHh" (2026-09-12) — os números de hoje
- * (Acumulado do mês etc.) só passam a incluir o dia atual a partir das
- * 20h (ver evolucaoDiariaReceitaReativacao no servidor); esse rótulo só
- * comunica esse checkpoint pro usuário, sem esconder/congelar nada — às
- * 20h e 22h porque a unidade costuma fechar por volta das 22h, e um
- * check antes disso já dá um sinal de como o dia está indo.
+ * Rótulo "Atualização DD/MM HHh" (2026-09-13) — mostra a hora REAL da
+ * última sincronização (Comanda/Caixa/Mercado Pago), não mais um
+ * checkpoint chutado por relógio: achado real (SSU, 12/09) em que o
+ * rótulo dizia "20h" mas o dado só tinha vindo da sincronização das 7h
+ * da manhã, porque a sincronização automática de Comanda só rodava uma
+ * vez por dia. Sem isso não dá pra saber se o número é de agora ou de
+ * horas atrás.
  */
-function ultimaAtualizacaoReativacao(): string {
+function fmtUltimaSincronizacao(data: Date | null): string {
+  if (!data) return "sem sincronização registrada ainda";
   const partes = new Intl.DateTimeFormat("pt-BR", {
-    timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false,
-  }).formatToParts(new Date());
+    timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(data);
   const valor = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "";
-  const dataIso = `${valor("year")}-${valor("month")}-${valor("day")}`;
-  const hora = Number(valor("hour"));
-  const fmtDataBr = (iso: string) => { const [, mes, dia] = iso.split("-"); return `${dia}/${mes}`; };
-
-  if (hora >= 22) return `${fmtDataBr(dataIso)} 22h`;
-  if (hora >= 20) return `${fmtDataBr(dataIso)} 20h`;
-  const ontem = new Date(`${dataIso}T00:00:00Z`);
-  ontem.setUTCDate(ontem.getUTCDate() - 1);
-  return `${fmtDataBr(ontem.toISOString().slice(0, 10))} 22h`;
+  return `${valor("day")}/${valor("month")} ${valor("hour")}h${valor("minute")}`;
 }
 
 /**
@@ -120,6 +115,16 @@ export function ResumoMensalReativacaoCard({ unidadeId }: { unidadeId: number })
     onError: (e) => toast.error(e.message),
   });
 
+  const sincronizarAgoraMutation = trpc.funilReativacao.sincronizarAgora.useMutation({
+    onSuccess: () => {
+      utils.funilReativacao.composicaoMeta.invalidate({ unidadeId });
+      utils.funilReativacao.evolucaoDiaria.invalidate({ unidadeId });
+      utils.financeiro.dashboard.invalidate();
+      toast.success("Sincronização concluída.");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   function salvarTicket() {
     const numero = Number(valorInput);
     if (!Number.isFinite(numero) || numero <= 0) return;
@@ -128,21 +133,31 @@ export function ResumoMensalReativacaoCard({ unidadeId }: { unidadeId: number })
 
   return (
     <Card className="border-border/50 shadow-sm">
-      <CardHeader>
+      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
         <CardTitle className="text-lg" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
           Desempenho mensal
         </CardTitle>
+        {isAdmin && (
+          <Button
+            size="sm" variant="outline" className="h-7 shrink-0 gap-1.5 text-xs"
+            disabled={sincronizarAgoraMutation.isPending}
+            onClick={() => sincronizarAgoraMutation.mutate({ unidadeId })}
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", sincronizarAgoraMutation.isPending && "animate-spin")} />
+            {sincronizarAgoraMutation.isPending ? "Sincronizando…" : "Sincronizar agora"}
+          </Button>
+        )}
       </CardHeader>
       <CardContent>
+        <p className="text-xs text-muted-foreground/70 -mt-1 mb-3">
+          Atualização {composicao ? fmtUltimaSincronizacao(composicao.ultimaSincronizacao) : "…"}
+        </p>
         {!composicao ? (
           <p className="text-sm text-muted-foreground">Carregando…</p>
         ) : composicao.metaFaturamento === 0 ? (
-          <>
-            <p className="text-sm text-muted-foreground">
-              Sem meta de faturamento do mês pra essa unidade — cadastre na aba "Metas" da planilha "Contabilidade SSU e RBS" e sincronize (mesmo lugar que já alimenta Financeiro &gt; Visão Geral) pra liberar o painel completo.
-            </p>
-            <p className="text-xs text-muted-foreground/70 pt-3">Atualização {ultimaAtualizacaoReativacao()}</p>
-          </>
+          <p className="text-sm text-muted-foreground">
+            Sem meta de faturamento do mês pra essa unidade — cadastre na aba "Metas" da planilha "Contabilidade SSU e RBS" e sincronize (mesmo lugar que já alimenta Financeiro &gt; Visão Geral) pra liberar o painel completo.
+          </p>
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 text-sm">
@@ -216,8 +231,6 @@ export function ResumoMensalReativacaoCard({ unidadeId }: { unidadeId: number })
                 <> — na conversão atual, isso é <strong className="text-primary">~{Math.ceil(composicao.contatosNecessariosPorDia)} contatos por dia</strong>.</>
               ) : "."}
             </p>
-
-            <p className="text-xs text-muted-foreground/70">Atualização {ultimaAtualizacaoReativacao()}</p>
           </div>
         )}
       </CardContent>

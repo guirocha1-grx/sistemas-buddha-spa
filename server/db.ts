@@ -7625,6 +7625,22 @@ export interface ComposicaoMetaReativacao {
   atendComPlano: number;
   atendSemPlano: number;
   planosVendidos: number;
+  // Timestamp real da última sincronização (Comanda/Caixa/Mercado Pago)
+  // — pro rótulo "Atualização" no card refletir a hora de verdade em vez
+  // de um checkpoint estimado (achado real, 2026-09-13: o Dashboard
+  // "chutava" 20h/22h mesmo quando o dado só tinha vindo às 7h da manhã).
+  ultimaSincronizacao: Date | null;
+}
+
+const TIPOS_SYNC_DESEMPENHO_MENSAL = ["comanda_itens", "caixa_fisico", "mercadopago_extrato", "mercadopago_vendas"] as const;
+
+async function ultimaSincronizacaoDesempenhoMensal(unidadeId: number): Promise<Date | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [linha] = await db.select({ data: sql<Date | null>`max(${syncLogs.createdAt})` })
+    .from(syncLogs)
+    .where(and(eq(syncLogs.unidadeId, unidadeId), inArray(syncLogs.tipo, [...TIPOS_SYNC_DESEMPENHO_MENSAL]), eq(syncLogs.status, "sucesso")));
+  return linha?.data ?? null;
 }
 
 /**
@@ -7664,7 +7680,7 @@ export async function composicaoMetaReativacao(unidadeId: number): Promise<Compo
   const inicioMes = `${mesStr}-01`;
   const fimMes = `${mesStr}-31`;
 
-  const [metaLinha, evolucao, ticketMedio, conversao, atendimentosLinhas, planosVendidosLinhas] = await Promise.all([
+  const [metaLinha, evolucao, ticketMedio, conversao, atendimentosLinhas, planosVendidosLinhas, ultimaSincronizacao] = await Promise.all([
     getMetaMensalAtual(unidadeId),
     evolucaoDiariaReceitaReativacao(unidadeId),
     getTicketMedioReativacao(unidadeId),
@@ -7688,6 +7704,7 @@ export async function composicaoMetaReativacao(unidadeId: number): Promise<Compo
     db ? db.select({ id: comandaItens.id }).from(comandaItens)
       .where(and(eq(comandaItens.unidadeId, unidadeId), gte(comandaItens.data, inicioMes), lte(comandaItens.data, fimMes), gte(comandaItens.idLinha, SECAO_OFFSET), like(comandaItens.terapiaProduto, "%plano%")))
       : Promise.resolve([]),
+    ultimaSincronizacaoDesempenhoMensal(unidadeId),
   ]);
 
   const metaFaturamento = metaLinha?.valorFaturamento ? Number(metaLinha.valorFaturamento) : 0;
@@ -7709,7 +7726,7 @@ export async function composicaoMetaReativacao(unidadeId: number): Promise<Compo
 
   return {
     metaFaturamento, faturamentoAtual, faltam, diasRestantesNoMes, ticketMedio, clientesNecessarios, clientesPorDia, taxaConversao, contatosNecessariosPorDia,
-    diaAtual, diasNoMes, metaEsperadaAteHoje, atingimentoMeta, premiacao, totalAtendimentos, atendComPlano, atendSemPlano, planosVendidos,
+    diaAtual, diasNoMes, metaEsperadaAteHoje, atingimentoMeta, premiacao, totalAtendimentos, atendComPlano, atendSemPlano, planosVendidos, ultimaSincronizacao,
   };
 }
 
