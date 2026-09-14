@@ -385,13 +385,27 @@ function excecaoOperacionalPermitida(params: { especialista: AgenteConfigurado; 
   return /\b(nota fiscal|nf|recibo fiscal)\b/i.test(ultimaMensagem);
 }
 
-function textoComScript(params: { introducao: string; conteudo: string }) {
+// Achado real (2026-09-14, análise das edições da Carol): o prompt pede
+// "só escreva uma transição cordial" (curta) quando o Script não começa
+// cordial — mas o modelo às vezes reescreve a PERGUNTA INTEIRA do
+// Script como "introdução" em vez de uma transição de verdade, e ela
+// fica duplicada com o texto oficial do Script logo depois (ex.: Script
+// 30024 "Preferência de terapeuta e solicitação de voucher" — a grande
+// maioria das edições da Carol nesse período era só tirar essa
+// duplicação, sem mudar mais nada). Acima desse tamanho não é mais
+// transição, é a pergunta reescrita — descarta e usa só o texto oficial
+// do Script, que já cobre o conteúdo sozinho.
+const TRANSICAO_SCRIPT_MAX_CARACTERES = 60;
+
+export function textoComScript(params: { introducao: string; conteudo: string }) {
   const conteudo = params.conteudo.trim();
   if (!conteudo) return params.introducao.trim();
   // Scripts que já começam com acolhimento não recebem outra saudação.
   const jaEhCordial = /^(oi|olá|ola|bom dia|boa tarde|boa noite|claro|com certeza|perfeito|que bom)/i.test(conteudo);
   if (jaEhCordial) return conteudo;
-  const introducao = params.introducao.trim() || "Claro, vou te explicar:";
+  const introducaoTrim = params.introducao.trim();
+  if (introducaoTrim.length > TRANSICAO_SCRIPT_MAX_CARACTERES) return conteudo;
+  const introducao = introducaoTrim || "Claro, vou te explicar:";
   return `${introducao}\n\n${conteudo}`;
 }
 
@@ -1250,10 +1264,19 @@ export async function aprovarEEnviarSugestao(params: { sugestaoId: number; texto
   if (!registro) throw new Error("Sugestão não encontrada");
   const textoFinal = params.textoFinal?.trim() || registro.sugestao.sugestao;
   if (!textoFinal) throw new Error("A sugestão não possui texto para enviar");
+  // Achado real (2026-09-14): o Inbox manda "editada" sempre que a
+  // recepção aprova pela tela de edição, mesmo quando ela abre, não
+  // muda nada e só clica enviar — 49 de 164 "editada" do período
+  // (~30%) tinham textoFinal idêntico, caractere por caractere, à
+  // sugestão original. Isso subestimava bastante a taxa de "aprovação
+  // integral" (o quanto a IA acerta sem precisar de nenhum ajuste). Se
+  // o texto final é exatamente igual ao gerado, é aceite integral de
+  // verdade, independente de qual tela a recepção usou pra aprovar.
+  const tipoRevisao = textoFinal.trim() === registro.sugestao.sugestao.trim() ? "aceita_como_esta" : (params.tipoRevisao ?? "aceita_como_esta");
   await agentesDb.avaliarSugestao({
     ...params,
     avaliacao: "aprovada",
-    tipoRevisao: params.tipoRevisao ?? "aceita_como_esta",
+    tipoRevisao,
     textoFinal,
   });
   try {

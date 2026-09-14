@@ -45,7 +45,7 @@ vi.mock("./zapiApi", () => ({ zapiApi: { sendText, sendDocument, sendImage } }))
 vi.mock("./buddhaMktApi", () => ({ buddhaMktApi: { sendText: vi.fn() } }));
 vi.mock("./fluxos", () => ({ iniciarExecucaoFluxo }));
 
-import { aplicarSaudacaoInicialEspecialista, aprovarEEnviarSugestao, extrairConteudoRespostaLLM, instrucaoContextoRelacionamento, liberarSugestaoParaEdicao, limitarMensagemCliente, processarMensagemRecebida, removerIdentificacaoAgente, reprovarSugestao } from "./agentesService";
+import { aplicarSaudacaoInicialEspecialista, aprovarEEnviarSugestao, extrairConteudoRespostaLLM, instrucaoContextoRelacionamento, liberarSugestaoParaEdicao, limitarMensagemCliente, processarMensagemRecebida, removerIdentificacaoAgente, reprovarSugestao, textoComScript } from "./agentesService";
 
 const respostaJson = (message: string, status = "in_process", action: string | null = null, excecaoOperacional: boolean = false) => JSON.stringify({
   message,
@@ -105,6 +105,25 @@ describe("orquestrador de agentes", () => {
   it("remove a identificação nominal do especialista antes de sugerir o texto", () => {
     expect(removerIdentificacaoAgente("Olá! Eu sou a Bianca, especialista em terapias. Posso ajudar você.", "Bianca")).toBe("Posso ajudar você.");
     expect(removerIdentificacaoAgente("Boa tarde! Sou a Estela. Vou verificar os valores.", "Estela")).toBe("Vou verificar os valores.");
+  });
+
+  // Achado real (2026-09-14, análise das edições da Carol): o modelo às
+  // vezes reescreve a pergunta inteira do Script 30024 como "introdução"
+  // em vez de uma transição curta — descarta a introdução longa/redundante
+  // e usa só o texto oficial do Script, evitando a duplicação (a grande
+  // maioria das edições da Carol no período era só tirar essa duplicação).
+  it("descarta a introdução do Script quando ela é longa demais pra ser uma transição", () => {
+    expect(textoComScript({
+      introducao: "Você prefere algum terapeuta específico ou gênero? Se tiver voucher, por favor envie a foto para que possamos verificar as regras.",
+      conteudo: "Você tem preferência por algum(a) terapeuta? 😊\nE, caso possua voucher, poderia me enviar, por gentileza?",
+    })).toBe("Você tem preferência por algum(a) terapeuta? 😊\nE, caso possua voucher, poderia me enviar, por gentileza?");
+  });
+
+  it("mantém uma transição curta antes do texto do Script", () => {
+    expect(textoComScript({
+      introducao: "Perfeito!",
+      conteudo: "Você tem preferência por algum(a) terapeuta? 😊\nE, caso possua voucher, poderia me enviar, por gentileza?",
+    })).toBe("Perfeito!\n\nVocê tem preferência por algum(a) terapeuta? 😊\nE, caso possua voucher, poderia me enviar, por gentileza?");
   });
 
   it("acolhe a primeira mensagem direcionada a um especialista sem dar voz à Áurea", () => {
@@ -787,6 +806,29 @@ describe("orquestrador de agentes", () => {
     expect(agentesDb.avaliarSugestao).toHaveBeenCalledWith(expect.objectContaining({ avaliacao: "aprovada", tipoRevisao: "aceita_como_esta", textoFinal: "Posso enviar a tabela de valores.", motivo: "tom" }));
     expect(db.insertInboxMensagem).toHaveBeenCalledWith(expect.objectContaining({ conteudo: "*Ana:*\nPosso enviar a tabela de valores." }));
     expect(agentesDb.registrarAcaoConversa).toHaveBeenCalledWith(10, "enviar_tabela", 91);
+  });
+
+  // Achado real (2026-09-14): o Inbox manda tipoRevisao "editada" sempre
+  // que a recepção aprova pela tela de edição, mesmo quando não muda
+  // nada — 49 de 164 "editada" do período (~30%) tinham textoFinal
+  // idêntico à sugestão original, subestimando bastante a taxa real de
+  // aprovação integral.
+  it("registra aceite integral quando o texto final é idêntico ao original, mesmo se a tela mandou 'editada'", async () => {
+    agentesDb.buscarSugestao.mockResolvedValue({ sugestao: { id: 91, conversaId: 10, sugestao: "Posso enviar a tabela de valores.", acaoPendente: null } });
+    agentesDb.obterNomeAtendente.mockResolvedValue("Ana");
+    db.getInboxConversaById.mockResolvedValue({ id: 10, unidadeId: 1, canal: "zapi", telefone: "5516999999999", nomeContato: "Carla" });
+    db.getUnidadeById.mockResolvedValue({ zapiInstanceId: "instancia", zapiToken: "token", zapiClientToken: "client" });
+    sendText.mockResolvedValue({ messageId: "zapi-1" });
+
+    await expect(aprovarEEnviarSugestao({
+      sugestaoId: 91,
+      textoFinal: "Posso enviar a tabela de valores.",
+      tipoRevisao: "editada",
+      userId: 7,
+      atendenteId: 3,
+    })).resolves.toEqual({ success: true });
+
+    expect(agentesDb.avaliarSugestao).toHaveBeenCalledWith(expect.objectContaining({ avaliacao: "aprovada", tipoRevisao: "aceita_como_esta" }));
   });
 
   it("envia o texto editado pela equipe e registra a revisão para aprendizado", async () => {
