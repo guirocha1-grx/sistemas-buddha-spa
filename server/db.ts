@@ -3029,6 +3029,26 @@ export async function contarVendasComandaPeriodo(unidadeId: number, dataInicio: 
   return rows.length;
 }
 
+/**
+ * Total de atendimentos de verdade (só a 1ª seção "Serviços" da Comanda,
+ * idLinha < SECAO_OFFSET — exclui "Venda de Plano, Produtos e Voucher's")
+ * — 2026-09-13, pro KPI "Total Atendimentos Hoje" do Dashboard, que
+ * substituiu "Agendamentos Hoje" (lia belle_atendimentos, incompleto —
+ * mesmo achado real do "Total de atendimentos" da Reativação: Belle só
+ * tinha 93 de 191 atendimentos reais num período de 11 dias).
+ */
+export async function contarAtendimentosComandaPeriodo(unidadeId: number, dataInicio: string, dataFim: string): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db.select({ id: comandaItens.id }).from(comandaItens).where(and(
+    eq(comandaItens.unidadeId, unidadeId),
+    gte(comandaItens.data, dataInicio),
+    lte(comandaItens.data, dataFim),
+    lt(comandaItens.idLinha, SECAO_OFFSET),
+  ));
+  return rows.length;
+}
+
 export interface DivergenciaTerapeuta {
   comandaItemId: number;
   data: string;
@@ -7584,13 +7604,15 @@ export async function evolucaoDiariaReceitaReativacao(unidadeId: number): Promis
 export interface ComposicaoMetaReativacao {
   metaFaturamento: number;
   faturamentoAtual: number;
-  faltam: number;
-  diasRestantesNoMes: number;
   ticketMedio: number;
-  clientesNecessarios: number;
-  clientesPorDia: number;
   taxaConversao: number | null;
-  contatosNecessariosPorDia: number | null;
+  // Clientes/contatos adicionais de reativação pra fechar a diferença
+  // entre o acumulado real e a Meta proporcional até hoje (2026-09-13,
+  // a pedido do usuário — substituiu a versão "por dia" espalhada pelos
+  // dias restantes do mês por um número único e mais acionável: "quantos
+  // preciso reativar HOJE pra voltar no ritmo").
+  clientesAdicionaisNecessarios: number;
+  contatosAdicionaisNecessarios: number | null;
   // "Desempenho mensal" (2026-09-12) — mesmo painel/fórmula de premiação
   // já usado pela unidade na planilha "Informe de vendas", confirmado
   // pelo usuário com print real (Acumulado, Meta Esperada até Hoje,
@@ -7667,7 +7689,6 @@ export async function composicaoMetaReativacao(unidadeId: number): Promise<Compo
   const diaAtual = Number(hoje.slice(8, 10));
   const [ano, mes] = hoje.split("-").map(Number);
   const diasNoMes = new Date(ano, mes, 0).getDate();
-  const diasRestantesNoMes = Math.max(1, diasNoMes - diaAtual + 1); // inclui hoje
   const inicioMes = `${mesStr}-01`;
   const fimMes = `${mesStr}-31`;
 
@@ -7702,11 +7723,10 @@ export async function composicaoMetaReativacao(unidadeId: number): Promise<Compo
   const pontoHoje = evolucao[diaAtual - 1] ?? evolucao[evolucao.length - 1];
   const faturamentoAtual = pontoHoje?.acumulado ?? 0;
   const metaEsperadaAteHoje = pontoHoje?.metaEsperada ?? 0;
-  const faltam = Math.max(0, metaFaturamento - faturamentoAtual);
-  const clientesNecessarios = ticketMedio > 0 ? faltam / ticketMedio : 0;
-  const clientesPorDia = clientesNecessarios / diasRestantesNoMes;
   const taxaConversao = conversao.contatados > 0 ? conversao.convertidos / conversao.contatados : null;
-  const contatosNecessariosPorDia = taxaConversao && taxaConversao > 0 ? clientesPorDia / taxaConversao : null;
+  const faltaProporcional = Math.max(0, metaEsperadaAteHoje - faturamentoAtual);
+  const clientesAdicionaisNecessarios = ticketMedio > 0 ? Math.ceil(faltaProporcional / ticketMedio) : 0;
+  const contatosAdicionaisNecessarios = taxaConversao && taxaConversao > 0 ? Math.ceil(clientesAdicionaisNecessarios / taxaConversao) : null;
 
   const atingimentoMeta = metaEsperadaAteHoje > 0 ? faturamentoAtual / metaEsperadaAteHoje : null;
   const premiacao = faixaPremiacaoReativacao(atingimentoMeta);
@@ -7716,7 +7736,7 @@ export async function composicaoMetaReativacao(unidadeId: number): Promise<Compo
   const planosVendidos = planosVendidosLinhas.length;
 
   return {
-    metaFaturamento, faturamentoAtual, faltam, diasRestantesNoMes, ticketMedio, clientesNecessarios, clientesPorDia, taxaConversao, contatosNecessariosPorDia,
+    metaFaturamento, faturamentoAtual, ticketMedio, taxaConversao, clientesAdicionaisNecessarios, contatosAdicionaisNecessarios,
     diaAtual, diasNoMes, metaEsperadaAteHoje, atingimentoMeta, premiacao, totalAtendimentos, atendComPlano, atendSemPlano, planosVendidos, ultimaSincronizacao,
   };
 }

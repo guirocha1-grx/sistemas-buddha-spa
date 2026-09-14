@@ -75,7 +75,7 @@ export default function Dashboard() {
 
   const totalRecebimentos = dashboardData?.recebimentosMes ?? 0;
   const faturamentoHoje = dashboardData?.faturamentoHoje ?? 0;
-  const totalAgendamentosHoje = dashboardData?.agendamentosHoje ?? 0;
+  const totalAtendimentosHoje = dashboardData?.totalAtendimentosHoje ?? 0;
 
   return (
     <div className="space-y-6">
@@ -136,7 +136,7 @@ export default function Dashboard() {
         <div className="grid gap-4 md:grid-cols-2">
           <Card className="border-border/50 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Agendamentos Hoje</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total Atendimentos Hoje</CardTitle>
               <Calendar className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -144,7 +144,7 @@ export default function Dashboard() {
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               ) : (
                 <>
-                  <div className="text-2xl font-bold">{totalAgendamentosHoje}</div>
+                  <div className="text-2xl font-bold">{totalAtendimentosHoje}</div>
                   <p className="text-xs text-muted-foreground mt-1">{unidadeSelecionada?.nome ?? "Unidade"}</p>
                 </>
               )}

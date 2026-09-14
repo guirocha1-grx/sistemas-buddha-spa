@@ -737,18 +737,22 @@ export const appRouter = router({
       // hojeIso precisa ser o dia em São Paulo, não no fuso do servidor
       // (Railway roda em UTC) — achado real (2026-09-12): à noite, com
       // SP ainda no dia D mas UTC já em D+1, "Faturamento Hoje"/
-      // "Agendamentos Hoje" buscavam um dia sem dado nenhum e vinham
-      // zerados.
+      // "Total Atendimentos Hoje" buscavam um dia sem dado nenhum e
+      // vinham zerados.
       const hojeIso = db.hojeSaoPaulo();
       const dataInicioIso = input.dataInicio ?? `${hojeIso.slice(0, 7)}-01`;
       const dataFimIso = input.dataFim ?? hojeIso;
 
-      const [comandaDias, totalVendasMes, recebimentosMes, agendamentosPeriodo, agendamentosHojeLista, comandaHoje] = await Promise.all([
+      const [comandaDias, totalVendasMes, recebimentosMes, agendamentosPeriodo, totalAtendimentosHoje, comandaHoje] = await Promise.all([
         db.listComandaDiaria(input.unidadeId, dataInicioIso, dataFimIso),
         db.contarVendasComandaPeriodo(input.unidadeId, dataInicioIso, dataFimIso),
         totalContasBancariasNoPeriodo(input.unidadeId, dataInicioIso, dataFimIso).catch(() => 0),
         db.listarAgendaPeriodo(input.unidadeId, dataInicioIso, dataFimIso),
-        db.listarAgendaPeriodo(input.unidadeId, hojeIso, hojeIso),
+        // "Total Atendimentos Hoje" (2026-09-13, era "Agendamentos Hoje")
+        // — trocado de belle_atendimentos pra Comanda: achado real, o
+        // Belle só tinha 93 de 191 atendimentos reais de um período de 11
+        // dias (mesmo problema já corrigido no funil de Reativação).
+        db.contarAtendimentosComandaPeriodo(input.unidadeId, hojeIso, hojeIso),
         // Faturamento de HOJE em específico — pro bloco "Hoje" do Dashboard,
         // independente do período escolhido pro resto da tela.
         db.listComandaDiaria(input.unidadeId, hojeIso, hojeIso),
@@ -764,7 +768,7 @@ export const appRouter = router({
         faturamentoHoje,
         totalVendasMes,
         recebimentosMes,
-        agendamentosHoje: agendamentosHojeLista.length,
+        totalAtendimentosHoje,
         totalAgendamentos: agendamentosPeriodo.length,
       };
     }),
