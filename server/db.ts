@@ -1840,8 +1840,35 @@ export async function upsertInboxConversa(params: {
     ultimaMensagemTexto: params.ultimaMensagemTexto,
     naoLidas: params.incrementarNaoLidas ? 1 : 0,
   };
-  const result = await db.insert(inboxConversas).values(insertValues).$returningId();
-  return result[0]?.id;
+  try {
+    const result = await db.insert(inboxConversas).values(insertValues).$returningId();
+    return result[0]?.id;
+  } catch (error) {
+    // Corrida real (2026-09-14, achado real: 13 pares de conversas
+    // duplicadas na produção): 2 mensagens quase simultâneas do mesmo
+    // contato podiam cair nesse INSERT ao mesmo tempo, e cada uma
+    // achava "não existe" antes da outra terminar — cada uma criava sua
+    // própria linha. O índice único inbox_conversas_telefone_canal_unq
+    // (ver drizzle/2026-09-14-mescla-conversas-duplicadas-inbox.sql)
+    // agora barra isso — a 2ª corrida esbarra no índice em vez de
+    // duplicar; trata como "a outra corrida ganhou": busca de novo e
+    // atualiza a que já foi criada, em vez de propagar o erro.
+    const jaExiste = await db.select().from(inboxConversas)
+      .where(and(eq(inboxConversas.telefone, params.telefone), eq(inboxConversas.canal, params.canal)))
+      .limit(1);
+    if (!jaExiste[0]) throw error;
+    await db.update(inboxConversas).set({
+      nomeContato: params.nomeContato ?? jaExiste[0].nomeContato,
+      fotoUrl: params.fotoUrl ?? jaExiste[0].fotoUrl,
+      chatLid: params.chatLid ?? jaExiste[0].chatLid,
+      clienteId: jaExiste[0].clienteId ?? params.clienteId,
+      ultimaMensagemEm: agora,
+      ultimaMensagemTexto: params.ultimaMensagemTexto,
+      naoLidas: params.incrementarNaoLidas ? jaExiste[0].naoLidas + 1 : jaExiste[0].naoLidas,
+      status: "aberta",
+    }).where(eq(inboxConversas.id, jaExiste[0].id));
+    return jaExiste[0].id;
+  }
 }
 
 // ===== Chamados de terapeuta =====

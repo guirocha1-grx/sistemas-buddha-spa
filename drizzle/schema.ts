@@ -1074,7 +1074,11 @@ export const inboxConversas = mysqlTable("inbox_conversas", {
   // backfill futuro, não usada como fonte primária de matching ainda.
   telefoneNormalizado: varchar("telefoneNormalizado", { length: 20 }),
 }, (table) => ({
-  telefoneCanalIdx: index("inbox_conversas_telefone_canal_idx").on(table.telefone, table.canal),
+  // Único (2026-09-14) — antes era só índice normal, e uma corrida entre
+  // 2 mensagens quase simultâneas do mesmo contato podia criar 2
+  // conversas pro mesmo telefone+canal (achado real: 13 pares
+  // duplicados na produção, ver drizzle/2026-09-14-mescla-conversas-duplicadas-inbox.sql).
+  telefoneCanalUnq: uniqueIndex("inbox_conversas_telefone_canal_unq").on(table.telefone, table.canal),
   unidadeIdx: index("inbox_conversas_unidade_idx").on(table.unidadeId),
   atendenteResponsavelIdx: index("inbox_conversas_atendente_responsavel_idx").on(table.atendenteResponsavelId),
   chatLidIdx: index("inbox_conversas_chat_lid_idx").on(table.chatLid),
