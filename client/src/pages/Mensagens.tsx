@@ -413,6 +413,15 @@ export default function Mensagens() {
     onError: (error) => toast.error(error.message),
   });
 
+  // Sinal de "digitando" (2026-09-14, ideia do usuário): no 1º caractere
+  // digitado numa caixa vazia, avisa o servidor pra descartar qualquer
+  // sugestão da IA ainda pendente nessa conversa — não espera o envio de
+  // verdade. sinalizadoRef evita reenviar a cada tecla (só de novo depois
+  // que a caixa volta a ficar vazia, ex.: apagou tudo ou trocou de
+  // conversa). Falha silenciosa: nunca deve incomodar quem está digitando.
+  const sinalizarDigitandoMutation = trpc.inbox.mensagens.sinalizarDigitando.useMutation();
+  const digitandoSinalizadoRef = useRef<number | null>(null);
+
   const reagirMutation = trpc.inbox.mensagens.reagir.useMutation({
     onSuccess: () => utils.inbox.mensagens.listPaginada.invalidate({ conversaId: conversaSelecionadaId ?? 0 }),
     onError: (error) => toast.error(error.message),
@@ -1587,8 +1596,15 @@ export default function Mensagens() {
                     value={texto}
                     onPaste={handlePasteTextarea}
                     onChange={(e) => {
+                      const valorAnterior = texto;
                       setTexto(e.target.value);
                       detectarMencao(e.target.value, e.target.selectionStart);
+                      if (!valorAnterior.trim() && e.target.value.trim() && conversaSelecionadaId
+                        && digitandoSinalizadoRef.current !== conversaSelecionadaId) {
+                        digitandoSinalizadoRef.current = conversaSelecionadaId;
+                        sinalizarDigitandoMutation.mutate({ conversaId: conversaSelecionadaId });
+                      }
+                      if (!e.target.value.trim()) digitandoSinalizadoRef.current = null;
                     }}
                     onKeyDown={(e) => {
                       if (e.key === "Escape" && mentionInicio !== null) {

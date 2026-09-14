@@ -1,4 +1,4 @@
-const CHAVES_AGENTES = ["aurea", "bianca", "fabricia", "estela", "carol", "diana"] as const;
+export const CHAVES_AGENTES = ["aurea", "bianca", "fabricia", "estela", "carol", "diana"] as const;
 const STATUS_FINAIS = ["in_process", "success", "failure", "enviar_resumo_dayspa"] as const;
 const MOTIVOS_AVALIACAO = ["informacao", "tom", "roteamento", "contexto", "comercial", "operacional", "outro"] as const;
 

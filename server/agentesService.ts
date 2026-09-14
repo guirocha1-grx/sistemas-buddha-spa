@@ -6,6 +6,7 @@ import { iniciarExecucaoFluxo } from "./fluxos";
 import { zapiApi } from "./zapiApi";
 import {
   aberturaSemIntencao,
+  CHAVES_AGENTES,
   destinoEspecialistaValido,
   envioAutomaticoPermitido,
   LIMITE_DIAS_REABERTURA_CONVERSA,
@@ -173,8 +174,16 @@ export function saudacaoInicialEspecialista(contexto: ContextoConversa, chaveAge
     .map((mensagem) => mensagem.transcricao || mensagem.conteudo || "")
     .join(" ");
   const perguntouComoEstamos = /\b(tudo bem|como (?:vai|est[aá]|est[aã]o))\b/i.test(textoDoTurno);
-  return `${saudacaoPorHorario(agora)}${perguntouComoEstamos ? ", tudo bem e você?" : "!"} Que bom ter você aqui 😊`;
+  return `${saudacaoPorHorario(agora)}${perguntouComoEstamos ? ", tudo bem e você?" : "!"} ${SAUDACAO_CORDIAL_SUFIXO}`;
 }
+
+/**
+ * Trecho fixo da saudação, sem a parte de horário/"tudo bem" — separado
+ * como constante pra `aplicarSaudacaoInicialEspecialista` conseguir
+ * remover essa parte SOZINHA quando ela sobra como fragmento duplicado
+ * (achado real 2026-09-14, sugestão 2940015: ver comentário lá).
+ */
+const SAUDACAO_CORDIAL_SUFIXO = "Que bom ter você aqui 😊";
 
 function removerSaudacaoDoInicio(mensagem: string) {
   return mensagem.trim().replace(
@@ -191,20 +200,41 @@ export function aplicarSaudacaoInicialEspecialista(params: {
 }) {
   const saudacao = saudacaoInicialEspecialista(params.contexto, params.chaveAgente, params.agora);
   if (!saudacao || !params.mensagem.trim()) return params.mensagem;
-  const mensagemTrim = params.mensagem.trim();
   // O prompt manda o modelo já começar a mensagem com a saudação exata
   // (instrucaoAcolhimentoInicialEspecialista) — quando ele obedece à
   // risca, `removerSaudacaoDoInicio` (regex genérico, não conhece o texto
   // atual da saudação) só tirava um pedaço dela e sobrava o resto no meio
-  // do texto; a linha de baixo prendia a saudação completa de novo na
-  // frente, duplicando (achado real 2026-09-10, rejeição 2070100: "Boa
-  // tarde! Que bom ter você aqui 😊\n\nQue bom ter você aqui 😊...").
-  // Tenta primeiro remover a saudação exata e atual como prefixo; só cai
-  // no regex genérico (fallback) se o modelo tiver improvisado outra.
-  const mensagemSemSaudacao = mensagemTrim.toLowerCase().startsWith(saudacao.toLowerCase())
-    ? mensagemTrim.slice(saudacao.length).trim()
-    : removerSaudacaoDoInicio(mensagemTrim);
-  return mensagemSemSaudacao ? `${saudacao}\n\n${mensagemSemSaudacao}` : saudacao;
+  // do texto; o código prendia a saudação completa de novo na frente,
+  // duplicando (achado real 2026-09-10, rejeição 2070100). Corrigido
+  // removendo a saudação exata como prefixo — mas só UMA vez, o que não
+  // bastava quando o próprio modelo já tinha duplicado a saudação nele
+  // mesmo: a 1ª remoção deixava uma 2ª cópia sobrando no início do resto —
+  // só que sem o "Boa tarde!" da 1ª cópia (o modelo repetiu só o trecho
+  // cordial fixo, não a saudação inteira), então nem o prefixo exato nem
+  // o regex genérico (que exige "oi/olá/bom dia/boa tarde/boa noite" no
+  // início) reconheciam esse fragmento — ele ficava no meio do texto e a
+  // saudação completa era colada de novo na frente igual, duplicando
+  // (achado real 2026-09-14, sugestão 2940015: "Boa tarde! Que bom ter
+  // você aqui 😊\n\nQue bom ter você aqui 😊...", aprovada/editada e
+  // ENVIADA AO CLIENTE ainda duplicada). Agora remove em loop — a
+  // saudação exata, só o trecho cordial fixo (SAUDACAO_CORDIAL_SUFIXO)
+  // ou o fallback genérico, o que bater primeiro — até não sobrar
+  // nenhuma cópia/fragmento no início.
+  let resto = params.mensagem.trim();
+  for (let mudou = true; mudou; ) {
+    mudou = false;
+    if (resto.toLowerCase().startsWith(saudacao.toLowerCase())) {
+      resto = resto.slice(saudacao.length).trim();
+      mudou = true;
+    } else if (resto.toLowerCase().startsWith(SAUDACAO_CORDIAL_SUFIXO.toLowerCase())) {
+      resto = resto.slice(SAUDACAO_CORDIAL_SUFIXO.length).trim();
+      mudou = true;
+    } else {
+      const semGenerico = removerSaudacaoDoInicio(resto);
+      if (semGenerico !== resto) { resto = semGenerico; mudou = true; }
+    }
+  }
+  return resto ? `${saudacao}\n\n${resto}` : saudacao;
 }
 
 function instrucaoAcolhimentoInicialEspecialista(contexto: ContextoConversa, chaveAgente: string) {
@@ -307,6 +337,16 @@ function serializarRecursos(recursos: Awaited<ReturnType<typeof agentesDb.listar
  * mensagem vazia também com "in_process" pra esses 2 agentes (mesma
  * lista de `naoIntervencaoPermitida`, que decide o que fazer com isso
  * logo em seguida).
+ *
+ * Achado real 2 (analise_evolucao_agentes_2026-09-14.md, seção 2): quando
+ * um especialista passa a vez a outro (`status` = chave de outro agente
+ * — mecanismo já documentado no prompt compartilhado, "retorne no campo
+ * status a chave do próximo especialista"), o modelo às vezes devolve
+ * `message` vazio mesmo aí — não só nos 2 casos acima. 4 execuções reais
+ * (Bianca, Fabrícia, Carol) viravam o mesmo erro técnico por causa
+ * disso. `message` vazio também é válido nesse caso, pra qualquer
+ * especialista, não só Carol/Diana — quem trata a troca de fato é
+ * `handoffSemMensagem` em `processarMensagemRecebida` (mais abaixo).
  */
 function interpretarRespostaEspecialista(chaveAgente: string, valor: unknown): RespostaEspecialista | null {
   if (!valor || typeof valor !== "object" || Array.isArray(valor)) return null;
@@ -317,10 +357,15 @@ function interpretarRespostaEspecialista(chaveAgente: string, valor: unknown): R
   const action = typeof resposta.action === "string" && ((ACOES_PERMITIDAS as readonly string[]).includes(resposta.action) || /^script_fluxo:\d+$/.test(resposta.action))
     ? resposta.action
     : status === "enviar_resumo_dayspa" ? "enviar_resumo_dayspa" : null;
-  // A mensagem vazia só é admitida posteriormente no caminho de não
-  // intervenção de Carol/Diana. Toda outra saída vazia continua inválida.
-  const podeSerVazia = AGENTES_COM_NAO_INTERVENCAO.includes(chaveAgente as typeof AGENTES_COM_NAO_INTERVENCAO[number])
-    && (status === "failure" || status === "in_process");
+  const ehHandoffParaOutroEspecialista = status !== "aurea"
+    && (CHAVES_AGENTES as readonly string[]).includes(status)
+    && status !== chaveAgente;
+  // A mensagem vazia só é admitida na não-intervenção de Carol/Diana, ou
+  // numa troca de especialista (com summary preenchido pra quem assumir
+  // ter contexto). Toda outra saída vazia continua inválida.
+  const podeSerVazia = (AGENTES_COM_NAO_INTERVENCAO.includes(chaveAgente as typeof AGENTES_COM_NAO_INTERVENCAO[number])
+    && (status === "failure" || status === "in_process"))
+    || (ehHandoffParaOutroEspecialista && Boolean(resposta.summary.trim()));
   if (!message && !podeSerVazia) return null;
   return {
     message,
@@ -699,7 +744,11 @@ async function obterRespostaEspecialista(params: {
     // Sem isso, "contrato JSON esperado" não diz se o modelo mandou prosa,
     // JSON truncado ou um campo fora do formato — cada falha nova virava
     // outro palpite às cegas (mesmo raciocínio do diagnóstico em llm.ts).
-    throw new Error(`O especialista não retornou o contrato JSON esperado; conteúdo bruto: ${conteudo.slice(0, 500)}`);
+    // Corte subiu de 500 pra 2000 (achado real 2026-09-14: várias falhas
+    // tinham o conteúdo cortado bem no meio da string, sem dar pra saber
+    // se era truncamento de verdade do modelo ou só desse corte no log —
+    // 2000 cobre folgado o tamanho normal de uma resposta de especialista).
+    throw new Error(`O especialista não retornou o contrato JSON esperado; conteúdo bruto: ${conteudo.slice(0, 2000)}`);
   }
   if (!interpretado?.scriptId) return interpretado;
   const script = scripts.find((item) => item.id === interpretado.scriptId);
@@ -945,6 +994,34 @@ export async function processarMensagemRecebida(params: { conversaId: number; me
         });
         return { status: "ignorada" as const };
       }
+
+      // Achado real (analise_evolucao_agentes_2026-09-14.md, seção 2): o
+      // prompt compartilhado pede uma linha de transição cordial ao
+      // passar a vez a outro especialista ("status" = chave do próximo),
+      // mas o modelo às vezes devolve "message" vazio mesmo assim
+      // (summary preenchido) — 4 execuções reais (Bianca, Fabrícia,
+      // Carol) viravam erro técnico por causa disso. Passa a vez de
+      // verdade dentro da mesma execução — mesmo mecanismo já usado pro
+      // retorno da Áurea logo abaixo — sem expor nada ao cliente nesse
+      // passo, em vez de derrubar a execução inteira.
+      const handoffSemMensagem = !resposta.message.trim() && resposta.status !== "aurea"
+        ? especialistas.find(({ agente }) => agente.chave === resposta.status && agente.chave !== especialista.agente.chave)
+        : undefined;
+      if (handoffSemMensagem) {
+        const variaveisAnterioresHandoff = (await agentesDb.obterEstadoConversa(params.conversaId))?.variaveis ?? {};
+        const variaveisHandoff: Record<string, string | number | boolean | null> = { ...(variaveisAnterioresHandoff ?? {}), ...resposta.variables };
+        await agentesDb.salvarEstadoConversa({
+          conversaId: params.conversaId,
+          unidadeId,
+          agenteAtualId: handoffSemMensagem.agente.id,
+          proximaRota: null,
+          resumo: resposta.summary,
+          variaveis: variaveisHandoff,
+        });
+        especialista = handoffSemMensagem;
+        rastro.push({ origem: "handoff_silencioso", destino: handoffSemMensagem.agente.chave, resumo: resposta.summary });
+        continue;
+      }
       if (!resposta.message.trim()) throw new Error("O especialista retornou uma mensagem vazia fora da regra de não intervenção");
 
       const variaveisAnteriores = (await agentesDb.obterEstadoConversa(params.conversaId))?.variaveis ?? {};
@@ -1043,7 +1120,7 @@ async function criarSugestaoFinal(params: {
   resposta: RespostaEspecialista;
 }) {
   const ultimaRecebida = ultimaMensagemCliente(params.contexto);
-  return agentesDb.criarSugestao({
+  const sugestaoId = await agentesDb.criarSugestao({
     execucaoId: params.execucaoId,
     agenteId: params.especialista.agente.id,
     conversaId: params.contexto.conversa.id,
@@ -1057,6 +1134,20 @@ async function criarSugestaoFinal(params: {
       unidadeId: params.contexto.conversa.unidadeId,
     },
   });
+  // Achado real (analise_evolucao_agentes_2026-09-14.md, seção 4): 3 das
+  // 4 rejeições do período eram a sugestão chegando depois de um
+  // atendente já ter respondido a mesma conversa pessoalmente enquanto a
+  // IA ainda gerava a resposta. Confere agora, na criação, se já existe
+  // mensagem "enviada" mais recente que o pedido do cliente que originou
+  // essa sugestão — se sim, marca obsoleta na hora (mantém o registro
+  // pra auditoria, igual `descartarSugestoesPendentesDaConversa`) e
+  // devolve null, pra quem chamou não tratar como sugestão válida (nem
+  // mostrar no Inbox, nem enviar automaticamente).
+  if (ultimaRecebida && await agentesDb.humanoRespondeuDepoisDe(params.contexto.conversa.id, new Date(ultimaRecebida.createdAt))) {
+    await agentesDb.descartarSugestoesPendentesPorRespostaHumana(params.contexto.conversa.id);
+    return null;
+  }
+  return sugestaoId;
 }
 
 async function enviarSugestao(conversaId: number, sugestao: string, userId: number | null, atendenteId: number | null, enviadaPorIa: boolean) {

@@ -5,6 +5,22 @@
 **Período coberto:** 10/09 16:20 → 14/09 17:02 (checkpoint anterior: `analise_evolucao_agentes_2026-09-10.md`)
 **Método:** consulta somente leitura direto no TiDB de produção via `POST /api/claude-consulta`, mesma metodologia dos relatórios anteriores.
 
+> **Errata (14/09, depois da publicação deste relatório):** a seção 6 abaixo
+> ("Nada. `git log` não retorna nenhum commit") está ERRADA — o comando usado
+> (`git log --since=... -- '*agente*'`) tinha um problema de quoting/glob que
+> não achava nada mesmo quando havia commits. O plano de correção FOI
+> aplicado, pelo próprio usuário, no commit `898d2fe` (10/09 15:26 BRT) —
+> antes até do início do período coberto aqui. Ou seja: os 11 erros de
+> "in_process"/handoff da seção 2 e a saudação duplicada da seção 4
+> (sugestão 2940015) aconteceram **com o fix já em produção**, não apesar da
+> falta dele — achados novos e mais graves do que o relatório original deu a
+> entender. Corrigidos no mesmo dia (14/09): handoff silencioso entre
+> especialistas com `message` vazio, saudação duplicada pelo próprio modelo
+> (não só pelo código), log de erro sem cortar em 500 caracteres, e supressão
+> de sugestão quando a equipe já respondeu manualmente (a causa das 3
+> rejeições da Estela na seção 4). O resto da análise (números, causas,
+> recomendações 2-6) continua válido.
+
 ## 1. Resumo executivo
 
 Volume: **654 execuções** no período (386 concluídas, 256 ignoradas, 12 com erro técnico, 0 pendentes).

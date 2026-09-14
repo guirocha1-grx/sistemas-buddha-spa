@@ -1538,7 +1538,24 @@ Diretrizes:
           nomeContato: conversa.nomeContato ?? undefined,
           ultimaMensagemTexto: textoFinal,
         });
+        // A equipe respondeu manualmente — qualquer sugestão da IA ainda
+        // pendente nessa conversa já não vale mais (ver comentário em
+        // agentesDb.descartarSugestoesPendentesPorRespostaHumana).
+        await agentesDb.descartarSugestoesPendentesPorRespostaHumana(input.conversaId).catch(() => {});
 
+        return { success: true };
+      }),
+
+      // "Sinal de digitando" (2026-09-14, ideia do usuário): assim que a
+      // recepção começa a escrever uma resposta manual, qualquer sugestão
+      // da IA ainda pendente nessa conversa já deixa de valer — não
+      // precisa esperar o envio de verdade pra descartar. Chamado pelo
+      // cliente no 1º caractere digitado na caixa de resposta (debounced,
+      // não em toda tecla). Falha silenciosa: nunca deve travar a digitação.
+      sinalizarDigitando: protectedProcedure.input(z.object({
+        conversaId: z.number(),
+      })).mutation(async ({ input }) => {
+        await agentesDb.descartarSugestoesPendentesPorRespostaHumana(input.conversaId).catch(() => {});
         return { success: true };
       }),
 

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, like, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNull, like, lte, or, sql } from "drizzle-orm";
 import {
   agentesAcoesConversa,
   agentesAgrupamentosMensagens,
@@ -805,6 +805,44 @@ export async function descartarSugestoesPendentesDaConversa(conversaId: number) 
     eq(agentesSugestoes.avaliacao, "pendente"),
     isNull(agentesSugestoes.enviadaEm),
   ));
+}
+
+/**
+ * Mesma ideia de `descartarSugestoesPendentesDaConversa`, mas pro caso
+ * inverso: a EQUIPE respondeu manualmente, não o cliente. Achado real
+ * (analise_evolucao_agentes_2026-09-14.md, seção 4): 3 das 4 rejeições
+ * do período eram sugestão chegando depois de um atendente já ter
+ * respondido a conversa pessoalmente ao vivo — a IA não sabia que a
+ * recepção já tinha assumido. Chamado em 2 pontos: (1) quando a
+ * recepção começa a digitar (sinal do primeiro caractere, pega o caso
+ * mais cedo possível) e (2) na criação de qualquer sugestão nova,
+ * conferindo se já existe mensagem "enviada" mais recente que o pedido
+ * do cliente que a gerou (cobre o caso de a resposta humana ter saído
+ * enquanto a sugestão ainda estava sendo gerada).
+ */
+export async function descartarSugestoesPendentesPorRespostaHumana(conversaId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Banco indisponível");
+  await db.update(agentesSugestoes).set({
+    avaliacao: "obsoleta",
+    tipoRevisao: "substituida_por_contexto",
+    comentarioAvaliacao: "Sugestão substituída — a equipe já respondeu essa conversa manualmente.",
+    avaliadaEm: new Date(),
+  }).where(and(
+    eq(agentesSugestoes.conversaId, conversaId),
+    eq(agentesSugestoes.avaliacao, "pendente"),
+    isNull(agentesSugestoes.enviadaEm),
+  ));
+}
+
+/** Usado por `criarSugestaoFinal` (agentesService.ts) pra saber, na hora de criar a sugestão, se a equipe já respondeu manualmente a mensagem do cliente que a originou. */
+export async function humanoRespondeuDepoisDe(conversaId: number, apos: Date): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const linhas = await db.select({ id: inboxMensagens.id }).from(inboxMensagens)
+    .where(and(eq(inboxMensagens.conversaId, conversaId), eq(inboxMensagens.direcao, "enviada"), gt(inboxMensagens.createdAt, apos)))
+    .limit(1);
+  return linhas.length > 0;
 }
 
 /**

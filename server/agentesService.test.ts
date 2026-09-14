@@ -12,6 +12,8 @@ const agentesDb = vi.hoisted(() => ({
   listarScriptsParaAgentes: vi.fn(),
   criarSugestao: vi.fn(),
   descartarSugestoesPendentesDaConversa: vi.fn(),
+  descartarSugestoesPendentesPorRespostaHumana: vi.fn(),
+  humanoRespondeuDepoisDe: vi.fn().mockResolvedValue(false),
   concluirExecucao: vi.fn(),
   buscarSugestao: vi.fn(),
   avaliarSugestao: vi.fn(),
@@ -161,6 +163,25 @@ describe("orquestrador de agentes", () => {
     })).toBe("Boa tarde! Que bom ter você aqui 😊\n\nVocê tem preferência por algum(a) terapeuta?");
   });
 
+  // Achado real (analise_evolucao_agentes_2026-09-14.md, seção 4, sugestão
+  // 2940015): o próprio modelo às vezes duplica a saudação sozinho (sem
+  // ajuda do código) — a 2ª cópia vem sem o "Boa tarde!" da 1ª, só o
+  // trecho cordial fixo. Isso escapava tanto do prefixo exato quanto do
+  // regex genérico, e a duplicação persistia mesmo após a correção de
+  // 10/09 (chegou a ser aprovada, editada e enviada ao cliente ainda
+  // duplicada).
+  it("não duplica a saudação quando o próprio especialista já a duplicou sozinho", () => {
+    const primeiraMensagem = contexto("Queria fazer uma massagem com a minha irmã");
+    const agora = new Date("2026-08-28T16:00:00.000Z");
+
+    expect(aplicarSaudacaoInicialEspecialista({
+      contexto: primeiraMensagem,
+      chaveAgente: "carol",
+      mensagem: "Boa tarde! Que bom ter você aqui 😊\n\nQue bom ter você aqui 😊\n\nVocê tem preferência por algum(a) terapeuta?",
+      agora,
+    })).toBe("Boa tarde! Que bom ter você aqui 😊\n\nVocê tem preferência por algum(a) terapeuta?");
+  });
+
   it("não repete a saudação quando a equipe respondeu há menos de 7 dias", () => {
     const agora = new Date("2026-08-28T16:00:00.000Z");
     const conversaRecente = contexto("Vocês têm horário para amanhã?");
@@ -190,6 +211,8 @@ describe("orquestrador de agentes", () => {
     agentesDb.sugestaoRepetiriaSemAceite.mockResolvedValue(false);
     agentesDb.criarSugestao.mockResolvedValue(91);
     agentesDb.descartarSugestoesPendentesDaConversa.mockResolvedValue(undefined);
+    agentesDb.descartarSugestoesPendentesPorRespostaHumana.mockResolvedValue(undefined);
+    agentesDb.humanoRespondeuDepoisDe.mockResolvedValue(false);
     db.mensageriaEstaAtiva.mockResolvedValue(true);
     db.getScriptById.mockResolvedValue(undefined);
   });
@@ -375,6 +398,26 @@ describe("orquestrador de agentes", () => {
 
     expect(agentesDb.criarSugestao).not.toHaveBeenCalled();
     expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({ status: "erro" }));
+  });
+
+  // Achado real (analise_evolucao_agentes_2026-09-14.md, seção 2): 4
+  // execuções reais (Bianca, Fabrícia, Carol) devolviam "message" vazio
+  // ao passar a vez a outro especialista (status = chave do próximo,
+  // summary preenchido) — virava erro técnico em vez de completar a
+  // troca de verdade, como já acontecia com a Áurea.
+  it("completa a troca de especialista quando o handoff vem com mensagem vazia", async () => {
+    agentesDb.obterContextoConversa.mockResolvedValue(contexto("Quais terapias vocês oferecem?"));
+    agentesDb.listarAgentesAtivosComPrompt.mockImplementation(async (_unidadeId: number, tipo: string) => tipo === "receptor" ? [receptor] : [biancaAssistida, fabriciaAssistida]);
+    invokeLLM
+      .mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("", "fabricia") } }] })
+      .mockResolvedValueOnce({ choices: [{ message: { content: respostaJson("O Day Spa é uma experiência combinada de terapias.") } }] });
+
+    const resultado = await processarMensagemRecebida({ conversaId: 10, mensagemEntradaId: 440 });
+
+    expect(resultado).toEqual({ status: "concluida", sugestaoId: 91 });
+    expect(agentesDb.criarSugestao).toHaveBeenCalledTimes(1);
+    expect(agentesDb.criarSugestao).toHaveBeenCalledWith(expect.objectContaining({ agenteId: fabriciaAssistida.agente.id }));
+    expect(agentesDb.concluirExecucao).toHaveBeenCalledWith(90, expect.objectContaining({ status: "concluida", classificacao: "fabricia" }));
   });
 
   it("usa o fluxo geral de Day Spa para pergunta de catálogo, sem voucher ou agendamento", async () => {
